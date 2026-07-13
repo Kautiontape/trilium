@@ -51,7 +51,7 @@
     "@types/pngjs": "6.0.5",
     "electron": "42.6.1",
     "gifenc": "1.0.3",
-    "node-mocks-http": "1.17.2",
+    "node-mocks-http": "1.18.0",
     "pngjs": "7.0.0",
     "prebuild-install": "7.1.3"
   }
