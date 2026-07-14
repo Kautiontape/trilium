@@ -1,0 +1,49 @@
+name: ktn build & publish
+on:
+  push:
+    branches: [ktn]
+  pull_request:
+    branches: [ktn] # build-gate for upstream-sync PRs (cloud only — safe for untrusted)
+  workflow_dispatch:
+concurrency:
+  group: ktn-build-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Build server bundle (produces apps/server/dist)
+        run: pnpm run server:build
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/kautiontape/trilium
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/ktn' }}
+            type=sha
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/server
+          file: apps/server/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }} # PRs build-only (gate); pushes publish
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

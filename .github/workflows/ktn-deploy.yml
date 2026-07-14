@@ -1,0 +1,35 @@
+name: ktn deploy
+on:
+  workflow_run:
+    workflows: ['ktn build & publish']
+    types: [completed]
+    branches: [ktn]
+  workflow_dispatch:
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, ktn]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ktn
+          sparse-checkout: |
+            deploy/ktn
+          sparse-checkout-cone-mode: false
+      - name: Load deploy SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.TRILIUM_DEPLOY_SSH_KEY }}" > ~/.ssh/trilium_deploy
+          chmod 600 ~/.ssh/trilium_deploy
+          ssh-keyscan -H 192.168.1.110 >> ~/.ssh/known_hosts 2>/dev/null || true
+      # Sync the compose verbatim to the box, then pull+restart in place on 110.
+      # Public GHCR package → no registry login needed on 110.
+      - name: Deploy to LXC 110 over SSH
+        run: |
+          scp -i ~/.ssh/trilium_deploy -o StrictHostKeyChecking=accept-new \
+            deploy/ktn/docker-compose.yml shawn@192.168.1.110:/opt/services/trilium/docker-compose.yml
+          ssh -i ~/.ssh/trilium_deploy -o StrictHostKeyChecking=accept-new shawn@192.168.1.110 \
+            'cd /opt/services/trilium && docker compose pull && docker compose up -d && docker image prune -f'
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/trilium_deploy

@@ -1,0 +1,27 @@
+# Canonical compose for Trilium on LXC 110. ktn-deploy syncs this verbatim to
+# /opt/services/trilium/docker-compose.yml and runs `docker compose pull && up -d`.
+# Secrets live in ./trilium.env (on-box, chmod 600, NOT in this repo).
+services:
+  trilium:
+    image: ghcr.io/kautiontape/trilium:latest
+    container_name: trilium
+    restart: unless-stopped
+    # LAN-reachable so Caddy (.116) can proxy it; the ingress guard (docker-user
+    # mode) restricts source to .116.
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./data:/home/node/trilium-data
+      - ./yuffie-root-ca.crt:/certs/yuffie-root-ca.crt:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TRILIUM_DATA_DIR=/home/node/trilium-data
+      - TRILIUM_NETWORK_TRUSTEDREVERSEPROXY=192.168.1.116
+      - NODE_EXTRA_CA_CERTS=/certs/yuffie-root-ca.crt
+      - TRILIUM_OAUTH_BASE_URL=https://trilium.yuffie.ts.net
+      - TRILIUM_OAUTH_ISSUER_BASE_URL=https://auth.yuffie.ts.net/application/o/trilium/
+      - TRILIUM_OAUTH_ISSUER_NAME=Authentik
+    env_file:
+      - trilium.env  # TRILIUM_OAUTH_CLIENT_ID, TRILIUM_OAUTH_CLIENT_SECRET
+    extra_hosts:
+      - 'auth.yuffie.ts.net:192.168.1.116'
