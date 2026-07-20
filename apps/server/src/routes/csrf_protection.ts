@@ -1,27 +1,45 @@
-import crypto from "crypto";
 import { doubleCsrf } from "csrf-csrf";
+import type { NextFunction, Request, Response } from "express";
 
+import { isInternalElectronRequest } from "../services/electron_request.js";
 import sessionSecret from "../services/session_secret.js";
-import { isElectron } from "../services/utils.js";
+import config from "../services/config.js";
+import sqlInit from "../services/sql_init.js";
 
 export const CSRF_COOKIE_NAME = "trilium-csrf";
-
-// In Electron, API calls go through an IPC bypass (routes/electron.ts) that uses a
-// FakeRequest with a static session ID, while the bootstrap request goes through real
-// Express with a real session. This mismatch causes CSRF validation to always fail.
-// We use a per-instance random identifier so each Electron process still gets unique tokens.
-const electronSessionId = crypto.randomUUID();
 
 const doubleCsrfUtilities = doubleCsrf({
     getSecret: () => sessionSecret,
     cookieOptions: {
         path: "/",
-        secure: false,
+        secure: config.Network.https,
         sameSite: "strict",
-        httpOnly: !isElectron // set to false for Electron, see https://github.com/TriliumNext/Trilium/pull/966
+        httpOnly: true
     },
     cookieName: CSRF_COOKIE_NAME,
-    getSessionIdentifier: (req) => isElectron ? electronSessionId : req.session.id
+    getSessionIdentifier: (req) => req.session.id
 });
 
-export const { generateCsrfToken, doubleCsrfProtection } = doubleCsrfUtilities;
+export const { generateCsrfToken } = doubleCsrfUtilities;
+
+// Skip CSRF validation only for requests dispatched via the `trilium-app://`
+// custom protocol from our own renderer — Express sessions don't round-trip
+// through that path, so the HMAC double-submit check has nothing meaningful
+// to validate against. Keying off the per-request marker (rather than the
+// process-wide `isElectron` flag) means TCP requests to the desktop's HTTP
+// listener still get the full CSRF check. Auth is similarly gated in
+// `services/auth.ts`.
+export function doubleCsrfProtection(req: Request, res: Response, next: NextFunction) {
+    if (isInternalElectronRequest(req)) {
+        return next();
+    }
+    // Before the DB is initialized, sessions are never persisted (SQLiteSessionStore
+    // no-ops), so every request carries a fresh session id and the session-bound CSRF
+    // token can never validate — protected endpoints the setup wizard needs (sync/now
+    // for resume/retry of the initial sync) would always 403. CSRF also has nothing to
+    // protect at this stage: there is no authenticated session to ride. See #10548.
+    if (!sqlInit.isDbInitialized()) {
+        return next();
+    }
+    return doubleCsrfUtilities.doubleCsrfProtection(req, res, next);
+}

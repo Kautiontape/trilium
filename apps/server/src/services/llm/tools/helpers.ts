@@ -2,11 +2,12 @@
  * Shared helpers for LLM tools — content conversion, metadata building, and previews.
  */
 
-import becca from "../../../becca/becca.js";
-import type BAttachment from "../../../becca/entities/battachment.js";
-import type BNote from "../../../becca/entities/bnote.js";
-import markdownExport from "../../export/markdown.js";
-import markdownImport from "../../import/markdown.js";
+import { type BAttachment, becca, type BNote, markdownExportService as markdownExport, markdownImportService as markdownImport } from "@triliumnext/core";
+import { unwrapStringOrBuffer } from "@triliumnext/core/src/services/utils/binary.js";
+import { readFileSync } from "fs";
+import path from "path";
+
+import resourceDir from "../../resource_dir.js";
 
 const CONTENT_PREVIEW_MAX_LENGTH = 500;
 const ATTACHMENT_PREVIEW_MAX_LENGTH = 200;
@@ -31,6 +32,13 @@ export function flag(value: boolean | undefined): true | undefined {
  * Text notes are converted from HTML to Markdown to reduce token usage.
  */
 export function getNoteContentForLlm(note: BNote) {
+    if (note.type === "doc") {
+        // Doc notes (in-app help / User Guide pages) store no content in the
+        // database — their HTML lives on disk and is fetched by the client.
+        const html = getDocNoteHtml(note);
+        return html ? markdownExport.toMarkdown(html) : "[doc content not available]";
+    }
+
     const content = note.getContent();
     if (typeof content !== "string") {
         // For binary content (images, files), use extracted text if available.
@@ -47,6 +55,32 @@ export function getNoteContentForLlm(note: BNote) {
 }
 
 /**
+ * Resolve the on-disk HTML of a `doc` note (in-app help / User Guide pages,
+ * identified by their `#docName` label), or null if it cannot be resolved.
+ * The User Guide ships in English only, so the `en` tree is always used
+ * (mirroring the client's doc_renderer behaviour).
+ */
+export function getDocNoteHtml(note: BNote): string | null {
+    const docName = note.getLabelValue("docName");
+    if (!docName) {
+        return null;
+    }
+
+    const docNotesDir = path.resolve(resourceDir.RESOURCE_DIR, "doc_notes");
+    const filePath = path.resolve(docNotesDir, "en", `${docName}.html`);
+    if (!filePath.startsWith(docNotesDir + path.sep)) {
+        // Path traversal guard — the docName label is note data, not trusted input.
+        return null;
+    }
+
+    try {
+        return readFileSync(filePath, "utf-8");
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Convert LLM-provided content to a format suitable for storage.
  * For text notes, converts Markdown to HTML.
  */
@@ -56,6 +90,56 @@ export function setNoteContentFromLlm(note: BNote, content: string) {
     } else {
         note.setContent(content);
     }
+}
+
+/** A single find-and-replace edit applied to note content. */
+export interface TextEdit {
+    oldText: string;
+    newText: string;
+}
+
+export type TextEditResult =
+    | { ok: true; content: string }
+    | { ok: false; error: string };
+
+/**
+ * Apply a sequence of find-and-replace edits to a string, all-or-nothing.
+ *
+ * Each edit's `oldText` must occur exactly once in the content at the moment it
+ * is applied. Edits are applied in order, so a later edit may target text that an
+ * earlier edit introduced. If any edit fails to match (or matches ambiguously),
+ * no edit is committed and an error describing the offending edit is returned.
+ */
+export function applyTextEdits(content: string, edits: TextEdit[]): TextEditResult {
+    let result = content;
+
+    for (let i = 0; i < edits.length; i++) {
+        const { oldText, newText } = edits[i];
+        const label = edits.length > 1 ? ` (edit ${i + 1} of ${edits.length})` : "";
+
+        if (oldText === "") {
+            return { ok: false, error: `oldText must not be empty${label}.` };
+        }
+        if (oldText === newText) {
+            return { ok: false, error: `oldText and newText are identical${label} — nothing to change.` };
+        }
+
+        const firstIndex = result.indexOf(oldText);
+        if (firstIndex === -1) {
+            return { ok: false, error: `oldText not found in the note content${label}.` };
+        }
+        if (result.indexOf(oldText, firstIndex + oldText.length) !== -1) {
+            return {
+                ok: false,
+                error: `oldText is not unique${label} — it matches more than once. `
+                    + "Include more surrounding context so it identifies a single location."
+            };
+        }
+
+        result = result.slice(0, firstIndex) + newText + result.slice(firstIndex + oldText.length);
+    }
+
+    return { ok: true, content: result };
 }
 
 /**
@@ -79,7 +163,7 @@ export function getContentPreview(note: BNote): string | null {
     }
 
     const full = getNoteContentForLlm(note);
-    if (!full || full === "[binary content]") {
+    if (!full || full === "[binary content]" || full === "[doc content not available]") {
         return null;
     }
 
@@ -100,7 +184,7 @@ export function getAttachmentContentPreview(att: BAttachment): string | null {
 
     if (att.hasStringContent()) {
         const content = att.getContent();
-        text = typeof content === "string" ? content : content.toString("utf-8");
+        text = unwrapStringOrBuffer(content);
     } else {
         const blob = att.blobId ? becca.getBlob({ blobId: att.blobId }) : null;
         text = blob?.textRepresentation ?? null;

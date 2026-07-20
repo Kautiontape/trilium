@@ -24,15 +24,48 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        electron = pkgs."electron_${lib.versions.major packageJsonDesktop.devDependencies.electron}";
+
+        electronVersion = packageJsonDesktop.devDependencies.electron;
+        electronFromNixpkgs = pkgs."electron_${lib.versions.major electronVersion}";
+
+        # nixpkgs lags behind the Electron version pinned in apps/desktop/package.json
+        # (electron_42 is still 42.5.1), and its source build cannot be bumped without
+        # upstream's Chromium dependency hashes. Build the exact pinned version from
+        # Electron's official binary release instead, reusing the nixpkgs builder.
+        #
+        # When bumping Electron, refresh these hashes:
+        #   zips:    curl -sL https://github.com/electron/electron/releases/download/v<version>/SHASUMS256.txt
+        #   headers: nix-prefetch-url --unpack https://artifacts.electronjs.org/headers/dist/v<version>/node-v<version>-headers.tar.gz
+        pinnedElectronVersion = "42.7.0";
+        pinnedElectronHashes = {
+          x86_64-linux = "18f889e05b4879d4b1faaabcae2e6bcfdb62c0884b4ab49b3049b82b849b26e8";
+          armv7l-linux = "8f2c2c6f50048567ecfae57e22e52afa9ff2c1a85420eb73421fbccd1088c21a";
+          aarch64-linux = "65cb5b9eff4e6435dec006fc78b95498971f7edb78365b2ce1ed5c44767a9085";
+          x86_64-darwin = "0db6f623fccabafe797bc3c9c8776707c4c87b40ffad6a46134536aa84b32c94";
+          aarch64-darwin = "1bdf5c042e0282e59784264cb29bb3341b1a17d4d14de591a834afb714ce8f63";
+          headers = "05ay892md7p872aii3kykl97nl082wmnnlb3hm2mwxpwwi0amzf1";
+        };
+        mkElectronBin = pkgs.callPackage (
+          pkgs.path + "/pkgs/development/tools/electron/binary/generic.nix"
+        ) { };
+
+        electron =
+          if electronFromNixpkgs.version == electronVersion then
+            electronFromNixpkgs
+          else
+            lib.throwIf (pinnedElectronVersion != electronVersion) ''
+              flake.nix pins Electron ${pinnedElectronVersion}, but apps/desktop/package.json wants ${electronVersion}.
+              Refresh pinnedElectronVersion/pinnedElectronHashes in flake.nix, or drop the override if nixpkgs ships ${electronVersion}.
+            '' (mkElectronBin pinnedElectronVersion pinnedElectronHashes);
+
         nodejs = pkgs.nodejs_24;
         # pnpm creates an overly long PATH env variable for child processes.
         # This patch deduplicates entries in PATH, which results in an equivalent but shorter entry.
         # https://github.com/pnpm/pnpm/issues/6106
         # https://github.com/pnpm/pnpm/issues/8552
-        pnpm = (pkgs.pnpm_10.overrideAttrs (prev: {
+        pnpm = (pkgs.pnpm_11.overrideAttrs (prev: {
           postInstall = prev.postInstall + ''
-            patch $out/libexec/pnpm/dist/pnpm.cjs ${./patches/pnpm-PATH-reduction.patch}
+            patch $out/libexec/pnpm/dist/pnpm.mjs ${./patches/pnpm-PATH-reduction.patch}
           '';
         }));
         inherit (pkgs)
@@ -42,8 +75,7 @@
           makeBinaryWrapper
           makeDesktopItem
           makeShellWrapper
-          moreutils
-          removeReferencesTo
+removeReferencesTo
           stdenv
           wrapGAppsHook3
           xcodebuild
@@ -125,7 +157,7 @@
 
             # remove pnpm version override
             preConfigure = ''
-              cat package.json | grep -v 'packageManager' | sponge package.json
+              node -e "const p = require('./package.json'); delete p.packageManager; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n')"
             '';
 
             postConfigure =
@@ -136,8 +168,7 @@
 
             extraNativeBuildInputs =
               [
-                moreutils # sponge
-                nodejs.python
+nodejs.python
                 removeReferencesTo
               ]
               ++ lib.optionals (app == "desktop" || app == "edit-docs") [
@@ -159,8 +190,6 @@
                 darwin.cctools
               ];
             dontWrapGApps = true;
-
-            env.ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
 
             preBuild = ''
               ${preBuildCommands}
@@ -202,7 +231,7 @@
               "apps/dump-db"
               "apps/edit-docs"
               "apps/server"
-              "apps/server-e2e"
+              "packages/trilium-e2e"
             ];
 
             desktopItems = lib.optionals (app == "desktop") [
@@ -225,11 +254,8 @@
 
         desktop = makeApp {
           app = "desktop";
-          # pnpm throws an error at the end of `pnpm postinstall`, but it doesn't seem to matter:
-          # ENOENT: no such file or directory, lstat
-          # '/build/source/apps/desktop/node_modules/better-sqlite3/build/node_gyp_bins'
           preBuildCommands = ''
-            export npm_config_nodedir=${electron.headers}
+            export ELECTRON_NODEDIR=${electron.headers}
             pnpm postinstall
           '';
           buildTask = "desktop:build";
@@ -286,7 +312,7 @@
         edit-docs = makeApp {
           app = "edit-docs";
           preBuildCommands = ''
-            export npm_config_nodedir=${electron.headers}
+            export ELECTRON_NODEDIR=${electron.headers}
             pnpm postinstall
           '';
           buildTask = "edit-docs:build";
