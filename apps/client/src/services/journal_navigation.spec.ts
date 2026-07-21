@@ -1,7 +1,7 @@
 import { DEFAULT_WEEK_SETTINGS, type WeekSettings } from "@triliumnext/commons";
 import { describe, expect, it } from "vitest";
 
-import { detectLevel, isValidValue, stepValue } from "./journal_navigation.js";
+import { detectLevel, expectedAncestors, isValidValue, stepValue } from "./journal_navigation.js";
 
 /** Minimal stand-in for FNote — detectLevel only needs getOwnedLabelValue. */
 function fakeNote(labels: Record<string, string>) {
@@ -134,5 +134,43 @@ describe("stepValue — week", () => {
     it("returns null for a malformed week value", () => {
         expect(stepValue("week", "2026-W1", 1, DEFAULTS)).toBeNull();
         expect(stepValue("week", "not-a-week", 1, DEFAULTS)).toBeNull();
+    });
+});
+
+describe("expectedAncestors", () => {
+    it("returns coarse-to-fine ancestors for a day note", () => {
+        expect(expectedAncestors("day", "2026-07-20", DEFAULTS, { week: true, quarter: true })).toEqual([
+            { level: "year", labelName: "yearNote", value: "2026" },
+            { level: "quarter", labelName: "quarterNote", value: "2026-Q3" },
+            { level: "month", labelName: "monthNote", value: "2026-07" },
+            { level: "week", labelName: "weekNote", value: "2026-W30" }
+        ]);
+    });
+
+    it("omits levels the calendar root has not enabled", () => {
+        expect(expectedAncestors("day", "2026-07-20", DEFAULTS, { week: false, quarter: false })).toEqual([
+            { level: "year", labelName: "yearNote", value: "2026" },
+            { level: "month", labelName: "monthNote", value: "2026-07" }
+        ]);
+    });
+
+    it("returns only coarser levels than the note's own", () => {
+        expect(expectedAncestors("month", "2026-07", DEFAULTS, { week: true, quarter: false })).toEqual([
+            { level: "year", labelName: "yearNote", value: "2026" }
+        ]);
+        expect(expectedAncestors("year", "2026", DEFAULTS, { week: true, quarter: true })).toEqual([]);
+    });
+
+    it("derives a cross-year week's own year from its week-year, not its start date", () => {
+        // 2026-W01 starts 2025-12-29, so it is filed under 2025-12 / 2025 in the tree,
+        // but its own identity is 2026. The clone into 2026-01 is what the walk matches.
+        expect(expectedAncestors("week", "2026-W01", DEFAULTS, { week: true, quarter: false })).toEqual([
+            { level: "year", labelName: "yearNote", value: "2026" },
+            { level: "month", labelName: "monthNote", value: "2026-01" }
+        ]);
+    });
+
+    it("returns an empty list for a malformed value", () => {
+        expect(expectedAncestors("day", "someday", DEFAULTS, { week: true, quarter: true })).toEqual([]);
     });
 });

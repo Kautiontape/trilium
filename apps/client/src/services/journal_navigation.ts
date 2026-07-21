@@ -116,3 +116,81 @@ export function stepValue(
             return String(parseInt(value, 10) + delta);
     }
 }
+
+/** Which optional levels the resolved calendar root has enabled. */
+export interface EnabledLevels {
+    week: boolean;
+    quarter: boolean;
+}
+
+export interface ExpectedAncestor {
+    level: CalendarLevel;
+    labelName: string;
+    value: string;
+}
+
+/**
+ * Computes the calendar values of every level coarser than `level`, broad to narrow.
+ *
+ * These are matched against cached ancestors to build the breadcrumb. For a week note
+ * the anchor date is the week's start date, but the *year* comes from the week-year
+ * encoded in the label: 2026-W01 begins 2025-12-29, yet belongs to 2026.
+ */
+export function expectedAncestors(
+    level: CalendarLevel,
+    value: string,
+    settings: WeekSettings,
+    enabled: EnabledLevels
+): ExpectedAncestor[] {
+    if (!isValidValue(level, value)) {
+        return [];
+    }
+
+    const anchor = anchorDate(level, value, settings);
+    if (!anchor) {
+        return [];
+    }
+
+    const year = level === "week" ? parseInt(value.split("-W")[0], 10) : anchor.year();
+
+    // A week's anchor is its *start* date, which for week 1 can fall in the previous
+    // calendar year (2026-W01 starts 2025-12-29). When that happens the month/quarter
+    // ancestors must come from the week's *end* date instead: the server clones a
+    // cross-month week note into both months it touches (see date_notes.ts), and the
+    // clone filed under the week's own year is the one the real ancestor walk finds.
+    const monthQuarterAnchor = level === "week" && anchor.year() !== year ? anchor.add(6, "day") : anchor;
+
+    const all: ExpectedAncestor[] = [
+        { level: "year", labelName: "yearNote", value: String(year) },
+        { level: "quarter", labelName: "quarterNote", value: `${monthQuarterAnchor.year()}-Q${monthQuarterAnchor.quarter()}` },
+        { level: "month", labelName: "monthNote", value: monthQuarterAnchor.format("YYYY-MM") },
+        { level: "week", labelName: "weekNote", value: getWeekString(anchor, settings) }
+    ];
+
+    const ownLevelIndex = all.findIndex((a) => a.level === level);
+    const coarserThanCurrent = all.slice(0, ownLevelIndex === -1 ? all.length : ownLevelIndex);
+
+    return coarserThanCurrent.filter((ancestor) => {
+        if (ancestor.level === "week") return enabled.week;
+        if (ancestor.level === "quarter") return enabled.quarter;
+        return true;
+    });
+}
+
+/** The representative date for a calendar value, used to derive coarser levels. */
+function anchorDate(level: CalendarLevel, value: string, settings: WeekSettings) {
+    switch (level) {
+        case "day":
+            return dayjs(value);
+        case "week":
+            return parseWeekString(value, settings);
+        case "month":
+            return dayjs(`${value}-01`);
+        case "quarter": {
+            const [ yearStr, quarterStr ] = value.split("-Q");
+            return dayjs(`${yearStr}-01-01`).quarter(parseInt(quarterStr, 10));
+        }
+        case "year":
+            return dayjs(`${value}-01-01`);
+    }
+}
