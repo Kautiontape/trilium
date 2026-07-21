@@ -12,6 +12,7 @@ import { useNoteContext, useNoteLabel, useNoteProperty, useTriliumEvent, useTril
 import { NewNoteLink } from "../react/NoteLink";
 import { useEditedNotes } from "../ribbon/EditedNotesTab";
 import SearchDefinitionTab from "../ribbon/SearchDefinitionTab";
+import JournalNavigation from "./JournalNavigation";
 import NoteTypeSwitcher from "./NoteTypeSwitcher";
 
 export default function NoteTitleActions() {
@@ -22,6 +23,7 @@ export default function NoteTitleActions() {
         <div className="title-actions">
             <PromotedAttributes note={note} componentId={componentId} noteContext={noteContext} />
             {noteType === "search" && <SearchProperties note={note} ntxId={ntxId} />}
+            <JournalNavigation note={note} />
             <EditedNotes />
             {(!viewScope?.viewMode || viewScope.viewMode === "default") && <NoteTypeSwitcher note={note} />}
         </div>
