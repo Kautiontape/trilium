@@ -87,15 +87,15 @@ describe("date_notes", () => {
         expect(result).toBe(note);
     });
 
-    it("getWeekNote tolerates a missing server response via optional chaining", async () => {
-        // getWeekNote is the only helper using froca.getNote(note?.noteId); a null server
-        // response must resolve to null (froca.getNote(undefined) returns null) instead of throwing.
+    it("getWeekNote returns null when the calendar root lacks #enableWeekNote", async () => {
+        // The server responds 200 with a null body in that case; getWeekNote must resolve
+        // to null instead of dereferencing the response.
         server.get = vi.fn(async () => null) as typeof server.get;
 
         const result = await dateNotes.getWeekNote("2025-W22");
 
         expect(server.get).toHaveBeenCalledWith("special-notes/weeks/2025-W22", "date-note");
-        expect(ws.waitForMaxKnownEntityChangeId).toHaveBeenCalled();
+        expect(ws.waitForMaxKnownEntityChangeId).not.toHaveBeenCalled();
         expect(result).toBeNull();
     });
 
