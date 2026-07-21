@@ -1,0 +1,33 @@
+.journal-navigation {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+    flex-wrap: wrap;
+    padding: 0.25em 0;
+    font-size: 0.9em;
+
+    & .journal-nav-crumbs {
+        display: flex;
+        align-items: center;
+        gap: 0.25em;
+        flex-wrap: wrap;
+        min-width: 0;
+    }
+
+    & .journal-nav-separator {
+        opacity: 0.45;
+        user-select: none;
+    }
+
+    & .journal-nav-spacer {
+        flex: 1 1 auto;
+    }
+
+    & .journal-nav-will-create {
+        opacity: 0.65;
+    }
+
+    &.journal-nav-blocked {
+        opacity: 0.5;
+    }
+}

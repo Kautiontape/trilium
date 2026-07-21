@@ -23,6 +23,12 @@ type Labels = {
     pageUrl: string;
     docUrl: string;
     dateNote: string;
+    weekNote: string;
+    monthNote: string;
+    quarterNote: string;
+    yearNote: string;
+    enableWeekNote: boolean;
+    enableQuarterNote: boolean;
 
     // Scripting
     run: string;

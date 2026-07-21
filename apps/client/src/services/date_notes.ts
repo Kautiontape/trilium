@@ -16,56 +16,61 @@ async function getTodayNote() {
 }
 
 async function getDayNote(date: string, calendarRootId?: string) {
-    let url = `special-notes/days/${date}`;
-    if (calendarRootId) {
-        url += `?calendarRootId=${calendarRootId}`;
+    const note = await server.get<FNoteRow>(dateNoteUrl("days", date, calendarRootId), "date-note");
+
+    await ws.waitForMaxKnownEntityChangeId();
+
+    return await froca.getNote(note.noteId);
+}
+
+async function getWeekFirstDayNote(date: string, calendarRootId?: string) {
+    const note = await server.get<FNoteRow>(dateNoteUrl("week-first-day", date, calendarRootId), "date-note");
+
+    await ws.waitForMaxKnownEntityChangeId();
+
+    return await froca.getNote(note.noteId);
+}
+
+/** Returns null when the calendar root does not have `#enableWeekNote`. */
+async function getWeekNote(week: string, calendarRootId?: string) {
+    const note = await server.get<FNoteRow | null>(dateNoteUrl("weeks", week, calendarRootId), "date-note");
+
+    if (!note) {
+        return null;
     }
 
-    const note = await server.get<FNoteRow>(url, "date-note");
+    await ws.waitForMaxKnownEntityChangeId();
+
+    return await froca.getNote(note.noteId);
+}
+
+async function getMonthNote(month: string, calendarRootId?: string) {
+    const note = await server.get<FNoteRow>(dateNoteUrl("months", month, calendarRootId), "date-note");
 
     await ws.waitForMaxKnownEntityChangeId();
 
     return await froca.getNote(note.noteId);
 }
 
-async function getWeekFirstDayNote(date: string) {
-    const note = await server.get<FNoteRow>(`special-notes/week-first-day/${date}`, "date-note");
+async function getQuarterNote(quarter: string, calendarRootId?: string) {
+    const note = await server.get<FNoteRow>(dateNoteUrl("quarters", quarter, calendarRootId), "date-note");
 
     await ws.waitForMaxKnownEntityChangeId();
 
     return await froca.getNote(note.noteId);
 }
 
-async function getWeekNote(week: string) {
-    const note = await server.get<FNoteRow>(`special-notes/weeks/${week}`, "date-note");
-
-    await ws.waitForMaxKnownEntityChangeId();
-
-    return await froca.getNote(note?.noteId);
-}
-
-async function getMonthNote(month: string) {
-    const note = await server.get<FNoteRow>(`special-notes/months/${month}`, "date-note");
+async function getYearNote(year: string, calendarRootId?: string) {
+    const note = await server.get<FNoteRow>(dateNoteUrl("years", year, calendarRootId), "date-note");
 
     await ws.waitForMaxKnownEntityChangeId();
 
     return await froca.getNote(note.noteId);
 }
 
-async function getQuarterNote(quarter: string) {
-    const note = await server.get<FNoteRow>(`special-notes/quarters/${quarter}`, "date-note");
-
-    await ws.waitForMaxKnownEntityChangeId();
-
-    return await froca.getNote(note.noteId);
-}
-
-async function getYearNote(year: string) {
-    const note = await server.get<FNoteRow>(`special-notes/years/${year}`, "date-note");
-
-    await ws.waitForMaxKnownEntityChangeId();
-
-    return await froca.getNote(note.noteId);
+function dateNoteUrl(path: string, value: string, calendarRootId?: string) {
+    const url = `special-notes/${path}/${encodeURIComponent(value)}`;
+    return calendarRootId ? `${url}?calendarRootId=${encodeURIComponent(calendarRootId)}` : url;
 }
 
 async function createSqlConsole() {

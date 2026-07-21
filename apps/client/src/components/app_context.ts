@@ -294,6 +294,8 @@ export type CommandMappings = {
     moveThisNoteSplit: CommandData & { isMovingLeft: boolean };
     jumpToNote: CommandData;
     openTodayNote: CommandData;
+    openPreviousDayNote: CommandData;
+    openNextDayNote: CommandData;
     commandPalette: CommandData;
 
     // Keyboard shortcuts

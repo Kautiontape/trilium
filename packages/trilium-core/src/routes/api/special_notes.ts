@@ -1,6 +1,7 @@
 import type { Request } from "express";
 
 import becca from "../../becca/becca.js";
+import { NotFoundError } from "../../errors.js";
 import * as cls from "../../services/context.js";
 import dateNoteService from "../../services/date_notes.js";
 import specialNotesService, { type LauncherType } from "../../services/special_notes.js";
@@ -11,29 +12,47 @@ function getInboxNote(req: Request<{ date: string }>) {
 }
 
 function getDayNote(req: Request<{ date: string }>) {
-    const calendarRootId = req.query.calendarRootId;
-    const calendarRoot = typeof calendarRootId === "string" ? becca.getNoteOrThrow(calendarRootId) : null;
-    return dateNoteService.getDayNote(req.params.date, calendarRoot);
+    return dateNoteService.getDayNote(req.params.date, resolveCalendarRoot(req));
 }
 
 function getWeekFirstDayNote(req: Request<{ date: string }>) {
-    return dateNoteService.getWeekFirstDayNote(req.params.date);
+    return dateNoteService.getWeekFirstDayNote(req.params.date, resolveCalendarRoot(req));
 }
 
 function getWeekNote(req: Request<{ week: string }>) {
-    return dateNoteService.getWeekNote(req.params.week);
+    return dateNoteService.getWeekNote(req.params.week, resolveCalendarRoot(req));
 }
 
 function getMonthNote(req: Request<{ month: string }>) {
-    return dateNoteService.getMonthNote(req.params.month);
+    return dateNoteService.getMonthNote(req.params.month, resolveCalendarRoot(req));
 }
 
 function getQuarterNote(req: Request<{ quarter: string }>) {
-    return dateNoteService.getQuarterNote(req.params.quarter);
+    return dateNoteService.getQuarterNote(req.params.quarter, resolveCalendarRoot(req));
 }
 
 function getYearNote(req: Request<{ year: string }>) {
-    return dateNoteService.getYearNote(req.params.year);
+    return dateNoteService.getYearNote(req.params.year, resolveCalendarRoot(req));
+}
+
+/**
+ * Resolves the calendar root a date-note request should be scoped to.
+ *
+ * Returns null when absent, meaning "let the service pick" — which is hoisting-dependent
+ * and therefore wrong for workspace calendars, hence the client always passing one.
+ */
+function resolveCalendarRoot(req: Request) {
+    const calendarRootId = req.query.calendarRootId;
+    if (typeof calendarRootId !== "string" || !calendarRootId) {
+        return null;
+    }
+
+    const note = becca.getNote(calendarRootId);
+    if (!note) {
+        throw new NotFoundError(`Calendar root '${calendarRootId}' not found.`);
+    }
+
+    return note;
 }
 
 function getDayNotesForMonth(req: Request) {

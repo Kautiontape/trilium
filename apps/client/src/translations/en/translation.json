@@ -2324,6 +2324,19 @@
     "edited_notes": "Notes edited on this day",
     "promoted_attributes": "Promoted attributes"
   },
+  "journal_navigation": {
+    "previous": "Previous {{level}}",
+    "next": "Next {{level}}",
+    "previous_create": "Create and open {{value}}",
+    "next_create": "Create and open {{value}}",
+    "today": "Go to today",
+    "outside_hoisted_subtree": "The calendar is outside the hoisted subtree. Unhoist to navigate the journal.",
+    "level_day": "day",
+    "level_week": "week",
+    "level_month": "month",
+    "level_quarter": "quarter",
+    "level_year": "year"
+  },
   "search_result": {
     "no_notes_found": "No notes have been found for given search parameters.",
     "search_not_executed": "Search has not been executed yet.",

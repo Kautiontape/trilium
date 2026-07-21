@@ -1,4 +1,4 @@
-import { CreateChildrenResponse, SqlExecuteResponse } from "@triliumnext/commons";
+import { CreateChildrenResponse, dayjs, SqlExecuteResponse } from "@triliumnext/commons";
 
 import { showBackendScriptingDisabledToast } from "../services/backend_scripting.js";
 import bundleService from "../services/bundle.js";
@@ -6,6 +6,7 @@ import dialog from "../services/dialog.js";
 import dateNoteService from "../services/date_notes.js";
 import froca from "../services/froca.js";
 import { t } from "../services/i18n.js";
+import { detectLevel } from "../services/journal_navigation.js";
 import linkService from "../services/link.js";
 import options from "../services/options.js";
 import protectedSessionHolder from "../services/protected_session_holder.js";
@@ -160,6 +161,38 @@ export default class Entrypoints extends Component {
         }
 
         await appContext.tabManager.openInSameTab(todayNote.noteId);
+    }
+
+    async openPreviousDayNoteCommand() {
+        await this.stepDayNote(-1);
+    }
+
+    async openNextDayNoteCommand() {
+        await this.stepDayNote(1);
+    }
+
+    /**
+     * Steps the active note by one day. No-ops when the active note is not a day note —
+     * keyboard scopes gate on focus location, not note type, so the guard lives here.
+     *
+     * Known limitation: unlike the journal navigation bar, this doesn't resolve a
+     * calendarRootId (that would require walking the note's ancestors), so the target
+     * day note is looked up under the default calendar root.
+     */
+    private async stepDayNote(delta: 1 | -1) {
+        const note = appContext.tabManager.getActiveContextNote();
+        const detected = note ? detectLevel(note) : null;
+
+        if (!detected || detected.level !== "day") {
+            return;
+        }
+
+        const target = dayjs(detected.value).add(delta, "day").format("YYYY-MM-DD");
+        const targetNote = await dateNoteService.getDayNote(target);
+
+        if (targetNote) {
+            await appContext.tabManager.openInSameTab(targetNote.noteId);
+        }
     }
 
     async runActiveNoteCommand() {

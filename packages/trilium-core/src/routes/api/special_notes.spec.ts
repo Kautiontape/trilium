@@ -117,6 +117,58 @@ describe("Special notes API (core)", () => {
             });
             expect(res.status).toBe(404);
         });
+
+        it("scopes week, month, quarter and year notes to an explicit calendar root", async () => {
+            const month = await api.get<NotePojo>("/api/special-notes/months/2025-04", {
+                query: { calendarRootId: "root" }
+            });
+            expect(month.status).toBe(200);
+            expect(month.body.noteId).toBeTruthy();
+
+            const quarter = await api.get<NotePojo>("/api/special-notes/quarters/2025-Q2", {
+                query: { calendarRootId: "root" }
+            });
+            expect(quarter.status).toBe(200);
+            expect(quarter.body.noteId).toBeTruthy();
+
+            const year = await api.get<NotePojo>("/api/special-notes/years/2025", {
+                query: { calendarRootId: "root" }
+            });
+            expect(year.status).toBe(200);
+            expect(year.body.noteId).toBeTruthy();
+
+            const week = await api.get<NotePojo | null>("/api/special-notes/weeks/2025-W18", {
+                query: { calendarRootId: "root" }
+            });
+            expect(week.status).toBe(200);
+            expect(week.body === null || typeof week.body.noteId === "string").toBe(true);
+        });
+
+        it("returns 404 for a calendar root that does not exist", async () => {
+            const res = await api.get("/api/special-notes/months/2025-05", {
+                query: { calendarRootId: "noSuchNoteId" }
+            });
+            expect(res.status).toBe(404);
+        });
+
+        it("finds an existing year note even after it has been archived, instead of duplicating it", async () => {
+            const year = await api.get<NotePojo>("/api/special-notes/years/2019", {
+                query: { calendarRootId: "root" }
+            });
+            expect(year.status).toBe(200);
+            const originalNoteId = year.body.noteId;
+
+            const archive = await api.post(`/api/notes/${originalNoteId}/attributes`, {
+                body: { type: "label", name: "archived", value: "" }
+            });
+            expect(archive.status).toBe(204);
+
+            const again = await api.get<NotePojo>("/api/special-notes/years/2019", {
+                query: { calendarRootId: "root" }
+            });
+            expect(again.status).toBe(200);
+            expect(again.body.noteId).toBe(originalNoteId);
+        });
     });
 
     describe("SQL console", () => {

@@ -109,6 +109,8 @@
     "activate-next-tab": "Activate Next Tab",
     "activate-previous-tab": "Activate Previous Tab",
     "open-new-window": "Open New Window",
+    "open-previous-day-note": "Open previous day note",
+    "open-next-day-note": "Open next day note",
     "toggle-system-tray-icon": "Toggle System Tray Icon",
     "toggle-zen-mode": "Toggle Zen Mode",
     "switch-to-first-tab": "Switch to First Tab",
