@@ -50,6 +50,18 @@ function getDefaultKeyboardActions() {
             scope: "window"
         },
         {
+            actionName: "openPreviousDayNote",
+            friendlyName: t("keyboard_action_names.open-previous-day-note"),
+            defaultShortcuts: [],
+            scope: "window"
+        },
+        {
+            actionName: "openNextDayNote",
+            friendlyName: t("keyboard_action_names.open-next-day-note"),
+            defaultShortcuts: [],
+            scope: "window"
+        },
+        {
             actionName: "commandPalette",
             friendlyName: t("keyboard_action_names.command-palette"),
             defaultShortcuts: ["CommandOrControl+Shift+J"],
