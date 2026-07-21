@@ -193,7 +193,7 @@ function getYearNote(dateStr: string, _rootNote: BNote | null = null): BNote {
     const yearStr = dateStr.trim().substring(0, 4);
 
     let yearNote = searchService.findFirstNoteWithQuery(
-        `#${YEAR_LABEL}="${yearStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId })
+        `#${YEAR_LABEL}="${yearStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId, includeArchivedNotes: true })
     );
 
     if (yearNote) {
@@ -226,7 +226,7 @@ function getQuarterNote(quarterStr: string, _rootNote: BNote | null = null): BNo
     quarterStr = quarterStr.trim().substring(0, 7);
 
     let quarterNote = searchService.findFirstNoteWithQuery(
-        `#${QUARTER_LABEL}="${quarterStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId })
+        `#${QUARTER_LABEL}="${quarterStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId, includeArchivedNotes: true })
     );
 
     if (quarterNote) {
@@ -268,7 +268,7 @@ function getMonthNote(dateStr: string, _rootNote: BNote | null = null): BNote {
     const monthNumber = dateStr.substring(5, 7);
 
     let monthNote = searchService.findFirstNoteWithQuery(
-        `#${MONTH_LABEL}="${monthStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId })
+        `#${MONTH_LABEL}="${monthStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId, includeArchivedNotes: true })
     );
 
     if (monthNote) {
@@ -344,7 +344,7 @@ function getWeekNote(weekStr: string, _rootNote: BNote | null = null): BNote | n
     weekStr = weekStr.trim().substring(0, 8);
 
     let weekNote = searchService.findFirstNoteWithQuery(
-        `#${WEEK_LABEL}="${weekStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId })
+        `#${WEEK_LABEL}="${weekStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId, includeArchivedNotes: true })
     );
 
     if (weekNote) {
@@ -395,7 +395,7 @@ function getDayNote(dateStr: string, _rootNote: BNote | null = null): BNote {
     dateStr = dateStr.trim().substring(0, 10);
 
     let dateNote = searchService.findFirstNoteWithQuery(
-        `#${DATE_LABEL}="${dateStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId })
+        `#${DATE_LABEL}="${dateStr}"`, new searchContext({ ancestorNoteId: rootNote.noteId, includeArchivedNotes: true })
     );
 
     if (dateNote) {

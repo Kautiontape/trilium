@@ -150,6 +150,25 @@ describe("Special notes API (core)", () => {
             });
             expect(res.status).toBe(404);
         });
+
+        it("finds an existing year note even after it has been archived, instead of duplicating it", async () => {
+            const year = await api.get<NotePojo>("/api/special-notes/years/2019", {
+                query: { calendarRootId: "root" }
+            });
+            expect(year.status).toBe(200);
+            const originalNoteId = year.body.noteId;
+
+            const archive = await api.post(`/api/notes/${originalNoteId}/attributes`, {
+                body: { type: "label", name: "archived", value: "" }
+            });
+            expect(archive.status).toBe(204);
+
+            const again = await api.get<NotePojo>("/api/special-notes/years/2019", {
+                query: { calendarRootId: "root" }
+            });
+            expect(again.status).toBe(200);
+            expect(again.body.noteId).toBe(originalNoteId);
+        });
     });
 
     describe("SQL console", () => {
