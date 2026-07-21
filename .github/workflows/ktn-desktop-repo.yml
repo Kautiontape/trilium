@@ -70,6 +70,12 @@ jobs:
 
           echo "Building ${PKGVER} against electron${ELECTRON_MAJOR}"
 
+      - name: Stamp build date and revision
+        # Regenerates packages/trilium-core/src/services/build.ts, which is committed
+        # with stale values. Upstream's release workflow does this before packaging;
+        # without it the About dialog reports whenever that file was last committed.
+        run: pnpm run chore:update-build-info
+
       - name: Build desktop app
         run: pnpm --filter desktop electron-forge:package
 
