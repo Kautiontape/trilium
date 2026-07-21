@@ -1,0 +1,211 @@
+name: ktn desktop repo
+
+# Builds the Electron desktop app from ktn, packages it for Arch, signs it, and
+# publishes a pacman repository as release assets under the fixed `ktn-repo` tag.
+#
+# Deliberately a separate workflow from `ktn build & publish`: that one gates the
+# server deploy via workflow_run, and chaining a full Electron build in front of it
+# would delay every server deploy by several minutes.
+#
+# Client setup lives in packaging/arch/README.md.
+
+on:
+  push:
+    branches: [ktn]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ktn-desktop-repo
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  REPO_NAME: ktn
+  RELEASE_TAG: ktn-repo
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # rev-list count feeds pkgver
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve versions
+        id: vers
+        run: |
+          set -euo pipefail
+          UPSTREAM_VERSION=$(node -p "require('./package.json').version")
+          ELECTRON_VERSION=$(node -p "
+            const p = require('./apps/desktop/package.json');
+            (p.devDependencies || {}).electron || (p.dependencies || {}).electron
+          ")
+          # "42.7.0" / "^42.7.0" -> 42, matching Arch's versioned electron packages.
+          ELECTRON_MAJOR=$(echo "$ELECTRON_VERSION" | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+          COMMITS=$(git rev-list --count HEAD)
+          SHA=$(git rev-parse --short HEAD)
+          # Monotonic and pacman-legal (no dashes); still orders correctly when
+          # upstream later bumps the base version.
+          PKGVER="${UPSTREAM_VERSION}.r${COMMITS}.g${SHA}"
+
+          {
+            echo "upstream_version=${UPSTREAM_VERSION}"
+            echo "electron_pkg=electron${ELECTRON_MAJOR}"
+            echo "pkgver=${PKGVER}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Building ${PKGVER} against electron${ELECTRON_MAJOR}"
+
+      - name: Stamp build date and revision
+        # Regenerates packages/trilium-core/src/services/build.ts, which is committed
+        # with stale values. Upstream's release workflow does this before packaging;
+        # without it the About dialog reports whenever that file was last committed.
+        run: pnpm run chore:update-build-info
+
+      - name: Build desktop app
+        run: pnpm --filter desktop electron-forge:package
+
+      - name: Assemble makepkg source tree
+        run: |
+          set -euo pipefail
+          SRC=$(find apps/desktop/out -maxdepth 1 -type d -name '*-linux-x64' | head -n1)
+          if [[ -z "$SRC" ]]; then
+            echo "::error::No linux-x64 output found under apps/desktop/out"
+            ls -la apps/desktop/out || true
+            exit 1
+          fi
+          echo "Packaged app: $SRC"
+
+          STAGE=build/arch
+          mkdir -p "$STAGE"
+          cp -a "$SRC/resources/app.asar" "$STAGE/app.asar"
+          if [[ -d "$SRC/resources/app.asar.unpacked" ]]; then
+            cp -a "$SRC/resources/app.asar.unpacked" "$STAGE/app.asar.unpacked"
+          fi
+
+          cp apps/desktop/electron-forge/app-icon/png/128x128.png "$STAGE/icon.png"
+          cp packaging/arch/triliumnext.desktop "$STAGE/triliumnext.desktop"
+          # Bake the resolved Electron binary name into the launcher.
+          sed "s/@ELECTRON_BIN@/${{ steps.vers.outputs.electron_pkg }}/g" \
+            packaging/arch/triliumnext.sh > "$STAGE/triliumnext.sh"
+          [[ -f LICENSE ]] && cp LICENSE "$STAGE/LICENSE" || true
+
+          tar -czf "$STAGE/trilium-ktn-${{ steps.vers.outputs.pkgver }}.tar.gz" \
+            -C "$STAGE" \
+            app.asar $([[ -d "$STAGE/app.asar.unpacked" ]] && echo app.asar.unpacked) \
+            icon.png triliumnext.desktop triliumnext.sh \
+            $([[ -f "$STAGE/LICENSE" ]] && echo LICENSE)
+
+          sed -e "s/@PKGVER@/${{ steps.vers.outputs.pkgver }}/g" \
+              -e "s/@ELECTRON_PKG@/${{ steps.vers.outputs.electron_pkg }}/g" \
+              -e "s/@UPSTREAM_VERSION@/${{ steps.vers.outputs.upstream_version }}/g" \
+              packaging/arch/PKGBUILD.in > "$STAGE/PKGBUILD"
+
+          echo "--- PKGBUILD ---"
+          cat "$STAGE/PKGBUILD"
+
+      - name: Build, sign and index the package
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.ARCH_REPO_GPG_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.ARCH_REPO_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
+            echo "::error::ARCH_REPO_GPG_KEY is not set — see packaging/arch/README.md"
+            exit 1
+          fi
+
+          docker run --rm \
+            -v "$PWD/build/arch:/work" \
+            -e GPG_PRIVATE_KEY -e GPG_PASSPHRASE \
+            -e REPO_NAME="$REPO_NAME" \
+            archlinux:base-devel bash -euo pipefail -c '
+              pacman -Sy --noconfirm --needed git >/dev/null
+
+              # makepkg refuses to run as root.
+              useradd -m builder
+              chown -R builder:builder /work
+
+              su builder -c "cd /work && makepkg --nodeps --noconfirm --clean"
+
+              PKG=$(find /work -maxdepth 1 -name "*.pkg.tar.zst" | head -n1)
+              [[ -n "$PKG" ]] || { echo "makepkg produced no package"; exit 1; }
+              echo "Built $(basename "$PKG")"
+
+              # Detached signing without gpg-agent gymnastics.
+              export GNUPGHOME=/tmp/gnupg
+              mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+              echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+              sign() {
+                gpg --batch --yes --pinentry-mode loopback \
+                    --passphrase "$GPG_PASSPHRASE" \
+                    --detach-sign --no-armor "$1"
+              }
+
+              sign "$PKG"
+
+              cd /work
+              repo-add "${REPO_NAME}.db.tar.gz" "$(basename "$PKG")"
+              # repo-add leaves .db/.files as symlinks to the .tar.gz; releases cannot
+              # carry symlinks, so replace them with real copies under the names pacman
+              # actually requests. The symlinks must go first — copying onto them would
+              # abort with "are the same file".
+              rm -f "${REPO_NAME}.db" "${REPO_NAME}.files"
+              cp "${REPO_NAME}.db.tar.gz" "${REPO_NAME}.db"
+              cp "${REPO_NAME}.files.tar.gz" "${REPO_NAME}.files"
+              sign "${REPO_NAME}.db.tar.gz"
+              sign "${REPO_NAME}.db"
+              sign "${REPO_NAME}.files.tar.gz"
+              sign "${REPO_NAME}.files"
+
+              chmod -R a+r /work
+              ls -la /work
+            '
+
+      - name: Publish repository to the ktn-repo release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd build/arch
+
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --title "ktn pacman repository" \
+              --notes "Rolling Arch repository for the ktn fork. Setup: packaging/arch/README.md" \
+              --prerelease
+          fi
+
+          gh release upload "$RELEASE_TAG" --clobber \
+            *.pkg.tar.zst *.pkg.tar.zst.sig \
+            "${REPO_NAME}.db" "${REPO_NAME}.db.sig" \
+            "${REPO_NAME}.db.tar.gz" "${REPO_NAME}.db.tar.gz.sig" \
+            "${REPO_NAME}.files" "${REPO_NAME}.files.sig" \
+            "${REPO_NAME}.files.tar.gz" "${REPO_NAME}.files.tar.gz.sig"
+
+          # Drop superseded package assets so the release does not grow without bound.
+          CURRENT=$(find . -maxdepth 1 -name '*.pkg.tar.zst' -printf '%f\n' | head -n1)
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' \
+            | grep -E '\.pkg\.tar\.zst(\.sig)?$' \
+            | grep -v "^${CURRENT}" \
+            | while read -r stale; do
+                echo "Deleting superseded asset: $stale"
+                gh release delete-asset "$RELEASE_TAG" "$stale" --yes || true
+              done
+
+          echo "Published ${CURRENT}"

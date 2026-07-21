@@ -1,0 +1,41 @@
+# Maintainer: Shawn Squire <shawn@shawnsquire.me>
+#
+# Template for the ktn desktop package. The CI workflow
+# (.github/workflows/ktn-desktop-repo.yml) substitutes the @PLACEHOLDER@ values
+# and runs makepkg against the tarball produced by electron-forge.
+#
+# This mirrors the layout of the AUR `triliumnext-bin` package (system Electron,
+# app.asar under /usr/lib/triliumnext) so it is a drop-in replacement for it.
+
+pkgname=triliumnext-ktn-bin
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc="Trilium Notes — ktn fork build (includes journal navigation)"
+arch=('x86_64')
+url="https://github.com/Kautiontape/trilium"
+license=('AGPL-3.0-only')
+depends=('@ELECTRON_PKG@')
+# Same binary and paths as the AUR package, so this replaces it cleanly.
+provides=('trilium' "triliumnext=@UPSTREAM_VERSION@")
+conflicts=('triliumnext-bin' 'triliumnext' 'trilium' 'trilium-bin' 'trilium-cn')
+options=('!strip' '!debug')
+source=("trilium-ktn-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+    install -dm755 "${pkgdir}/usr/lib/triliumnext"
+    cp -a "${srcdir}/app.asar" "${pkgdir}/usr/lib/triliumnext/app.asar"
+
+    # Native modules (better-sqlite3) live outside the asar and must keep their mode.
+    if [[ -d "${srcdir}/app.asar.unpacked" ]]; then
+        cp -a "${srcdir}/app.asar.unpacked" "${pkgdir}/usr/lib/triliumnext/app.asar.unpacked"
+    fi
+
+    install -Dm755 "${srcdir}/triliumnext.sh" "${pkgdir}/usr/bin/triliumnext"
+    install -Dm644 "${srcdir}/triliumnext.desktop" "${pkgdir}/usr/share/applications/triliumnext.desktop"
+    install -Dm644 "${srcdir}/icon.png" "${pkgdir}/usr/share/pixmaps/triliumnext.png"
+
+    if [[ -f "${srcdir}/LICENSE" ]]; then
+        install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    fi
+}
