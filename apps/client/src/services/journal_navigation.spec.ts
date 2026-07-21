@@ -1,4 +1,4 @@
-import { DEFAULT_WEEK_SETTINGS } from "@triliumnext/commons";
+import { DEFAULT_WEEK_SETTINGS, type WeekSettings } from "@triliumnext/commons";
 import { describe, expect, it } from "vitest";
 
 import { detectLevel, isValidValue, stepValue } from "./journal_navigation.js";
@@ -83,5 +83,56 @@ describe("stepValue — month, quarter, year", () => {
     it("returns null for a malformed value rather than guessing", () => {
         expect(stepValue("day", "someday", 1, DEFAULT_WEEK_SETTINGS)).toBeNull();
         expect(stepValue("month", "2026-7", 1, DEFAULT_WEEK_SETTINGS)).toBeNull();
+    });
+});
+
+/** Trilium's shipped default: first week contains Jan 1, weeks start Monday. */
+const DEFAULTS: WeekSettings = { firstDayOfWeek: 1, firstWeekOfYear: 0, minDaysInFirstWeek: 4 };
+/** ISO 8601: first week contains the first Thursday. */
+const ISO: WeekSettings = { firstDayOfWeek: 1, firstWeekOfYear: 1, minDaysInFirstWeek: 4 };
+/** Minimum-days rule with a full week required. */
+const MIN_DAYS_7: WeekSettings = { firstDayOfWeek: 1, firstWeekOfYear: 2, minDaysInFirstWeek: 7 };
+/** Sunday-start weeks. */
+const SUNDAY: WeekSettings = { firstDayOfWeek: 7, firstWeekOfYear: 0, minDaysInFirstWeek: 4 };
+
+describe("stepValue — week", () => {
+    it("steps within a year", () => {
+        expect(stepValue("week", "2026-W30", 1, DEFAULTS)).toBe("2026-W31");
+        expect(stepValue("week", "2026-W30", -1, DEFAULTS)).toBe("2026-W29");
+    });
+
+    it("zero-pads single-digit week numbers", () => {
+        expect(stepValue("week", "2026-W06", 1, DEFAULTS)).toBe("2026-W07");
+        expect(stepValue("week", "2026-W10", -1, DEFAULTS)).toBe("2026-W09");
+    });
+
+    it("crosses the 2025/2026 boundary identically under every setting", () => {
+        expect(stepValue("week", "2026-W01", -1, DEFAULTS)).toBe("2025-W52");
+        expect(stepValue("week", "2026-W01", -1, ISO)).toBe("2025-W52");
+        expect(stepValue("week", "2026-W01", -1, MIN_DAYS_7)).toBe("2025-W52");
+        expect(stepValue("week", "2026-W01", -1, SUNDAY)).toBe("2025-W52");
+    });
+
+    it("yields a 53rd week only where the settings actually produce one", () => {
+        // 2023 has 53 weeks under Trilium's defaults but 52 under the others.
+        expect(stepValue("week", "2024-W01", -1, DEFAULTS)).toBe("2023-W53");
+        expect(stepValue("week", "2024-W01", -1, ISO)).toBe("2023-W52");
+        expect(stepValue("week", "2024-W01", -1, MIN_DAYS_7)).toBe("2023-W52");
+        expect(stepValue("week", "2024-W01", -1, SUNDAY)).toBe("2023-W52");
+    });
+
+    it("round-trips forward and back", () => {
+        for (const settings of [ DEFAULTS, ISO, MIN_DAYS_7, SUNDAY ]) {
+            for (const week of [ "2026-W01", "2026-W30", "2026-W52", "2024-W01" ]) {
+                const forward = stepValue("week", week, 1, settings);
+                expect(forward).not.toBeNull();
+                expect(stepValue("week", forward as string, -1, settings)).toBe(week);
+            }
+        }
+    });
+
+    it("returns null for a malformed week value", () => {
+        expect(stepValue("week", "2026-W1", 1, DEFAULTS)).toBeNull();
+        expect(stepValue("week", "not-a-week", 1, DEFAULTS)).toBeNull();
     });
 });
