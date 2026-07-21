@@ -1,4 +1,4 @@
-import { dayjs } from "@triliumnext/commons";
+import { dayjs, getWeekString, parseWeekString, WeekSettings } from "@triliumnext/commons";
 
 /** A level of the Trilium calendar hierarchy, from most to least specific. */
 export type CalendarLevel = "day" | "week" | "month" | "quarter" | "year";
@@ -69,4 +69,50 @@ export function detectLevel(note: CalendarLabelSource): { level: CalendarLevel; 
     }
 
     return null;
+}
+
+/**
+ * Returns the calendar value one unit before or after `value`, at the same level.
+ *
+ * Day stepping uses dayjs, which parses a date-only string to *local* midnight and
+ * delegates `.add()` to `Date.prototype.setDate` — calendar-based and therefore
+ * DST-safe. Never use `new Date(dateStr)` (spec-mandated UTC parsing) or
+ * `.toISOString()` (shifts the date in non-UTC zones).
+ *
+ * @returns the stepped value, or null if `value` is malformed.
+ */
+export function stepValue(
+    level: CalendarLevel,
+    value: string,
+    delta: 1 | -1,
+    settings: WeekSettings
+): string | null {
+    if (!isValidValue(level, value)) {
+        return null;
+    }
+
+    switch (level) {
+        case "day":
+            return dayjs(value).add(delta, "day").format("YYYY-MM-DD");
+
+        case "week":
+            // Digit math on the label is wrong: a year has 52 or 53 weeks depending on
+            // all three week settings. Go through real dates instead.
+            return getWeekString(parseWeekString(value, settings).add(delta * 7, "day"), settings);
+
+        case "month":
+            return dayjs(`${value}-01`).add(delta, "month").format("YYYY-MM");
+
+        case "quarter": {
+            const [ yearStr, quarterStr ] = value.split("-Q");
+            const stepped = dayjs(`${yearStr}-01-01`)
+                .quarter(parseInt(quarterStr, 10))
+                .add(delta, "quarter");
+            // The server writes quarters unpadded: `${year}-Q${quarter}`.
+            return `${stepped.year()}-Q${stepped.quarter()}`;
+        }
+
+        case "year":
+            return String(parseInt(value, 10) + delta);
+    }
 }

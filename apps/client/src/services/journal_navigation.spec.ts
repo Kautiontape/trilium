@@ -1,6 +1,7 @@
+import { DEFAULT_WEEK_SETTINGS } from "@triliumnext/commons";
 import { describe, expect, it } from "vitest";
 
-import { detectLevel, isValidValue } from "./journal_navigation.js";
+import { detectLevel, isValidValue, stepValue } from "./journal_navigation.js";
 
 /** Minimal stand-in for FNote — detectLevel only needs getOwnedLabelValue. */
 function fakeNote(labels: Record<string, string>) {
@@ -46,5 +47,41 @@ describe("detectLevel", () => {
     it("returns null for a note with no calendar label or a malformed one", () => {
         expect(detectLevel(fakeNote({}))).toBeNull();
         expect(detectLevel(fakeNote({ dateNote: "someday" }))).toBeNull();
+    });
+});
+
+describe("stepValue — day", () => {
+    it("steps forward and back, rolling over month and year boundaries", () => {
+        expect(stepValue("day", "2026-07-20", 1, DEFAULT_WEEK_SETTINGS)).toBe("2026-07-21");
+        expect(stepValue("day", "2026-07-20", -1, DEFAULT_WEEK_SETTINGS)).toBe("2026-07-19");
+        expect(stepValue("day", "2026-07-31", 1, DEFAULT_WEEK_SETTINGS)).toBe("2026-08-01");
+        expect(stepValue("day", "2026-12-31", 1, DEFAULT_WEEK_SETTINGS)).toBe("2027-01-01");
+        expect(stepValue("day", "2026-01-01", -1, DEFAULT_WEEK_SETTINGS)).toBe("2025-12-31");
+        expect(stepValue("day", "2024-02-28", 1, DEFAULT_WEEK_SETTINGS)).toBe("2024-02-29");
+    });
+});
+
+describe("stepValue — month, quarter, year", () => {
+    it("rolls month over the year boundary and keeps zero padding", () => {
+        expect(stepValue("month", "2026-07", 1, DEFAULT_WEEK_SETTINGS)).toBe("2026-08");
+        expect(stepValue("month", "2026-12", 1, DEFAULT_WEEK_SETTINGS)).toBe("2027-01");
+        expect(stepValue("month", "2026-01", -1, DEFAULT_WEEK_SETTINGS)).toBe("2025-12");
+        expect(stepValue("month", "2026-09", 1, DEFAULT_WEEK_SETTINGS)).toBe("2026-10");
+    });
+
+    it("rolls quarter over the year boundary and stays unpadded", () => {
+        expect(stepValue("quarter", "2026-Q3", 1, DEFAULT_WEEK_SETTINGS)).toBe("2026-Q4");
+        expect(stepValue("quarter", "2026-Q4", 1, DEFAULT_WEEK_SETTINGS)).toBe("2027-Q1");
+        expect(stepValue("quarter", "2026-Q1", -1, DEFAULT_WEEK_SETTINGS)).toBe("2025-Q4");
+    });
+
+    it("steps the year", () => {
+        expect(stepValue("year", "2026", 1, DEFAULT_WEEK_SETTINGS)).toBe("2027");
+        expect(stepValue("year", "2026", -1, DEFAULT_WEEK_SETTINGS)).toBe("2025");
+    });
+
+    it("returns null for a malformed value rather than guessing", () => {
+        expect(stepValue("day", "someday", 1, DEFAULT_WEEK_SETTINGS)).toBeNull();
+        expect(stepValue("month", "2026-7", 1, DEFAULT_WEEK_SETTINGS)).toBeNull();
     });
 });
