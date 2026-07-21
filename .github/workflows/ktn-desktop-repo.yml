@@ -82,10 +82,16 @@ jobs:
       - name: Assemble makepkg source tree
         run: |
           set -euo pipefail
-          SRC=$(find apps/desktop/out -maxdepth 1 -type d -name '*-linux-x64' | head -n1)
+          # electron-forge resolves `outDir` relative to the project directory passed
+          # to `electron-forge package dist`, so the packaged app lands under
+          # apps/desktop/dist/out — not apps/desktop/out. Search rather than hardcode,
+          # so a future forge config change surfaces as a clear error instead of a
+          # mystery.
+          SRC=$(find apps/desktop -maxdepth 4 -type d -name '*-linux-x64' -print -quit)
           if [[ -z "$SRC" ]]; then
-            echo "::error::No linux-x64 output found under apps/desktop/out"
-            ls -la apps/desktop/out || true
+            echo "::error::No linux-x64 packaged output found under apps/desktop"
+            echo "Candidate directories:"
+            find apps/desktop -maxdepth 4 -type d \( -name 'out' -o -name '*-linux-*' \) | head -20
             exit 1
           fi
           echo "Packaged app: $SRC"
