@@ -247,8 +247,8 @@ Use `note.getOwnedAttribute()` for direct, `note.getAttribute()` for inherited.
 - **Do not use `localStorage`** for user preferences — Trilium has a synced options system that persists across devices
 - To add a new user preference:
   1. Add the option type to `OptionDefinitions` in `packages/commons/src/lib/options_interface.ts`
-  2. Add a default value in `apps/server/src/services/options_init.ts` in the `defaultOptions` array
-  3. **Whitelist the option** in `apps/server/src/routes/api/options.ts` by adding it to the `ALLOWED_OPTIONS` array — **without this, the API will reject changes with "Option 'X' is not allowed to be changed"**
+  2. Add a default value in `packages/trilium-core/src/services/options_init.ts` in the `defaultOptions` array
+  3. **Whitelist the option** in `packages/trilium-core/src/routes/api/options.ts` by adding it to the `ALLOWED_OPTIONS` array — **without this, the API will reject changes with "Option 'X' is not allowed to be changed"**
   4. If the option should be user-editable in the UI, add a control in the appropriate settings component (e.g., `apps/client/src/widgets/type_widgets/options/other.tsx`) and a translation key in `apps/client/src/translations/en/translation.json`
   5. Use `useTriliumOption("optionName")` hook in React components to read/write the option
 - Available hooks: `useTriliumOption` (string), `useTriliumOptionBool`, `useTriliumOptionInt`, `useTriliumOptionJson`
