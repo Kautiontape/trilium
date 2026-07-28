@@ -1,4 +1,4 @@
-import { Autoformat, AutoLink, BlockQuote, BlockToolbar, Bold, CKFinderUploadAdapter, Clipboard, Code, CodeBlock, Enter, Font, FontBackgroundColor, FontColor, GeneralHtmlSupport, Heading, HeadingButtonsUI, HorizontalLine, Image, ImageCaption, ImageInline, ImageResize, ImageStyle, ImageToolbar, ImageUpload, Alignment, Indent, IndentBlock, Italic, Link, List, ListProperties, Mention, PageBreak, Paragraph, ParagraphButtonUI, PasteFromOffice, PictureEditing, RemoveFormat, SelectAll, ShiftEnter, SpecialCharacters, SpecialCharactersEssentials, Strikethrough, Style, Subscript, Superscript, Table, TableCaption, TableCellProperties, TableColumnResize, TableProperties, TableSelection, TableToolbar, TextPartLanguage, TextTransformation, TodoList, Typing, Underline, Undo, Bookmark, EmojiMention, EmojiPicker, FindAndReplaceEditing } from "ckeditor5";
+import { Autoformat, AutoLink, BlockQuote, BlockToolbar, Bold, CKFinderUploadAdapter, Clipboard, Code, CodeBlock, Enter, Font, FontBackgroundColor, FontColor, GeneralHtmlSupport, Heading, HeadingButtonsUI, HorizontalLine, Image, ImageCaption, ImageInline, ImageResize, ImageStyle, ImageToolbar, ImageUpload, Alignment, Indent, IndentBlock, Italic, Link, List, ListProperties, MentionEditing, PageBreak, Paragraph, ParagraphButtonUI, PasteFromOffice, PictureEditing, RemoveFormat, SelectAll, ShiftEnter, SpecialCharacters, SpecialCharactersEssentials, Strikethrough, Style, Subscript, Superscript, Table, TableCaption, TableCellProperties, TableColumnResize, TableProperties, TableSelection, TableToolbar, TextPartLanguage, TextTransformation, TodoList, Typing, Underline, Undo, Bookmark, EmojiPicker, FindAndReplaceEditing } from "ckeditor5";
 // Premium features loaded dynamically to improve initial load time
 // import { SlashCommand, Template, FormatPainter } from "ckeditor5-premium-features";
 import type { Plugin } from "ckeditor5";
@@ -13,6 +13,9 @@ import RemoveFormatLinksPlugin from "./plugins/remove_format_links.js";
 import IndentBlockShortcutPlugin from "./plugins/indent_block_shortcut.js";
 import MarkdownImportPlugin from "./plugins/markdownimport.js";
 import MentionCustomization from "./plugins/mention_customization.js";
+import TriliumEmojiMention from "./plugins/mention/emoji_mention.js";
+import TriliumMentionUI from "./plugins/mention/trilium_mention_ui.js";
+import TriliumSlashCommands from "./plugins/mention/slash_commands.js";
 import IncludeNote from "./plugins/includenote.js";
 import LinkEmbed from "./plugins/link_embed/link_embed.js";
 import Uploadfileplugin from "./plugins/file_upload/uploadfileplugin.js";
@@ -26,6 +29,7 @@ import { Math, AutoformatMath } from "@triliumnext/ckeditor5-math";
 import CopyAnchorLinkButton from "./plugins/copy_anchor_link.js";
 import CopyLinkUrlButton from "./plugins/copy_link_url.js";
 import ImageActions from "./plugins/image_actions.js";
+import TriliumSnippets from "./plugins/snippets/snippets.js";
 
 // import "@triliumnext/ckeditor5-mermaid/index.css";
 // import "@triliumnext/ckeditor5-admonition/index.css";
@@ -34,6 +38,7 @@ import ImageActions from "./plugins/image_actions.js";
 import CodeBlockToolbar from "./plugins/code_block_toolbar.js";
 import CodeBlockLanguageDropdown from "./plugins/code_block_language_dropdown.js";
 import CodeBlockInsertParagraph from "./plugins/code_block_insert_paragraph.js";
+import CodeBlockHljsClass from "./plugins/code_block_hljs_class.js";
 import MoveBlockUpDownPlugin from "./plugins/move_block_updown.js";
 import ScrollOnUndoRedoPlugin from "./plugins/scroll_on_undo_redo.js"
 import InlineCodeNoSpellcheck from "./plugins/inline_code_no_spellcheck.js";
@@ -46,6 +51,7 @@ import LinkEmbedToolbar from "./plugins/link_embed/link_embed_toolbar.js";
 import TodoListMultistate from "./plugins/todo_list_multistate/todo_list_multistate.js";
 import TodoListUncheckOnEnter from "./plugins/todo_list_uncheck_on_enter.js";
 import CollapsibleListItems from "./plugins/collapsible_list_items.js";
+import TableIndent from "./plugins/table_indent.js";
 
 /**
  * Plugins that are specific to Trilium and not part of the CKEditor 5 core, included in both text editors but not in the attribute editor.
@@ -67,6 +73,7 @@ const TRILIUM_PLUGINS: typeof Plugin[] = [
     CodeBlockLanguageDropdown,
     CodeBlockToolbar,
     CodeBlockInsertParagraph,
+    CodeBlockHljsClass,
     MoveBlockUpDownPlugin,
     ScrollOnUndoRedoPlugin,
     InlineCodeNoSpellcheck,
@@ -78,9 +85,11 @@ const TRILIUM_PLUGINS: typeof Plugin[] = [
     LinkEmbedToolbar,
     TodoListMultistate,
     CollapsibleListItems,
+    TableIndent,
     CopyAnchorLinkButton,
     CopyLinkUrlButton,
     ImageActions,
+    TriliumSnippets,
 ];
 
 /**
@@ -103,9 +112,13 @@ export const CORE_PLUGINS: typeof Plugin[] = [
     Clipboard, Enter, SelectAll,
     ShiftEnter, Typing, Undo,
 	Paragraph,
-    Mention,
+
+    // `MentionEditing` + `TriliumMentionUI` rather than the `Mention` façade: the façade also pulls
+    // in upstream's `MentionUI`, which `TriliumMentionUI` replaces. See its doc comment for why.
+    MentionEditing,
 
     // Trilium plugins
+    TriliumMentionUI,
     MentionCustomization,
     ReferenceLink
 ];
@@ -130,10 +143,17 @@ export const CHAT_INPUT_PLUGINS: typeof Plugin[] = [
  * This avoids loading ~6 seconds of premium features code during initial app startup.
  */
 export async function loadPremiumPlugins(): Promise<(typeof Plugin)[]> {
-    const { SlashCommand, Template, FormatPainter } = await import('ckeditor5-premium-features');
+    // `SlashCommand` is deliberately not among them: it `requires` the `Mention` façade, which loads
+    // upstream's `MentionUI` next to `TriliumMentionUI` and leaves the two fighting over the same
+    // balloon. `TriliumSlashCommands` provides `/` instead, for premium and GPL builds alike.
+    //
+    // `Template` is likewise absent: the GPL `TriliumSnippets` plugin replaces it (see
+    // `plugins/snippets/`), and additionally supports live reloading of the snippet list — the
+    // premium plugin baked its definitions in at startup, forcing an editor rebuild on any change.
+    const { FormatPainter } = await import('ckeditor5-premium-features');
     // Also load the CSS when premium features are used
     await import('ckeditor5-premium-features/ckeditor5-premium-features.css');
-    return [SlashCommand, Template, FormatPainter];
+    return [FormatPainter];
 }
 
 /**
@@ -196,8 +216,12 @@ export const COMMON_PLUGINS: typeof Plugin[] = [
 	TextPartLanguage,
     Style,
     Bookmark,
-    EmojiMention,
+    // Upstream's `EmojiMention` is replaced by `TriliumEmojiMention` for the same reason as
+    // `SlashCommand` — it `requires` the `Mention` façade. `EmojiPicker` and `EmojiRepository` do
+    // not, so the picker and the emoji data stay upstream's.
     EmojiPicker,
+    TriliumEmojiMention,
+    TriliumSlashCommands,
 
     ...TRILIUM_PLUGINS,
     ...EXTERNAL_PLUGINS

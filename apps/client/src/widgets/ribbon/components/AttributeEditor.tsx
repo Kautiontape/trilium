@@ -1,8 +1,7 @@
 import "./AttributeEditor.css";
 
-import type { AttributeEditor as CKEditorAttributeEditor, MentionFeed, ModelElement, ModelNode, ModelPosition } from "@triliumnext/ckeditor5";
+import type { AttributeEditor as CKEditorAttributeEditor, ModelElement, ModelNode, ModelPosition, TriliumMentionFeed } from "@triliumnext/ckeditor5";
 import { AttributeType } from "@triliumnext/commons";
-import type { Tooltip } from "bootstrap";
 import { createPortal } from "preact/compat";
 import { MutableRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "preact/hooks";
 
@@ -24,16 +23,15 @@ import { escapeQuotes, getErrorMessage } from "../../../services/utils";
 import AttributeDetailWidget from "../../attribute_widgets/attribute_detail";
 import ActionButton from "../../react/ActionButton";
 import CKEditor, { CKEditorApi } from "../../react/CKEditor";
-import { useLegacyImperativeHandlers, useLegacyWidget, useTooltip, useTriliumEvent, useTriliumOption } from "../../react/hooks";
+import HelpDropdown from "../../react/HelpDropdown";
+import { useLegacyImperativeHandlers, useLegacyWidget, useTriliumEvent } from "../../react/hooks";
+import AttributeHelp, { ATTRIBUTE_HELP_PAGE } from "./AttributeHelp";
 
 type AttributeCommandNames = FilteredCommandNames<CommandData>;
 
-const HELP_TEXT = `
-<p>${t("attribute_editor.help_text_body1")}</p>
-<p>${t("attribute_editor.help_text_body2")}</p>
-<p>${t("attribute_editor.help_text_body3")}</p>`;
-
-const mentionSetup: MentionFeed[] = [
+// `preselectFirstItem: false` throughout: in this editor Enter means "save the attributes", so an
+// open panel must not silently swallow it into committing whichever suggestion happens to be first.
+const mentionSetup: TriliumMentionFeed[] = [
     {
         marker: "@",
         feed: (queryText) => note_autocomplete.autocompleteSourceForCKEditor(queryText),
@@ -45,7 +43,10 @@ const mentionSetup: MentionFeed[] = [
 
             return itemElement;
         },
-        minimumCharacters: 0
+        minimumCharacters: 0,
+        // Relation targets are note titles, which contain spaces.
+        allowSpaces: true,
+        preselectFirstItem: false
     },
     {
         marker: "#",
@@ -59,7 +60,8 @@ const mentionSetup: MentionFeed[] = [
                 };
             });
         },
-        minimumCharacters: 0
+        minimumCharacters: 0,
+        preselectFirstItem: false
     },
     {
         marker: "~",
@@ -73,7 +75,8 @@ const mentionSetup: MentionFeed[] = [
                 };
             });
         },
-        minimumCharacters: 0
+        minimumCharacters: 0,
+        preselectFirstItem: false
     }
 ];
 
@@ -85,6 +88,11 @@ interface AttributeEditorProps {
     notePath?: string | null;
     ntxId?: string | null;
     hidden?: boolean;
+    /**
+     * Suppresses the editor's own `?` button, for hosts that already offer the same help elsewhere
+     * (the new layout's attributes panel carries it in its title bar).
+     */
+    hideHelpButton?: boolean;
 }
 
 export interface AttributeEditorImperativeHandlers {
@@ -94,9 +102,8 @@ export interface AttributeEditorImperativeHandlers {
     renderOwnedAttributes(ownedAttributes: FAttribute[]): Promise<void>;
 }
 
-export default function AttributeEditor({ api, note, componentId, notePath, ntxId, hidden }: AttributeEditorProps) {
+export default function AttributeEditor({ api, note, componentId, notePath, ntxId, hidden, hideHelpButton }: AttributeEditorProps) {
     const [ currentValue, setCurrentValue ] = useState("");
-    const [ state, setState ] = useState<"normal" | "showHelpTooltip" | "showAttributeDetail">();
     const [ error, setError ] = useState<unknown>();
     const [ needsSaving, setNeedsSaving ] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -106,7 +113,6 @@ export default function AttributeEditor({ api, note, componentId, notePath, ntxI
     const currentValueRef = useRef(currentValue);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<CKEditorApi>();
-    const [ locale ] = useTriliumOption("locale");
 
     // The CKEditor bundle is heavy and this component mounts in always-visible containers
     // (e.g. the status bar), so the editor class is loaded on demand to keep CKEditor out
@@ -125,29 +131,7 @@ export default function AttributeEditor({ api, note, componentId, notePath, ntxI
         };
     }, []);
 
-    // Stable config so `useTooltip`'s effect doesn't dispose/recreate the tooltip
-    // on every render (it runs on each keystroke). `focus` shows the help when the
-    // editor is focused; `state` below force-hides it when the attribute-detail
-    // popup takes over.
-    const tooltipConfig = useMemo<Partial<Tooltip.Options>>(() => ({
-        trigger: "focus",
-        html: true,
-        title: HELP_TEXT,
-        placement: "bottom",
-        offset: "0,30"
-    }), []);
-
-    const { showTooltip, hideTooltip } = useTooltip(wrapperRef, tooltipConfig);
-
     const [ attributeDetailWidgetEl, attributeDetailWidget ] = useLegacyWidget(() => new AttributeDetailWidget());
-
-    useEffect(() => {
-        if (state === "showHelpTooltip") {
-            showTooltip();
-        } else {
-            hideTooltip();
-        }
-    }, [ state ]);
 
     async function renderOwnedAttributes(ownedAttributes: FAttribute[], saved: boolean) {
         // attrs are not resorted if position changes after the initial load
@@ -242,17 +226,15 @@ export default function AttributeEditor({ api, note, componentId, notePath, ntxI
         // this.$editor.scrollTop(this.$editor[0].scrollHeight);
         const rect = wrapperRef.current?.getBoundingClientRect();
 
-        setTimeout(() => {
-            // showing a little bit later because there's a conflict with outside click closing the attr detail
-            attributeDetailWidget.showAttributeDetail({
-                allAttributes: attrs,
-                attribute: attrs[attrs.length - 1],
-                isOwned: true,
-                x: rect ? (rect.left + rect.right) / 2 : 0,
-                y: rect?.bottom ?? 0,
-                focus: "name"
-            });
-        }, 100);
+        attributeDetailWidget.showAttributeDetail({
+            allAttributes: attrs,
+            attribute: attrs[attrs.length - 1],
+            isOwned: true,
+            x: rect ? (rect.left + rect.right) / 2 : 0,
+            y: rect?.bottom ?? 0,
+            focus: "name",
+            parent: wrapperRef.current ?? undefined
+        });
     }
 
     // Refresh with note
@@ -370,22 +352,22 @@ export default function AttributeEditor({ api, note, componentId, notePath, ntxI
                                     }
                                 }
 
-                                setTimeout(() => {
-                                    if (matchedAttr) {
-                                        attributeDetailWidget.showAttributeDetail({
-                                            allAttributes: parsedAttrs,
-                                            attribute: matchedAttr,
-                                            isOwned: true,
-                                            x: e.pageX,
-                                            y: e.pageY
-                                        });
-                                        setState("showAttributeDetail");
-                                    } else {
-                                        setState("showHelpTooltip");
-                                    }
-                                }, 100);
+                                if (matchedAttr) {
+                                    attributeDetailWidget.showAttributeDetail({
+                                        allAttributes: parsedAttrs,
+                                        attribute: matchedAttr,
+                                        isOwned: true,
+                                        x: e.pageX,
+                                        y: e.pageY,
+                                        parent: wrapperRef.current ?? undefined
+                                    });
+                                } else {
+                                    // Presses inside the editor no longer dismiss the popup, so
+                                    // clicking next to an attribute has to close it explicitly.
+                                    attributeDetailWidget.hide();
+                                }
                             } else {
-                                setState("showHelpTooltip");
+                                attributeDetailWidget.hide();
                             }
                         }}
                         onKeyDown={() => attributeDetailWidget.hide()}
@@ -401,6 +383,18 @@ export default function AttributeEditor({ api, note, componentId, notePath, ntxI
                             text={escapeQuotes(t("attribute_editor.save_attributes"))}
                             onClick={save}
                         /> }
+
+                        { !hideHelpButton && (
+                            // This button lives inside the wrapper the detail popup treats as its
+                            // spawner, so its outside-click dismissal exempts it. Close it by hand to
+                            // match the hosts whose help button sits outside (the attributes panel).
+                            <HelpDropdown
+                                helpPage={ATTRIBUTE_HELP_PAGE}
+                                onShown={() => attributeDetailWidget.hide()}
+                            >
+                                <AttributeHelp />
+                            </HelpDropdown>
+                        ) }
 
                         <ActionButton
                             icon="bx bx-plus"
