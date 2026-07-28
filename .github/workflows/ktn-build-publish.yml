@@ -23,6 +23,12 @@ jobs:
           cache: pnpm
       - name: Install deps
         run: pnpm install --frozen-lockfile
+      - name: Stamp build date and revision
+        # Regenerates packages/trilium-core/src/services/build.ts, which is committed with
+        # stale values. Without this the server image reports whenever that file was last
+        # committed (June 2025) instead of this build, and the About dialog lies. Must run
+        # before server:build, which bundles the file into apps/server/dist.
+        run: pnpm run chore:update-build-info
       - name: Build server bundle (produces apps/server/dist)
         run: pnpm run server:build
       - uses: docker/setup-buildx-action@v3
