@@ -1,0 +1,22 @@
+name: ktn upstream sync
+on:
+  schedule:
+    - cron: '0 13 * * 1' # weekly Monday check
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        type: boolean
+        default: false
+        description: 'attempt but do not push/PR'
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  sync:
+    uses: Kautiontape/fork-sync/.github/workflows/fork-sync.yml@main
+    with:
+      upstream: TriliumNext/Trilium
+      mode: merge
+      tag_pattern: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    secrets: inherit
