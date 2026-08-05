@@ -57,30 +57,47 @@ secret; committing it here or dropping it on the LAN is fine).
 
 ---
 
-## Per machine: trust the key and add the repo
+## Per machine: one script
 
-Run on the desktop, the laptop, and anything you add later.
+On the laptop, or any new Arch machine:
 
 ```bash
-# 1. Trust the signing key
-sudo pacman-key --add ktn-repo.pub
-sudo pacman-key --lsign-key <your-long-key-id>
+curl -fsSL https://raw.githubusercontent.com/Kautiontape/trilium/ktn/packaging/arch/bootstrap-client.sh -o ktn-bootstrap.sh
+less ktn-bootstrap.sh      # it installs a trust anchor — worth a read
+sudo bash ktn-bootstrap.sh
+```
+
+It fetches the signing key, **verifies its fingerprint against a pinned value**, adds
+it to the pacman keyring, appends the `[ktn]` repo to `/etc/pacman.conf` (backing the
+file up first), syncs, and installs `triliumnext-ktn-bin` — replacing the AUR
+`triliumnext-bin` if present. Every step is idempotent, so re-running is safe.
+
+Deliberately *not* a `curl | sudo bash` one-liner: this establishes a package-signing
+trust anchor, so it should be read before it runs.
+
+From then on, `sudo pacman -Syu` picks up every new `ktn` build.
+
+<details>
+<summary>Equivalent manual steps</summary>
+
+```bash
+sudo pacman-key --add packaging/arch/ktn-repo.pub
+sudo pacman-key --lsign-key C20F8574816A1B67C81E6F829DA4E0459723DB07
 ```
 
 ```ini
-# 2. Append to /etc/pacman.conf
+# /etc/pacman.conf
 [ktn]
 SigLevel = Required
 Server = https://github.com/Kautiontape/trilium/releases/download/ktn-repo
 ```
 
 ```bash
-# 3. Sync and install — pacman will offer to replace triliumnext-bin
 sudo pacman -Syu
 sudo pacman -S triliumnext-ktn-bin
 ```
 
-From then on, `sudo pacman -Syu` picks up every new `ktn` build.
+</details>
 
 ---
 
