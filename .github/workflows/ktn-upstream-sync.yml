@@ -8,6 +8,9 @@ on:
         type: boolean
         default: false
         description: 'attempt but do not push/PR'
+concurrency:
+  group: fork-sync-${{ github.repository }}
+  cancel-in-progress: false
 permissions:
   contents: write
   pull-requests: write
