@@ -1,5 +1,6 @@
 import "./NoteTitleActions.css";
 
+import { EditedNotesResponse } from "@triliumnext/commons";
 import { useEffect, useState } from "preact/hooks";
 
 import NoteContext from "../../components/note_context";
@@ -8,7 +9,7 @@ import { t } from "../../services/i18n";
 import { checkFullHeight, getExtendedWidgetType } from "../NoteDetail";
 import { PromotedAttributesContent, usePromotedAttributeData } from "../PromotedAttributes";
 import Collapsible, { ExternallyControlledCollapsible } from "../react/Collapsible";
-import { useNoteContext, useNoteLabel, useNoteProperty, useTriliumEvent, useTriliumOptionBool } from "../react/hooks";
+import { useNoteContext, useNoteLabel, useNoteProperty, useTriliumEvent } from "../react/hooks";
 import { NewNoteLink } from "../react/NoteLink";
 import { useEditedNotes } from "../ribbon/EditedNotesTab";
 import SearchDefinitionTab from "../ribbon/SearchDefinitionTab";
@@ -75,25 +76,29 @@ function PromotedAttributes({ note, componentId, noteContext }: {
 function EditedNotes() {
     const { note } = useNoteContext();
     const [ dateNote ] = useNoteLabel(note, "dateNote");
-    const [ editedNotesOpenInRibbon ] = useTriliumOptionBool("editedNotesOpenInRibbon");
+    // Fetched here rather than in the body, so the count is known while the section is closed.
+    const editedNotes = useEditedNotes(dateNote ? note : null);
 
+    // Closed by default: on a day note the list is something to look up, not to read past every
+    // time, and the count in the title says whether it is worth opening at all.
     return (note && dateNote &&
         <Collapsible
             className="edited-notes"
-            title={t("note_title.edited_notes")}
-            initiallyExpanded={editedNotesOpenInRibbon}
+            title={editedNotes === undefined
+                ? t("note_title.edited_notes")
+                : t("note_title.edited_notes_count", { count: editedNotes.length })}
+            initiallyExpanded={false}
         >
-            <EditedNotesContent note={note} />
+            <EditedNotesContent editedNotes={editedNotes} />
         </Collapsible>
     );
 }
 
-function EditedNotesContent({ note }: { note: FNote }) {
-    const editedNotes = useEditedNotes(note);
-
+function EditedNotesContent({ editedNotes }: { editedNotes: EditedNotesResponse | undefined }) {
     return (editedNotes !== undefined &&
-        (editedNotes.length > 0 ? editedNotes?.map(editedNote => (
+        (editedNotes.length > 0 ? editedNotes.map(editedNote => (
             <NewNoteLink
+                key={editedNote.noteId}
                 className="badge"
                 notePath={editedNote.noteId}
                 showNoteIcon

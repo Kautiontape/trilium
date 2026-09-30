@@ -2780,7 +2780,8 @@
     "note_type_switcher_templates": "Template",
     "note_type_switcher_collection": "Collection",
     "edited_notes": "Notes edited on this day",
-    "promoted_attributes": "Promoted attributes"
+    "promoted_attributes": "Promoted attributes",
+    "edited_notes_count": "Notes edited on this day ({{count}})"
   },
   "journal_navigation": {
     "previous": "Previous {{level}}",
