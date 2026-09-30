@@ -112,6 +112,7 @@ interface MentionSuggestion {
 /** The dynamically-attached config members that CKEditor's `EditorConfig` type doesn't declare. */
 interface DynamicConfig {
     renderShortcut(shortcut: string): string;
+    contentHintsEnabled: boolean;
     autoLinkPreviewsEnabled(): boolean;
     imageActions: {
         copyToClipboard(src: string): void;
@@ -490,6 +491,25 @@ describe("CK config - language & emoji", () => {
         // Dev mode prepends the origin, so the dev URL ends with the plain (prod) one.
         expect(devUrl.endsWith(prodUrl)).toBe(true);
         expect(devUrl.length).toBeGreaterThanOrEqual(prodUrl.length);
+    });
+});
+
+describe("CK config - content hints", () => {
+    it("follows the option on desktop but stays off on a phone, where the hints cannot be acted on", async () => {
+        optionsState.map.textNoteContentHintsEnabled = "true";
+        expect((await buildDynamicConfig()).contentHintsEnabled).toBe(true);
+        optionsState.map.textNoteContentHintsEnabled = "false";
+        expect((await buildDynamicConfig()).contentHintsEnabled).toBe(false);
+
+        // The toolbar builder reads the device too, so put it back for the tests that follow.
+        const previousDevice = window.glob.device;
+        window.glob.device = "mobile";
+        try {
+            optionsState.map.textNoteContentHintsEnabled = "true";
+            expect((await buildDynamicConfig()).contentHintsEnabled).toBe(false);
+        } finally {
+            window.glob.device = previousDevice;
+        }
     });
 });
 

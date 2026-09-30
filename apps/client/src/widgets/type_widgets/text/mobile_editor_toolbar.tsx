@@ -5,6 +5,7 @@ import { MutableRef, useCallback, useEffect, useRef, useState } from "preact/hoo
 
 import { isIOS } from "../../../services/utils";
 import { useIsNoteReadOnly, useNoteContext, useNoteProperty, useTriliumEvent } from "../../react/hooks";
+import { attachListContextToolbar } from "./list_context_toolbar";
 
 interface MobileEditorToolbarProps {
     inPopupEditor?: boolean;
@@ -23,6 +24,8 @@ export default function MobileEditorToolbar({ inPopupEditor }: MobileEditorToolb
     const { isReadOnly } = useIsNoteReadOnly(note, noteContext);
     const shouldDisplay = noteType === "text" && isReadOnly === false;
     const [ dropdownActive, setDropdownActive ] = useState(false);
+    // Undoes the list-context pinning on the editor it was attached to (see below).
+    const detachListContext = useRef<() => void>(() => {});
 
     usePositioningOniOS(!inPopupEditor, containerRef);
 
@@ -34,6 +37,13 @@ export default function MobileEditorToolbar({ inPopupEditor }: MobileEditorToolb
         if (!inPopupEditor) {
             repositionDropdowns(editor);
         }
+
+        // Bring outdent/indent to the front of the bar while the caret is in a list, scrolling the
+        // bar back to its start when that happens so they are on screen without a hunt.
+        detachListContext.current();
+        detachListContext.current = attachListContextToolbar(editor as ClassicEditor, {
+            onPinned: () => containerRef.current?.scrollTo({ left: 0 })
+        });
 
         if (toolbar) {
             containerRef.current.replaceChildren(toolbar);
@@ -57,6 +67,8 @@ export default function MobileEditorToolbar({ inPopupEditor }: MobileEditorToolb
 
         return () => observer.disconnect();
     }, []);
+
+    useEffect(() => () => detachListContext.current(), []);
 
     return (
         <div className={`classic-toolbar-outer-container ${!shouldDisplay ? "hidden-ext" : "visible"} ${isIOS() ? "ios" : ""}`}>
