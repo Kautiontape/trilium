@@ -46,13 +46,22 @@ export function useEditedNotes(note: FNote | null | undefined) {
     const [ editedNotes, setEditedNotes ] = useState<EditedNotesResponse>();
 
     useEffect(() => {
+        // Drop the previous note's list first, so neither it nor its count shows under this note
+        // while the fetch is in flight; a fetch the note has moved on from is discarded as well.
+        setEditedNotes(undefined);
         if (!note) return;
+        let stale = false;
         server.get<EditedNotesResponse>(`edited-notes/${note.getLabelValue("dateNote")}`).then(async editedNotes => {
             editedNotes = editedNotes.filter((n) => n.noteId !== note.noteId);
             const noteIds = editedNotes.flatMap((n) => n.noteId);
             await froca.getNotes(noteIds, true); // preload all at once
-            setEditedNotes(editedNotes);
+            if (!stale) {
+                setEditedNotes(editedNotes);
+            }
         });
+        return () => {
+            stale = true;
+        };
     }, [ note ]);
 
     return editedNotes;
