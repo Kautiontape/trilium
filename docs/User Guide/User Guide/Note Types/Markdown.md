@@ -49,7 +49,7 @@ The following features are supported by Trilium's Markdown format and will show 
     ```
 *   To-do lists with extended task states:
     
-    <table class="ck-table-resized" style="border-style:none">
+    <table class="ck-table-resized" style="border-style:none;">
         <colgroup>
             <col style="width:80.6%;">
             <col style="width:19.4%;">
@@ -83,6 +83,12 @@ The following features are supported by Trilium's Markdown format and will show 
     
     ```
     <div class="page-break"></div>
+    ```
+*   Highlights (background color) are supported both via the `==` Markdown syntax, as well as the canonical HTML representation in Trilium:
+    
+    ```
+    ==highlighted==
+    <span style="background-color:hsl(0,0%,100%);">Highlighted</span>
     ```
 
 ### Links

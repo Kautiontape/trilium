@@ -100,9 +100,22 @@ export default class Entrypoints extends Component {
         utils.reloadFrontendApp();
     }
 
-    async logoutCommand() {
-        await server.post("../logout");
-        window.location.replace(`/login`);
+    logoutCommand() {
+        // A form submission keeps the OIDC provider's redirect a top-level navigation; an XHR
+        // follows it cross-origin and fails the provider's CORS preflight.
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.action = `${window.glob.baseApiUrl}../logout`;
+        form.hidden = true;
+
+        const csrfToken = document.createElement("input");
+        csrfToken.type = "hidden";
+        csrfToken.name = "x-csrf-token";
+        csrfToken.value = window.glob.csrfToken ?? "";
+        form.append(csrfToken);
+
+        document.body.append(form);
+        form.submit();
     }
 
     backInNoteHistoryCommand() {
@@ -137,16 +150,12 @@ export default class Entrypoints extends Component {
         utils.reloadFrontendApp("Switching to mobile version");
     }
 
-    async openInWindowCommand({ notePath, hoistedNoteId, viewScope }: NoteCommandData) {
-        const extraWindowHash = linkService.calculateHash({ notePath, hoistedNoteId, viewScope });
+    async openInWindowCommand({ notePath, hoistedNoteId, viewScope, splits, activeSplit }: NoteCommandData) {
+        const target = { notePath, hoistedNoteId, viewScope, splits, activeSplit };
 
-        if (window.electronApi) {
-            window.electronApi.window.createExtraWindow(extraWindowHash);
-        } else {
-            const url = `${window.location.protocol}//${window.location.host}${window.location.pathname}?extraWindow=1${extraWindowHash}`;
-
-            window.open(url, "", "width=1000,height=800");
-        }
+        // On desktop the main process turns this into an extra window that shares
+        // this renderer's process (`installWindowOpenPolicy`).
+        window.open(linkService.calculateExtraWindowUrl(target), "", "width=1000,height=800");
     }
 
     async openNewWindowCommand() {

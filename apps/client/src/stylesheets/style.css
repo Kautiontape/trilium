@@ -2,13 +2,13 @@
 
 @font-face {
     font-family: Montserrat;
-    src: url(../fonts/Montserrat-Light.ttf);
+    src: url(../fonts/Montserrat-Light.woff2) format("woff2");
     font-weight: normal;
 }
 
 @font-face {
     font-family: Montserrat;
-    src: url(../fonts/Montserrat-SemiBold.ttf);
+    src: url(../fonts/Montserrat-SemiBold.woff2) format("woff2");
     font-weight: bold;
 }
 
@@ -91,7 +91,7 @@ body {
     --native-titlebar-darwin-y-offset: 12;
     --launcher-pane-height: 53px;
     --tab-bar-height: 40px;
-    --mobile-bottom-offset: env(safe-area-inset-bottom);
+    --mobile-bottom-offset: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
 }
 
 /*
@@ -148,19 +148,19 @@ body.desktop {
         #left-pane,
         #rest-pane {
             padding-top: var(--safe-area-inset-top, env(safe-area-inset-top));
-            padding-bottom: env(safe-area-inset-bottom);
+            padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
         }
     }
 
     &.experimental-feature-new-layout #root-widget.horizontal-layout {
         >.status-bar {
-            padding-bottom: env(safe-area-inset-bottom);
+            padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
         }
     }
 
     &:not(.experimental-feature-new-layout) #root-widget.horizontal-layout {
         #horizontal-main-container {
-            padding-bottom: env(safe-area-inset-bottom);
+            padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
         }
     }
 
@@ -284,6 +284,20 @@ samp {
     font-family: var(--monospace-font-family) !important;
 }
 
+/*
+ * Programming ligatures: the bundled JetBrains Mono renders `!=` as `≠`, `->` as `→` and so on,
+ * which reads as the characters having been silently replaced (see #2851). The `monospaceLigatures-
+ * Enabled` option gates this; the class is applied by RootContainer.
+ *
+ * Scoped to the monospace surfaces rather than set on `body`: `font-variant-ligatures` is inherited,
+ * so a blanket rule would also disable `fi`/`fl` in prose, which is a typographic regression in note
+ * content and not what anyone is asking for. Inheritance is what makes `.cm-editor` enough to cover
+ * CodeMirror's internals.
+ */
+body.monospace-ligatures-disabled :is(code, kbd, pre, samp, .cm-editor, .ck-mermaid__editing-view) {
+    font-variant-ligatures: none;
+}
+
 .badge {
     --bs-badge-color: var(--muted-text-color);
 
@@ -348,6 +362,11 @@ button.custom-title-bar-button {
 .icon-action:hover:not(.disabled) {
     text-decoration: none;
     border-color: var(--button-border-color);
+}
+
+/* An action that takes something away, marked as such the way destructive menu items are. */
+.icon-action.destructive-action-icon {
+    color: var(--dropdown-item-icon-destructive-color);
 }
 
 .icon-action.disabled {
@@ -437,6 +456,23 @@ button kbd {
     --bs-dropdown-link-active-bg: var(--active-item-background-color) !important;
 }
 
+/* A portaled menu (the Dropdown's `portalToBody`) stacks in the root context, so it has to clear a
+   modal (1055) and a stacked quick-edit popup (1100), and stay under the prompts (2000) it can
+   summon. */
+body > .tn-dropdown-portal > .dropdown-menu {
+    --bs-dropdown-zindex: 1200;
+}
+
+/* Under the menu above, which is what it is drawn for; stated beside it so the two stay in step.
+   Dressed as a dialog's backdrop, a menu that dims the page being the same thing to the reader. */
+body > .tn-dropdown-portal > .tn-dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1199;
+    background-color: var(--modal-backdrop-color);
+    opacity: var(--bs-backdrop-opacity, 0.5);
+}
+
 body.desktop .dropdown-menu,
 body.desktop .tabulator-popup-container,
 :root .excalidraw .dropdown-menu .dropdown-menu-container,
@@ -484,7 +520,7 @@ body.desktop .tabulator-popup-container,
     opacity: 1;
 }
 
-.dropdown-item:hover:not(.disabled, .dropdown-container-item),
+.dropdown-item:hover:not(.disabled, .active, .dropdown-container-item),
 .tabulator-menu-item:hover,
 :root .excalidraw .context-menu .context-menu-item:hover {
     color: var(--hover-item-text-color) !important;
@@ -522,6 +558,7 @@ body.mobile .dropdown .dropdown-submenu {
 }
 
 .dropdown-item span.keyboard-shortcut,
+.dropdown-item span.menu-trailing-icon,
 .dropdown-item *:not(.keyboard-shortcut) > kbd {
     flex-grow: 1;
     text-align: end;
@@ -567,6 +604,11 @@ body.mobile .dropdown .dropdown-submenu {
     color: var(--dropdown-item-icon-destructive-color);
 }
 
+.dropdown-item .tn-icon.use-note-color {
+    --menu-item-icon-color: var(--custom-color);
+    color: var(--custom-color, inherit);
+}
+
 .dropdown-item > span:not([class]) {
     width: 100%;
 }
@@ -586,8 +628,21 @@ body.mobile .dropdown .dropdown-submenu {
     font-family: var(--monospace-font-family) !important;
 }
 
-body .cm-editor .cm-placeholder {
-    color: #999 !important;
+.cm-editor .cm-placeholder {
+    color: inherit;
+    opacity: 0.5;
+    /* Out of flow, so the caret takes its height from the line rather than from the hint. */
+    position: absolute;
+}
+
+/* Firefox draws the caret against the spacer CodeMirror puts before the placeholder widget,
+   short (https://bugzilla.mozilla.org/show_bug.cgi?id=904846). The spacer must stay in layout:
+   CodeMirror measures a position next to a widget from its rect, and a hidden one reads as
+   zeros, which hides the completion popup as off-screen. */
+@supports (-moz-appearance: none) {
+    .cm-editor .cm-widgetBuffer:has(+ .cm-placeholder) {
+        vertical-align: baseline;
+    }
 }
 
 #sql-console-query {
@@ -650,7 +705,7 @@ button.btn-sm {
     color: var(--left-pane-text-color);
 }
 
-.ck.ck-block-toolbar-button {
+.ck.ck-button.ck-block-toolbar-button {
     transform: translateX(7px);
     color: var(--muted-text-color);
     background-color: var(--main-background-color);
@@ -658,6 +713,8 @@ button.btn-sm {
     min-width: 0;
     padding: 0;
     z-index: 1000;
+    translate: -40% 0;
+    padding: 0;
 }
 
 body[dir=rtl] .ck.ck-block-toolbar-button {
@@ -768,16 +825,29 @@ table.promoted-attributes-in-tooltip th {
 
 .tooltip {
     font-size: var(--main-font-size) !important;
-    z-index: calc(var(--ck-z-panel) - 1) !important;
+    /* Above every layer the app opens over the page: a tooltip is appended to `<body>`, so it
+       competes with a dialog in the root stacking context rather than painting inside it, and any
+       lower layer leaves it unreadable behind the very dialog it was asked for. Bootstrap's modal
+       sits at 1055, the dialogs the app lifts itself at up to 3000, the context menu at 2500.
+
+       This layer used to be chained to CKEditor's own — `calc(var(--ck-z-panel) - 1)` — which
+       `ckeditor-theme.css` raised to 10000 for exactly this reason, landing tooltips at 9999.
+       Upstream renamed the variable (`--ck-z-modal` → `--ck-z-panel`) and the override went dead
+       with the old name, dropping tooltips to 999 — under every dialog. Nothing showed it because
+       the math form's rescue rule named a bare `[role="tooltip"]`, lifting every tooltip in the app
+       to 3000; keeping that rule to MathLive's own UI is what finally uncovered it. Stated here in
+       full, and no longer read from a variable another package owns. */
+    z-index: 9999 !important;
 }
 
 .tooltip.tooltip-top {
     z-index: 32767 !important;
 }
 
-/* Note tooltips are appended to <body> and are frequently triggered from inside modals
-   (e.g. links or deleted-note entries in a dialog). The base .tooltip z-index sits below
-   Bootstrap's modal, so raise them above it — matching .tooltip-top. */
+/* Note tooltips are appended to <body> and are frequently triggered from inside a dialog (a link,
+   a deleted-note entry), including the few that lift themselves above the base tooltip layer — the
+   content manager's active-content overlay among them. Held at the same "above everything" layer
+   .tooltip-top names, so they clear those too. */
 .tooltip.note-tooltip {
     z-index: 32767 !important;
 }
@@ -912,6 +982,13 @@ table.promoted-attributes-in-tooltip th {
     overflow: hidden;
 }
 
+.note-tooltip-detail {
+    margin-top: -5px;
+    margin-bottom: 5px;
+    color: var(--muted-text-color);
+    font-size: small;
+}
+
 .note-tooltip-content {
     /* height needs to stay small because tooltip has problem when it can't fit to either top or bottom of the cursor */
     max-height: 300px;
@@ -1032,13 +1109,39 @@ table.promoted-attributes-in-tooltip th {
     color: orange;
 }
 
-.multiplicity {
-    font-size: 1.3em;
-}
-
 /* this is because bootstrap (?) sets code color to red for some reason */
 code {
     color: inherit !important;
+}
+
+/*
+ * Inline code — a `code` that is not the body of a code block.
+ *
+ * CKEditor ships its own `.ck-content code` rule with a hardcoded grey, which ignores the theme
+ * entirely. The rule below overrides it (one class more specific) for every surface that renders
+ * note content: the editable and read-only text notes, doc notes and the print sheet.
+ *
+ * The values are theme-tunable; the defaults here are a translucent neutral grey so they hold up
+ * on a light and a dark background alike, which is what the legacy themes fall back to.
+ */
+:where(:root) {
+    --inline-code-background-color: rgba(128, 128, 128, 0.18);
+    --inline-code-border-color: rgba(128, 128, 128, 0.28);
+    --inline-code-hover-background-color: rgba(128, 128, 128, 0.3);
+}
+
+.ck-content code:not(pre code) {
+    padding: 0.1em 0.35em;
+    border-radius: 5px;
+    background-color: var(--inline-code-background-color);
+    /* Monospace runs visually larger than the surrounding prose at the same nominal size. */
+    font-size: 0.8em;
+    /* A long path or identifier must wrap rather than push the paragraph past the note width. */
+    overflow-wrap: break-word;
+
+    &.ck-code_selected {
+        background-color: var(--inline-code-hover-background-color) !important;
+    }
 }
 
 .animated {
@@ -1579,7 +1682,7 @@ body.mobile #context-menu-container.mobile-bottom-menu {
     overflow: auto !important;
     user-select: none;
     -webkit-user-select: none;
-    padding-bottom: max(env(safe-area-inset-bottom), var(--padding, var(--menu-padding-size))) !important;
+    padding-bottom: max(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)), var(--padding, var(--menu-padding-size))) !important;
 }
 
 body.mobile .dropdown-menu {
@@ -1595,6 +1698,7 @@ body.mobile .dropdown-submenu > .dropdown-menu {
     top: unset !important;
     margin-top: 0 !important;
     width: 100%;
+    max-height: none;
 }
 
 #context-menu-container,
@@ -1612,6 +1716,21 @@ body.mobile .dropdown-submenu > .dropdown-menu {
     -webkit-user-select: none;
 }
 
+/* What stands between a menu item's icon and its title. */
+.dropdown-item .tn-menu-gap {
+    flex: none;
+    width: 0.5em;
+}
+
+/* A name the user wrote, boxed by `menuName()`: clipped rather than widening the menu. */
+.dropdown-item .tn-menu-name {
+    display: block;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 body.desktop li.dropdown-submenu:hover > ul.dropdown-menu {
     display: block;
 }
@@ -1624,7 +1743,10 @@ body.desktop li.dropdown-submenu:hover > ul.dropdown-menu {
     top: 0;
     inset-inline-start: calc(100% - 2px); /* -2px, otherwise there's a small gap between menu and submenu where the hover can disappear */
     margin-top: -10px;
-    /* to make submenu scrollable https://github.com/zadam/trilium/issues/3136 */
+}
+
+/* to make submenu scrollable https://github.com/zadam/trilium/issues/3136 */
+.dropdown-submenu > .dropdown-menu:not(:has(.dropdown-submenu)) {
     max-height: 600px;
     overflow: auto;
 }
@@ -1642,7 +1764,10 @@ body.desktop .dropdown-submenu > .dropdown-menu {
     max-width: 300px;
 }
 
+/* Opened on the other side (`submenu-flip-start` added by ContextMenu.repositionSubmenu) when the
+   submenu would overflow the side it opens on. */
 .dropdown-submenu.dropstart > .dropdown-menu,
+.dropdown-submenu > .dropdown-menu.submenu-flip-start,
 body:not(.mobile) #launcher-pane.horizontal .dropdown-submenu > .dropdown-menu {
     inset-inline-start: auto;
     inset-inline-end: calc(100% - 2px);
@@ -1704,6 +1829,28 @@ body:not(.mobile) #launcher-pane.horizontal .dropdown-submenu > .dropdown-menu {
     background-color: var(--selection-background-color);
 }
 
+/*
+ * Fades a scroll container's content out at its edges instead of hard-clipping it, so text
+ * dissolves toward whatever chrome sits past the edge (a section title bar, a composer).
+ * A mask rather than an overlay gradient because the content becomes genuinely transparent:
+ * this holds up when the pane background is a semi-transparent tint over a window material
+ * (Mica/vibrancy), which no painted gradient color could match. Opt in per edge by setting
+ * `--scroll-fade-top` / `--scroll-fade-bottom` on the scroll container (or an ancestor);
+ * each edge defaults to a hard clip. The defaults are `var()` fallbacks rather than custom
+ * property declarations here, so a widget's knobs win regardless of stylesheet bundling
+ * order. The overlay scrollbar fades over the same distance — the cost of masking the
+ * scroll container itself, accepted wherever this is used.
+ */
+.scroll-edge-fade {
+    mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        black var(--scroll-fade-top, 0px),
+        black calc(100% - var(--scroll-fade-bottom, 0px)),
+        transparent
+    );
+}
+
 [data-bs-toggle="tooltip"]:not(.button-widget) span {
     padding-bottom: 0;
     border-bottom: 1px dotted;
@@ -1721,6 +1868,25 @@ body:not(.mobile) #launcher-pane.horizontal .dropdown-submenu > .dropdown-menu {
 .ck.ck-mentions > .ck-list__item .ck-button {
     /* wrap text for very long note path title */
     white-space: normal !important;
+}
+
+/*
+ * A note suggestion is an icon beside a note path. Laid out as a row so the two are centred against
+ * each other: left inline, the icon aligns on the text baseline, and `vertical-align: middle` only
+ * gets it as far as the x-height — about a pixel below where the capitals it sits beside read as
+ * centred. The icon carries its own font, so no baseline rule can line the two up in general.
+ */
+.ck.ck-mentions .ck-button.note-mention-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    text-align: start;
+}
+
+/* Its own box, so the row centres the glyph itself rather than the line box around it. */
+.ck.ck-mentions .ck-button.note-mention-suggestion > .bx {
+    line-height: 1;
+    flex-shrink: 0;
 }
 
 /* Slash commands */
@@ -1866,7 +2032,7 @@ body:not(.mobile) #launcher-pane.horizontal .dropdown-submenu > .dropdown-menu {
 
     body.mobile .dropdown-menu.mobile-bottom-menu.show {
         --dropdown-bottom: 0px;
-        padding-bottom: calc(max(var(--menu-padding-size), env(safe-area-inset-bottom))) !important;
+        padding-bottom: calc(max(var(--menu-padding-size), var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))) !important;
     }
 
     #mobile-sidebar-container {
@@ -1943,7 +2109,7 @@ body:not(.mobile) #launcher-pane.horizontal .dropdown-submenu > .dropdown-menu {
         max-width: unset;
 
         .modal-header {
-            margin-top: env(safe-area-inset-top);
+            margin-top: var(--safe-area-inset-top, env(safe-area-inset-top));
         }
 
         .modal-content {
@@ -1963,7 +2129,7 @@ body:not(.mobile) #launcher-pane.horizontal .dropdown-submenu > .dropdown-menu {
 
     body.mobile .modal-footer {
         padding-top: 12px;
-        padding-bottom: calc(max(env(safe-area-inset-bottom), 12px));
+        padding-bottom: calc(max(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)), 12px));
     }
 
     body.mobile .help-dialog kbd {
@@ -2104,7 +2270,6 @@ body:not(.mobile) #launcher-pane.horizontal .dropdown-submenu > .dropdown-menu {
 }
 
 #right-pane .card-body ul {
-    padding-inline-start: 25px;
     margin-bottom: 5px;
 }
 
@@ -2136,9 +2301,28 @@ button.close:hover {
 }
 
 .reference-link .tn-icon {
+    /* A line can wrap after an inline-block. An inline box that does not wrap and ends with a
+       word joiner keeps the icon on the line of the first title character. */
+    display: inline;
     position: relative;
     top: 1px;
     margin-inline-end: 3px;
+    white-space: nowrap;
+}
+
+.reference-link .tn-icon::before {
+    /* An inline-block glyph does not take the underline of the link. */
+    display: inline-block;
+}
+
+.reference-link .tn-icon::after {
+    content: "\2060";
+}
+
+/* The board column a reference points at. `--custom-color` is set by the theme on
+   `.use-note-color`. */
+.reference-link small.use-note-color {
+    color: var(--custom-color, inherit);
 }
 
 .options-section:first-of-type h4 {
@@ -2202,13 +2386,16 @@ body.electron.platform-darwin:not(.native-titlebar) .tab-row-container {
  * Only macOS reserves the traffic lights' room with this spacer; every other platform uses the
  * container padding below, which handles controls on either side. Keeping the spacer at zero
  * elsewhere avoids reserving `titlebar-area-x` twice on a Linux desktop with left-hand controls.
+ *
+ * `titlebar-area-x` is where the traffic lights actually end, as the platform measures it, and it
+ * is reported in CSS pixels — so it already accounts both for the width the running macOS gives
+ * the cluster and for the page zoom, which the system-drawn buttons do not follow. A fixed reserve
+ * cannot do either: it shrinks with the page while the buttons stay put, so zooming out slid them
+ * over whatever the tab bar puts first (the pane toggle). It resolves to zero when there are no
+ * controls to clear, i.e. with a native title bar or in full screen.
  */
 body.electron.platform-darwin #tab-row-left-spacer {
     width: env(titlebar-area-x);
-}
-
-body.electron.platform-darwin:not(.native-titlebar):not(.full-screen) #tab-row-left-spacer {
-    width: 80px;
 }
 
 /*
@@ -2283,7 +2470,7 @@ body.zen .note-split:not(.type-book) .note-list-widget {
 
 body.experimental-feature-new-layout.zen #vertical-main-container {
     /* Remove the placeholder for the right pane peek button */
-    --right-pane-peek-button-gutter: 0;
+    --right-pane-peek-button-gutter: 0 !important;
 }
 
 body.zen .split-note-container-widget > .gutter {
@@ -2875,12 +3062,10 @@ iframe.print-iframe {
     overflow: hidden;
 }
 
-/* Calendar collection */
-
-.calendar-view a.fc-timegrid-event,
-.calendar-view a.fc-daygrid-event {
-    /* Workaround: set font weight only if the theme-next is not active */
-    font-weight: var(--root-background, 800);
+/* A full-height note fills the container instead of scrolling it, so the padding that lets
+   flowing content scroll past its end would only take height away from the note. */
+.scrolling-container:has(> .note-detail.full-height) > .scroll-padding-widget {
+    display: none;
 }
 
 @media (max-width: 991px) {
@@ -2897,7 +3082,7 @@ iframe.print-iframe {
             }
         }
 
-        body:not(.ios) #root-widget.virtual-keyboard-opened .note-split:not(.active) {
+        &:not(.ios) #root-widget.virtual-keyboard-opened .note-split:not(.active) {
             max-height: 80px;
             opacity: 0.4;
         }
@@ -3043,6 +3228,8 @@ iframe.print-iframe {
        variant — this makes both variants share one deterministic geometry. */
     position: absolute;
     top: calc((1lh - var(--_checkbox-size)) / 2);
+    inset-inline-start: -25px;
+    inset-inline-end: auto;
     /* `1lh` must resolve against the text's line height, not the UA form-control
        font, and the UA's 3px checkbox margins would offset the absolute position.
        (Bootstrap's reboot happens to do both, but don't depend on it.) */
@@ -3109,7 +3296,7 @@ iframe.print-iframe {
     --collapsible-block-background: var(--card-background-color);
     --collapsible-block-summary-background: var(--card-background-color);
     --collapsible-block-summary-delimiter-color: var(--main-background-color);
-    
+
     --_border-radius: 8px;
     --_block-padding: .75rem;
     --_inline-padding: 1rem;
@@ -3179,9 +3366,9 @@ iframe.print-iframe {
 
     &[open] > summary {
         margin-bottom: calc(var(--_block-padding) * 2);
-        
+
         &::after {
-            border-bottom: 2px solid var(--collapsible-block-summary-delimiter-color);            
+            border-bottom: 2px solid var(--collapsible-block-summary-delimiter-color);
         }
     }
 

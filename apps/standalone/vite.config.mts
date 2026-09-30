@@ -6,9 +6,39 @@ import prefresh from "@prefresh/vite";
 import { defineConfig, type Plugin } from "vite";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
+import { stripUniverHyphenation } from "../client/vite-plugins.mjs";
+
 const clientAssets = ["assets", "stylesheets", "fonts", "translations"];
 
 const isDev = process.env.NODE_ENV === "development";
+
+// The share pages resolve built-in assets against `assets/v<version>`, the same prefix the server
+// serves them under. Read from trilium-core because that is the version `assetUrlFragment` is
+// built from; `chore:update-version` keeps every package.json in step.
+const coreVersion = JSON.parse(
+    fs.readFileSync(join(__dirname, "../../packages/trilium-core/package.json"), "utf-8")
+).version;
+
+// Lists the share theme's built files as `virtual:share-theme-assets`, so the share-theme export
+// can fetch each one from `share/assets`, where the static copy below places them.
+const shareThemeAssetListPlugin = (): Plugin => {
+    const moduleId = "virtual:share-theme-assets";
+    const resolvedId = `\0${moduleId}`;
+
+    return {
+        name: "share-theme-asset-list",
+        resolveId: (id) => (id === moduleId ? resolvedId : undefined),
+        load(id) {
+            if (id !== resolvedId) {
+                return;
+            }
+
+            const distDir = join(__dirname, "../../packages/share-theme/dist");
+            const files = fs.existsSync(distDir) ? fs.readdirSync(distDir) : [];
+            return `export default ${JSON.stringify(files)};`;
+        }
+    };
+};
 
 // Watch client files and trigger reload in development
 const clientWatchPlugin = () => ({
@@ -111,8 +141,10 @@ const sqliteWasmPlugin = viteStaticCopy({
 });
 
 let plugins: any = [
+    stripUniverHyphenation(),
     sqliteWasmDedupePlugin(),
     sqliteWasmPlugin,
+    shareThemeAssetListPlugin(),
     viteStaticCopy({
         targets: clientAssets.map((asset) => ({
             src: `../../client/src/${asset}/**/*`,
@@ -136,6 +168,29 @@ let plugins: any = [
                 ],
                 dest: "server-assets",
                 rename: { stripBase: 3 }
+            }
+        ]
+    }),
+    // What the share theme's own pages load: its bundle (stylesheets, scripts, KaTeX fonts), the
+    // icon-pack fonts the client ships, and the logo, each at the path content_renderer.ts writes
+    // into the page. The server answers these from express.static routes it registers in
+    // routes/assets.ts; here they are copied into the build instead.
+    viteStaticCopy({
+        targets: [
+            {
+                src: "../../../packages/share-theme/dist/**/*",
+                dest: "share/assets",
+                rename: { stripBase: 3 }
+            },
+            {
+                src: "../../client/src/fonts/**/*",
+                dest: "share/assets/fonts",
+                rename: { stripBase: 3 }
+            },
+            {
+                src: "../../server/src/assets/images/**/*",
+                dest: `assets/v${coreVersion}/images`,
+                rename: { stripBase: 4 }
             }
         ]
     }),
@@ -244,6 +299,39 @@ export default defineConfig(() => ({
             {
                 find: "@client",
                 replacement: join(__dirname, "../client/src")
+            },
+            // Bypass officeparser's `browser` entry — a prebuilt ~2.7 MB monolith that
+            // inlines pdfjs-dist for its PDF-parsing feature. The wrapper bundles the
+            // package's Node ESM entry instead (plus the Buffer polyfill it needs),
+            // keeping only the office-format parsers and the HTML generator (~0.4 MB).
+            // Guarded against upstream layout changes by office_preview.spec.ts.
+            {
+                find: /^officeparser$/,
+                replacement: join(__dirname, "src/stubs/officeparser_entry.ts")
+            },
+            // Heavy optional officeparser dependencies, only reachable via dynamic import
+            // on code paths office-format conversion never executes (PDF parsing, OCR,
+            // PDF generation via puppeteer). Without the stubs, Vite would either emit
+            // their multi-megabyte chunks or fail dev import-analysis on unresolvable
+            // specifiers.
+            {
+                find: /^pdfjs-dist(\/.*)?$/,
+                replacement: join(__dirname, "src/stubs/empty.ts")
+            },
+            {
+                find: /^tesseract\.js$/,
+                replacement: join(__dirname, "src/stubs/empty.ts")
+            },
+            {
+                find: /^puppeteer$/,
+                replacement: join(__dirname, "src/stubs/empty.ts")
+            },
+            // EJS renders the share pages. Its ESM entry imports `node:fs` and `node:path` for the
+            // file-loading it only reaches without an `includer`; the share renderer always passes
+            // one, so the package's own browser build serves it and resolves in this bundle.
+            {
+                find: /^ejs$/,
+                replacement: join(__dirname, "../../node_modules/ejs/ejs.min.js")
             }
         ],
         dedupe: [
@@ -286,10 +374,17 @@ export default defineConfig(() => ({
         }
     },
     optimizeDeps: {
-        exclude: ['@sqlite.org/sqlite-wasm', '@triliumnext/core']
+        exclude: ['@sqlite.org/sqlite-wasm', '@triliumnext/core'],
+        // Dynamically imported from the excluded @triliumnext/core, so the dep scanner
+        // never discovers it on its own. Pre-bundling matters beyond warm-up here: the
+        // officeparser alias resolves to CJS internals that only the dep optimizer
+        // converts to ESM in dev — without it, the dev server serves raw CJS and the
+        // import fails in the browser.
+        include: ['officeparser']
     },
     worker: {
-        format: "es" as const
+        format: "es" as const,
+        plugins: () => [ shareThemeAssetListPlugin() ]
     },
     commonjsOptions: {
         transformMixedEsModules: true,
@@ -305,15 +400,22 @@ export default defineConfig(() => ({
                 'local-bridge': join(__dirname, 'src', 'local-bridge.ts'),
             },
             output: {
+                // Everything below `src/` carries a content hash so a deployment switches over
+                // atomically: `index.html` is served uncached and can only ever reference chunks
+                // from its own build. Without the hash, a browser holding a still-fresh copy of
+                // one chunk mixes it with newly fetched ones — and since the minifier reassigns
+                // single-letter export names every build, a cross-build import silently binds to
+                // the wrong value ("X is not a function") until the cache expires.
                 entryFileNames: (chunkInfo) => {
-                    // Service worker and other workers should be at root level
-                    if (chunkInfo.name === 'sw') {
-                        return '[name].js';
+                    // The service worker must keep a stable URL: `main.ts` registers it as
+                    // `./sw.js`, and a hash would orphan the previously registered worker.
+                    if (chunkInfo.name === "sw") {
+                        return "[name].js";
                     }
-                    return 'src/[name].js';
+                    return "src/[name]-[hash].js";
                 },
-                chunkFileNames: "src/[name].js",
-                assetFileNames: "src/[name].[ext]"
+                chunkFileNames: "src/[name]-[hash].js",
+                assetFileNames: "src/[name]-[hash].[ext]"
             }
         }
     },

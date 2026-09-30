@@ -17,7 +17,7 @@ In previous versions of Trilium, the title bar was fixed at all times. In the ne
 
 Whenever the title is scrolled past, the fixed title is shown instead.
 
-This only affects <a class="reference-link" href="../../Note%20Types/Text.md">Text</a> and <a class="reference-link" href="../../Note%20Types/Code.md">Code</a> notes. Note types that take the entirety of the screen such as <a class="reference-link" href="../../Note%20Types/Canvas.md">Canvas</a> will always have only the fixed title bar.
+This only affects <a class="reference-link" href="../../Note%20Types/Text.md">Text</a> notes. Note types that take the entirety of the screen, such as <a class="reference-link" href="../../Note%20Types/Code.md">Code</a> and <a class="reference-link" href="../../Note%20Types/Canvas.md">Canvas</a>, will always have only the fixed title bar.
 
 Depending on the note type, the inline title will also present some more interactive options such as being able to switch the note type (see below).
 
@@ -25,7 +25,7 @@ Depending on the note type, the inline title will also present some more interac
 
 ### New note type switcher
 
-When a new <a class="reference-link" href="../../Note%20Types/Text.md">Text</a> or <a class="reference-link" href="../../Note%20Types/Code.md">Code</a> note is created, a note type switcher will appear below the _Inline title_. Apart from changing the note type, it's also possible to apply a [template](../../Advanced%20Usage/Templates.md).
+When a new <a class="reference-link" href="../../Note%20Types/Text.md">Text</a> note is created, a note type switcher will appear below the _Inline title_. Apart from changing the note type, it's also possible to apply a [template](../../Advanced%20Usage/Templates.md).
 
 The switcher will disappear as soon as a text is entered.
 
@@ -95,11 +95,10 @@ Here's how all the different tabs that were once part of the ribbon are now avai
     *   Moved underneath the title under a collapsible area.
     *   Expanded by default for new searches, collapsed for saved searches.
 *   The Note map is now available in the Note actions menu.
-    *   Instead of opening into a panel in the ribbon, the note map now opens in a side split (similar to the in-app help).
+    *   Instead of opening into a panel in the ribbon, the note map now opens in the sidebar, in the <a class="reference-link" href="Right%20Sidebar/Connections%20tab.md">Connections tab</a> where it can also be maximized.
 *   “Note info” tab was moved to a small (i) icon in the status bar.
 *   “Similar notes” tab
-    *   Moved to the status bar, by going to the “Note info” section and pressing the button to show similar notes.
-    *   Displayed as a fixed panel, similar to the attributes.
+    *   Instead of opening into a panel in the ribbon, the similar notes are now shown in the sidebar, in the <a class="reference-link" href="Right%20Sidebar/Connections%20tab.md">Connections tab</a>.
 *   The Collection properties tab were relocated under the note title and grouped into:
     *   A combo box to quickly switch between views.
     *   Individual settings for the current view in a submenu.
@@ -115,13 +114,21 @@ Here's how all the different tabs that were once part of the ribbon are now avai
 Most of the buttons were relocated to the right of the note title, in the <a class="reference-link" href="Note%20buttons.md">Note buttons</a> area, with the exception of:
 
 *   The Edit button is displayed near the note title, as a badge.
-*   _Backlinks_ is displayed in the status bar. When clicked, the same list of backlinks is displayed.
+*   _Backlinks_ are now displayed in the sidebar, in the <a class="reference-link" href="Right%20Sidebar/Connections%20tab.md">Connections tab</a>.
+    *   Alternatively, the backlinks count is displayed in the status bar and when clicked the sidebar opens at the right section.
 *   Relation map zoom buttons are now part of the relation map itself.
 *   Export image to PNG/SVG are now in the Note actions menu, in the _Export as image_ option.
 
 ### Changes to the sidebar
 
 The sidebar (also known as the right pane) also received some important changes.
+
+Most importantly, v0.105.0 splits the sidebar into multiple tabs with additional functionality:
+
+*   <a class="reference-link" href="Right%20Sidebar/Outline%20tab.md">Outline tab</a>, which gathers the table of contents and highlights lists.
+*   <a class="reference-link" href="Right%20Sidebar/Attributes%20tab.md">Attributes tab</a>, which provides a graphical method of editing labels, relations and (promoted) attribute definitions.
+*   A dedicated <a class="reference-link" href="Right%20Sidebar/AI%20chat%20tab.md">AI chat tab</a>.
+*   <a class="reference-link" href="Right%20Sidebar/Connections%20tab.md">Connections tab</a>, which groups together the note map, note paths, backlinks and similar notes.
 
 The previous iteration of the sidebar would appear contextually, depending on whether there are any items to be displayed. This caused occasional content shifts when moving between two panes in a split view. In the new layout, the sidebar acts more like the <a class="reference-link" href="Note%20Tree.md">Note Tree</a> pane, remaining visible even if there is nothing to display.
 

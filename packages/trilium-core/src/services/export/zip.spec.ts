@@ -4,6 +4,9 @@ import { join } from "path";
 import { PassThrough } from "stream";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { isLocalPreviewImageSrc } from "@triliumnext/commons";
+
+import becca from "../../becca/becca.js";
 import type BBranch from "../../becca/entities/bbranch.js";
 import type BNote from "../../becca/entities/bnote.js";
 import type { ExportFormat, NoteMetaFile } from "../../meta.js";
@@ -93,7 +96,7 @@ async function exportSubtree(branch: BBranch, format: ExportFormat = "html") {
     const ctx = new taskContext("no-progress-reporting", "export", null);
     const res = new FakeResponse();
     const done = collect(res);
-    await zip.exportToZip(ctx, branch, format, res as unknown as Record<string, unknown>);
+    await zip.exportToZip(ctx, branch, format, res);
     const buffer = await done;
     return { buffer, res, entries: await readArchive(buffer) };
 }
@@ -236,6 +239,65 @@ describe.skipIf(isBrowserRuntime)("zip export (real DB)", () => {
             expect(attrs.some((a) => a.name === "outsideRel")).toBe(false);
         });
 
+        it("leaves out the link relations the importer rebuilds, and keeps the ones it reads back", async () => {
+            // Both notes go inside the exported subtree: a relation pointing out of it is dropped
+            // by the containment filter, which would hide what this test is about.
+            const { note: parent } = createNote("root", { title: "LinkHost", content: "" });
+            const { note: target } = createNote(parent.noteId, { title: "LinkTarget", content: "<p>t</p>" });
+            const { note } = createNote(parent.noteId, { title: "Linker", content: "<p>x</p>" });
+            getContext().init(() => {
+                note.addRelation("internalLink", target.noteId);
+                note.addRelation("imageLink", target.noteId);
+                // The importer reads these two back to remap note ids inside the content.
+                note.addRelation("includeNoteLink", target.noteId);
+                note.addRelation("relationMapLink", target.noteId);
+                note.addRelation("userRelation", target.noteId);
+            });
+
+            const { entries } = await exportSubtree(parent.getParentBranches()[0], "html");
+            const children = parseMeta(entries).files[0].children ?? [];
+            const linkerMeta = children.find((child) => child.title === "Linker");
+            const names = (linkerMeta?.attributes ?? []).map((a) => a.name);
+
+            expect(names).not.toContain("internalLink");
+            expect(names).not.toContain("imageLink");
+            expect(names).toContain("includeNoteLink");
+            expect(names).toContain("relationMapLink");
+            expect(names).toContain("userRelation");
+        });
+
+        it("comes back with those relations anyway, rebuilt from content and pointing at the new notes", async () => {
+            const { note: parent } = createNote("root", { title: "LinkRoundTrip", content: "" });
+            const { note: target } = createNote(parent.noteId, { title: "Target", content: "<p>t</p>" });
+            const { note: picture } = createNote(parent.noteId,
+                { title: "Picture", content: "png-bytes", type: "image", mime: "image/png" });
+            const { note: source } = createNote(parent.noteId, { title: "Source", content: "" });
+            getContext().init(() => source.setContent(
+                `<p>See <a href="#root/${target.noteId}">Target</a>.</p>`
+                + `<p><img src="api/images/${picture.noteId}/Picture.png"></p>`
+            ));
+
+            const taskContext = (await import("../task_context.js")).default;
+            const importZip = (await import("../import/zip.js")).default;
+            const { buffer } = await exportSubtree(parent.getParentBranches()[0], "html");
+            const imported = await getContext().init(async () => await importZip.importZip(
+                new taskContext("no-progress-reporting", "importNotes", {}),
+                buffer,
+                becca.getNoteOrThrow("root")
+            ));
+
+            const childByTitle = (title: string) =>
+                imported.getChildNotes().find((child) => child.title === title);
+            const importedSource = childByTitle("Source");
+            const relationTargets = (name: string) =>
+                (importedSource?.getRelations() ?? []).filter((rel) => rel.name === name).map((rel) => rel.value);
+
+            // New ids on the far side, so a relation copied out of the export could not have pointed here.
+            expect(childByTitle("Target")?.noteId).not.toBe(target.noteId);
+            expect(relationTargets("internalLink")).toStrictEqual([childByTitle("Target")?.noteId]);
+            expect(relationTargets("imageLink")).toStrictEqual([childByTitle("Picture")?.noteId]);
+        });
+
         it("excludes notes marked with #excludeFromExport", async () => {
             const { note: parent } = createNote("root", { title: "WithExcluded", content: "" });
             const { note: kept } = createNote(parent.noteId, { title: "Kept", content: "<p>kept</p>" });
@@ -357,28 +419,82 @@ describe.skipIf(isBrowserRuntime)("zip export (real DB)", () => {
             }
         });
 
-        it("rewrites a link preview's data-image reference to the exported attachment file", async () => {
-            // A link preview stores its card image as an attachment referenced from `data-image`
-            // (not an <img src>), so the attribute must be rewritten to the exported attachment
-            // file just like an image src. The markdown export keeps the preview's raw HTML, so
-            // the same rewrite must land there too.
+        it("rewrites a link preview's picture references to the exported attachment files", async () => {
+            // A link preview stores its card image and its favicon as attachments referenced from
+            // `data-image` and `data-favicon` (not an <img src>), so both attributes must be
+            // rewritten to the exported attachment files just like an image src. The markdown
+            // export keeps the preview's raw HTML, so the same rewrite must land there too.
             const { note } = createNote("root", { title: "LinkPreviewHost", content: "" });
             getContext().init(() => {
-                const attachment = note.saveAttachment({ role: "image", mime: "image/jpeg", title: "preview.jpg", content: "jpeg-bytes" });
+                const image = note.saveAttachment({ role: "image", mime: "image/jpeg", title: "preview.jpg", content: "jpeg-bytes" });
+                const favicon = note.saveAttachment({ role: "image", mime: "image/x-icon", title: "favicon.ico", content: "ico-bytes" });
                 note.setContent(`<section class="link-embed" data-url="https://example.com" data-embed-type="opengraph"` +
-                    ` data-title="Example" data-image="api/attachments/${attachment.attachmentId}/image/preview.jpg"></section>`);
+                    ` data-title="Example" data-image="api/attachments/${image.attachmentId}/image/preview.jpg"` +
+                    ` data-favicon="api/attachments/${favicon.attachmentId}/image/favicon.ico"></section>`);
             });
 
             for (const format of ["html", "markdown"] as const) {
                 const { entries } = await exportSubtree(note.getParentBranches()[0], format);
                 const rootMeta = parseMeta(entries).files[0];
+                const attachments = rootMeta.attachments ?? [];
 
-                const attFileName = (rootMeta.attachments ?? [])[0]?.dataFileName ?? "";
-                expect(entries[attFileName], format).toBeDefined();
+                const fileNameOf = (title: string) => attachments.find((a) => a.title === title)?.dataFileName ?? "";
+                const imageFileName = fileNameOf("preview.jpg");
+                const faviconFileName = fileNameOf("favicon.ico");
+                expect(entries[imageFileName], format).toBeDefined();
+                expect(entries[faviconFileName], format).toBeDefined();
 
                 const exported = entries[rootMeta.dataFileName ?? ""].toString("utf-8");
-                expect(exported, format).toContain(`data-image="${attFileName}"`);
+                expect(exported, format).toContain(`data-image="${imageFileName}"`);
+                expect(exported, format).toContain(`data-favicon="${faviconFileName}"`);
                 expect(exported, format).not.toContain("api/attachments");
+            }
+        });
+
+        it("carries a link preview's pictures through an export and back", async () => {
+            // The two halves of the rewrite above are each tested against a fixed archive shape, which
+            // leaves the seam between them untested — and the seam is where this broke: the export
+            // learned about `data-image`/`data-favicon` while the import kept rewriting `src` alone, so
+            // both pictures imported as attachments with the right roles and neither one rendered.
+            // A title with a space in it, as the default "New note" has: the export prefixes it onto
+            // both attachment file names, and a space is exactly what the render sinks reject.
+            const { note } = createNote("root", { title: "Round Trip Host", content: "" });
+            getContext().init(() => {
+                const cover = note.saveAttachment({ role: "coverImage", mime: "image/jpeg", title: "https://example.com/page", content: "jpeg-bytes" });
+                const favicon = note.saveAttachment({ role: "favicon", mime: "image/png", title: "example.com", content: "png-bytes" });
+                note.setContent(`<section class="link-embed" data-url="https://example.com/page" data-embed-type="opengraph"`
+                    + ` data-title="Example" data-image="api/attachments/${cover.attachmentId}/image/page.jpg"`
+                    + ` data-favicon="api/attachments/${favicon.attachmentId}/image/example.com.png"></section>`);
+            });
+
+            const taskContext = (await import("../task_context.js")).default;
+            const importZip = (await import("../import/zip.js")).default;
+
+            // Markdown too: that export keeps the preview's raw HTML, so it carries the same two
+            // attributes and needs the same journey back.
+            for (const format of ["html", "markdown"] as const) {
+                const { buffer } = await exportSubtree(note.getParentBranches()[0], format);
+                const imported = await getContext().init(async () => await importZip.importZip(
+                    new taskContext("no-progress-reporting", "importNotes", {}),
+                    buffer,
+                    becca.getNoteOrThrow("root")
+                ));
+
+                const content = imported.getContent().toString();
+                const idOf = (role: string) => imported.getAttachments().find((a) => a.role === role)?.attachmentId;
+
+                // New ids on the far side, so the references have to have been rewritten twice over...
+                expect(content, format).toContain(`data-image="api/attachments/${idOf("coverImage")}/image/`);
+                expect(content, format).toContain(`data-favicon="api/attachments/${idOf("favicon")}/image/`);
+
+                // ...and into something the render sinks will actually load. Pointing at the right
+                // attachment is only half of it: this note's title has a space in it, which the export
+                // prefixes onto both file names, and the pattern below admits none.
+                const sources = [...content.matchAll(/data-(?:image|favicon)="([^"]*)"/g)];
+                expect(sources, format).toHaveLength(2);
+                for (const [, src] of sources) {
+                    expect(isLocalPreviewImageSrc(src), `${format}: ${src}`).toBe(true);
+                }
             }
         });
 
@@ -424,7 +540,7 @@ describe.skipIf(isBrowserRuntime)("zip export (real DB)", () => {
                 const ctx = new taskContext("no-progress-reporting", "export", null);
                 const res = new FakeResponse();
                 const done = collect(res);
-                await zip.exportToZip(ctx, branch, "html", res as unknown as Record<string, unknown>);
+                await zip.exportToZip(ctx, branch, "html", res);
                 await done;
             } finally {
                 initZipProvider(original);

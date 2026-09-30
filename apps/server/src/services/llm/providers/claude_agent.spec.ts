@@ -1,19 +1,25 @@
 import type { LlmStreamChunk } from "@triliumnext/commons";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ClaudeSession } from "./claude_session_pool.js";
+
 const queryMock = vi.hoisted(() => vi.fn());
 const errorLogMock = vi.hoisted(() => vi.fn());
+/** Streaming-input-only Query controls the session pool drives. */
+const setModelMock = vi.hoisted(() => vi.fn());
+const closeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
     query: queryMock
 }));
 
 vi.mock("@triliumnext/core", () => ({
-    getLog: () => ({ info: vi.fn(), error: errorLogMock }),
-    // buildSystemPrompt (reached via composeSystemPrompt) reads the workspace
-    // task states; no custom states in this unit test.
-    task_states: { getTaskStates: () => [] }
+    getLog: () => ({ info: vi.fn(), error: errorLogMock })
 }));
+
+// buildSystemPrompt (reached via composeSystemPrompt) reads the workspace task
+// states; no custom states in this unit test.
+vi.mock("@triliumnext/core/src/services/task_states.js", () => ({ getTaskStates: () => [] }));
 
 // In-process MCP: the provider hands the agent Trilium's own MCP server
 // instance; stub the factory so tests don't build the real tool registry.
@@ -29,7 +35,7 @@ vi.mock("../../data_dir.js", async () => {
 vi.mock("../../port.js", () => ({ default: 8080 }));
 
 const buildNoteHintMock = vi.hoisted(() => vi.fn((noteId: string): string | null => `NOTE_META(${noteId})`));
-vi.mock("../note_hint.js", () => ({ buildNoteHint: buildNoteHintMock }));
+vi.mock("@triliumnext/core/src/services/llm/note_hint.js", () => ({ buildNoteHint: buildNoteHintMock }));
 
 // BYO binary resolution shells out to the user's `claude`; stub it so tests
 // don't depend on a real install. Resolves a path by default; can be made to
@@ -40,7 +46,7 @@ vi.mock("./claude_binary.js", () => ({ resolveClaudeBinaryPath: resolveClaudeBin
 // Attachment resolution reads bytes out of Becca, which the core mock above
 // omits — stub it so the multimodal tests drive block construction directly.
 const resolveAttachmentPartMock = vi.hoisted(() => vi.fn());
-vi.mock("../attachment_content.js", () => ({ resolveAttachmentPart: resolveAttachmentPartMock }));
+vi.mock("@triliumnext/core/src/services/llm/attachment_content.js", () => ({ resolveAttachmentPart: resolveAttachmentPartMock }));
 
 // The Windows `.cmd` shim delegates to child_process.spawn; the provider never
 // spawns otherwise, so mocking the whole module is safe.
@@ -48,31 +54,68 @@ const spawnMock = vi.hoisted(() => vi.fn());
 vi.mock("child_process", () => ({ spawn: spawnMock }));
 
 const { buildSeededPrompt, buildSubscriptionModelList, ClaudeAgentProvider, hashTranscript, resetAgentCwdForTests, resetSubscriptionModelCacheForTests } = await import("./claude_agent.js");
+const { MAX_WARM_SESSIONS, Pushable, releaseSession, rememberSession: rememberWarmSession, resetClaudeSessionPoolForTests } = await import("./claude_session_pool.js");
+type PushablePrompt = { pending: readonly { message: { role: string; content: unknown[] } }[] };
 
-/** Drain the query prompt into the single user message it streams (multimodal path). */
-async function drainPrompt(prompt: unknown): Promise<{ role: string; content: unknown[] }> {
-    const iterator = (prompt as AsyncIterable<unknown>)?.[Symbol.asyncIterator];
-    if (typeof prompt === "string" || typeof iterator !== "function") {
-        throw new Error("expected a streamed multimodal prompt, got a plain string");
+/**
+ * Every turn now feeds the session's streaming input, so the `prompt` option is
+ * always a Pushable and the turn's own message is what was pushed onto it.
+ */
+function pushedMessages(prompt: unknown): { message: { role: string; content: unknown[] } }[] {
+    const pending = (prompt as PushablePrompt)?.pending;
+    if (!Array.isArray(pending)) {
+        throw new Error("expected the prompt to be a streaming-input Pushable");
     }
-    const messages: { message: { role: string; content: unknown[] } }[] = [];
-    for await (const message of prompt as AsyncIterable<{ message: { role: string; content: unknown[] } }>) {
-        messages.push(message);
-    }
+    return [...pending];
+}
+
+/** The single user message a turn streamed (multimodal path). */
+function drainPrompt(prompt: unknown): { role: string; content: unknown[] } {
+    const messages = pushedMessages(prompt);
     expect(messages).toHaveLength(1);
     return messages[0].message;
 }
 
+/** The plain text a turn pushed, for the non-multimodal path. */
+function promptText(prompt: unknown): string {
+    return drainPrompt(prompt).content
+        .map(block => (block && typeof block === "object" && "text" in block ? String(block.text) : ""))
+        .join("");
+}
+
+/**
+ * One long-lived query stream serving several turns, as a warm session does:
+ * the provider consumes up to each turn's `result` and resumes from there on
+ * the next turn instead of starting a new query.
+ */
+function scriptAgentSession(turns: unknown[][]) {
+    queryMock.mockImplementation(() => makeQuery(turns.flat()));
+}
+
 /** Make query() replay the given SDK messages and record its invocation. */
 function scriptAgent(messages: unknown[]) {
-    queryMock.mockImplementation(() => (async function* () {
+    queryMock.mockImplementation(() => makeQuery(messages));
+}
+
+/**
+ * A stand-in for the SDK's Query: an async generator plus the control methods
+ * that only exist in streaming input mode, which the pool drives.
+ */
+function makeQuery(messages: unknown[]) {
+    const generator = (async function* () {
         for (const message of messages) {
             yield message;
         }
-    })());
+    })();
+    return Object.assign(generator, { setModel: setModelMock, close: closeMock });
 }
 
+/** The reply chunks of a turn, without the status that precedes a cold start (see {@link collectAll}). */
 async function collect(iterable: AsyncIterable<LlmStreamChunk>): Promise<LlmStreamChunk[]> {
+    return (await collectAll(iterable)).filter(chunk => chunk.type !== "status");
+}
+
+async function collectAll(iterable: AsyncIterable<LlmStreamChunk>): Promise<LlmStreamChunk[]> {
     const chunks: LlmStreamChunk[] = [];
     for await (const chunk of iterable) {
         chunks.push(chunk);
@@ -107,6 +150,12 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         errorLogMock.mockReset();
         createMcpServerMock.mockClear(); // clear calls, keep the instance impl
         resolveAttachmentPartMock.mockReset();
+        // Sessions outlive a turn now, so each test must start from a cold
+        // pool. Reset it *before* clearing the mocks: tearing down a leftover
+        // session calls close() and would otherwise count against this test.
+        resetClaudeSessionPoolForTests();
+        setModelMock.mockClear();
+        closeMock.mockClear();
     });
 
     it("maps stream events, tool calls, results, and usage to chunks in order", async () => {
@@ -170,7 +219,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
                 type: "usage",
                 // No cost even though the SDK result carries total_cost_usd: usage is
                 // covered by the subscription, so a per-turn dollar figure isn't shown.
-                usage: { promptTokens: 100, completionTokens: 40, totalTokens: 140, model: "Claude Sonnet 5" }
+                usage: { promptTokens: 100, completionTokens: 40, totalTokens: 140, model: "Claude Sonnet 5", provider: "claude-agent" }
             },
             { type: "done" }
         ]);
@@ -187,9 +236,11 @@ describe("ClaudeAgentProvider.chatChunks", () => {
 
         // A known model ID is mapped to its display name (the chat pane renders it verbatim).
         expect(await usageModel({ model: "claude-fable-5" })).toBe("Claude Fable 5");
+        // A long-context ID is named after the model it varies, rather than falling
+        // through to the raw `claude-opus-4-8[1m]`.
+        expect(await usageModel({ model: "claude-opus-4-8[1m]" })).toBe("Claude Opus 4.8 (1M)");
         // An unrecognized ID passes through unchanged rather than becoming undefined.
-        expect(await usageModel({ model: "some-unknown-model" })).toBe("some-unknown-model");
-    });
+        expect(await usageModel({ model: "some-unknown-model" })).toBe("some-unknown-model");    });
 
     it("ignores subagent traffic (non-null parent_tool_use_id)", async () => {
         scriptAgent([
@@ -203,30 +254,37 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect(chunks.filter(c => c.type === "text")).toEqual([]);
     });
 
-    it("starts a fresh session with the plain prompt and resumes it when the transcript matches", async () => {
+    it("keeps one warm session across turns, pushing the next message onto its streaming input", async () => {
         const provider = new ClaudeAgentProvider();
         const config = { chatNoteId: "note-resume" };
 
-        // Turn 1 — no history, no mapping: plain prompt, no resume.
-        scriptAgent([textDelta("first reply"), successResult("sess-A")]);
-        await collect(provider.chatChunks([{ role: "user", content: "first question" }], config));
+        scriptAgentSession([
+            [textDelta("first reply"), successResult("sess-A")],
+            [textDelta("second reply"), successResult("sess-A")]
+        ]);
+
+        // Turn 1 — no history, no mapping: plain prompt, no resume. Starting the
+        // subprocess is announced before anything else.
+        const first = await collectAll(provider.chatChunks([{ role: "user", content: "first question" }], config));
+        expect(first[0]).toEqual({ type: "status", status: "starting_agent" });
 
         expect(queryMock).toHaveBeenCalledTimes(1);
-        const firstCall = queryMock.mock.calls[0][0];
-        expect(firstCall.prompt).toBe("first question");
-        expect(firstCall.options.resume).toBeUndefined();
+        const call = queryMock.mock.calls[0][0];
+        expect(call.options.resume).toBeUndefined();
 
-        // Turn 2 — transcript = turn 1 + streamed reply: resume with only the new message.
-        scriptAgent([textDelta("second reply"), successResult("sess-A")]);
-        await collect(provider.chatChunks([
+        // Turn 2 — the transcript still matches, so the live subprocess is
+        // reused: no second query(), just another message on the same input.
+        const second = await collectAll(provider.chatChunks([
             { role: "user", content: "first question" },
             { role: "assistant", content: "first reply" },
             { role: "user", content: "second question" }
         ], config));
 
-        const secondCall = queryMock.mock.calls[1][0];
-        expect(secondCall.prompt).toBe("second question");
-        expect(secondCall.options.resume).toBe("sess-A");
+        expect(queryMock).toHaveBeenCalledTimes(1);
+        expect(second).toContainEqual({ type: "text", content: "second reply" });
+        expect(second.some(chunk => chunk.type === "status")).toBe(false);
+        const pushed = pushedMessages(call.prompt).map(m => (m.message.content[0] as { text: string }).text);
+        expect(pushed).toEqual(["first question", "second question"]);
     });
 
     it("reseeds a fresh session from the transcript when the history diverged", async () => {
@@ -246,10 +304,10 @@ describe("ClaudeAgentProvider.chatChunks", () => {
 
         const secondCall = queryMock.mock.calls[1][0];
         expect(secondCall.options.resume).toBeUndefined();
-        expect(secondCall.prompt).toContain("<conversation_history>");
-        expect(secondCall.prompt).toContain("User: edited");
-        expect(secondCall.prompt).toContain("Assistant: reply");
-        expect(secondCall.prompt).toContain("follow-up");
+        expect(promptText(secondCall.prompt)).toContain("<conversation_history>");
+        expect(promptText(secondCall.prompt)).toContain("User: edited");
+        expect(promptText(secondCall.prompt)).toContain("Assistant: reply");
+        expect(promptText(secondCall.prompt)).toContain("follow-up");
     });
 
     it("prepends the current-note metadata hint to the user message when contextNoteId is set", async () => {
@@ -262,8 +320,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         ));
 
         expect(buildNoteHintMock).toHaveBeenCalledWith("note-abc", false);
-        const prompt = queryMock.mock.calls[0][0].prompt;
-        expect(prompt).toBe("NOTE_META(note-abc)\n\nwhat is this note about?");
+        expect(promptText(queryMock.mock.calls[0][0].prompt)).toBe("NOTE_META(note-abc)\n\nwhat is this note about?");
     });
 
     it("does not prepend a hint when the context note no longer exists", async () => {
@@ -275,28 +332,30 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             { contextNoteId: "gone" }
         ));
 
-        expect(queryMock.mock.calls[0][0].prompt).toBe("hello");
+        expect(promptText(queryMock.mock.calls[0][0].prompt)).toBe("hello");
     });
 
     it("keeps the note hint out of the session hash so a later turn still resumes", async () => {
         const provider = new ClaudeAgentProvider();
         const config = { contextNoteId: "note-abc", chatNoteId: "note-hint-resume" };
 
-        scriptAgent([textDelta("first reply"), successResult("sess-H")]);
+        scriptAgentSession([
+            [textDelta("first reply"), successResult("sess-H")],
+            [textDelta("second reply"), successResult("sess-H")]
+        ]);
         await collect(provider.chatChunks([{ role: "user", content: "q1" }], config));
 
-        // Turn 2: transcript matches turn 1 (unhinted) → resume, and the new
-        // message still carries the freshly-built hint.
-        scriptAgent([textDelta("second reply"), successResult("sess-H")]);
+        // Turn 2: transcript matches turn 1 (unhinted), so the warm session is
+        // reused, and the new message still carries the freshly-built hint.
         await collect(provider.chatChunks([
             { role: "user", content: "q1" },
             { role: "assistant", content: "first reply" },
             { role: "user", content: "q2" }
         ], config));
 
-        const secondCall = queryMock.mock.calls[1][0];
-        expect(secondCall.options.resume).toBe("sess-H");
-        expect(secondCall.prompt).toBe("NOTE_META(note-abc)\n\nq2");
+        expect(queryMock).toHaveBeenCalledTimes(1);
+        const pushed = pushedMessages(queryMock.mock.calls[0][0].prompt);
+        expect((pushed[1].message.content[0] as { text: string }).text).toBe("NOTE_META(note-abc)\n\nq2");
     });
 
     it("sends a supported image as a base64 block via a one-message stream", async () => {
@@ -310,7 +369,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             ] }
         ], {}));
 
-        const message = await drainPrompt(queryMock.mock.calls[0][0].prompt);
+        const message = drainPrompt(queryMock.mock.calls[0][0].prompt);
         expect(message.role).toBe("user");
         expect(message.content).toEqual([
             { type: "text", text: "what is this?" },
@@ -326,7 +385,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             { role: "user", content: [{ type: "file", attachmentId: "att-2", mime: "application/pdf", filename: "report.pdf" }] }
         ], { contextNoteId: "note-abc" }));
 
-        const message = await drainPrompt(queryMock.mock.calls[0][0].prompt);
+        const message = drainPrompt(queryMock.mock.calls[0][0].prompt);
         expect(message.content).toEqual([
             { type: "text", text: "NOTE_META(note-abc)" },
             { type: "document", title: "report.pdf", source: { type: "base64", media_type: "application/pdf", data: "JVBERg==" } }
@@ -345,15 +404,17 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             ] }
         ], {}));
 
-        const prompt = queryMock.mock.calls[0][0].prompt;
-        expect(typeof prompt).toBe("string");
-        expect(prompt).toBe("read this\n\n<file name=\"d.svg\">\n<svg/>\n</file>");
+        // Degrades to a single text block rather than image/document blocks.
+        const message = drainPrompt(queryMock.mock.calls[0][0].prompt);
+        expect(message.content).toEqual([
+            { type: "text", text: "read this\n\n<file name=\"d.svg\">\n<svg/>\n</file>" }
+        ]);
     });
 
     it("wires Trilium's in-process MCP server instance and disables built-in tools", async () => {
         scriptAgent([successResult()]);
         const provider = new ClaudeAgentProvider();
-        await collect(provider.chatChunks([{ role: "user", content: "hi" }], {}));
+        await collect(provider.chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
 
         const options = queryMock.mock.calls[0][0].options;
         expect(options.tools).toEqual([]);
@@ -449,6 +510,21 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         // Prompt matches the wiring: no note-tools guidance when they're off.
         expect(options.systemPrompt).not.toContain("load_skill");
         expect(options.systemPrompt).toContain("do not have access to the user's notes");
+    });
+
+    // A caller with no opinion gets no note access, the same reading `base_provider` gives an
+    // absent flag — so what a request leaves unsaid means one thing across every provider. This
+    // used to go the other way here, handing the whole tree to anything that simply did not ask.
+    it("omits note-tools wiring when the chat says nothing about them", async () => {
+        scriptAgent([successResult()]);
+        const provider = new ClaudeAgentProvider();
+        await collect(provider.chatChunks([{ role: "user", content: "hi" }], {}));
+
+        const options = queryMock.mock.calls[0][0].options;
+        expect(options.mcpServers).toBeUndefined();
+        expect(createMcpServerMock).not.toHaveBeenCalled();
+        expect(options.allowedTools).toEqual([]);
+        expect(options.systemPrompt).not.toContain("load_skill");
     });
 
     it("logs a diagnostic when the in-process MCP bridge fails to connect", async () => {
@@ -548,7 +624,10 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         const models = provider.getAvailableModels();
         expect(models.some(m => m.id === "claude-sonnet-5" && m.isDefault)).toBe(true);
         expect(provider.getModelPricing("claude-sonnet-5")).toEqual(expect.objectContaining({ input: 0, output: 0 }));
+        // A long-context variant prices like its base model, not as an unknown.
+        expect(provider.getModelPricing("claude-opus-4-8[1m]")).toEqual(expect.objectContaining({ input: 0, output: 0 }));
         expect(provider.getModelPricing("no-such-model")).toBeUndefined();
+        expect(provider.getModelPricing("no-such-model[1m]")).toBeUndefined();
         expect(() => provider.chat()).toThrow(/chatChunks/);
     });
 
@@ -746,7 +825,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             ] }
         ], {}));
 
-        const message = await drainPrompt(queryMock.mock.calls[0][0].prompt);
+        const message = drainPrompt(queryMock.mock.calls[0][0].prompt);
         expect(message.content).toEqual([
             { type: "image", source: { type: "base64", media_type: "image/png", data: "AQ==" } },
             { type: "text", text: "[attached image]" },
@@ -761,7 +840,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         await collect(provider.chatChunks([
             { role: "user", content: [{ type: "text", text: "line one" }, { type: "text", text: "line two" }] }
         ], {}));
-        expect(queryMock.mock.calls[0][0].prompt).toBe("line one\nline two");
+        expect(promptText(queryMock.mock.calls[0][0].prompt)).toBe("line one\nline two");
     });
 
     it("creates the isolating .git marker only when it is absent", async () => {
@@ -785,6 +864,73 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect(fs.statSync(path.join(agentDir, ".git", "HEAD")).mtimeMs).toBe(headBefore);
     });
 
+    it("switches models on the live session instead of respawning it", async () => {
+        const provider = new ClaudeAgentProvider();
+        const config = { chatNoteId: "note-model" };
+        scriptAgentSession([
+            [textDelta("a"), successResult("sess-M")],
+            [textDelta("b"), successResult("sess-M")]
+        ]);
+
+        await collect(provider.chatChunks([{ role: "user", content: "q1" }], { ...config, model: "claude-sonnet-5" }));
+        await collect(provider.chatChunks([
+            { role: "user", content: "q1" },
+            { role: "assistant", content: "a" },
+            { role: "user", content: "q2" }
+        ], { ...config, model: "claude-haiku-4-5-20251001" }));
+
+        // setModel is a streaming-input-only control: it is why a model change
+        // costs ~0 ms instead of a cold start.
+        expect(queryMock).toHaveBeenCalledTimes(1);
+        expect(setModelMock).toHaveBeenCalledExactlyOnceWith("claude-haiku-4-5-20251001");
+    });
+
+    it.each([
+        [ "note tools", { enableNoteTools: true }, { enableNoteTools: false } ],
+        [ "web search", {}, { enableWebSearch: true } ],
+        [ "extended thinking", {}, { enableExtendedThinking: true } ]
+    ])("starts a new session when %s, fixed at construction, changes", async (_option, before, after) => {
+        const provider = new ClaudeAgentProvider();
+        const config = { chatNoteId: "note-fixed" };
+        scriptAgent([textDelta("a"), successResult("sess-F")]);
+        await collect(provider.chatChunks([{ role: "user", content: "q1" }], { ...config, ...before }));
+
+        // The option is wired into query()'s options and can't be changed on a
+        // live session, so this must build a new one (and retire the old).
+        scriptAgent([textDelta("b"), successResult("sess-F2")]);
+        await collect(provider.chatChunks([
+            { role: "user", content: "q1" },
+            { role: "assistant", content: "a" },
+            { role: "user", content: "q2" }
+        ], { ...config, ...after }));
+
+        expect(queryMock).toHaveBeenCalledTimes(2);
+        expect(closeMock).toHaveBeenCalled();
+    });
+
+    it("closes the session after an aborted turn rather than reusing a half-finished one", async () => {
+        const controller = new AbortController();
+        const provider = new ClaudeAgentProvider();
+        const config = { chatNoteId: "note-abort" };
+
+        // The turn is cancelled mid-stream, so the session's real state is
+        // unknown — it must not be handed to the next turn.
+        queryMock.mockImplementation(() => makeQuery([textDelta("partial"), successResult("sess-X")]));
+        const chunks = await collect(provider.chatChunks(
+            [{ role: "user", content: "q" }],
+            config,
+            (controller.abort(), controller.signal)
+        ));
+
+        expect(chunks).toEqual([]);
+        expect(closeMock).not.toHaveBeenCalled(); // nothing was started to close
+
+        // A later turn starts a fresh session rather than resuming.
+        scriptAgent([textDelta("ok"), successResult("sess-Y")]);
+        await collect(provider.chatChunks([{ role: "user", content: "q" }], config));
+        expect(queryMock).toHaveBeenCalledTimes(1);
+    });
+
     it("evicts the oldest chat-note mapping once the session cap is exceeded", async () => {
         const provider = new ClaudeAgentProvider();
 
@@ -796,6 +942,11 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             scriptAgent([textDelta("r"), successResult(`sess-${i}`)]);
             await collect(provider.chatChunks([{ role: "user", content: "q" }], { chatNoteId: `filler-${i}` }));
         }
+
+        // This test is about the chat-note → session-id map, not the warm
+        // subprocess pool; drop the warm sessions so both follow-ups have to
+        // start a query and reveal what they would resume.
+        resetClaudeSessionPoolForTests();
 
         // Despite a perfectly matching transcript, the victim can no longer resume.
         scriptAgent([successResult()]);
@@ -816,6 +967,68 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         ], { chatNoteId: "filler-199" }));
         const fillerCall = queryMock.mock.calls[queryMock.mock.calls.length - 1][0];
         expect(fillerCall.options.resume).toBe("sess-199");
+    });
+
+    it("closes a session whose stream failed mid-turn instead of handing it to the next turn", async () => {
+        const provider = new ClaudeAgentProvider();
+        const config = { chatNoteId: "note-broken" };
+        const followUp = [
+            { role: "user" as const, content: "q1" },
+            { role: "assistant" as const, content: "a" },
+            { role: "user" as const, content: "q2" }
+        ];
+        // One stream: the first turn completes, the second fails partway.
+        queryMock.mockImplementation(() => Object.assign((async function* () {
+            yield textDelta("a");
+            yield successResult("sess-B");
+            yield textDelta("partial");
+            throw new Error("stream broke");
+        })(), { setModel: setModelMock, close: closeMock }));
+        await collect(provider.chatChunks([{ role: "user", content: "q1" }], config));
+
+        const failed = await collect(provider.chatChunks(followUp, config));
+        expect(failed.some(c => c.type === "error")).toBe(true);
+        expect(closeMock).toHaveBeenCalledTimes(1);
+
+        // A retry on the same history starts a new query.
+        scriptAgent([textDelta("b"), successResult("sess-B")]);
+        const retried = await collect(provider.chatChunks(followUp, config));
+        expect(queryMock).toHaveBeenCalledTimes(2);
+        expect(retried).toContainEqual({ type: "text", content: "b" });
+    });
+
+    it("starts a new session after the agent's stream ended mid-turn", async () => {
+        const provider = new ClaudeAgentProvider();
+        const config = { chatNoteId: "note-ended" };
+        scriptAgent([textDelta("cut off")]);
+        const chunks = await collect(provider.chatChunks([{ role: "user", content: "q" }], config));
+        expect(chunks).toContainEqual({ type: "text", content: "cut off" });
+
+        scriptAgent([textDelta("fresh"), successResult()]);
+        await collect(provider.chatChunks([{ role: "user", content: "q" }], config));
+        expect(queryMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps to the warm-session cap by closing idle sessions behind a busy oldest one", () => {
+        const fakeSession = (): ClaudeSession => ({
+            query: { close: vi.fn() } as unknown as ClaudeSession["query"],
+            input: new Pushable(),
+            fingerprint: "",
+            closed: false,
+            busy: false
+        });
+        const busy = fakeSession();
+        rememberWarmSession("busy", busy);
+        const idle: ClaudeSession[] = [];
+        for (let i = 0; i < MAX_WARM_SESSIONS; i++) {
+            const session = fakeSession();
+            rememberWarmSession(`idle-${i}`, session);
+            releaseSession(`idle-${i}`, session);
+            idle.push(session);
+        }
+
+        expect(busy.closed).toBe(false);
+        expect(idle.map(s => s.closed)).toEqual([true, ...Array(MAX_WARM_SESSIONS - 1).fill(false)]);
     });
 });
 
@@ -908,6 +1121,35 @@ describe("buildSubscriptionModelList", () => {
 
         const fable = merged.find(m => m.id === "claude-fable-9");
         expect(fable).toEqual({ id: "claude-fable-9", name: "Claude Fable 9", contextWindow: undefined, isSubscription: true, pricing: { input: 0, output: 0 } });
+    });
+
+    it("drops the `default` alias so the concrete row it shadows keeps its own name", () => {
+        // Claude Code lists `default` first, resolving to the same id as `opus[1m]`.
+        // Kept, it would win the dedupe and label the row "Default (recommended)".
+        const merged = buildSubscriptionModelList([
+            { value: "default", resolvedModel: "claude-opus-4-6[1m]", displayName: "Default (recommended)" },
+            { value: "opus[1m]", resolvedModel: "claude-opus-4-6[1m]", displayName: "Opus" },
+            { value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" }
+        ], curated);
+
+        expect(merged.map(m => m.name)).toEqual(["Sonnet", "Opus"]);
+        expect(merged.some(m => m.id === "claude-opus-4-6")).toBe(false);
+    });
+
+    it("treats a long-context id as a variant of its base model, next to it and without its default flag", () => {
+        const merged = buildSubscriptionModelList([
+            { value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" },
+            { value: "sonnet[1m]", resolvedModel: "claude-sonnet-5[1m]" },
+            { value: "claude-opus-4-6[1m]", displayName: "Opus" }
+        ], curated);
+
+        // Curated ordering survives: each variant sits directly after its base.
+        expect(merged.map(m => m.id)).toEqual(["claude-sonnet-5", "claude-sonnet-5[1m]", "claude-opus-4-6[1m]"]);
+        // Curated metadata is inherited, and the CLI's silence leaves the derived name.
+        expect(merged[1]).toMatchObject({ name: "Claude Sonnet 5 (1M)", contextWindow: 1000000, isSubscription: true, isDefault: false });
+        // ...including flags the base carries — but never a second default.
+        expect(merged[2]).toMatchObject({ name: "Opus", contextWindow: 1000000, isLegacy: true, isDefault: false });
+        expect(merged.filter(m => m.isDefault)).toHaveLength(1);
     });
 });
 
@@ -1097,5 +1339,14 @@ describe("ClaudeAgentProvider.recommendedModelIds", () => {
         expect([...ids].sort()).toEqual([
             "claude-fable-5", "claude-haiku-4-5-20251001", "claude-opus-4-8", "claude-sonnet-5"
         ]);
+    });
+
+    it("ranks long-context ids under their base model so they are recommended too", () => {
+        // `claude-opus-4-8[1m]` doesn't parse as a family/version on its own; unranked
+        // it would be left out even though it is the only Opus row Claude Code offers.
+        const ids = new ClaudeAgentProvider().recommendedModelIds(
+            ["claude-opus-4-8[1m]", "claude-opus-4-7", "claude-sonnet-5"].map(id => ({ id, name: id }))
+        );
+        expect([...ids].sort()).toEqual(["claude-opus-4-8[1m]", "claude-sonnet-5"]);
     });
 });

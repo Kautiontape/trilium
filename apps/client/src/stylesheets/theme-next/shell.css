@@ -177,8 +177,27 @@ body.layout-horizontal > .horizontal {
     align-items: center;
 }
 
-body[dir=ltr] #launcher-container {
-    scrollbar-gutter: stable both-edges;
+/* Thin launcher-rail scrollbar; the padding below (set from the JS-measured
+ * `--launcher-scrollbar-size`) offsets its width so it never shifts the centred buttons. */
+#launcher-container {
+    --scrollbar-thickness: 4px;
+    --scrollbar-thumb-thickness: 4px;
+    --scrollbar-thumb-hover-thickness: 4px;
+    scrollbar-width: thin;
+}
+
+/* Style the base pseudo (forms.css styles only :vertical) so WebKit shows a persistent bar
+ * instead of an auto-hiding overlay. */
+#launcher-container::-webkit-scrollbar {
+    width: var(--scrollbar-thickness);
+    height: var(--scrollbar-thickness);
+}
+
+@supports (-webkit-box-reflect: below) {
+    /* Let ::-webkit-scrollbar win over scrollbar-width on WebKit (mirrors forms.css's :root reset). */
+    #launcher-container {
+        scrollbar-width: unset;
+    }
 }
 
 #launcher-pane.vertical {
@@ -205,6 +224,7 @@ body[dir=ltr] #launcher-container {
     height: 100%;
     overflow-x: hidden;
     overflow-y: auto;
+    padding-inline-start: var(--launcher-scrollbar-size, 0px);
 }
 
 #launcher-pane.horizontal {
@@ -230,6 +250,7 @@ body[dir=ltr] #launcher-container {
     height: 100%;
     overflow-x: auto;
     overflow-y: hidden;
+    padding-block-start: var(--launcher-scrollbar-size, 0px);
 }
 
 @media (max-width: 991px) {
@@ -638,19 +659,17 @@ div.quick-search .dropdown-menu {
     --menu-item-icon-vert-offset: -.065em;
 }
 
-/*
- * TO FIX: The quick search results dropdown has a backdrop issue with the tree panel
- * when background effects are enabled in Electron.
- * As a temporary workaround, the backdrop and transparency are disabled for the
- * vertical layout.
- */
-body.layout-vertical.background-effects div.quick-search .dropdown-menu {
-    --menu-background-color: var(--menu-background-color-no-backdrop) !important;
-}
-
 /* Item */
 .quick-search .dropdown-menu *.dropdown-item {
     padding: 8px 12px !important;
+}
+
+:root .quick-search .dropdown-item:not(.disabled):hover,
+:root .quick-search .dropdown-item:not(.disabled):focus,
+:root .quick-search .dropdown-item:not(.disabled):focus-visible {
+    outline: none !important;
+    background: var(--hover-item-background-color);
+    color: var(--hover-item-text-color);
 }
 
 .quick-search .quick-search-item-icon {
@@ -1360,8 +1379,15 @@ body.layout-horizontal #rest-pane > .classic-toolbar-widget {
     border: 2px solid transparent;
 }
 
+/* Mobile has no #center-pane: its splits stack inside #detail-container instead. */
+body.mobile #detail-container .note-split {
+    transition: border-color 150ms ease-out;
+    border: 2px solid transparent;
+}
+
 /* The active split in a multi-split view */
-#center-pane > .split-note-container-widget:has(> .note-split.visible ~ .note-split.visible) > .note-split.active {
+#center-pane > .split-note-container-widget:has(> .note-split.visible ~ .note-split.visible) > .note-split.active,
+body.mobile #detail-container > .split-note-container-widget:has(> .note-split.visible ~ .note-split.visible) > .note-split.active {
     border-color: var(--link-selection-outline-color);
 }
 
@@ -1493,7 +1519,6 @@ body.experimental-feature-new-layout #center-pane .note-split > div.alert {
 
 /* The promoted attributes section */
 div.promoted-attributes-container {
-    display: flex;
     margin-inline-end: 10%;
     padding: 6px 0;
     gap: 8px;
@@ -1529,8 +1554,7 @@ div.promoted-attribute-cell {
 }
 
 /* A promoted attribute card (boolean attribute) */
-div.promoted-attribute-cell:has(input[type="checkbox"]):not(:has(.multiplicity > span)) {
-    /* Checbox attribute, without multiplicity */
+div.promoted-attribute-cell:has(input[type="checkbox"]) {
     padding-inline-end: var(--pa-card-padding-inline-start);
 }
 
@@ -1553,6 +1577,23 @@ div.promoted-attribute-cell div.input-group {
     padding: 1px 6px;
 }
 
+/*
+ * The field of a label holding several values, which in this theme sits inside a card of its own. The
+ * card is the frame — as it already is for the group around a single value's box, whose input gives up
+ * its border and background here — so the field brings none, a second rounded edge just within the
+ * first reading as two boxes where there is one.
+ *
+ * The border is kept and made invisible rather than dropped, so the chips sit where they would in a
+ * theme that does frame the field.
+ */
+div.promoted-attribute-cell div.promoted-attribute-values {
+    min-height: auto;
+
+    > .tn-field {
+        border-color: transparent;
+    }
+}
+
 div.promoted-attribute-cell input {
     padding: 2px 8px;
     font-weight: 500;
@@ -1573,29 +1614,18 @@ div.promoted-attribute-cell span.open-external-link-button {
 }
 
 div.promoted-attribute-cell .tn-checkbox {
-    --box-label-gap: 0;
+    --box-label-gap: 0px;
 
-    height: 1cap;
+    height: 1em;
+    vertical-align: calc((1cap - 1em) / 2);
+}
+
+div.promoted-attribute-cell .tn-checkbox > input[type="checkbox"] {
+    width: var(--box-size) !important;
 }
 
 div.promoted-attribute-cell.promoted-attribute-label-boolean > div:first-of-type {
-    margin-inline-end: 1.5em;
-}
-
-/* The element containing the "new attribute" and "remove this attribute button" */
-div.promoted-attribute-cell .multiplicity:has(span) {
-    --icon-button-size: 24px;
-
-    margin-inline-start: 8px;
-    margin-inline-end: calc(var(--pa-card-padding-inline-start) - var(--pa-card-padding-inline-end));
-    font-size: 0; /* Prevent whitespaces creating a gap between buttons */
-    display: flex;
-}
-
-div.promoted-attribute-cell .multiplicity:has(span) span {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    margin-inline-end: 0.5em;
 }
 
 div.promoted-attribute-cell.promoted-attribute-label-color {

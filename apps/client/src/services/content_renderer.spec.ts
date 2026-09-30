@@ -53,11 +53,18 @@ vi.mock("./open.js", () => ({
     }
 }));
 
-const loadElkIfNeeded = vi.fn(async (..._args: any[]) => {});
+const getMermaidConfig = vi.fn(() => ({ theme: "default", layout: "dagre", look: "classic" }));
 const postprocessMermaidSvg = vi.fn((...args: any[]) => `<svg class="mm">${args[0]}</svg>`);
 vi.mock("./mermaid.js", () => ({
-    loadElkIfNeeded: (...a: any[]) => loadElkIfNeeded(...a),
+    getMermaidConfig: () => getMermaidConfig(),
     postprocessMermaidSvg: (...a: any[]) => postprocessMermaidSvg(...a)
+}));
+
+// isOfficeMimeType comes (unmocked) from @triliumnext/commons; only the server
+// round-trip is stubbed out.
+const renderOfficeToHtml = vi.fn(async (..._args: any[]) => ({ css: "", html: `<div class="office-doc">converted</div>` }));
+vi.mock("./office_renderer.js", () => ({
+    renderOfficeToHtml: (...a: any[]) => renderOfficeToHtml(...a)
 }));
 
 const mermaidRender = vi.fn(async (..._args: any[]) => ({ svg: "<g/>" }));
@@ -66,8 +73,12 @@ vi.mock("mermaid", () => ({
     default: { mermaidAPI: { initialize: (...a: any[]) => mermaidInitialize(...a), render: (...a: any[]) => mermaidRender(...a) } }
 }));
 
-const pdfViewerComponent = vi.fn(() => null);
-vi.mock("../widgets/type_widgets/file/PdfViewer", () => ({ default: pdfViewerComponent }));
+const pdfViewerComponent = vi.fn((_props: any) => null);
+// Only the component is stubbed: the URL the viewer is handed is the assertion below (#8877).
+vi.mock("../widgets/type_widgets/file/PdfViewer", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../widgets/type_widgets/file/PdfViewer")>()),
+    default: pdfViewerComponent
+}));
 
 const webViewComponent = vi.fn((_props: any): VNode<any> => h("span", { class: "mock-webview-marker" }));
 vi.mock("../widgets/type_widgets/WebView", () => ({ default: webViewComponent }));
@@ -284,6 +295,14 @@ describe("getRenderedContent file rendering", () => {
         const { type, $renderedContent } = await getRenderedContent(note);
         expect(type).toBe("pdf");
         expect(pdfViewerComponent).toHaveBeenCalled();
+        // Root-relative, never `../../api/...`: a path climbing out of /pdfjs/web is rejected by
+        // proxies that filter traversal, before the request reaches Trilium (#8877).
+        expect(pdfViewerComponent.mock.calls.at(-1)?.[0].pdfUrl).toBe(`/api/notes/${note.noteId}/open`);
+
+        const att = buildAttachment({ role: "file", mime: "application/pdf" });
+        await getRenderedContent(att);
+        expect(pdfViewerComponent.mock.calls.at(-1)?.[0].pdfUrl).toBe(`/api/attachments/${att.attachmentId}/open`);
+
         expect($renderedContent.find(".file-download").length).toBe(1);
         const $open = $renderedContent.find(".file-open");
         expect($open.length).toBe(1);
@@ -379,6 +398,65 @@ describe("getRenderedContent file rendering", () => {
     });
 });
 
+describe("getRenderedContent office rendering", () => {
+    const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    it("renders a docx file note as a converted, sanitized preview plus file actions", async () => {
+        const note = buildNote({ title: "Doc", type: "file" });
+        note.mime = DOCX;
+        const { type, $renderedContent } = await getRenderedContent(note);
+        expect(type).toBe("office");
+        expect(renderOfficeToHtml).toHaveBeenCalledWith("notes", note.noteId, { trim: undefined });
+        // the padded body sits inside a dedicated, unpadded scroll host
+        expect($renderedContent.find(".office-preview-scroll > .office-preview-body").html()).toContain("converted");
+        // the file remains downloadable / openable
+        expect($renderedContent.find(".file-download").length).toBe(1);
+        expect($renderedContent.find(".file-open").length).toBe(1);
+    });
+
+    it("attaches a spreadsheet's stylesheet inside the preview body, as an element", async () => {
+        renderOfficeToHtml.mockResolvedValueOnce({
+            css: ".spreadsheet-table .sst-1{font-weight:bold}",
+            html: '<table class="spreadsheet-table"><td class="sst-1">x</td></table>'
+        });
+        const note = buildNote({ title: "Book", type: "file" });
+        note.mime = DOCX;
+
+        const { $renderedContent } = await getRenderedContent(note);
+
+        const $style = $renderedContent.find(".office-preview-body > style");
+        expect($style.length).toBe(1);
+        // Set as text, so the rules are never parsed as markup on the way in.
+        expect($style.text()).toBe(".spreadsheet-table .sst-1{font-weight:bold}");
+    });
+
+    it("shows an admonition (and drops the preview body) when conversion fails", async () => {
+        renderOfficeToHtml.mockRejectedValueOnce(new Error("bad zip"));
+        const note = buildNote({ title: "DocBad", type: "file" });
+        note.mime = "application/vnd.oasis.opendocument.text";
+        const { type, $renderedContent } = await getRenderedContent(note);
+        expect(type).toBe("office");
+        expect($renderedContent.find(".admonition.caution").length).toBe(1);
+        expect($renderedContent.find(".office-preview-scroll, .office-preview-body").length).toBe(0);
+    });
+
+    it("does not run the heavy conversion in tooltip mode", async () => {
+        const note = buildNote({ title: "DocT", type: "file" });
+        note.mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        const { $renderedContent } = await getRenderedContent(note, { tooltip: true });
+        expect(renderOfficeToHtml).not.toHaveBeenCalled();
+        expect($renderedContent.hasClass("no-preview")).toBe(true);
+    });
+
+    it("renders an office attachment preview without the note-only footer", async () => {
+        const att = buildAttachment({ role: "file", mime: "application/vnd.oasis.opendocument.spreadsheet" });
+        const { type, $renderedContent } = await getRenderedContent(att);
+        expect(type).toBe("office");
+        expect(renderOfficeToHtml).toHaveBeenCalledWith("attachments", att.attachmentId, { trim: undefined });
+        expect($renderedContent.find(".file-footer").length).toBe(0);
+    });
+});
+
 describe("getRenderedContent render / doc / protectedSession / mermaid", () => {
     it("renders a render-type note and surfaces render-service output", async () => {
         const note = buildNote({ title: "R", type: "render" });
@@ -436,7 +514,9 @@ describe("getRenderedContent render / doc / protectedSession / mermaid", () => {
         const { type, $renderedContent } = await getRenderedContent(note);
         expect(type).toBe("mermaid");
         expect(mermaidInitialize).toHaveBeenCalledOnce();
-        expect(loadElkIfNeeded).toHaveBeenCalledOnce();
+        expect(mermaidInitialize).toHaveBeenCalledWith(
+            expect.objectContaining({ layout: "dagre", look: "classic", startOnLoad: false })
+        );
         expect(postprocessMermaidSvg).toHaveBeenCalledWith("<g/>");
         expect($renderedContent.find("svg.mm").length).toBe(1);
     });

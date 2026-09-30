@@ -141,8 +141,8 @@ const TAGS_SAMPLE = `<html lang="en-US">
 </html>`;
 
 // Real OneNote source (web-OneNote Graph export): the decorative (non-checkbox) note tags. Each is a
-// paragraph carrying a `data-tag` that OneNote renders as an icon — we render it as an emoji prefix.
-const EMOJI_TAGS_SAMPLE = `<html lang="en-US">
+// paragraph carrying a `data-tag` that OneNote renders as an icon — we render it as an icon prefix.
+const DECORATIVE_TAGS_SAMPLE = `<html lang="en-US">
     <body data-absolute-enabled="true" style="font-family:Calibri;font-size:11pt">
         <div style="position:absolute;left:48px;top:115px;width:624px">
             <p data-tag="important" style="margin-top:0pt;margin-bottom:0pt">Important</p>
@@ -150,6 +150,17 @@ const EMOJI_TAGS_SAMPLE = `<html lang="en-US">
             <p data-tag="idea" style="margin-top:0pt;margin-bottom:0pt">Idea</p>
             <p data-tag="password" style="margin-top:0pt;margin-bottom:0pt">Password</p>
             <p data-tag="phone-number" style="margin-top:0pt;margin-bottom:0pt">Phone number</p>
+        </div>
+    </body>
+</html>`;
+
+// Constructed from the same shapes: the Project A/B tags, whose glyph is a character Boxicons has no
+// icon for.
+const CHARACTER_TAGS_SAMPLE = `<html lang="en-US">
+    <body data-absolute-enabled="true" style="font-family:Calibri;font-size:11pt">
+        <div style="position:absolute;left:48px;top:115px;width:624px">
+            <p data-tag="project-a" style="margin-top:0pt;margin-bottom:0pt">First project</p>
+            <p data-tag="project-b" style="margin-top:0pt;margin-bottom:0pt">Second project</p>
         </div>
     </body>
 </html>`;
@@ -529,42 +540,55 @@ describe("convertPageHtml", () => {
         expect(root.querySelectorAll(`input[type="checkbox"]`)).toHaveLength(4);
         // Only the schedule-meeting:completed item is checked.
         expect(root.querySelectorAll("input[checked]")).toHaveLength(1);
-        // Each meaningful checkbox tag keeps an inner emoji alongside the checkbox.
+        // Each meaningful checkbox tag keeps an inner glyph alongside the checkbox — an icon, or the
+        // emoji for the priorities, whose glyph is a numeral.
         expect(out).toContain("1️⃣ Priority 1");
-        expect(out).toContain("📅 Schedule meeting");
-        expect(out).toContain("🗣️ Discuss with Manager");
-        expect(out).toContain("📋 Client Request");
+        expect(out).toContain(`${icon("bx-calendar")} Schedule meeting`);
+        expect(out).toContain(`${icon("bx-conversation")} Discuss with Manager`);
+        expect(out).toContain(`${icon("bx-clipboard")} Client Request`);
         // The raw data-tag attribute is consumed, not left on the output.
         expect(out).not.toContain("data-tag");
     });
 
-    it("renders decorative tags as an emoji prefix, leaving the paragraph in place", () => {
-        const out = converter.convertPageHtml(EMOJI_TAGS_SAMPLE);
+    it("renders decorative tags as an icon prefix, leaving the paragraph in place", () => {
+        const out = converter.convertPageHtml(DECORATIVE_TAGS_SAMPLE);
         const root = parse(out);
 
         // No checkbox tags here, so nothing becomes a task list.
         expect(root.querySelectorAll("ul.todo-list")).toHaveLength(0);
         expect(root.querySelectorAll("p")).toHaveLength(5);
-        expect(out).toContain("⭐ Important");
-        expect(out).toContain("❓ Question");
-        expect(out).toContain("💡 Idea");
-        expect(out).toContain("🔑 Password");
-        expect(out).toContain("📞 Phone number");
+        expect(out).toContain(`${icon("bx-star")} Important`);
+        expect(out).toContain(`${icon("bx-help-circle")} Question`);
+        expect(out).toContain(`${icon("bx-bulb")} Idea`);
+        expect(out).toContain(`${icon("bx-key")} Password`);
+        expect(out).toContain(`${icon("bx-phone")} Phone number`);
         expect(out).not.toContain("data-tag");
+
+        // The sanitizer keeps the empty span and its classes, which is the whole of an icon.
+        expect(root.querySelectorAll("span.tn-icon")).toHaveLength(5);
+    });
+
+    it("keeps an emoji for the tags whose glyph is a character", () => {
+        const out = converter.convertPageHtml(CHARACTER_TAGS_SAMPLE);
+
+        // Boxicons has no alphabet, so Project A/B stay the boxed letters OneNote draws.
+        expect(out).toContain("🅰️ First project");
+        expect(out).toContain("🅱️ Second project");
+        expect(out).not.toContain("tn-icon");
     });
 
     it("supports multiple comma-separated tags on one paragraph", () => {
         const out = converter.convertPageHtml(MULTI_TAGS_SAMPLE);
         const root = parse(out);
 
-        // The checkbox tag turns its paragraph into a task item, prefixed with the decorative emoji.
+        // The checkbox tag turns its paragraph into a task item, prefixed with the decorative icons.
         expect(root.querySelectorAll("ul.todo-list")).toHaveLength(1);
         expect(root.querySelectorAll(`input[type="checkbox"]`)).toHaveLength(1);
         expect(root.querySelectorAll("input[checked]")).toHaveLength(0);
-        expect(out).toContain("⭐❓ Todo plus star plus question");
+        expect(out).toContain(`${icon("bx-star")}${icon("bx-help-circle")} Todo plus star plus question`);
 
-        // The decorative-only paragraph stays a <p>, prefixed with both emoji.
-        expect(out).toContain("🎬📚 Movie and book");
+        // The decorative-only paragraph stays a <p>, prefixed with both icons.
+        expect(out).toContain(`${icon("bx-movie")}${icon("bx-book")} Movie and book`);
     });
 
     it("normalizes OneNote resource references so the importer can rewrite them", () => {
@@ -790,6 +814,91 @@ describe("convertPageHtml", () => {
         expect(out).toContain(`<span class="text-big">Title</span>`);
         expect(out).toContain("<code>Code</code>");
     });
+
+    it("merges a run of all-Consolas paragraphs into a code block, keeping true inline code", () => {
+        // Mirrors a real OneNote export: an inline Consolas span, a three-line code passage, and a
+        // trailing paragraph whose Consolas paragraph mark is dead styling (every text run
+        // overrides it back to Calibri) — the latter must not become code at all.
+        const sample = `<body data-absolute-enabled="true" style="font-family:Calibri;font-size:11pt">
+            <div style="position:absolute;left:48px;top:115px;width:720px">
+                <p style="margin-top:0pt;margin-bottom:0pt">This is normal text, with <span style="font-family:Consolas">monospace text</span>.</p>
+                <br />
+                <p style="font-family:Consolas;margin-top:0pt;margin-bottom:0pt">void main() {</p>
+                <p style="font-family:Consolas;margin-top:0pt;margin-bottom:0pt">printf(&quot;Hello world.&quot;);</p>
+                <p style="font-family:Consolas;margin-top:0pt;margin-bottom:0pt">}</p>
+                <br />
+                <p style="font-family:Consolas;margin-top:0pt;margin-bottom:0pt"><span style="font-family:Calibri">Back to normal text.</span></p>
+            </div></body>`;
+        const out = converter.convertPageHtml(sample);
+
+        // The &quot; entities come out as literal quotes: decoded when the line text is extracted,
+        // and the sanitizer only re-escapes &<> in text content.
+        expect(out).toContain(`<pre><code class="language-text-x-trilium-auto">void main() {\nprintf("Hello world.");\n}</code></pre>`);
+        expect(out).toContain("<code>monospace text</code>");
+        // The dead-font paragraph stays plain text: exactly one block + one inline <code> overall.
+        expect(out).toContain("Back to normal text.");
+        expect(out.match(/<code/g) ?? []).toHaveLength(2);
+    });
+
+    it("bridges block-level <br> gaps inside a code run as blank lines, flattening formatting", () => {
+        // The bold span's formatting is dropped (code blocks are plain text), the <br> between the
+        // code lines becomes an empty line, and a paragraph that is all-Consolas only through its
+        // spans still joins the run.
+        const sample = `<body><div>
+            <p style="font-family:Consolas"><span style="font-weight:bold">let x</span> = 1;</p>
+            <br />
+            <p><span style="font-family:Consolas">return x;</span></p>
+        </div></body>`;
+        const out = converter.convertPageHtml(sample);
+
+        expect(out).toContain(`<pre><code class="language-text-x-trilium-auto">let x = 1;\n\nreturn x;</code></pre>`);
+        expect(out).not.toContain("<strong>");
+    });
+
+    it("leaves a lone all-Consolas paragraph as inline code and breaks runs on normal text", () => {
+        // A single code-styled line reads fine inline; the intervening normal paragraph keeps the
+        // two Consolas lines from merging across it.
+        const sample = `<body><div>
+            <p style="font-family:Consolas">npm install</p>
+            <p>Then run it:</p>
+            <p style="font-family:Consolas">npm start</p>
+        </div></body>`;
+        const out = converter.convertPageHtml(sample);
+
+        expect(out).not.toContain("<pre>");
+        expect(out).toContain("<code>npm install</code>");
+        expect(out).toContain("<code>npm start</code>");
+    });
+
+    it("sees through formatting wrappers and whitespace when judging what renders in Consolas", () => {
+        // Text inside a formatting child with no font-family of its own still renders in the
+        // paragraph's Consolas, so the lone paragraph becomes inline code with the wrapper kept.
+        const wrapped = converter.convertPageHtml(
+            `<body><div><p style="font-family:Consolas"><strong>ls -la</strong></p></div></body>`
+        );
+        expect(wrapped).toContain("<code><strong>ls -la</strong></code>");
+
+        // Whitespace-only direct text is not "text rendering in Consolas": with the only real text
+        // overridden to Calibri, the paragraph is not code at all — neither block nor inline.
+        const whitespace = converter.convertPageHtml(
+            `<body><div><p style="font-family:Consolas"> <span style="font-family:Calibri">plain</span></p></div></body>`
+        );
+        expect(whitespace).toContain("plain");
+        expect(whitespace).not.toContain("<code>");
+    });
+
+    it("treats an empty Consolas paragraph inside a run as a blank code line", () => {
+        // The empty paragraph has no text to judge, so only its own Consolas paragraph mark lets it
+        // join the run — as an empty line between the two code lines.
+        const sample = `<body><div>
+            <p style="font-family:Consolas">a</p>
+            <p style="font-family:Consolas"></p>
+            <p style="font-family:Consolas">b</p>
+        </div></body>`;
+        const out = converter.convertPageHtml(sample);
+
+        expect(out).toContain(`<pre><code class="language-text-x-trilium-auto">a\n\nb</code></pre>`);
+    });
 });
 
 describe("extractPageCreatedDate", () => {
@@ -805,3 +914,8 @@ describe("extractPageCreatedDate", () => {
         expect(converter.extractPageCreatedDate(`<html><head><meta name="created" /></head><body></body></html>`)).toBeUndefined();
     });
 });
+
+/** One note tag's icon, in the markup a text note stores icons as. */
+function icon(name: string) {
+    return `<span class="tn-icon bx ${name}"></span>`;
+}

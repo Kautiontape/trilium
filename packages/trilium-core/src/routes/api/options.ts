@@ -1,7 +1,7 @@
 
 
-import type { OptionNames } from "@triliumnext/commons";
-import type { Request } from "express";
+import type { OptionNames, UserFont } from "@triliumnext/commons";
+import type { Request } from "../../http_interface";
 
 import attributeService from "../../services/attributes.js";
 import config from "../../services/config.js";
@@ -10,6 +10,7 @@ import { getLog } from "../../services/log.js";
 import optionService from "../../services/options.js";
 import searchService from "../../services/search/services/search.js";
 import { getSql } from "../../services/sql/index.js";
+import syncOptions from "../../services/sync_options.js";
 import { ValidationError } from "../../errors.js";
 
 interface UserTheme {
@@ -29,6 +30,7 @@ const ALLOWED_OPTIONS = new Set<OptionNames>([
     "revisionSnapshotTimeInterval",
     "revisionSnapshotTimeIntervalTimeScale",
     "revisionSnapshotNumberLimit",
+    "revisionIgnoreNamedSnapshots",
     "zoomFactor",
     "theme",
     "codeBlockTheme",
@@ -57,6 +59,7 @@ const ALLOWED_OPTIONS = new Set<OptionNames>([
     "detailFontFamily",
     "monospaceFontSize",
     "monospaceFontFamily",
+    "monospaceLigaturesEnabled",
     "openNoteContexts",
     "vimKeymapEnabled",
     "codeLineWrapEnabled",
@@ -67,10 +70,16 @@ const ALLOWED_OPTIONS = new Set<OptionNames>([
     "spellCheckLanguageCode",
     "imageMaxWidthHeight",
     "imageJpegQuality",
+    "imageResize",
+    "imageJpegHandling",
+    "imagePngHandling",
+    "imageConversionQuality",
     "leftPaneWidth",
     "leftPaneVisible",
     "rightPaneWidth",
     "rightPaneCollapsedItems",
+    "rightPaneSelectedTab",
+    "rightPaneNoteMapType",
     "rightPaneVisible",
     "nativeTitleBarVisible",
     "headingStyle",
@@ -83,6 +92,9 @@ const ALLOWED_OPTIONS = new Set<OptionNames>([
     "dailyBackupEnabled",
     "weeklyBackupEnabled",
     "monthlyBackupEnabled",
+    "customDbBackupDir",
+    "backupEnableCompression",
+    "backupEnableEncryption",
     "motionEnabled",
     "shadowsEnabled",
     "smoothScrollEnabled",
@@ -106,23 +118,35 @@ const ALLOWED_OPTIONS = new Set<OptionNames>([
     "editedNotesOpenInRibbon",
     "locale",
     "formattingLocale",
+    "defaultContentLanguage",
     "firstDayOfWeek",
     "firstWeekOfYear",
     "minDaysInFirstWeek",
     "languages",
     "textNoteEditorType",
     "textNoteEditorMultilineToolbar",
+    "textNoteDoubleQuoteStyle",
+    "textNoteSingleQuoteStyle",
+    "textNotePunctuationReplacementsEnabled",
+    "textNoteMathReplacementsEnabled",
+    "textNoteSymbolReplacementsEnabled",
+    "textNoteCustomReplacements",
     "textNoteEmojiCompletionEnabled",
     "textNoteCompletionEnabled",
     "textNoteSlashCommandsEnabled",
     "textNoteContentHintsEnabled",
     "textNoteAutoLinkPreviewsEnabled",
+    "textNoteHtmlSupportEnabled",
+    "clipboardImageEmbedEnabled",
     "includeNoteDefaultBoxSize",
     "layoutOrientation",
     "backgroundEffects",
     "allowedHtmlTags",
+    "cleanupToolOptions",
+    "imageCompressionToolOptions",
     "searchEnableFuzzyMatching",
     "searchAutocompleteFuzzy",
+    "searchResultsPageSize",
     "redirectBareDomain",
     "showLoginInShareTheme",
     "splitEditorOrientation",
@@ -133,6 +157,7 @@ const ALLOWED_OPTIONS = new Set<OptionNames>([
     // LLM options
     "aiEnabled",
     "llmProviders",
+    "aiAssistantModel",
     "mcpEnabled",
     // OCR options
     "ocrAutoProcessImages",
@@ -169,6 +194,11 @@ function getOptions() {
     resultMap["sqlConsoleEnabled"] = config.Security.sqlConsoleEnabled ? "true" : "false";
     // Desktop LAN-access override (read-only; toggled via the Electron security bridge)
     resultMap["allowLanAccess"] = config.Security.allowLanAccess ? "true" : "false";
+    // Expose the sync address actually in use (read-only), which config.ini / env vars can override
+    // so that a development copy of a live document does not push to the live sync server.
+    const syncServerHost = syncOptions.isSyncSetup() ? syncOptions.getSyncServerHost() : null;
+    resultMap["effectiveSyncServerHost"] = syncServerHost ? stripSyncCredentials(syncServerHost) : "";
+    resultMap["syncServerHostOverridden"] = config.Sync.syncServerHost ? "true" : "false";
 
     // Detect if the user has any backend scripts with #run labels (backendStartup, hourly, daily).
     // Filter by MIME type since #run can also appear on frontend scripts.
@@ -259,12 +289,38 @@ function getUserThemes() {
     return ret;
 }
 
+function getUserFonts() {
+    const notes = searchService.searchNotes("#customFont", { ignoreHoistedNote: true });
+    const ret: UserFont[] = [];
+
+    for (const note of notes) {
+        // A font whose bytes cannot be read — a protected note outside a protected session — has
+        // nothing to offer the picker.
+        if (!note.isContentAvailable()) {
+            continue;
+        }
+
+        ret.push({
+            noteId: note.noteId,
+            title: note.getTitleOrProtected(),
+            blobId: note.blobId ?? ""
+        });
+    }
+
+    return ret;
+}
+
 /** Check if an option can be read by the client (GET responses). */
 function isReadable(name: string) {
     return (ALLOWED_OPTIONS as Set<string>).has(name)
         || name.startsWith("keyboardShortcuts")
         || name.endsWith("Collapsed")
         || name.startsWith("hideArchivedNotes");
+}
+
+/** Removes any `user:password@` from a sync address, so it can be shown in the UI. */
+function stripSyncCredentials(host: string) {
+    return host.replace(/^((?:[a-z][a-z\d+.-]*:)?\/\/)?[^/?#]*@/i, "$1");
 }
 
 /** Check if an option can be written by the client (PUT requests). */
@@ -277,5 +333,6 @@ export default {
     getOptions,
     updateOption,
     updateOptions,
-    getUserThemes
+    getUserThemes,
+    getUserFonts
 };

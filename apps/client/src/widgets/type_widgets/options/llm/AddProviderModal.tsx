@@ -6,6 +6,7 @@ import { useMemo, useState } from "preact/hooks";
 import { Trans } from "react-i18next";
 
 import { t } from "../../../../services/i18n";
+import { isStandalone } from "../../../../services/utils";
 import { Badge } from "../../../react/Badge";
 import { Card, CardSection } from "../../../react/Card";
 import FormTextBox from "../../../react/FormTextBox";
@@ -13,15 +14,9 @@ import MaskedIcon from "../../../react/MaskedIcon";
 import SelectableCard, { SelectableCardGrid } from "../../../react/SelectableCard";
 import WizardModal, { type WizardStep } from "../../../react/WizardModal";
 import OptionsRow from "../components/OptionsRow";
-import anthropicIcon from "./icons/anthropic.svg?url";
-import claudeAgentIcon from "./icons/claude-ai.svg?url";
-import deepseekIcon from "./icons/deepseek.svg?url";
-import geminiIcon from "./icons/gemini.svg?url";
-import lmStudioIcon from "./icons/lmstudio.svg?url";
-import ollamaIcon from "./icons/ollama.svg?url";
-import openaiIcon from "./icons/openai.svg?url";
-import openAiCompatibleIcon from "./icons/robot.svg?url";
+import { useAntigravityDownload } from "./antigravity_download";
 import ModelSelection from "./ModelSelection";
+import { PROVIDER_ICONS } from "./provider_icons.js";
 
 export interface LlmProviderConfig {
     id: string;
@@ -55,10 +50,26 @@ export interface ProviderType {
      * headed "Cloud providers", is a line of height for nothing.
      */
     description?: string;
+    /**
+     * What the connection step shows when the provider has neither a key nor an
+     * endpoint to ask for: the full account-and-prerequisite story, in place of
+     * the fields that would otherwise fill the step. Blank lines separate its
+     * paragraphs, so the translation decides where they fall.
+     */
+    connectionDescription?: string;
     /** One-line setup reminder shown under the endpoint field (i18n key, rendered via `<Trans>`). */
     setupHintKey?: string;
     /** Marks the provider as beta, shown as a badge next to its name. */
     beta?: boolean;
+    /**
+     * The provider drives a program on the machine, so the standalone build —
+     * where the whole server is a worker inside the page — has nothing to run it
+     * on; core refuses to instantiate it there at all. Such a card is shown
+     * disabled with the reason in place of its blurb, rather than dropped: the
+     * provider is documented and the user may well be looking for it, and a list
+     * that silently omits it leaves them hunting.
+     */
+    needsHostProcess?: boolean;
     /**
      * How the provider authenticates: a key it requires (vendor APIs), one it may
      * take (self-hosted endpoints that sit behind a proxy or gateway), or none at
@@ -70,6 +81,8 @@ export interface ProviderType {
      * an advanced override (vendor APIs), or not applicable. Defaults to `"advanced"`.
      */
     baseUrl?: "required" | "advanced" | "none";
+    /** How long listing the provider's models can take, when it needs longer than the default minute. */
+    modelListTimeoutMs?: number;
     /**
      * Which section of the provider list this card belongs to — how it is billed,
      * mirroring the three the user guide describes: metered API keys, a fixed-fee
@@ -90,7 +103,7 @@ export interface ProviderType {
  */
 const PROVIDER_GROUPS = [
     { id: "cloud", columns: 2, headingKey: "llm.provider_group_cloud", descriptionKey: "llm.provider_group_cloud_description" },
-    { id: "subscription", columns: 1, headingKey: "llm.provider_group_subscription", descriptionKey: "llm.provider_group_subscription_description" },
+    { id: "subscription", columns: 2, headingKey: "llm.provider_group_subscription", descriptionKey: "llm.provider_group_subscription_description" },
     { id: "local", columns: 2, headingKey: "llm.provider_group_local", descriptionKey: "llm.provider_group_local_description" },
     // Kept apart from the local runtimes: the same card reaches a hosted
     // OpenAI-compatible service (OpenRouter, Groq, …), so neither "no usage cost"
@@ -101,41 +114,50 @@ const PROVIDER_GROUPS = [
 type ProviderGroupId = (typeof PROVIDER_GROUPS)[number]["id"];
 
 export const PROVIDER_TYPES: ProviderType[] = [
-    { id: "anthropic", name: "Anthropic", group: "cloud", defaultBaseUrl: "https://api.anthropic.com/v1", iconUrl: anthropicIcon },
-    { id: "openai", name: "OpenAI", group: "cloud", defaultBaseUrl: "https://api.openai.com/v1", iconUrl: openaiIcon },
-    { id: "google", name: "Google Gemini", group: "cloud", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta", iconUrl: geminiIcon },
+    { id: "anthropic", name: "Anthropic", group: "cloud", defaultBaseUrl: "https://api.anthropic.com/v1", iconUrl: PROVIDER_ICONS.anthropic },
+    { id: "openai", name: "OpenAI", group: "cloud", defaultBaseUrl: "https://api.openai.com/v1", iconUrl: PROVIDER_ICONS.openai },
+    { id: "google", name: "Google Gemini", group: "cloud", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta", iconUrl: PROVIDER_ICONS.google },
     // Reachable through the custom endpoint card too — it speaks the OpenAI API —
     // but carded here so its models resolve against the committed price table,
     // which a nameless endpoint never can.
-    { id: "deepseek", name: "DeepSeek", group: "cloud", defaultBaseUrl: "https://api.deepseek.com/v1", iconUrl: deepseekIcon, beta: true },
+    { id: "deepseek", name: "DeepSeek", group: "cloud", defaultBaseUrl: "https://api.deepseek.com/v1", iconUrl: PROVIDER_ICONS.deepseek },
     // Uses the Claude Agent SDK on the server; auth belongs to Claude Code (`claude /login`),
     // and usage is covered by the subscription rather than charged per token.
-    { id: "claude-agent", name: "Claude Code", group: "subscription", defaultBaseUrl: "", iconUrl: claudeAgentIcon, description: t("llm.provider_desc_claude_agent"), beta: true, apiKey: "none", baseUrl: "none" },
+    { id: "claude-agent", name: "Claude Code", group: "subscription", defaultBaseUrl: "", iconUrl: PROVIDER_ICONS["claude-agent"], connectionDescription: t("llm.claude_agent_description"), apiKey: "none", baseUrl: "none", needsHostProcess: true },
+    // The same arrangement over the GitHub Copilot CLI, driven in its ACP mode;
+    // auth belongs to the CLI (`copilot login`).
+    { id: "copilot-agent", name: "GitHub Copilot", group: "subscription", defaultBaseUrl: "", iconUrl: PROVIDER_ICONS["copilot-agent"], connectionDescription: t("llm.copilot_agent_description"), beta: true, apiKey: "none", baseUrl: "none", needsHostProcess: true },
+    // Gemini on a Google account through Google's Antigravity ACP server; the server
+    // signs in itself, opening the Google sign-in page the first time models are listed.
+    // That sign-in runs inside the model-list request, so the request outlasts the
+    // server's own 5-minute wait for it (`SIGN_IN_TIMEOUT_MS`).
+    { id: "antigravity-agent", name: "Google Antigravity", group: "subscription", defaultBaseUrl: "", iconUrl: PROVIDER_ICONS["antigravity-agent"], connectionDescription: t("llm.antigravity_agent_description"), beta: true, apiKey: "none", baseUrl: "none", needsHostProcess: true, modelListTimeoutMs: 6 * 60_000 },
     // The three self-hosted cards share one server-side provider; they differ only in
     // the endpoint they prefill and the setup hint they show.
     // No blurbs: the group heading already says local/self-hosted, and how to start
     // each server belongs on the connection step, where the setup hints live.
     {
         id: "ollama", name: "Ollama", group: "local", defaultBaseUrl: "http://localhost:11434", prefillBaseUrl: true,
-        iconUrl: ollamaIcon,
-        setupHintKey: "llm.setup_hint_ollama", apiKey: "none", baseUrl: "required",
-        beta: true
+        iconUrl: PROVIDER_ICONS.ollama,
+        setupHintKey: "llm.setup_hint_ollama", apiKey: "none", baseUrl: "required"
     },
     {
         id: "lmstudio", name: "LM Studio", group: "local", defaultBaseUrl: "http://localhost:1234/v1", prefillBaseUrl: true,
-        iconUrl: lmStudioIcon,
-        setupHintKey: "llm.setup_hint_lmstudio", apiKey: "none", baseUrl: "required",
-        beta: true
+        iconUrl: PROVIDER_ICONS.lmstudio,
+        setupHintKey: "llm.setup_hint_lmstudio", apiKey: "none", baseUrl: "required"
     },
     {
         id: "openai-compatible", name: t("llm.provider_openai_compatible"), group: "custom", defaultBaseUrl: "http://localhost:8080/v1",
-        iconUrl: openAiCompatibleIcon, description: t("llm.provider_desc_openai_compatible"),
-        setupHintKey: "llm.setup_hint_openai_compatible", apiKey: "optional", baseUrl: "required",
-        beta: true
+        iconUrl: PROVIDER_ICONS["openai-compatible"], description: t("llm.provider_desc_openai_compatible"),
+        setupHintKey: "llm.setup_hint_openai_compatible", apiKey: "optional", baseUrl: "required"
     }
 ];
 
-function isValidBaseUrl(value: string): boolean {
+/**
+ * Whether an endpoint is one the app could actually reach. An empty field is not invalid — it means
+ * the provider's own default stands — so it is only the shape of what was typed that is judged here.
+ */
+export function isValidBaseUrl(value: string): boolean {
     if (!value) {
         return true;
     }
@@ -145,6 +167,29 @@ function isValidBaseUrl(value: string): boolean {
     } catch {
         return false;
     }
+}
+
+/**
+ * Whether the connection step has been given everything the provider needs of it: a key where one is
+ * required, an endpoint where the provider has no default of its own, and nothing malformed in the
+ * endpoint field either way.
+ *
+ * Both fields are taken as typed; the trimming is done here so a field of spaces counts as empty.
+ */
+export function isConnectionValid(providerType: ProviderType | undefined, apiKey: string, baseUrl: string): boolean {
+    const apiKeyMode = providerType?.apiKey ?? "required";
+    const baseUrlMode = providerType?.baseUrl ?? "advanced";
+    const trimmedBaseUrl = baseUrl.trim();
+
+    if (apiKeyMode === "required" && !apiKey.trim()) {
+        return false;
+    }
+
+    if (baseUrlMode === "none") {
+        return true;
+    }
+
+    return isValidBaseUrl(trimmedBaseUrl) && (baseUrlMode !== "required" || !!trimmedBaseUrl);
 }
 
 /**
@@ -190,8 +235,7 @@ export default function AddProviderModal({ show, onHidden, onSave, existingProvi
     const trimmedApiKey = apiKey.trim();
     const trimmedBaseUrl = baseUrl.trim();
     const baseUrlIsValid = isValidBaseUrl(trimmedBaseUrl);
-    const connectionValid = (apiKeyMode !== "required" || !!trimmedApiKey)
-        && (baseUrlMode === "none" || (baseUrlIsValid && (baseUrlMode !== "required" || !!trimmedBaseUrl)));
+    const connectionValid = isConnectionValid(providerType, apiKey, baseUrl);
 
     /**
      * Picking a card swaps in that provider's endpoint — so the right port is
@@ -338,7 +382,7 @@ export default function AddProviderModal({ show, onHidden, onSave, existingProvi
                             )}
                             {baseUrlMode === "advanced" && baseUrlField}
                             {!usesApiKey && baseUrlMode === "none" && (
-                                <p>{t("llm.claude_agent_description")}</p>
+                                providerType?.connectionDescription?.split(/\n\s*\n/).map((paragraph) => <p key={paragraph}>{paragraph}</p>)
                             )}
                         </CardSection>
                     </Card>
@@ -356,13 +400,11 @@ export default function AddProviderModal({ show, onHidden, onSave, existingProvi
                     <CardSection>
                         <ModelSelection
                             query={modelQuery}
+                            timeoutMs={providerType?.modelListTimeoutMs}
                             selected={selectedModels}
                             onChange={setSelectedModels}
                             autoSelectDefaults={seedDefaultModels}
-                            // Only for the local runtimes: the checklist is about starting a
-                            // server on your own machine, which says nothing useful about a
-                            // hosted endpoint failing to list.
-                            troubleshooting={providerType?.group === "local" ? <SelfHostedTroubleshooting /> : undefined}
+                            troubleshooting={troubleshootingFor(providerType)}
                         />
                     </CardSection>
                 </Card>
@@ -432,18 +474,27 @@ function ProviderGroup({ heading, description, columns, providers, selectedProvi
             <CardSection>
                 <p className="add-provider-group-description">{description}</p>
                 <SelectableCardGrid columns={columns}>
-                    {providers.map((provider) => (
-                        <SelectableCard
-                            key={provider.id}
-                            iconUrl={provider.iconUrl}
-                            title={provider.beta
-                                ? <span className="add-provider-card-heading">{provider.name}<Badge text={t("llm.beta")} className="add-provider-beta-badge" outline /></span>
-                                : provider.name}
-                            description={provider.description}
-                            selected={selectedProvider === provider.id}
-                            onSelect={() => onSelect(provider.id)}
-                        />
-                    ))}
+                    {providers.map((provider) => {
+                        // A provider this build can't run keeps its place in the list but
+                        // states why in place of its blurb — the blurb describes a setup
+                        // that isn't on offer here, so it would only mislead.
+                        const unavailableReason = provider.needsHostProcess && isStandalone
+                            ? t("llm.provider_unavailable_standalone")
+                            : undefined;
+                        return (
+                            <SelectableCard
+                                key={provider.id}
+                                iconUrl={provider.iconUrl}
+                                title={provider.beta
+                                    ? <span className="add-provider-card-heading">{provider.name}<Badge text={t("llm.beta")} className="add-provider-beta-badge" outline /></span>
+                                    : provider.name}
+                                description={unavailableReason ?? provider.description}
+                                selected={selectedProvider === provider.id}
+                                onSelect={() => onSelect(provider.id)}
+                                disabled={!!unavailableReason}
+                            />
+                        );
+                    })}
                 </SelectableCardGrid>
             </CardSection>
         </Card>
@@ -462,9 +513,43 @@ export function prefilledBaseUrl(providerId: string): string {
 }
 
 /**
- * Shown when a self-hosted endpoint can't be listed — the point at which the
- * user needs setup instructions, rather than on the way in.
+ * The checklist shown when a provider's models can't be listed, which is when
+ * the user needs setup instructions. Only the local runtimes and Google
+ * Antigravity have one: a hosted endpoint failing to list says nothing that
+ * steps on the user's own device would fix.
  */
+function troubleshootingFor(providerType: ProviderType | undefined) {
+    if (providerType?.id === "antigravity-agent") {
+        return <AntigravitySetup />;
+    }
+    return providerType?.group === "local" ? <SelfHostedTroubleshooting /> : undefined;
+}
+
+/**
+ * How to install Google's Antigravity ACP server, which Trilium does not bundle.
+ * The first step links the archive for the device running Trilium; without
+ * one, it links the registry entry that lists them all.
+ */
+function AntigravitySetup() {
+    const downloadUrl = useAntigravityDownload().url;
+    const components = {
+        Code: <code />,
+        // The registry entry lists the current archive for each platform.
+        Link: <a className="tn-link external" href="https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json" target="_blank" rel="noopener noreferrer" />
+    };
+    return (
+        <ol className="model-selection-troubleshooting">
+            <li>
+                {downloadUrl
+                    ? <Trans i18nKey="llm.antigravity_setup_archive" components={{ Link: <a className="tn-link external" href={downloadUrl} target="_blank" rel="noopener noreferrer" /> }} />
+                    : <Trans i18nKey="llm.antigravity_setup_download" components={components} />}
+            </li>
+            <li><Trans i18nKey="llm.antigravity_setup_path" components={components} /></li>
+            <li><Trans i18nKey="llm.antigravity_setup_sign_in" components={components} /></li>
+        </ol>
+    );
+}
+
 function SelfHostedTroubleshooting() {
     return (
         <ul className="model-selection-troubleshooting">

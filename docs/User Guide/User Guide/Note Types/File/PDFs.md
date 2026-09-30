@@ -78,28 +78,14 @@ Simply type text in the forms and they will be automatically saved.
 > [!NOTE]
 > This feature is only available if <a class="reference-link" href="../../Basic%20Concepts%20and%20Features/UI%20Elements/New%20Layout.md">New Layout</a> is enabled. If you are using the old layout, these features are still available by looking for a sidebar button in the PDF viewer toolbar.
 
-When a PDF file is opened in Trilium the <a class="reference-link" href="../../Basic%20Concepts%20and%20Features/UI%20Elements/Right%20Sidebar.md">Right Sidebar</a> is augmented with PDF-specific navigation, with the following features:
-
-*   Table of contents/outline
-    *   All the headings and “bookmarks” will be displayed hierarchially.
-    *   The heading on the current page is also highlighted (note that it can be slightly offset depending on how many headings are on the same page).
-    *   Clicking on a heading will jump to the corresponding position in the PDF.
-*   Pages
-    *   A preview of all the pages with a small thumbnail.
-    *   Clicking on a page will automatically navigate to that page.
-*   Annotations
-    *   Highlight and comment annotations are listed here.
-    *   For the old layout, this feature is not directly available, however there is a listing of comments directly in the PDF toolbar.
-*   Attachments
-    *   If the PDF has its own attachments (not to be confused with Trilium's <a class="reference-link" href="../../Basic%20Concepts%20and%20Features/Notes/Attachments.md">Attachments</a>), they will be displayed in a list.
-    *   Some information such as the name and size of the attachment are displayed.
-    *   It's possible to download the attachment by clicking on the download button.
-*   Layers
-    *   A less common feature, if the PDF has toggle-able layers, these layers will be displayed in a list here.
-    *   It's possible to toggle the visibility for each individual layer.
+See the dedicated section on PDFs in <a class="reference-link" href="../../Basic%20Concepts%20and%20Features/UI%20Elements/Right%20Sidebar/Outline%20tab.md">Outline tab</a>.
 
 ## Share functionality
 
 PDFs can also be shared using the <a class="reference-link" href="../../Advanced%20Usage/Sharing.md">Sharing</a> feature. This will also use Trilium's customized PDF viewer.
 
 If you are using a reverse proxy on your server with strict access limitations for the share functionality, make sure that `[host].com/pdfjs` directory is accessible. Note that this directory is outside the `/share` route as it's common with the rest of the application.
+
+## OCR
+
+PDFs are eligible for <a class="reference-link" href="../../Advanced%20Usage/Text%20Extraction%20(OCR).md">Text Extraction (OCR)</a>, which means that their text can be used in <a class="reference-link" href="../../Basic%20Concepts%20and%20Features/Navigation/Search.md">Search</a>.

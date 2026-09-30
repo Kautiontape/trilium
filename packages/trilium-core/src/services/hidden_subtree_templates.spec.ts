@@ -39,6 +39,7 @@ describe("buildHiddenSubtreeTemplates", () => {
             "_template_text_snippet",
             "_template_markdown_snippet",
             "_template_code_snippet",
+            "_template_ai_quick_action",
             "_template_list_view",
             "_template_grid_view",
             "_template_calendar",
@@ -135,17 +136,23 @@ describe("buildHiddenSubtreeTemplates", () => {
         }
     });
 
-    it("applies the shared hidden-subtree label on the templates that hide their subtree", () => {
+    it("applies the hidden-subtree label on the templates that declare it", () => {
         const templates = buildHiddenSubtreeTemplates();
-        const hidingIds = ["_template_calendar", "_template_table", "_template_geo_map", "_template_board"];
+        const offByDefault = ["_template_calendar", "_template_table", "_template_geo_map"];
 
-        for (const id of hidingIds) {
+        for (const id of offByDefault) {
             const item = childById(templates, id);
             const attr = item.attributes?.find((a) => a.name === "subtreeHidden");
             expect(attr, id).toBeDefined();
             expect(attr?.type, id).toBe("label");
             expect(attr?.value, id).toBe("false");
         }
+
+        // The board hides its subtree by default: the cards already list the children.
+        const board = childById(templates, "_template_board");
+        const boardAttr = board.attributes?.find((a) => a.name === "subtreeHidden");
+        expect(boardAttr?.type).toBe("label");
+        expect(boardAttr?.value ?? "").toBe("");
 
         // The list/grid views intentionally do NOT hide their subtree.
         for (const id of ["_template_list_view", "_template_grid_view"]) {
@@ -170,8 +177,9 @@ describe("buildHiddenSubtreeTemplates", () => {
         const templates = buildHiddenSubtreeTemplates();
         const board = childById(templates, "_template_board");
 
-        const statusDefinition = board.attributes?.find((a) => a.name === "label:status");
-        expect(statusDefinition?.isInheritable).toBe(true);
+        // The status definition belongs to each board, not to the template every board shares: one
+        // option list here would be everyone's option list. Boards write their own.
+        expect(board.attributes?.some((a) => a.name === "label:status")).toBe(false);
 
         const childIds = (board.children ?? []).map((c) => c.id);
         expect(childIds).toEqual([

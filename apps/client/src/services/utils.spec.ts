@@ -8,6 +8,7 @@ import utils, {
     escapeHtml,
     escapeQuotes,
     escapeRegExp,
+    fileAccept,
     formatDateTime,
     formatSize,
     getErrorMessage,
@@ -108,6 +109,24 @@ describe("formatSize", () => {
         expect(formatSize(2048)).toBe("2 KiB");
         expect(formatSize(5 * 1024 * 1024)).toBe("5 MiB");
         expect(formatSize(3 * 1024 * 1024 * 1024)).toBe("3 GiB");
+    });
+
+    it("stays in the largest unit it knows rather than running off the end of them", () => {
+        // Past the last unit this used to name it "undefined", since it indexed straight into the
+        // list with whatever power of 1024 the size came to.
+        expect(formatSize(3 * 1024 ** 4)).toBe("3 TiB");
+        expect(formatSize(5 * 1024 ** 5)).toBe("5120 TiB");
+    });
+
+    it("keeps the places it is given, trailing zeros and all", () => {
+        // For a counter that is still climbing: dropping the zero shortens the text on every other
+        // update, and the line shifts about while it is being read.
+        expect(formatSize(1.5 * 1024 ** 3, 2)).toBe("1.50 GiB");
+        expect(formatSize(1.55 * 1024 ** 3, 2)).toBe("1.55 GiB");
+        expect(formatSize(2 * 1024 ** 3, 2)).toBe("2.00 GiB");
+        expect(formatSize(10 * 1024 ** 2, 1)).toBe("10.0 MiB");
+        // Nothing below a byte to show, however many places were asked for.
+        expect(formatSize(512, 2)).toBe("512 B");
     });
 });
 
@@ -285,6 +304,19 @@ describe("platform / device detection", () => {
         (window as any).Capacitor = { isNativePlatform: () => true };
         expect(isMobileApp()).toBe(true);
         delete (window as any).Capacitor;
+    });
+
+    it("fileAccept widens the filter on Android and iOS only", () => {
+        const uaSpy = vi.spyOn(navigator, "userAgent", "get");
+
+        uaSpy.mockReturnValue("Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0.0.0");
+        expect(fileAccept(".gpx,application/gpx+xml")).toBe(".gpx,application/gpx+xml");
+
+        uaSpy.mockReturnValue("Mozilla/5.0 (Linux; Android 14; SM-S911B) Chrome/120.0.0.0 Mobile");
+        expect(fileAccept(".gpx,application/gpx+xml")).toBe("*/*");
+
+        uaSpy.mockReturnValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/605.1");
+        expect(fileAccept(".enex")).toBe("*/*");
     });
 
     it("isMobile / isDesktop respond to glob.device", () => {

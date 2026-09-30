@@ -22,7 +22,9 @@
  */
 
 import { sanitize, utils } from "@triliumnext/core";
-import { HTMLElement, parse } from "node-html-parser";
+import { HTMLElement, NodeType, parse } from "node-html-parser";
+
+import { parseColor, reflectLightness } from "./color.js";
 
 /**
  * The marker class the importer keys on to find OneNote file attachments (see importer.ts). The href
@@ -41,7 +43,7 @@ const LIST_STYLE_MAP = new Map<string, string>([["lower-alpha", "lower-latin"], 
  * OneNote's checkbox-style note tags — the ones it renders with a tick box and that carry a
  * `:completed` status (see https://learn.microsoft.com/en-us/graph/onenote-note-tags). Each becomes a
  * CKEditor task-list item, checked when its status is `completed`. The ones that mean more than a bare
- * to-do (priorities, discussions, meetings, requests) also keep an inner emoji from TAG_EMOJI.
+ * to-do (priorities, discussions, meetings, requests) also keep an inner glyph from {@link tagGlyph}.
  */
 const CHECKBOX_TAGS = new Set<string>([
     "to-do",
@@ -56,41 +58,49 @@ const CHECKBOX_TAGS = new Set<string>([
 ]);
 
 /**
- * OneNote's note tags mapped to a representative emoji, keyed on the tag *shape* (the part before any
- * `:status`). Decorative tags render as the emoji alone; checkbox tags (CHECKBOX_TAGS) render as a task
- * item with the emoji prefixed inside it — except plain `to-do`, which is a bare checkbox with no
- * emoji. A shape not listed here (e.g. a user's custom tag) simply renders with no prefix.
+ * OneNote's note tags mapped to a Boxicons name, keyed on the tag *shape* (the part before any
+ * `:status`). Every name here is in `icon_pack_boxicons-v2.json`, the one icon pack Trilium builds
+ * in — a class from an installable pack would draw nothing on a fresh install.
+ */
+const TAG_ICON = new Map<string, string>([
+    ["important", "bx-star"],
+    ["critical", "bx-error-circle"],
+    ["question", "bx-help-circle"],
+    ["highlight", "bx-highlight"],
+    // Graph returns a Definition tag as `remember-for-later`, so this shape never reaches us.
+    ["definition", "bx-book-open"],
+    ["remember-for-later", "bx-pin"],
+    ["remember-for-blog", "bx-edit"],
+    ["idea", "bx-bulb"],
+    ["password", "bx-key"],
+    ["contact", "bx-user"],
+    ["address", "bx-home"],
+    ["phone-number", "bx-phone"],
+    ["web-site-to-visit", "bx-globe"],
+    ["source-for-article", "bx-news"],
+    ["send-in-email", "bx-envelope"],
+    ["movie-to-see", "bx-movie"],
+    ["book-to-read", "bx-book"],
+    ["music-to-listen-to", "bx-music"],
+    // Checkbox tags that carry meaning beyond a bare to-do; `to-do` itself stays glyph-less.
+    ["discuss-with-person-a", "bx-message-rounded"],
+    ["discuss-with-person-b", "bx-message-rounded"],
+    ["discuss-with-manager", "bx-conversation"],
+    ["schedule-meeting", "bx-calendar"],
+    ["call-back", "bx-phone-call"],
+    ["client-request", "bx-clipboard"]
+]);
+
+/**
+ * The tags whose glyph is a character rather than a picture. Boxicons carries no alphabet and no
+ * numerals, so an icon could not tell A from B, and these keep the boxed-character emoji OneNote
+ * itself draws. The cost is that they are not findable by name the way an icon is.
  */
 const TAG_EMOJI = new Map<string, string>([
-    ["important", "⭐"],
-    ["critical", "❗"],
-    ["question", "❓"],
-    ["highlight", "🖍️"],
-    ["definition", "📖"],
-    ["remember-for-later", "📌"],
-    ["remember-for-blog", "✍️"],
-    ["idea", "💡"],
-    ["password", "🔑"],
-    ["contact", "👤"],
-    ["address", "🏠"],
-    ["phone-number", "📞"],
-    ["web-site-to-visit", "🌐"],
-    ["source-for-article", "📰"],
-    ["send-in-email", "📧"],
-    ["movie-to-see", "🎬"],
-    ["book-to-read", "📚"],
-    ["music-to-listen-to", "🎵"],
     ["project-a", "🅰️"],
     ["project-b", "🅱️"],
-    // Checkbox tags that carry meaning beyond a bare to-do; `to-do` itself stays emoji-less.
     ["to-do-priority-1", "1️⃣"],
-    ["to-do-priority-2", "2️⃣"],
-    ["discuss-with-person-a", "💬"],
-    ["discuss-with-person-b", "💬"],
-    ["discuss-with-manager", "🗣️"],
-    ["schedule-meeting", "📅"],
-    ["call-back", "📲"],
-    ["client-request", "📋"]
+    ["to-do-priority-2", "2️⃣"]
 ]);
 
 /** OneNote's highlight/font palette uses the 16 basic CSS color names; map them to hex (see below). */
@@ -109,6 +119,7 @@ export function convertPageHtml(rawHtml: string): string {
     convertResourceReferences(scope);
     wrapFloatingImages(scope);
     convertTags(scope);
+    convertCodeBlocks(scope);
     convertInlineFormatting(scope);
     normalizeNamedColors(scope);
     removeDefaultTextColor(scope);
@@ -265,16 +276,17 @@ function takeTrailingCaption(img: HTMLElement): string | null {
  *
  * Checkbox-style tags (CHECKBOX_TAGS — `to-do` and its priority/discussion/meeting siblings) become a
  * CKEditor task list, checked when their status is `completed`; runs of consecutive ones collapse into
- * one list, matching the structure Trilium's TodoList plugin produces. The emoji prefix (TAG_EMOJI) is
- * orthogonal: it applies to decorative tags and to the meaningful checkbox tags alike, so e.g. a
- * `discuss-with-manager` paragraph becomes a task item reading "🗣️ …" while bare `to-do` stays a plain
- * checkbox. A paragraph can carry several comma-separated tags (e.g. `to-do,important`), in which case
- * its emojis stack and a single checkbox tag still turns it into a task item.
+ * one list, matching the structure Trilium's TodoList plugin produces. The glyph prefix ({@link
+ * tagGlyph}) is orthogonal: it applies to decorative tags and to the meaningful checkbox tags alike,
+ * so e.g. a `discuss-with-manager` paragraph becomes a task item led by a `bx-conversation` icon while
+ * bare `to-do` stays a plain checkbox. A paragraph can carry several comma-separated tags (e.g.
+ * `to-do,important`), in which case its glyphs stack and a single checkbox tag still turns it into a
+ * task item.
  */
 function convertTags(scope: HTMLElement) {
     const tagged = scope.querySelectorAll("p[data-tag]");
 
-    // Prefix each tagged paragraph's emoji in place, and record whether it is a checkbox paragraph
+    // Prefix each tagged paragraph's glyph in place, and record whether it is a checkbox paragraph
     // (and if so, whether it's completed) so adjacent ones can be grouped.
     const completedByCheckbox = new Map<HTMLElement, boolean>();
     for (const p of tagged) {
@@ -284,9 +296,9 @@ function convertTags(scope: HTMLElement) {
         });
         p.removeAttribute("data-tag");
 
-        const emojis = tags.map((tag) => TAG_EMOJI.get(tag.shape)).filter((emoji): emoji is string => Boolean(emoji));
-        if (emojis.length > 0) {
-            p.set_content(`${emojis.join("")} ${p.innerHTML}`);
+        const glyphs = tags.map((tag) => tagGlyph(tag.shape)).filter((glyph): glyph is string => Boolean(glyph));
+        if (glyphs.length > 0) {
+            p.set_content(`${glyphs.join("")} ${p.innerHTML}`);
         }
 
         const checkbox = tags.find((tag) => CHECKBOX_TAGS.has(tag.shape));
@@ -317,6 +329,17 @@ function convertTags(scope: HTMLElement) {
         run[0].insertAdjacentHTML("beforebegin", `<ul class="todo-list">${items.join("")}</ul>`);
         run.forEach((p) => p.remove());
     }
+}
+
+/**
+ * What one tag shape is drawn as: an inline icon in the form the text editor and the share theme
+ * both read, or the emoji from {@link TAG_EMOJI}. Returns undefined for plain `to-do`, which is a
+ * bare tick box, and for a shape neither map lists.
+ */
+function tagGlyph(shape: string) {
+    const icon = TAG_ICON.get(shape);
+
+    return icon ? `<span class="tn-icon bx ${icon}"></span>` : TAG_EMOJI.get(shape);
 }
 
 /**
@@ -351,8 +374,11 @@ function convertInlineFormatting(scope: HTMLElement) {
         if (decorations.includes("line-through")) {
             wrap("del");
         }
-        // OneNote's "Code" style is just a Consolas font; map it to an inline <code> element.
-        if ((style.get("font-family") ?? "").includes("consolas")) {
+        // OneNote's "Code" style is just a Consolas font; map it to an inline <code> element — but
+        // only when some of the element's own text actually renders in it. After leaving the code
+        // style, OneNote keeps Consolas on the paragraph mark while every text run overrides it
+        // back to the body font, and that dead paragraph-level Consolas must not become <code>.
+        if ((style.get("font-family") ?? "").includes(MONOSPACE_FONT) && hasUnoverriddenText(el)) {
             wrap("code");
         }
         // OneNote carries explicit point sizes; map them onto CKEditor's tiny/small/big/huge scale.
@@ -366,6 +392,117 @@ function convertInlineFormatting(scope: HTMLElement) {
             el.set_content(`${open.join("")}${el.innerHTML}${close.join("")}`);
         }
     }
+}
+
+/** The font-family OneNote's community "Code" style applies; its only marker for code-styled text. */
+const MONOSPACE_FONT = "consolas";
+
+/**
+ * Whether any of the element's text actually renders in the element's own font — i.e. some
+ * non-empty text node is not inside a descendant that declares a font-family of its own. A
+ * descendant that declares one either overrides the font away (its text doesn't count) or restates
+ * a monospace font (and then gets its own <code> wrap on its own visit), so either way its subtree
+ * is skipped.
+ */
+function hasUnoverriddenText(el: HTMLElement): boolean {
+    for (const child of el.childNodes) {
+        if (child instanceof HTMLElement) {
+            if (!declaredFontFamily(child) && hasUnoverriddenText(child)) {
+                return true;
+            }
+        } else if (child.nodeType === NodeType.TEXT_NODE && child.text.trim().length > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * OneNote has no code-block construct: its community "Code" style is just Consolas-styled ordinary
+ * paragraphs. A run of two or more consecutive paragraphs whose entire text renders in Consolas is
+ * a code block in all but markup, so merge it into one <pre><code> (with the language-autodetect
+ * class the Markdown and ENEX importers use). Blank lines survive as OneNote's block-level <br>
+ * spacing between code paragraphs; lines are flattened to plain text, matching CKEditor's code
+ * blocks, so any inline formatting within them is dropped. A lone all-Consolas paragraph is left to
+ * convertInlineFormatting's inline <code> treatment — one line reads fine inline, and eagerly
+ * promoting every such paragraph to a block would catch code-styled asides like filenames. Runs
+ * before convertInlineFormatting so the merged lines aren't first wrapped as inline <code>.
+ */
+function convertCodeBlocks(scope: HTMLElement) {
+    const consumed = new Set<HTMLElement>();
+    for (const paragraph of scope.querySelectorAll("p")) {
+        if (consumed.has(paragraph) || !isCodeParagraph(paragraph)) {
+            continue;
+        }
+
+        // Gather the run: consecutive code paragraphs, bridging bare <br> gaps as blank lines.
+        // A trailing gap with no code paragraph after it is left in place, not consumed.
+        const members: HTMLElement[] = [paragraph];
+        const lines: string[] = [paragraph.text];
+        let paragraphCount = 1;
+        let cursor = paragraph.nextElementSibling;
+        while (cursor) {
+            const gap: HTMLElement[] = [];
+            while (cursor && cursor.tagName?.toLowerCase() === "br") {
+                gap.push(cursor);
+                cursor = cursor.nextElementSibling;
+            }
+            if (!cursor || cursor.tagName?.toLowerCase() !== "p" || !isCodeParagraph(cursor)) {
+                break;
+            }
+            members.push(...gap, cursor);
+            lines.push(...gap.map(() => ""), cursor.text);
+            paragraphCount++;
+            cursor = cursor.nextElementSibling;
+        }
+        if (paragraphCount < 2) {
+            continue;
+        }
+
+        for (const member of members) {
+            consumed.add(member);
+        }
+        const code = lines.map((line) => utils.escapeHtml(line)).join("\n");
+        paragraph.insertAdjacentHTML("beforebegin", `<pre><code class="language-text-x-trilium-auto">${code}</code></pre>`);
+        for (const member of members) {
+            member.remove();
+        }
+    }
+}
+
+/**
+ * Whether a paragraph is one line of code-styled text: every non-empty text node in it renders in
+ * Consolas — via the paragraph's own font or a wrapping span's — with descendant font-family
+ * declarations overriding the inherited state either way. A paragraph with no text at all only
+ * qualifies through its own Consolas paragraph mark (a blank line inside a code passage).
+ */
+function isCodeParagraph(paragraph: HTMLElement): boolean {
+    const base = (declaredFontFamily(paragraph) ?? "").includes(MONOSPACE_FONT);
+    if (paragraph.text.trim().length === 0) {
+        return base;
+    }
+    return allTextMonospace(paragraph, base);
+}
+
+/** Whether every non-empty text node under `el` renders in Consolas, given the inherited state. */
+function allTextMonospace(el: HTMLElement, inherited: boolean): boolean {
+    for (const child of el.childNodes) {
+        if (child instanceof HTMLElement) {
+            const family = declaredFontFamily(child);
+            const monospace = family ? family.includes(MONOSPACE_FONT) : inherited;
+            if (!allTextMonospace(child, monospace)) {
+                return false;
+            }
+        } else if (child.nodeType === NodeType.TEXT_NODE && child.text.trim().length > 0 && !inherited) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** The element's own font-family declaration, if any. */
+function declaredFontFamily(el: HTMLElement): string | undefined {
+    return parseStyle(el.getAttribute("style") ?? "").get("font-family");
 }
 
 /**
@@ -627,93 +764,20 @@ function columnPercentages(widths: number[]): number[] {
  * OneNote's Graph API exports table cell shading as a dark *shade* of the colour OneNote actually
  * displays: it keeps the hue and saturation but inverts the lightness (e.g. a cell shown as #b6d9a1
  * comes back as #375623). Left as-is the cell imports far too dark — commonly dark-on-dark and
- * unreadable. So for a cell whose background is dark, reflect its lightness (L → 1 − L, hue/saturation
- * untouched) to recover the displayed light tint; light backgrounds (plausible shading as-is, and the
- * form correctly-exported colours arrive in) are left alone. Runs after normalizeNamedColors, so a
- * named background has already become the hex this keys on.
+ * unreadable. So for a cell whose background is dark, reflect its lightness (L → 100 − L,
+ * hue/saturation untouched) to recover the displayed light tint; light backgrounds (plausible shading
+ * as-is, and the form correctly-exported colours arrive in) are left alone.
  */
 function correctTableShadingColors(scope: HTMLElement) {
     for (const cell of scope.querySelectorAll("td, th")) {
         const style = parseStyle(cell.getAttribute("style") ?? "");
-        const rgb = parseHexColor(style.get("background-color") ?? "");
-        if (!rgb) {
+        const background = parseColor(style.get("background-color") ?? "");
+        if (!background || background.lightness() >= 50) {
             continue;
         }
-        const [hue, saturation, lightness] = rgbToHsl(rgb);
-        if (lightness >= 0.5) {
-            continue;
-        }
-        style.set("background-color", hslToHex(hue, saturation, 1 - lightness));
+        style.set("background-color", reflectLightness(background));
         cell.setAttribute("style", serializeStyle(style));
     }
-}
-
-/** Parses a `#rgb` or `#rrggbb` colour to [r, g, b] (0-255), or null if it isn't a hex colour. */
-function parseHexColor(value: string): [number, number, number] | null {
-    const match = value.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-    if (!match) {
-        return null;
-    }
-    const hex = match[1].length === 3 ? match[1].replace(/(.)/g, "$1$1") : match[1];
-    return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
-}
-
-/** Converts an [r, g, b] (0-255) colour to [h, s, l], each in [0, 1]. */
-function rgbToHsl([r, g, b]: [number, number, number]): [number, number, number] {
-    r /= 255;
-    g /= 255;
-    b /= 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const lightness = (max + min) / 2;
-    const delta = max - min;
-    if (delta === 0) {
-        return [0, 0, lightness];
-    }
-    const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-    let hue: number;
-    switch (max) {
-        case r:
-            hue = (g - b) / delta + (g < b ? 6 : 0);
-            break;
-        case g:
-            hue = (b - r) / delta + 2;
-            break;
-        default:
-            hue = (r - g) / delta + 4;
-            break;
-    }
-    return [hue / 6, saturation, lightness];
-}
-
-/** Converts [h, s, l] (each in [0, 1]) back to a `#rrggbb` hex colour. */
-function hslToHex(h: number, s: number, l: number): string {
-    const channel = (value: number) => Math.round(value * 255).toString(16).padStart(2, "0");
-    if (s === 0) {
-        return `#${channel(l).repeat(3)}`;
-    }
-    /* v8 ignore next -- only called from correctTableShadingColors with l strictly above 0.5 */
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    const component = (t: number) => {
-        if (t < 0) {
-            t += 1;
-        }
-        if (t > 1) {
-            t -= 1;
-        }
-        if (t < 1 / 6) {
-            return p + (q - p) * 6 * t;
-        }
-        if (t < 1 / 2) {
-            return q;
-        }
-        if (t < 2 / 3) {
-            return p + (q - p) * (2 / 3 - t) * 6;
-        }
-        return p;
-    };
-    return `#${channel(component(h + 1 / 3))}${channel(component(h))}${channel(component(h - 1 / 3))}`;
 }
 
 /** Drops list items that hold nothing but whitespace/<br> (OneNote's "exited the list" remnant). */

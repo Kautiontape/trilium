@@ -15,8 +15,10 @@ Trilium allows importing from OneNote. Currently the only mechanism supported is
 
 The following features are preserved by Trilium during the import process:
 
-*   Basic formatting (bold, italic, underline, strikethrough, subscript, super script, inline code, font sizes, headings, colors, highlights).
+*   Basic formatting (bold, italic, underline, strikethrough, subscript, super script, font sizes, headings, colors, highlights).
     *   Black-colored text is intentionally stripped to allow it to work in dark themes.
+*   Inline code is automatically detected and formatted. Paragraphs that use the Code style are also converted to <a class="reference-link" href="../../../Note%20Types/Text/Developer-specific%20formatting/Code%20blocks.md">Code blocks</a>.
+    *   Unfortunately the indentation of the code might be lost because the information is simply not present in the data from the Microsoft API.
 *   <a class="reference-link" href="../../../Note%20Types/Text/Lists.md">Lists</a> with different bullet types.
 *   <a class="reference-link" href="../../../Note%20Types/Text/Tables.md">Tables</a>
     *   Cell backgrounds are preserved, including a best-effort hue correction because the colors returned by the Graph API are sometimes incorrect.
@@ -27,7 +29,7 @@ The following features are preserved by Trilium during the import process:
 *   Hand-drawing is preserved and displayed as an SVG image inside the note
     *   OneNote's default color (black) is special since it also renders as white for dark themes. Since v0.104.1, this is also supported by using a special SVG tweak which reacts to light/dark themes.
 *   Links between other imported pages are converted to <a class="reference-link" href="../../../Note%20Types/Text/Links/Internal%20(reference)%20links.md">Internal (reference) links</a> if the text of the link matches the name of the page, or plain links otherwise. If the pages are not part of the import, the original `onenote:` link is kept.
-*   Tags (apart from to-do lists) are mildly preserved by converting them to emojis. This loses their searchability. Since Trilium has no concept of inline attributes or badges, this is considered a middle-ground.
+*   Tags (apart from to-do lists) are preserved by converting them to [inline icons](../../../Note%20Types/Text/Insert%20buttons/Icons.md), which are searchable by the icon's name and can be recolored like any other icon. Some icons are turned into emojis instead.
 
 Regarding the note structure:
 
@@ -79,7 +81,7 @@ OneNote supports encryption at section level; when importing a notebook that con
 
 The section itself is kept for reference and all the sections that could not be imported will be shown in the report (the top-level note called _OneNote import_).
 
-To unprotect a section in OneNote Desktop, right click on the protected section → _Password Protect This Section_ and press _Remove Password_ and sync. Then reimport either only the protected sessions or the remove everything and start the import from scratch.
+To unprotect a section in OneNote Desktop, right click on the protected section → _Password Protect This Section_ and press _Remove Password_ and sync. Then re-import either only the protected sections or remove everything and start the import from scratch.
 
 ## Other limitations
 
@@ -87,7 +89,7 @@ The following are known limitations due to how the information comes from the im
 
 *   The order of the sections (and section groups) is not available, the sections are ordered by creation date instead.
 *   Revision history.
-*   Paragraph indentation.
+*   Paragraph indentation, as well as code block indentation.
 *   Section colors.
 *   Drawings inside titles, the title might appear incomplete or “Untitled”.
 

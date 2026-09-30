@@ -10,7 +10,10 @@ import ws from "./ws.js";
 type BooleanLike = boolean | "true" | "false";
 
 export interface UploadFilesOptions {
-    /** Routes the upload to a specific importer (e.g. "notion"), overriding extension-based detection. */
+    /**
+     * Routes the upload to a specific importer (e.g. "notion"), overriding extension-based detection.
+     * `"auto"` instead lets the importer recognize the archive itself, which only drag-and-drop asks for.
+     */
     format?: string;
     safeImport?: BooleanLike;
     shrinkImages: BooleanLike;
@@ -80,6 +83,8 @@ function makeToast(id: string, message: string): ToastOptionsWithRequiredId {
 
 /**
  * Builds the persistent "import in progress" toast:
+ *  - the "throttled" phase (OneNote under Graph rate limiting) → an explicit "waiting for the service"
+ *    message, since the count can legitimately sit still for up to an hour and must not look hung;
  *  - a phase is known (zip import) → a phase-specific message: "Extracted X items of N" while extracting
  *    archive entries, "Processed X notes of N" while post-processing the created notes;
  *  - a total but no phase (single-format importers like Notion/Obsidian) → "Imported X notes of N";
@@ -90,7 +95,11 @@ function makeToast(id: string, message: string): ToastOptionsWithRequiredId {
 function makeProgressToast(taskId: string, progressCount: number, totalCount?: number, phase?: ProgressPhase): ToastOptionsWithRequiredId {
     const hasTotal = typeof totalCount === "number" && totalCount > 0;
     let message: string;
-    if (hasTotal && phase === "extracting") {
+    if (phase === "throttled") {
+        message = hasTotal
+            ? t("import.throttled-with-total", { progress: progressCount, total: totalCount })
+            : t("import.throttled");
+    } else if (hasTotal && phase === "extracting") {
         message = t("import.extracting", { progress: progressCount, total: totalCount });
     } else if (hasTotal && phase === "processing") {
         message = t("import.processing", { progress: progressCount, total: totalCount });

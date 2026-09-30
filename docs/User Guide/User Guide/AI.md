@@ -1,9 +1,13 @@
 # AI
 Trilium can connect to a large language model and use it as an assistant that works directly on your notes: ask questions about the note you're reading, have it draft or restructure content, or get it to write scripts and widgets for you.
 
-The integration is off by default and does nothing until you enable it and configure a provider; Trilium ships no model of its own. Which provider you pick also decides where your notes travel: a cloud API billed per use, a subscription you already pay for, or a model running on your own hardware, in which case nothing leaves the machine. See <a class="reference-link" href="AI/Providers.md">Providers</a> for what each involves, and <a class="reference-link" href="AI/Privacy.md">Privacy</a> for exactly what gets sent.
+The integration is off by default and does nothing until you enable it and configure a provider; Trilium ships no model of its own. The provider you pick decides how your notes travel: a cloud API billed per use, a subscription you already pay for, or a model running on your own hardware, in which case nothing leaves the machine. See <a class="reference-link" href="AI/Providers.md">Providers</a> for what each involves, and <a class="reference-link" href="AI/Privacy.md">Privacy</a> for exactly what gets sent.
 
-Once enabled, the assistant is available both as a panel in the right sidebar and as a dedicated note type. It can read and modify notes through tools, which you can switch off per conversation if you would rather it only saw what you type.
+Once enabled, the assistant is available as:
+
+*   As a dedicated note type, it can read and modify notes through tools, which you can switch off per conversation if you would rather it only saw what you type.
+*   A panel in the right sidebar, which acts similarly to the dedicated note type but it also has optional access to the current note.
+*   An <a class="reference-link" href="Note%20Types/Text/In-editor%20AI%20assistant.md">In-editor AI assistant</a> which comes with builtin actions that operate over selected text (such as proof-reading, summarizing), as well as <a class="reference-link" href="Note%20Types/Text/In-editor%20AI%20assistant/Custom%20AI%20quick%20actions.md">Custom AI quick actions</a>.
 
 ## Feature highlights
 
@@ -56,18 +60,6 @@ There are two different chat interfaces:
 *   A dedicated note type.
 
 ### The sidebar interface
-
-Once the AI integration is activated, a _Chat_ entry will appear in the <a class="reference-link" href="Basic%20Concepts%20and%20Features/UI%20Elements/Right%20Sidebar.md">Right Sidebar</a>.
-
-*   Unlike the dedicated note type, the side bar has optional access to the current note, making it easy to ask for information or modifications to a note without having to search for the note first.
-    *   To toggle whether the current note is visible to the AI, simply click on the file icon at the bottom of the chat interface.
-*   On the top-right of the sidebar there are three buttons:
-    *   Create a new conversation.
-    *   Go to a previous conversation
-    *   Save the current conversation as a dedicated note in the <a class="reference-link" href="Advanced%20Usage/Advanced%20Showcases/Day%20Notes.md">Day Notes</a>, which turns it into a dedicated chat note.
-
-> [!NOTE]
-> The sidebar chats are stored in the <a class="reference-link" href="Advanced%20Usage/Hidden%20Notes.md">Hidden Notes</a> and can be seen in the _AI Chat History_ section.
 
 ### The dedicated note type
 
@@ -145,7 +137,7 @@ Since Trilium v0.140.0, <a class="reference-link" href="Basic%20Concepts%20and%
 To upload an attachment:
 
 *   Press the dedicated _Attach_ button (paperclip icon) underneath the text box.
-*   Paste an image directly from clipboard using <kbd>Ctrl</kbd>+<kbd>V</kbd>.
+*   Paste an image directly from clipboard using Ctrl+V.
 
 Once one or more attachments are uploaded, they will appear directly above the text box:
 
@@ -159,7 +151,7 @@ When an attachment is present, the LLM is instructed to consider the attachment 
 
 ### Mentions
 
-Mentions are a way to insert references to notes other than the current note, using the same mechanism as <a class="reference-link" href="Note%20Types/Text/Links/Internal%20(reference)%20links.md">Internal (reference) links</a>. To refer to another note, simply type <kbd>@</kbd> followed by the name of the note to reference.
+Mentions are a way to insert references to notes other than the current note, using the same mechanism as <a class="reference-link" href="Note%20Types/Text/Links/Internal%20(reference)%20links.md">Internal (reference) links</a>. To refer to another note, simply type @ followed by the name of the note to reference.
 
 This feature is mostly helpful when note tools are enabled, otherwise the LLM will have no way to access the given note.
 
