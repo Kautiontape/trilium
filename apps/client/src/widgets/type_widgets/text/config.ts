@@ -13,7 +13,7 @@ import options from "../../../services/options.js";
 import { sanitizeNoteContentHtml } from "../../../services/sanitize_content.js";
 import { ensureMimeTypesForHighlighting, isSyntaxHighlightEnabled } from "../../../services/syntax_highlight.js";
 import { getTaskStateDefinitions, openCustomTaskStateConfig } from "../../../services/task_states.js";
-import { isMac, openInAppHelpFromUrl } from "../../../services/utils.js";
+import { isMac, isMobile, openInAppHelpFromUrl } from "../../../services/utils.js";
 import { resolveContentLanguage } from "../../../utils/formatters.js";
 import SAMPLE_DIAGRAMS from "../mermaid/sample_diagrams.js";
 import buildAiAssistantStream, { type AiNoteLocationProvider, buildAiAssistantQuickActions } from "./ai_assistant_stream.js";
@@ -239,7 +239,12 @@ export async function buildConfig(opts: BuildEditorOptions): Promise<EditorConfi
     // checkboxes, collapsible summaries, drag handles). Plugins consult this via
     // `editor.config.get("contentHintsEnabled")` and skip registering their hint
     // managers when it's false.
-    (config as Record<string, unknown>).contentHintsEnabled = options.get("textNoteContentHintsEnabled") === "true";
+    //
+    // Off outright on a phone, whatever the option says: the hints explain right-clicks and
+    // keyboard shortcuts, which a touchscreen has no way to act on, so there they are only a
+    // popup in the way of typing — every new checklist row would raise one.
+    (config as Record<string, unknown>).contentHintsEnabled =
+        options.get("textNoteContentHintsEnabled") === "true" && !isMobile();
 
     // Whether a URL typed or pasted into the note is auto-detected and turned into a link preview.
     // A getter rather than a boolean: the LinkEmbed plugin calls it each time a URL is detected, so
