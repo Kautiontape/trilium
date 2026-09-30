@@ -48,4 +48,21 @@ body.mobile {
     .classic-toolbar-widget .ck.ck-button.ck-disabled {
         opacity: 0.3;
     }
+
+    /* The list controls pinned to the front of the bar while the caret is in a list (see
+       list_context_toolbar.ts). The last of them draws a divider like the toolbar's own
+       separators, so the group reads as distinct from what follows. */
+    .classic-toolbar-widget .ck.ck-button.tn-list-context-pinned:not(:has(+ .tn-list-context-pinned)) {
+        margin-inline-end: calc(2 * var(--ck-spacing-small) + 1px);
+
+        &::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            inset-inline-end: calc(-1 * var(--ck-spacing-small) - 1px);
+            width: 1px;
+            background: var(--ck-color-toolbar-border);
+        }
+    }
 }
