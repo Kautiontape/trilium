@@ -206,12 +206,22 @@ jobs:
 
           # Drop superseded package assets so the release does not grow without bound.
           CURRENT=$(find . -maxdepth 1 -name '*.pkg.tar.zst' -printf '%f\n' | head -n1)
-          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' \
+
+          # `grep` exits 1 when nothing matches. Under `set -o pipefail` that would fail
+          # the step whenever there is nothing to clean up — which is the normal case,
+          # including every first run. Swallow it explicitly.
+          STALE=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' \
             | grep -E '\.pkg\.tar\.zst(\.sig)?$' \
-            | grep -v "^${CURRENT}" \
-            | while read -r stale; do
-                echo "Deleting superseded asset: $stale"
-                gh release delete-asset "$RELEASE_TAG" "$stale" --yes || true
-              done
+            | grep -v "^${CURRENT}" || true)
+
+          if [[ -n "$STALE" ]]; then
+            while read -r stale; do
+              [[ -n "$stale" ]] || continue
+              echo "Deleting superseded asset: $stale"
+              gh release delete-asset "$RELEASE_TAG" "$stale" --yes || true
+            done <<< "$STALE"
+          else
+            echo "No superseded assets to remove."
+          fi
 
           echo "Published ${CURRENT}"
