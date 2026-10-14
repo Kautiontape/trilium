@@ -65,6 +65,9 @@ The contextual menu can operate:
     *   Opens the [import](../../Import%20%26%20Export.md) dialog and places the imported notes as child notes of the selected one.
 *   **Export**
     *   Opens the [export](../../Import%20%26%20Export.md) dialog for the selected notes.
+*   **Copy note path to clipboard**
+    *   Copies a URL fragment representing the full path to this branch for a note, such as `#root/Hb2E70L7HPuf/4sRFgMZhYFts/2IVuShedRJ3U/LJVMvKXOFv7n`.
+    *   The URL to manually create <a class="reference-link" href="../../../Note%20Types/Text/Links.md">Links</a> within notes, or for note <a class="reference-link" href="../../Navigation">Navigation</a>.
 *   **Search in subtree**
     *   Opens a full <a class="reference-link" href="../../Navigation/Search.md">Search</a> with it preconfigured to only look into this note and its descendants (the _Ancestor_ field).
 
@@ -91,8 +94,5 @@ To access these options, first look for the _Advanced_ option in the contextual 
     *   Opens a dialog to sort all the child notes of the selected note.
     *   The sorting is done only once, there is an automatic sorting mechanism as well that can be set using <a class="reference-link" href="../../../Advanced%20Usage/Attributes.md">Attributes</a>.
     *   See <a class="reference-link" href="../../Notes/Sorting%20Notes.md">Sorting Notes</a> for more information.
-*   **Copy note path to clipboard**
-    *   Copies a URL fragment representing the full path to this branch for a note, such as `#root/Hb2E70L7HPuf/4sRFgMZhYFts/2IVuShedRJ3U/LJVMvKXOFv7n`.
-    *   The URL to manually create <a class="reference-link" href="../../../Note%20Types/Text/Links.md">Links</a> within notes, or for note <a class="reference-link" href="../../Navigation">Navigation</a>.
 *   **Recent changes in subtree**
     *   This will open <a class="reference-link" href="../Recent%20Changes.md">Recent Changes</a>, but filtered to only the changes related to this note or one of its descendants.

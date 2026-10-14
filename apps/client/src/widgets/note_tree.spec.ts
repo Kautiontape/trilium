@@ -1,9 +1,14 @@
 import $ from "jquery";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import appContext from "../components/app_context.js";
+import FBranch from "../entities/fbranch.js";
+import froca from "../services/froca.js";
 import hoistedNoteService from "../services/hoisted_note.js";
 import noteCreateService from "../services/note_create.js";
+import options from "../services/options.js";
 import treeService from "../services/tree.js";
+import { buildNote } from "../test/easy-froca.js";
 import NoteTreeWidget, { publishDropMarkerShift } from "./note_tree.js";
 
 vi.mock("../services/import.js", () => ({ uploadFiles: vi.fn() }));
@@ -183,5 +188,122 @@ describe("files dropped on the tree", () => {
 
         const { uploadFiles } = await import("../services/import.js");
         expect(uploadFiles).toHaveBeenCalledWith("notes", "target", [file], expect.objectContaining({ format: "auto" }));
+    });
+});
+
+describe("archived notes on the active note's path", () => {
+    const tabManager = appContext.tabManager;
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        options.set("hideArchivedNotes_main", "false");
+        appContext.tabManager = tabManager;
+    });
+
+    /**
+     * Renders a live tree over root → projects → { current, old (archived, inherited by alpha →
+     * notes), older (archived) } with archived notes hidden, so no archived note is in the tree.
+     */
+    async function renderTreeHidingArchivedNotes() {
+        buildNote({
+            id: "root",
+            title: "root",
+            children: [{
+                id: "projects",
+                title: "Projects",
+                children: [
+                    { id: "current", title: "Current" },
+                    {
+                        id: "old",
+                        title: "Old",
+                        "#archived(inheritable)": "",
+                        children: [{
+                            id: "alpha",
+                            title: "Alpha",
+                            children: [{ id: "notes", title: "Notes" }]
+                        }]
+                    },
+                    { id: "older", title: "Older", "#archived": "" }
+                ]
+            }]
+        });
+        froca.branches.none_root = new FBranch(froca, {
+            branchId: "none_root",
+            noteId: "root",
+            parentNoteId: "none",
+            notePosition: 0,
+            isExpanded: true,
+            fromSearchNote: false
+        });
+        await options.initializedPromise;
+        options.set("hideArchivedNotes_main", "true");
+        // Rendering a title asks the tab manager for the hoisted note; no tab is open here.
+        appContext.tabManager = {
+            getActiveContext: () => undefined
+        } as unknown as typeof appContext.tabManager;
+
+        // Every note is already in froca, so a lazy load is the cache lookup.
+        vi.spyOn(froca, "loadSubTree").mockImplementation(async (noteId) => {
+            const note = froca.getNoteFromCache(noteId);
+            if (!note) {
+                throw new Error(`Note ${noteId} is not in the fixture`);
+            }
+            return note;
+        });
+
+        // getTree() walks up by jQuery UI's `:ui-fancytree` pseudo-class, which happy-dom's
+        // selector engine does not know, so the tree is read off the element's widget data.
+        vi.spyOn($.ui.fancytree, "getTree").mockImplementation(
+            (el) => $(el as JQuery<HTMLElement>).data("ui-fancytree")?.tree ?? null
+        );
+
+        const widget = new NoteTreeWidget();
+        // The auto-collapse timer and the hoisting filter need a live app and play no part here.
+        vi.spyOn(widget, "activityDetected").mockImplementation(() => {});
+        vi.spyOn(widget, "filterHoistedBranch").mockResolvedValue(undefined);
+        widget.doRender();
+        widget.$widget.appendTo(document.body);
+        // Let doRender's init promise chain reach initFancyTree.
+        await new Promise((resolve) => setTimeout(resolve));
+        return widget;
+    }
+
+    it("expands the path to an archived active note, as scroll-to-active-note asks", async () => {
+        const widget = await renderTreeHidingArchivedNotes();
+
+        try {
+            const node = await widget.expandToNote("root/projects/old/alpha/notes", false);
+
+            expect(node?.data.noteId).toBe("notes");
+            expect(node?.extraClasses).toContain("spotlighted-node");
+            expect(widget.getNodesByNoteId("old")).toHaveLength(1);
+            // Only the path is let through: an archived sibling stays hidden.
+            expect(widget.getNodesByNoteId("older")).toHaveLength(0);
+        } finally {
+            widget.$widget.remove();
+        }
+    });
+
+    it("refresh() keeps the path open under the archived ancestor, then drops it on leaving", async () => {
+        const widget = await renderTreeHidingArchivedNotes();
+        const noteContext = { notePath: "root/projects/old/alpha/notes", hoistedNoteId: "root" };
+        (widget as { noteContext?: unknown }).noteContext = noteContext;
+
+        try {
+            await widget.expandToNote(noteContext.notePath, false);
+            await widget.refresh();
+
+            expect(widget.getActiveNode()?.data.noteId).toBe("notes");
+            expect(widget.getNodesByNoteId("old")).toHaveLength(1);
+
+            noteContext.notePath = "root/projects/current";
+            await widget.refresh();
+
+            expect(widget.getActiveNode()?.data.noteId).toBe("current");
+            expect(widget.getNodesByNoteId("old")).toHaveLength(0);
+            expect(widget.getNodesByNoteId("notes")).toHaveLength(0);
+        } finally {
+            widget.$widget.remove();
+        }
     });
 });

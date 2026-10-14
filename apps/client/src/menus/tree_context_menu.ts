@@ -241,7 +241,6 @@ export async function buildTreeContextMenuItems(ctx: TreeContextMenuContext): Pr
 
                 { kind: "separator" },
 
-                { title: t("tree-context-menu.copy-note-path-to-clipboard"), command: "copyNotePathToClipboard", uiIcon: "bx bx-directions", enabled: true },
                 { title: t("tree-context-menu.recent-changes-in-subtree"), command: "recentChangesInSubtree", uiIcon: "bx bx-history", enabled: noSelectedNotes && notOptionsOrHelp }
             ].filter(Boolean) as MenuItem<TreeCommandNames>[]
         },
@@ -341,6 +340,8 @@ export async function buildTreeContextMenuItems(ctx: TreeContextMenuContext): Pr
         { title: t("tree-context-menu.export"), command: "exportNote", uiIcon: "bx bx-export", enabled: notSearch && noSelectedNotes && notOptionsOrHelp },
 
         { kind: "separator" },
+
+        { title: t("tree-context-menu.copy-note-path-to-clipboard"), command: "copyNotePathToClipboard", uiIcon: "bx bx-directions", enabled: true },
 
         {
             title: t("tree-context-menu.search-in-subtree"),

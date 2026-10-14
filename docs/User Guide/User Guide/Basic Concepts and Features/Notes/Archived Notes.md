@@ -5,6 +5,6 @@ Such notes are then by default not shown in the autocomplete and in the full tex
 
 This can be useful for notes which are no longer very useful but still valuable enough to keep around without them getting too much in the way.
 
-You can control whether archived notes are displayed in the note tree with a setting:
+You can control whether archived notes are displayed in the note tree with a setting. Even with archived notes hidden, the tree shows the path to the note you are viewing when that note or one of its parents is archived:
 
 ![](Archived%20Notes_hide-archived.png)
