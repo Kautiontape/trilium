@@ -769,6 +769,7 @@ export default class NoteTreeWidget extends NoteContextAwareWidget {
         const noteList: Fancytree.FancytreeNewNode[] = [];
 
         const hideArchivedNotes = this.hideArchivedNotes;
+        const spotlightedChildNoteId = this.#spotlightedChildNoteId(parentNote);
 
         let childBranches = parentNote.getFilteredChildBranches();
 
@@ -794,7 +795,7 @@ export default class NoteTreeWidget extends NoteContextAwareWidget {
         }
 
         for (const branch of childBranches) {
-            if (hideArchivedNotes) {
+            if (hideArchivedNotes && branch.noteId !== spotlightedChildNoteId) {
                 const note = branch.getNoteFromCache();
 
                 if (!note || note.hasLabel("archived")) {
@@ -809,6 +810,16 @@ export default class NoteTreeWidget extends NoteContextAwareWidget {
         }
 
         return noteList;
+    }
+
+    /**
+     * The child of `parentNote` that the spotlighted note path continues through, if the path
+     * runs through `parentNote` at all.
+     */
+    #spotlightedChildNoteId(parentNote: FNote) {
+        const segments = this.spotlightedNotePath?.split("/") ?? [];
+        const parentIndex = segments.indexOf(parentNote.noteId);
+        return parentIndex >= 0 ? segments[parentIndex + 1] : undefined;
     }
 
     async updateNode(node: Fancytree.FancytreeNode) {
@@ -1081,9 +1092,12 @@ export default class NoteTreeWidget extends NoteContextAwareWidget {
 
                         if (childNote?.type === "image") return;
 
-                        // The child note can be part of a note with #subtreeHidden, case in which we need to "spotlight" it.
+                        // The child note can be part of a note with #subtreeHidden, or archived while
+                        // archived notes are hidden, case in which we need to "spotlight" it.
                         const parentNote = froca.getNoteFromCache(parentNode.data.noteId);
-                        if (parentNote?.isLabelTruthy("subtreeHidden")) {
+                        const isHiddenArchived = this.hideArchivedNotes
+                            && childNote?.hasLabel("archived");
+                        if (parentNote?.isLabelTruthy("subtreeHidden") || isHiddenArchived) {
                             // Enable spotlight mode and reload the parent to show only the path to this note
                             this.spotlightedNotePath = notePath;
                             await parentNode.load(true);
@@ -1171,8 +1185,11 @@ export default class NoteTreeWidget extends NoteContextAwareWidget {
             (!treeService.isNotePathInHiddenSubtree(this.noteContext.notePath) || (await hoistedNoteService.isHoistedInHiddenSubtree(this.hoistedNoteId))) &&
             (await this.getNodeFromPath(this.noteContext.notePath));
 
-        if (this.spotlightedNode && newActiveNode !== this.spotlightedNode) {
-            // Can get removed when switching to another note in a spotlighted subtree.
+        // Switching to a note outside the spotlighted subtree takes that subtree out of the tree.
+        const staysInSpotlight = !!newActiveNode && !!this.spotlightedNode
+            && (newActiveNode === this.spotlightedNode
+                || newActiveNode.isDescendantOf(this.spotlightedNode));
+        if (this.spotlightedNode && !staysInSpotlight) {
             if (this.spotlightedNode.parent) {
                 this.spotlightedNode.remove();
             }
