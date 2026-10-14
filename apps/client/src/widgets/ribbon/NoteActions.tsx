@@ -10,6 +10,7 @@ import Component from "../../components/component";
 import NoteContext from "../../components/note_context";
 import FNote from "../../entities/fnote";
 import branches from "../../services/branches";
+import { copyTextWithToast } from "../../services/clipboard_ext";
 import dialog from "../../services/dialog";
 import { isExperimentalFeatureEnabled } from "../../services/experimental_features";
 import { t } from "../../services/i18n";
@@ -141,6 +142,9 @@ export function NoteContextMenu({ note, noteContext, itemsAtStart, itemsNearNote
                 {/* The attributes panel is a right pane tab where there is a right pane; on a phone the
                     menu is where it is reached, and a modal is where it is shown. */}
                 {isMobile && <CommandItem command="showNoteAttributes" icon="bx bx-list-check" disabled={isInOptionsOrHelp} text={t("note_actions.note_attributes")} />}
+                <CommandItem icon="bx bx-directions" text={t("tree-context-menu.copy-note-path-to-clipboard")}
+                    disabled={!noteContext?.notePath}
+                    command={() => noteContext?.notePath && copyTextWithToast(`#${noteContext.notePath}`)} />
 
                 <FormDropdownDivider />
 
