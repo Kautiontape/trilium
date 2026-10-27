@@ -264,7 +264,7 @@ type AsyncTool = Extract<ToolDefinition, { async: true }>;
 function serialized(tools: Record<string, AsyncTool>): Record<string, AsyncTool> {
     const wrapped: Record<string, AsyncTool> = {};
     for (const [name, def] of Object.entries(tools)) {
-        wrapped[name] = { ...def, execute: (args) => withCaiusLock(() => def.execute(args)) };
+        wrapped[name] = { ...def, execute: (args) => withCaiusLock(name, () => def.execute(args)) };
     }
     return wrapped;
 }

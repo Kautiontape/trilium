@@ -101,23 +101,43 @@ export function createBeccaStore(): NoteStore {
 
 let lockTail: Promise<void> = Promise.resolve();
 
+/** How long a call can hold the lock before `withCaiusLock` warns that it is blocking the others. */
+export const LOCK_WARN_MS = 30_000;
+
 /**
  * Runs `fn` once every Caius call queued before it has settled, so one call at a time reads and
- * writes the Journal. The tools wrap each `execute` in it, and anything else that drives the
- * library against becca must too. Each call waits inside its own async function, so `fn` runs in
- * the caller's CLS context (`localNowDateTime`, `componentId`). A call that rejects still releases
- * the next one.
+ * writes the Journal. Every entry point of `service.ts` runs in it, and anything else that drives
+ * the library against becca must too. Each call waits inside its own async function, so `fn` runs
+ * in the caller's CLS context (`localNowDateTime`, `componentId`). A call that rejects still
+ * releases the next one.
+ *
+ * The lock has no timeout, since releasing it early would let two calls overlap. Instead, a call
+ * that holds it for over `LOCK_WARN_MS` logs a warning with its `name`, and logs again when it
+ * releases.
  */
-export async function withCaiusLock<T>(fn: () => Promise<T>): Promise<T> {
+export async function withCaiusLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
     const previous = lockTail;
     let release = () => {};
     lockTail = new Promise((resolve) => {
         release = resolve;
     });
+    let acquired = 0;
+    let warned = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     try {
         await previous;
+        acquired = Date.now();
+        watchdog = setTimeout(() => {
+            warned = true;
+            console.warn(`Caius call ${name} has held the lock for over ${LOCK_WARN_MS / 1000} s; later Caius calls wait for it.`);
+        }, LOCK_WARN_MS);
+        watchdog.unref();
         return await fn();
     } finally {
+        clearTimeout(watchdog);
+        if (warned) {
+            console.warn(`Caius call ${name} released the lock after ${Math.round((Date.now() - acquired) / 1000)} s.`);
+        }
         release();
     }
 }

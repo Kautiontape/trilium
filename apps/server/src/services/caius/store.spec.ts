@@ -1,8 +1,8 @@
 import { becca, cls, note_service as noteService, sql_init } from "@triliumnext/core";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import sql from "../sql.js";
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, LOCK_WARN_MS, withCaiusLock } from "./store.js";
 
 const store = createBeccaStore();
 
@@ -92,5 +92,43 @@ describe("becca NoteStore", () => {
         becca.getNote(secret.noteId)!.isProtected = true;
         await expect(store.content(secret.noteId)).rejects.toThrow("protected");
         await expect(store.putContent(secret.noteId, "x")).rejects.toThrow("protected");
+    });
+});
+
+describe("withCaiusLock", () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it("warns once when a call holds the lock too long, timed from when it gets the lock, and again on release", async () => {
+        vi.useFakeTimers();
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const finish: Record<string, () => void> = {};
+        const hold = (name: string) => withCaiusLock(name, () => new Promise<void>((resolve) => {
+            finish[name] = resolve;
+        }));
+
+        const first = hold("caius_first");
+        const second = hold("caius_second");
+        await vi.advanceTimersByTimeAsync(LOCK_WARN_MS - 5_000);
+        finish.caius_first?.();
+        await first;
+        expect(warn).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(LOCK_WARN_MS - 1);
+        expect(warn).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(LOCK_WARN_MS * 2);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0]?.[0]).toContain("Caius call caius_second has held the lock for over 30 s");
+
+        finish.caius_second?.();
+        await second;
+        expect(warn).toHaveBeenCalledTimes(2);
+        expect(warn.mock.calls[1]?.[0]).toBe("Caius call caius_second released the lock after 90 s.");
+
+        await withCaiusLock("caius_quick", async () => {});
+        await vi.advanceTimersByTimeAsync(LOCK_WARN_MS * 2);
+        expect(warn).toHaveBeenCalledTimes(2);
     });
 });
