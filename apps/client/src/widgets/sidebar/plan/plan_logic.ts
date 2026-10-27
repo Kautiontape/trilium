@@ -189,7 +189,9 @@ export function fateTarget(kind: Exclude<FateKind, "drop">, now: Date, period: C
 }
 
 /** The fates of `fates` whose task is still among `candidates`; a refresh can drop a task. */
-export function listedFates(fates: Record<string, Fate>, candidates: { listItemId?: string }[]) {
+export function listedFates(
+    fates: Record<string, Fate>, candidates: { listItemId?: string | null }[]
+) {
     const listed = new Set(candidates.map((task) => task.listItemId));
     return Object.fromEntries(Object.entries(fates)
         .filter(([ listItemId ]) => listed.has(listItemId)));

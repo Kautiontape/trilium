@@ -149,7 +149,7 @@ describe("Caius routes", () => {
     it("applies a Close in one request: forwards, then drops, behind one version check", async () => {
         const day = await cls.init(() => store.calendarDay("2031-05-10"));
         await cls.init(() => store.putContent(day.noteId, `<h3>Work</h3>${ul(li("c1", "Move on"), li("c2", "Drop one"), li("c3", "Drop two"))}`));
-        const body = (expectedBlobId: string) => ({
+        const body = (expectedBlobId: string | undefined) => ({
             forwards: [ { noteId: day.noteId, listItemId: "c1", to: "2031-05-11" } ],
             drops: [
                 { noteId: day.noteId, listItemId: "c2", state: "cancelled", reason: "moot" },
