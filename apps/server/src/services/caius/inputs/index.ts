@@ -20,7 +20,9 @@ export async function readInputs(input: InputsInput, deps: InputsDeps = defaultD
     const errors: InputError[] = [];
     let jira: JiraInputs = { handoff: [], asks: [], done: [] };
     try {
-        jira = await readJira(deps, input.context);
+        const read = await readJira(deps, input.context);
+        jira = read.inputs;
+        for (const warning of read.warnings) errors.push({ source: "jira", error: warning });
     } catch (e) {
         errors.push({ source: "jira", error: e instanceof JiraError ? e.code : "unexpected" });
     }

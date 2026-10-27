@@ -15,7 +15,10 @@ const ASK_WINDOW_DAYS = 7;
 const EXCERPT_LENGTH = 200;
 const PAGE_SIZE = 50;
 const MAX_PAGES = 10;
-const MAX_ASK_TICKETS = 40;
+const MAX_ASK_TICKETS = 80;
+const CONCURRENCY = 4;
+const RETRY_STATUSES = [ 429, 502, 503, 504 ];
+const MAX_RETRY_WAIT_MS = 5000;
 const DAY_MS = 86_400_000;
 const TICKET_FIELDS = "summary,status,resolution,assignee,updated,statuscategorychangedate";
 
@@ -23,6 +26,8 @@ export interface JiraDeps {
     fetch: typeof fetch;
     env: Record<string, string | undefined>;
     now: () => Date;
+    /** Waits before a retry; defaults to a timer. */
+    sleep?: (ms: number) => Promise<void>;
 }
 
 /** A failure with a stable code, such as `http_401`, `timeout` or `not_configured`. It never carries a URL or a header. */
@@ -61,46 +66,86 @@ interface SearchPage {
     isLast?: boolean;
 }
 
-export async function readJira(deps: JiraDeps, context: string[] = []): Promise<JiraInputs> {
-    const config = readConfig(deps.env);
-    const api = jiraApi(config, deps.fetch);
-    const now = deps.now();
+/** What `readJira` found, and the non-fatal problems (`asks_truncated`, `asks_partial`, …) met on the way. */
+export interface JiraRead {
+    inputs: JiraInputs;
+    warnings: string[];
+}
 
+export async function readJira(deps: JiraDeps, context: string[] = []): Promise<JiraRead> {
+    const config = readConfig(deps.env);
+    const api = jiraApi(config, deps.fetch, deps.sleep ?? sleep);
+    const now = deps.now();
+    const warnings = new Set<string>();
+
+    // The identity and the two searches are fatal; everything per ticket is not.
     const me = await api.get<{ accountId: string }>("/rest/api/3/myself");
     const assigned = await search(api, "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC");
     const since = new Date(now.getTime() - ASK_WINDOW_DAYS * DAY_MS);
+    // `-8d` on Jira's clock always covers the 7 days measured on ours; `asksIn` applies the exact cutoff.
     const involved = await search(
         api,
-        `(assignee = currentUser() OR watcher = currentUser() OR comment ~ currentUser()) AND updated >= "${isoDate(since)}" ORDER BY updated DESC`
+        "(assignee = currentUser() OR watcher = currentUser() OR comment ~ currentUser()) AND updated >= -8d ORDER BY updated DESC"
     );
+    if (assigned.truncated || involved.truncated) warnings.add("search_truncated");
 
-    const handoff: HandoffTicket[] = [];
-    for (const issue of assigned) {
-        if (!isHandoff(issue)) continue;
-        handoff.push({ ...toTicket(config, issue), daysInStatus: await daysInStatus(api, issue, now) });
-    }
+    const handoffIssues = assigned.issues.filter(isHandoff);
+    const handoff = await mapPool(handoffIssues, async (issue): Promise<HandoffTicket> => {
+        try {
+            return { ...toTicket(config, issue), daysInStatus: await daysInStatus(api, issue, now) };
+        } catch {
+            warnings.add("handoff_partial");
+            return { ...toTicket(config, issue), daysInStatus: null };
+        }
+    });
 
-    const asks: JiraAsk[] = [];
-    const tickets = new Map<string, JiraTicket>();
-    for (const issue of involved.slice(0, MAX_ASK_TICKETS)) {
-        const ticket = toTicket(config, issue);
-        tickets.set(ticket.key, ticket);
-        const comments = await allComments(api, issue.key);
-        asks.push(...asksIn(ticket, comments, me.accountId, since));
-    }
+    if (involved.issues.length > MAX_ASK_TICKETS) warnings.add("asks_truncated");
+    const scanned = involved.issues.slice(0, MAX_ASK_TICKETS);
+    const found = await mapPool(scanned, async (issue): Promise<JiraAsk[]> => {
+        try {
+            return asksIn(toTicket(config, issue), await allComments(api, issue.key), me.accountId, since);
+        } catch {
+            warnings.add("asks_partial");
+            return [];
+        }
+    });
+    const asks = found.flat();
 
+    // Done is judged only for tickets the result offers: the hand-offs and those with an ask.
     const finished = new Set<string>();
-    for (const issue of [ ...assigned, ...involved ]) {
-        if (isDone(issue)) finished.add(issue.key);
+    const offered = new Set([ ...handoffIssues.map((i) => i.key), ...asks.map((a) => a.ticket.key) ]);
+    for (const issue of [ ...assigned.issues, ...scanned ]) {
+        if (offered.has(issue.key) && isDone(issue)) finished.add(issue.key);
     }
 
     const overridden = overriddenKeys(context);
     const mark = <T extends JiraTicket>(ticket: T): T => overridden.has(ticket.key) ? { ...ticket, overridden: true } : ticket;
     return {
-        handoff: handoff.map(mark),
-        asks: asks.map((ask) => ({ ...ask, ticket: mark(ask.ticket) })),
-        done: [ ...finished ].filter((key) => !overridden.has(key))
+        inputs: {
+            handoff: handoff.map(mark),
+            asks: asks.map((ask) => ({ ...ask, ticket: mark(ask.ticket) })),
+            done: [ ...finished ].filter((key) => !overridden.has(key))
+        },
+        warnings: [ ...warnings ]
     };
+}
+
+/** Maps `items` with at most `CONCURRENCY` calls in flight, keeping their order. */
+async function mapPool<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+        while (next < items.length) {
+            const index = next++;
+            results[index] = await fn(items[index]);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker));
+    return results;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** The keys that a Context line calls open, such as "ZAP-2590 is open; Jira's Done is a mistake". */
@@ -108,7 +153,7 @@ export function overriddenKeys(context: string[]): Set<string> {
     const keys = new Set<string>();
     for (const line of context) {
         if (!saysOpen(line)) continue;
-        for (const [ key ] of line.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g)) keys.add(key);
+        for (const [ key ] of line.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/gi)) keys.add(key.toUpperCase());
     }
     return keys;
 }
@@ -195,19 +240,27 @@ function readConfig(env: JiraDeps["env"]): Config {
     };
 }
 
-function jiraApi(config: Config, doFetch: typeof fetch) {
+function jiraApi(config: Config, doFetch: typeof fetch, wait: (ms: number) => Promise<void>) {
+    const request = async (url: URL): Promise<Response> => {
+        try {
+            return await doFetch(url, {
+                headers: { Authorization: config.authorization, Accept: "application/json" },
+                signal: AbortSignal.timeout(JIRA_TIMEOUT_MS)
+            });
+        } catch (e) {
+            throw new JiraError(e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError") ? "timeout" : "network");
+        }
+    };
+
     return {
         async get<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
             const url = new URL(config.baseUrl + path);
             for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
-            let response: Response;
-            try {
-                response = await doFetch(url, {
-                    headers: { Authorization: config.authorization, Accept: "application/json" },
-                    signal: AbortSignal.timeout(JIRA_TIMEOUT_MS)
-                });
-            } catch (e) {
-                throw new JiraError(e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError") ? "timeout" : "network");
+            let response = await request(url);
+            if (RETRY_STATUSES.includes(response.status)) {
+                const seconds = Number(response.headers.get("Retry-After"));
+                await wait(Math.min(MAX_RETRY_WAIT_MS, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 1000));
+                response = await request(url);
             }
             if (!response.ok) throw new JiraError(`http_${response.status}`);
             try {
@@ -221,8 +274,8 @@ function jiraApi(config: Config, doFetch: typeof fetch) {
 
 type Api = ReturnType<typeof jiraApi>;
 
-/** Every issue the JQL matches, following `nextPageToken` (`/search/jql` replaced the `startAt` search). */
-async function search(api: Api, jql: string): Promise<RawIssue[]> {
+/** Every issue the JQL matches, following `nextPageToken` (`/search/jql` replaced the `startAt` search). `truncated` is set when `MAX_PAGES` ended it early. */
+async function search(api: Api, jql: string): Promise<{ issues: RawIssue[]; truncated: boolean }> {
     const issues: RawIssue[] = [];
     let nextPageToken: string | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -231,9 +284,9 @@ async function search(api: Api, jql: string): Promise<RawIssue[]> {
         const result = await api.get<SearchPage>("/rest/api/3/search/jql", params);
         issues.push(...(result.issues ?? []));
         nextPageToken = result.nextPageToken;
-        if (result.isLast || !nextPageToken) break;
+        if (result.isLast || !nextPageToken) return { issues, truncated: false };
     }
-    return issues;
+    return { issues, truncated: true };
 }
 
 async function allComments(api: Api, key: string): Promise<RawComment[]> {
@@ -297,6 +350,3 @@ function timeOf(stamp: string): number {
     return Date.parse(stamp.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
 }
 
-function isoDate(date: Date): string {
-    return date.toISOString().slice(0, 10);
-}

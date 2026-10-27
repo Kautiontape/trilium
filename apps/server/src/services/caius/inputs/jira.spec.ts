@@ -68,6 +68,8 @@ describe("caius_inputs Jira", () => {
         });
         const second = jira.calls.filter((u) => u.pathname.endsWith("/search/jql") && u.searchParams.has("nextPageToken"));
         expect(second).toHaveLength(1);
+        // The window is relative to Jira's clock; the exact 7 days are applied in code.
+        expect(jira.calls.some((u) => u.searchParams.get("jql")?.includes("updated >= -8d"))).toBe(true);
         expect(jira.headers[0].Authorization).toBe(`Basic ${Buffer.from(`sam@example.com:${TOKEN}`).toString("base64")}`);
     });
 
@@ -78,7 +80,8 @@ describe("caius_inputs Jira", () => {
         // update neither asks nor mentions. ZAP-106's question came before the user's reply.
         expect(jira.asks.map((a) => [ a.ticket.key, a.author, a.created ])).toEqual([
             [ "ZAP-105", "Riley Sample", "2026-10-24T15:20:00.000Z" ],
-            [ "ZAP-105", "Jordan Placeholder", "2026-10-25T18:00:00.000Z" ]
+            [ "ZAP-105", "Jordan Placeholder", "2026-10-25T18:00:00.000Z" ],
+            [ "ZAP-104", "Riley Sample", "2026-10-26T19:30:00.000Z" ]
         ]);
         expect(jira.asks[0].excerpt.length).toBeGreaterThan(190);
         expect(jira.asks[0].excerpt.length).toBeLessThanOrEqual(200);
@@ -89,9 +92,10 @@ describe("caius_inputs Jira", () => {
 
     it("reports tickets Jira calls done, and lets a Context line reopen one", async () => {
         const plain = await run(fakeJira().doFetch);
+        // ZAP-107 is Done too, but neither a hand-off nor the subject of an ask.
         expect(plain.jira.done).toEqual([ "ZAP-103", "ZAP-104" ]);
 
-        const reopened = await run(fakeJira().doFetch, ENV, [ "ZAP-103 is open; Jira's Done is a mistake", "ZAP-102 was reopened" ]);
+        const reopened = await run(fakeJira().doFetch, ENV, [ "zap-103 is open; Jira's Done is a mistake", "ZAP-102 was reopened" ]);
         expect(reopened.jira.done).toEqual([ "ZAP-104" ]);
         expect(reopened.jira.handoff.find((t) => t.key === "ZAP-103")?.overridden).toBe(true);
         expect(reopened.jira.handoff.find((t) => t.key === "ZAP-101")?.overridden).toBeUndefined();
@@ -109,6 +113,68 @@ describe("caius_inputs Jira", () => {
         expect(timedOut.errors).toEqual([ { source: "jira", error: "timeout" } ]);
 
         expect(JSON.stringify([ unauthorized, missing, timedOut ])).not.toContain(TOKEN);
+    });
+});
+
+describe("caius_inputs Jira under strain", () => {
+    const withFixtures = (override: (url: URL) => Response | undefined) => {
+        const base = fakeJira();
+        return (async (input: URL, init?: never) => override(input) ?? base.doFetch(input, init)) as unknown as typeof fetch;
+    };
+    const runWith = (fetchImpl: typeof fetch, sleeps: number[] = []) =>
+        readInputs({ date: "2026-10-27" }, { fetch: fetchImpl, env: ENV, now: () => NOW, sleep: async (ms) => { sleeps.push(ms); } });
+
+    it("retries a 503 or 429 once, waiting for Retry-After up to five seconds", async () => {
+        for (const [ header, waited ] of [ [ "2", 2000 ], [ "30", 5000 ], [ undefined, 1000 ] ] as const) {
+            let hits = 0;
+            const sleeps: number[] = [];
+            const result = await runWith(withFixtures((url) => {
+                if (url.pathname !== "/rest/api/3/myself" || hits++ > 0) return undefined;
+                return new Response("{}", { status: 503, headers: header ? { "Retry-After": header } : {} });
+            }), sleeps);
+            expect(result.errors.filter((e) => e.source === "jira")).toEqual([]);
+            expect(sleeps).toEqual([ waited ]);
+        }
+
+        const twice = await runWith(withFixtures((url) => url.pathname === "/rest/api/3/myself" ? new Response("{}", { status: 429 }) : undefined));
+        expect(twice.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "http_429" } ]);
+    });
+
+    it("keeps going when one ticket's comments or changelog fail, and says so once each", async () => {
+        const result = await runWith(withFixtures((url) =>
+            /ZAP-105\/comment$|ZAP-101\/changelog$/.test(url.pathname) ? new Response("{}", { status: 500 }) : undefined
+        ));
+        const jiraErrors = result.errors.filter((e) => e.source === "jira").map((e) => e.error).sort();
+        expect(jiraErrors).toEqual([ "asks_partial", "handoff_partial" ]);
+        expect(result.jira.asks.map((a) => a.ticket.key)).toEqual([ "ZAP-104" ]);
+        expect(result.jira.handoff.find((t) => t.key === "ZAP-101")?.daysInStatus).toBeNull();
+        expect(result.jira.handoff.find((t) => t.key === "ZAP-103")?.daysInStatus).toBe(3);
+    });
+
+    it("names a cap that bites, fetching comments four at a time", async () => {
+        const many = Array.from({ length: 90 }, (_, i) => ({ key: `ZAP-${500 + i}`, fields: { summary: "x", status: { name: "In Progress" }, updated: "2026-10-26T10:00:00.000-0400" } }));
+        let inFlight = 0;
+        let peak = 0;
+        const result = await runWith((async (input: URL) => {
+            const { pathname, searchParams } = input;
+            if (pathname === "/rest/api/3/myself") return new Response(JSON.stringify({ accountId: "acc-sam-0001" }));
+            if (pathname === "/rest/api/3/search/jql") {
+                const assigned = searchParams.get("jql")?.startsWith("assignee = currentUser() AND statusCategory");
+                // The assigned search never ends; the involved one returns 90 tickets.
+                return new Response(JSON.stringify(assigned
+                    ? { issues: many.slice(0, 5), nextPageToken: "more" }
+                    : { issues: many, isLast: true }));
+            }
+            inFlight++;
+            peak = Math.max(peak, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            inFlight--;
+            return new Response(JSON.stringify({ total: 0, comments: [], values: [] }));
+        }) as unknown as typeof fetch);
+
+        const codes = result.errors.filter((e) => e.source === "jira").map((e) => e.error).sort();
+        expect(codes).toEqual([ "asks_truncated", "search_truncated" ]);
+        expect(peak).toBe(4);
     });
 });
 
