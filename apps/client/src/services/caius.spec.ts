@@ -385,6 +385,18 @@ describe("openPeriodNoteIds", () => {
 });
 
 describe("caiusApi", () => {
+    it("explains through the silent-404 getter, reading the server's not_found body as the answer", async () => {
+        h.getWithSilentNotFound.mockResolvedValueOnce({ lane: "today", summary: "Today: …" });
+        await expect(caiusApi.explain("n1", "e1")).resolves.toEqual({ lane: "today", summary: "Today: …" });
+        expect(h.getWithSilentNotFound).toHaveBeenLastCalledWith("caius/explain?noteId=n1&listItemId=e1");
+
+        h.getWithSilentNotFound.mockRejectedValueOnce(JSON.stringify({ error: "not_found", detail: "No task e1" }));
+        await expect(caiusApi.explain("n1", "e1")).resolves.toEqual({ error: "not_found" });
+
+        h.getWithSilentNotFound.mockRejectedValueOnce("<html>Cannot GET</html>");
+        await expect(caiusApi.explain("n1", "e1")).rejects.toBe("<html>Cannot GET</html>");
+    });
+
     it("posts the items for real and reads the results out of the response", async () => {
         const results = [ { status: "updated", noteId: "n1" } ];
         h.post.mockResolvedValueOnce({ results });

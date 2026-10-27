@@ -104,10 +104,34 @@ export const caiusApi = {
     forward: (items: CaiusForwardItem[]) => postItems("forward", items),
     accept: (items: CaiusAcceptItem[]) => postItems("accept", items),
     dismiss: (items: CaiusDismissItem[]) => postItems("dismiss", items),
-    explain: (noteId: string, listItemId: string) => server.get<CaiusExplanation>(
-        `caius/explain?${new URLSearchParams({ noteId, listItemId }).toString()}`
-    )
+    explain
 };
+
+/**
+ * Why a task is in its lane. The route answers 404 `{ error: "not_found" }` for an item it cannot
+ * find; that comes back as the answer, without the generic error toast `server.get()` would show.
+ */
+async function explain(noteId: string, listItemId: string): Promise<CaiusExplanation> {
+    try {
+        return await server.getWithSilentNotFound<CaiusExplanation>(
+            `caius/explain?${new URLSearchParams({ noteId, listItemId }).toString()}`
+        );
+    } catch (error) {
+        if (isNotFoundBody(error)) {
+            return { error: "not_found" };
+        }
+        throw error;
+    }
+}
+
+function isNotFoundBody(responseText: unknown) {
+    try {
+        return typeof responseText === "string"
+            && (JSON.parse(responseText) as { error?: unknown }).error === "not_found";
+    } catch {
+        return false;
+    }
+}
 
 async function postItems(action: string, items: object[]): Promise<CaiusItemResult[]> {
     const response = await server.post<{ results: CaiusItemResult[] }>(
