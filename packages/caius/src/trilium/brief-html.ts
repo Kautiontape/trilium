@@ -33,6 +33,17 @@ export function leadingInclude(html: string): string | null {
   return (first && isIncludeNote(first) && first.getAttribute('data-note-id')) || null;
 }
 
+/**
+ * `html` without its images: every `<img>`, and a `<figure class="image">` whole. Section text can
+ * come from email or Jira, so a remote image in it, such as a tracking pixel, never reaches the brief.
+ */
+export function withoutImages(html: string): string {
+  const root = parse(html, { comment: true });
+  const figures = root.querySelectorAll('figure.image');
+  const images = root.querySelectorAll('img').filter((img) => !figures.some((figure) => figure.querySelectorAll('img').includes(img)));
+  return apply(html, [...figures, ...images].map((el) => ({ start: el.range[0], end: el.range[1], text: '' })));
+}
+
 export interface BriefAct {
   range: string;
   text: string;

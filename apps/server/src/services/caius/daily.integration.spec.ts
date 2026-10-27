@@ -172,7 +172,7 @@ describe("caius_brief_write", () => {
         ],
         sections: [
             { title: "Follow up", markdown: "**Sam** asked for the numbers." },
-            { title: "Heads-up", markdown: "- Two packages shipped overnight" }
+            { title: "Heads-up", markdown: "- Two packages shipped overnight\n\n![](https://tracker.example/pixel.png)" }
         ],
         header: {
             start: "10:00", end: "23:00",
@@ -225,6 +225,7 @@ describe("caius_brief_write", () => {
         expect(body).toContain(">Get ZAP-101 done: because sitting in Dev Verify for 3 days (~30m)</li>");
         expect(body).toContain(">Get the review done: because Sam asked on Tuesday (~1h30m)</li>");
         expect(body).not.toContain("todo-list");
+        expect(body).not.toContain("<img");
         expect(body).toMatch(/<h2>Follow up<\/h2><p><strong>Sam<\/strong> asked for the numbers\.<\/p><h2>Heads-up<\/h2><ul>/);
 
         const day = await cls.init(() => store.content(dayId));

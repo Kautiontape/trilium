@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefBodyHtml, headerHtml, includeNote, leadingInclude, withInclude } from './brief-html.js';
+import { briefBodyHtml, headerHtml, includeNote, leadingInclude, withInclude, withoutImages } from './brief-html.js';
 
 const INCLUDE = '<section class="include-note" data-note-id="hdr" data-box-size="full">&nbsp;</section>';
 
@@ -71,5 +71,13 @@ describe('briefBodyHtml', () => {
       INCLUDE + '<h2>Get done today</h2><ul><li>Get ZAP-1 done: because it waits (~30m)</li><li>a &lt; b</li></ul>'
       + '<h2>Follow up</h2><p>Ask Sam.</p><h2>Heads-up</h2><p>Shipped.</p>',
     );
+  });
+});
+
+describe('withoutImages', () => {
+  it('takes out images and image figures and leaves the rest', () => {
+    expect(withoutImages('<p>Seen <img src="https://tracker.example/p.png" alt=""> here.</p><figure class="image"><img src="x.png"><figcaption>c</figcaption></figure><p>End</p>'))
+      .toBe('<p>Seen  here.</p><p>End</p>');
+    expect(withoutImages('<p>No images</p>')).toBe('<p>No images</p>');
   });
 });

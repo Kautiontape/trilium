@@ -47,6 +47,6 @@ export type { WorkBlock, WorkTask } from './daily/blocks.js';
 export type { Rhythm } from './daily/standing.js';
 export { dayCandidates, keysOf, liveKeys } from './daily/candidates.js';
 export type { Candidate, CandidateReason, JiraLike, TicketLike, WeekTaskLike } from './daily/candidates.js';
-export { briefBodyHtml, headerHtml, includeNote, leadingInclude, withInclude } from './trilium/brief-html.js';
+export { briefBodyHtml, headerHtml, includeNote, leadingInclude, withInclude, withoutImages } from './trilium/brief-html.js';
 export type { BriefAct } from './trilium/brief-html.js';
 export type { TerrainInput, TerrainEvent, TerrainWork, WeatherIcon } from './draw/terrain.js';

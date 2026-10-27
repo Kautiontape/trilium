@@ -15,7 +15,8 @@ import {
     leadingInclude,
     type NoteStore,
     type StoreNote,
-    withInclude
+    withInclude,
+    withoutImages
 } from "@triliumnext/caius";
 import { createHash } from "crypto";
 import { t } from "i18next";
@@ -70,7 +71,7 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
         because: pick.because.trim().replace(/^because\s+/i, ""),
         estimate: formatEstimate(pick.minutes)
     }));
-    const sections = input.sections.map(({ title, markdown }) => ({ title, html: deps.render(markdown, title) }));
+    const sections = input.sections.map(({ title, markdown }) => ({ title, html: withoutImages(deps.render(markdown, title)) }));
     const headerContent = (attachmentId: string) => headerHtml({
         dateLine: dateLine(date),
         headline: input.headline,
