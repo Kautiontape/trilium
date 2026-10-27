@@ -166,8 +166,13 @@ export interface Fate {
  */
 export function closeFates(period: CaiusPeriodKind, key: string, now: Date): FateKind[] {
     const later: FateKind[] = [ "tomorrow", "next_week", "next_month", "drop" ];
+    return isPastPeriod(period, key, now) ? [ "current", ...later ] : later;
+}
+
+/** Whether the `period` note `key` is over: before the day, week or month `now` falls in. */
+export function isPastPeriod(period: CaiusPeriodKind, key: string, now: Date) {
     // Keys of one kind sort by date.
-    return key < periodKey({ kind: period, anchor: now }) ? [ "current", ...later ] : later;
+    return key < periodKey({ kind: period, anchor: now });
 }
 
 /**

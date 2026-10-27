@@ -144,6 +144,7 @@ describe("PlanTab", () => {
     it("pulls a task into the viewed period through a write on the task's own note", async () => {
         api.plan.mockResolvedValue(dayPlan());
         const tab = await mount();
+        expect(tab.querySelector("#plan-pull-in")).not.toBeNull();
 
         await press(button(tab, "→ 2026-10-27", tab.querySelector("[data-lane=overdue]")));
         // The viewed note is the target, so its editors are locked too.
@@ -167,6 +168,8 @@ describe("PlanTab", () => {
         const titles = [ ...first.querySelectorAll("button") ].map((el) =>
             el.getAttribute("title") ?? el.dataset.bsOriginalTitle);
         expect(titles[0]).toBe("Today → 2026-10-27");
+        // Nothing is pulled into a period that is already over.
+        expect(tab.querySelector("#plan-pull-in")).toBeNull();
         await press(button(first, "", first, "Today → 2026-10-27"));
         await press(button(tab, "Apply"));
         expect(api.apply).toHaveBeenCalledWith({

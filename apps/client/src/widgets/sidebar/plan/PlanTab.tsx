@@ -25,7 +25,8 @@ import { CollapsibleWidgets } from "../RightPanelWidget";
 import PlanCapacity from "./PlanCapacity";
 import PlanClose from "./PlanClose";
 import {
-    acceptSections, isCloseable, periodKey, periodOfNote, stepPeriod, type ViewedPeriod
+    acceptSections, isCloseable, isPastPeriod, periodKey, periodOfNote, stepPeriod,
+    type ViewedPeriod
 } from "./plan_logic";
 import PlanPullIn from "./PlanPullIn";
 import PlanSuggested from "./PlanSuggested";
@@ -87,12 +88,14 @@ export default function PlanTab() {
                         sections={current.sections}
                         onChanged={reload}
                     />
-                    <PlanPullIn
-                        plan={current.plan}
-                        lanes={current.lanes}
-                        onOpen={openTask}
-                        onChanged={reload}
-                    />
+                    {!isPastPeriod(current.plan.period, current.plan.key, new Date()) && (
+                        <PlanPullIn
+                            plan={current.plan}
+                            lanes={current.lanes}
+                            onOpen={openTask}
+                            onChanged={reload}
+                        />
+                    )}
                     {current.plan.noteId && isCloseable(period, new Date()) && (
                         <PlanClose
                             key={key}
