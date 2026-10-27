@@ -1,8 +1,8 @@
-// Synthetic Trilium HTML and a fake ETAPI, shared by the planning tests.
+// Synthetic Trilium HTML and a fake note store, shared by the planning tests.
 // Nothing here is real note text.
 
-import type { PlanEtapi } from './etapi.js';
-import type { EtapiNote } from './etapi.js';
+import type { NoteStore } from './store.js';
+import type { StoreNote } from './store.js';
 
 export const STATES = new Map([
   ['doing', '/'],
@@ -18,7 +18,7 @@ export const ul = (...items: string[]) => `<ul class="todo-list">${items.join(''
 export const critical = (...items: string[]) => `<aside class="admonition important">${ul(...items)}</aside>`;
 export const TEMPLATE = '<h2>☑️ Tasks</h2><ul><li data-list-item-id="etemplate">[…]</li></ul>';
 
-export const periodNote = (noteId: string, name: string, key: string, extra: Partial<EtapiNote> = {}): EtapiNote => ({
+export const periodNote = (noteId: string, name: string, key: string, extra: Partial<StoreNote> = {}): StoreNote => ({
   noteId,
   title: key,
   type: 'text',
@@ -31,9 +31,9 @@ export const periodNote = (noteId: string, name: string, key: string, extra: Par
 });
 
 export interface Fake {
-  api: PlanEtapi;
+  api: NoteStore;
   html: Record<string, string>;
-  notes: Record<string, EtapiNote>;
+  notes: Record<string, StoreNote>;
   /** Every non-GET-ish call in order: `put id`, `label id name=value`, `create day …`. */
   log: string[];
 }
@@ -42,8 +42,8 @@ export interface Fake {
  * A fake with a Journal: `notes` maps noteId → [note, html]. Creating a day, week or month
  * makes a note whose content is the Journal template.
  */
-export function fakeTrilium(seed: Record<string, [EtapiNote, string]>, o: { template?: string; failPut?: string } = {}): Fake {
-  const notes: Record<string, EtapiNote> = {};
+export function fakeTrilium(seed: Record<string, [StoreNote, string]>, o: { template?: string; failPut?: string } = {}): Fake {
+  const notes: Record<string, StoreNote> = {};
   const html: Record<string, string> = {};
   for (const [id, [n, h]] of Object.entries(seed)) {
     notes[id] = n;
@@ -58,7 +58,7 @@ export function fakeTrilium(seed: Record<string, [EtapiNote, string]>, o: { temp
     html[n.noteId] = template;
     return n;
   };
-  const api: PlanEtapi = {
+  const api: NoteStore = {
     async search(q) {
       if (q === '#calendarRoot') return [periodNote('root', 'calendarRoot', '')];
       const m = /^#(\w+)="?([^"]+)"?$/.exec(q);

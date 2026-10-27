@@ -1,7 +1,6 @@
-export { etapiClient, label } from './etapi.js';
-export type { PlanEtapi } from './etapi.js';
-export { normalizeBaseUrl } from './etapi.js';
-export type { Etapi, EtapiNote, EtapiAttribute } from './etapi.js';
+export { etapiClient, normalizeBaseUrl } from './etapi.js';
+export { label } from './store.js';
+export type { NoteStore, NoteReader, StoreNote, StoreAttribute } from './store.js';
 export { htmlToMarkdown, DEFAULT_STATE_SYMBOLS } from './markdown.js';
 export type { StateSymbols } from './markdown.js';
 export { loadJournal, loadStateSymbols } from './journal.js';

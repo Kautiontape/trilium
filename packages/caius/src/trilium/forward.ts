@@ -9,7 +9,7 @@
 // item already Rescheduled is skipped, and a copy already sitting in the target
 // (a forward that died between the two writes) is not duplicated.
 
-import { label, type Etapi, type EtapiNote } from './etapi.js';
+import { label, type NoteReader, type StoreNote } from './store.js';
 import { loadStateSymbols } from './journal.js';
 import { periodQuery } from './plan-read.js';
 import { dayLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
@@ -50,14 +50,14 @@ export interface ForwardOptions {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export async function forwardTasks(api: Etapi, requests: ForwardRequest[], opts: ForwardOptions = {}): Promise<ForwardResult[]> {
+export async function forwardTasks(api: NoteReader, requests: ForwardRequest[], opts: ForwardOptions = {}): Promise<ForwardResult[]> {
   const states = opts.states ?? (await loadStateSymbols(api));
   const stateId = [...states].find(([, symbol]) => symbol === '>')?.[0] ?? '_rescheduled';
-  const days = new Map<string, EtapiNote | null>();
+  const days = new Map<string, StoreNote | null>();
 
-  const day = async (date: string): Promise<EtapiNote | null> => {
+  const day = async (date: string): Promise<StoreNote | null> => {
     if (days.has(date)) return days.get(date)!;
-    let note: EtapiNote | null;
+    let note: StoreNote | null;
     if (opts.dryRun) {
       // The calendar endpoint creates missing notes, so a dry run only searches.
       note = (await api.search(periodQuery('dateNote', date)))[0] ?? null;
@@ -80,10 +80,10 @@ export async function forwardTasks(api: Etapi, requests: ForwardRequest[], opts:
 }
 
 async function forwardOne(
-  api: Etapi,
+  api: NoteReader,
   req: ForwardRequest,
   opts: ForwardOptions & { states: StateSymbols; stateId: string },
-  day: (date: string) => Promise<EtapiNote | null>,
+  day: (date: string) => Promise<StoreNote | null>,
 ): Promise<ForwardResult> {
   const skip = (reason: SkipReason, detail?: string): ForwardResult => ({ ...req, status: 'skipped', reason, detail });
   if (!req.noteId || !req.listItemId || !DATE.test(req.to ?? '')) {
@@ -161,7 +161,7 @@ async function forwardOne(
   return { ...req, status: 'moved', detail: alreadyCopied ? 'target already held the copy' : undefined };
 }
 
-function dayOrTitle(note: EtapiNote): string {
+function dayOrTitle(note: StoreNote): string {
   const date = label(note, 'dateNote');
   return date ? dayLabel(date) : note.title;
 }

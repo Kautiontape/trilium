@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { forwardTasks } from './forward.js';
-import type { Etapi, EtapiNote } from './etapi.js';
+import type { NoteReader, StoreNote } from './store.js';
 
 const STATES = new Map([['_rescheduled', '>']]);
 
@@ -8,7 +8,7 @@ const li = (id: string, text: string, checked = false) =>
   `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox"${checked ? ' checked="checked"' : ''} disabled="disabled"><span class="todo-list__label__description">${text}</span></label></li>`;
 const ul = (...items: string[]) => `<ul class="todo-list">${items.join('')}</ul>`;
 
-const day = (noteId: string, date: string, extra: Partial<EtapiNote> = {}): EtapiNote => ({
+const day = (noteId: string, date: string, extra: Partial<StoreNote> = {}): StoreNote => ({
   noteId,
   title: date,
   type: 'text',
@@ -21,14 +21,14 @@ const day = (noteId: string, date: string, extra: Partial<EtapiNote> = {}): Etap
 });
 
 function fake(opts: { onGetContent?: (id: string, n: number) => void; failPut?: string } = {}) {
-  const notes: Record<string, EtapiNote> = { mon: day('mon', '2026-10-26'), tue: day('tue', '2026-10-27') };
+  const notes: Record<string, StoreNote> = { mon: day('mon', '2026-10-26'), tue: day('tue', '2026-10-27') };
   const html: Record<string, string> = {
     mon: '<h2>☑️ Tasks</h2><h3>Work</h3>' + ul(li('eone', 'Write it'), li('etwo', 'Other')),
     tue: '<h2>☑️ Tasks</h2><h3>Work</h3>' + ul(li('eexisting', 'Already here')),
   };
   const log: string[] = [];
   const reads: Record<string, number> = {};
-  const api: Etapi = {
+  const api: NoteReader = {
     async search(q) {
       log.push(`search ${q}`);
       const m = /#dateNote="?([^"]+)"?/.exec(q);

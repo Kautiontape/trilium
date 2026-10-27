@@ -10,7 +10,7 @@
 // non-text notes and the morning brief's own notes (#morningBrief) are skipped.
 
 import type { VaultDoc } from '../index/index.js';
-import { label, type Etapi, type EtapiNote } from './etapi.js';
+import { label, type NoteReader, type StoreNote } from './store.js';
 import { htmlToMarkdownWithIds, DEFAULT_STATE_SYMBOLS, type StateSymbols } from './markdown.js';
 import { neutralizeSuggested } from './sections.js';
 
@@ -42,7 +42,7 @@ const SKIP_LABELS = ['morningBrief'];
 const CONCURRENCY = 8;
 
 /** stateId → markdown symbol from the live `_taskStates` notes; defaults if unreadable. */
-export async function loadStateSymbols(api: Etapi): Promise<StateSymbols> {
+export async function loadStateSymbols(api: NoteReader): Promise<StateSymbols> {
   try {
     const container = await api.note('_taskStates');
     const states = await Promise.all(container.childNoteIds.map((id) => api.note(id)));
@@ -58,7 +58,7 @@ export async function loadStateSymbols(api: Etapi): Promise<StateSymbols> {
   }
 }
 
-export async function loadJournal(api: Etapi): Promise<JournalLoad> {
+export async function loadJournal(api: NoteReader): Promise<JournalLoad> {
   const roots = await api.search('#calendarRoot');
   const root = roots[0];
   if (!root) throw new Error('no note with #calendarRoot');
@@ -69,14 +69,14 @@ export async function loadJournal(api: Etapi): Promise<JournalLoad> {
   const skipped = { protected: 0, brief: 0, nonText: 0 };
 
   // One entry per note to read: the note, and the path it becomes.
-  const wanted: { note: EtapiNote; path: string }[] = [];
+  const wanted: { note: StoreNote; path: string }[] = [];
   const taken = new Set<string>();
   const claim = (base: string, noteId: string): string => {
     const path = taken.has(`${base}.md`) ? `${base} (${noteId}).md` : `${base}.md`;
     taken.add(path);
     return path;
   };
-  const keep = (note: EtapiNote): boolean => {
+  const keep = (note: StoreNote): boolean => {
     if (SKIP_LABELS.some((l) => label(note, l) !== undefined)) {
       skipped.brief++;
       return false;
@@ -117,7 +117,7 @@ export async function loadJournal(api: Etapi): Promise<JournalLoad> {
 }
 
 /** One note's HTML as a document: scanner text, full text, item ids, critical and Suggested lines. */
-export function buildDoc(note: EtapiNote, path: string, html: string, states: StateSymbols): TriliumDoc {
+export function buildDoc(note: StoreNote, path: string, html: string, states: StateSymbols): TriliumDoc {
   const { markdown, itemIds, critical } = htmlToMarkdownWithIds(html, states);
   const { text, suggested } = neutralizeSuggested(markdown);
   return {

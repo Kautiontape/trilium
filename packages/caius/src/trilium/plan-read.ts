@@ -3,7 +3,7 @@
 // how much time the live tasks add up to. Read-only; never creates a note.
 
 import { scanDocs, type IndexedTask } from '../index/index.js';
-import { label, type Etapi, type EtapiNote } from './etapi.js';
+import { label, type NoteReader, type StoreNote } from './store.js';
 import { buildDoc, loadStateSymbols, type TriliumDoc } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import { headingsByLine, isSuggestedName, sectionKind, type SectionKind } from './sections.js';
@@ -78,7 +78,7 @@ export function periodPath(period: PeriodKind, key: string): string {
   return `Journal/${PERIODS[period].folder}/${key}.md`;
 }
 
-export function dismissedKeys(note: Pick<EtapiNote, 'attributes'>): string[] {
+export function dismissedKeys(note: Pick<StoreNote, 'attributes'>): string[] {
   return note.attributes.filter((a) => a.type === 'label' && a.name === DISMISSED_LABEL).map((a) => a.value);
 }
 
@@ -88,7 +88,7 @@ export function periodQuery(labelName: string, key: string): string {
 }
 
 /** Find a periodic note by its label, without creating it. */
-export async function findPeriodNote(api: Etapi, period: PeriodKind, key: string): Promise<EtapiNote | null> {
+export async function findPeriodNote(api: NoteReader, period: PeriodKind, key: string): Promise<StoreNote | null> {
   const found = await api.search(periodQuery(PERIODS[period].label, key));
   return found.find((n) => label(n, PERIODS[period].label) === key) ?? found[0] ?? null;
 }
@@ -189,7 +189,7 @@ function emptyView(period: PeriodKind, key: string): PlanView {
 }
 
 /** Read one day, week or month note. A missing note gives an empty view with `noteId: null`. */
-export async function readPlan(api: Etapi, period: PeriodKind, key: string, now: Date = new Date()): Promise<PlanView> {
+export async function readPlan(api: NoteReader, period: PeriodKind, key: string, now: Date = new Date()): Promise<PlanView> {
   const note = await findPeriodNote(api, period, key);
   if (!note) return emptyView(period, key);
   if (note.type !== 'text' || note.isProtected) throw new Error(`${period} note ${note.noteId} is protected or not a text note`);

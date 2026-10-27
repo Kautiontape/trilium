@@ -3,11 +3,11 @@ import { scanDocs, type ScanResult } from '../index/index.js';
 import { loadJournal, type JournalLoad } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import { openTasks } from './open.js';
-import type { Etapi, EtapiNote } from './etapi.js';
+import type { NoteReader, StoreNote } from './store.js';
 
 const now = new Date(2026, 9, 26); // Mon 26 Oct 2026, ISO week 44
 
-const note = (noteId: string, labels: Record<string, string>, extra: Partial<EtapiNote> = {}): EtapiNote => ({
+const note = (noteId: string, labels: Record<string, string>, extra: Partial<StoreNote> = {}): StoreNote => ({
   noteId,
   title: noteId,
   type: 'text',
@@ -23,7 +23,7 @@ const list = (...items: string[]) => `<ul>${items.map((i) => `<li>${i}</li>`).jo
 const todoItem = (id: string, text: string, checked = false) =>
   `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox"${checked ? ' checked="checked"' : ''} disabled="disabled"><span class="todo-list__label__description">${text}</span></label></li>`;
 
-const notes: Record<string, EtapiNote> = {
+const notes: Record<string, StoreNote> = {
   root: note('root', { calendarRoot: '' }),
   month: note('month', { monthNote: '2026-10' }, { childNoteIds: ['week'] }),
   week: note('week', { weekNote: '2026-W44' }, { childNoteIds: ['today', 'past'] }),
@@ -43,7 +43,7 @@ const content: Record<string, string> = {
   brief: list('[ ] Brief line that must not be indexed'),
 };
 
-const fake: Etapi = {
+const fake: NoteReader = {
   async search(query) {
     if (query === '#calendarRoot') return [notes.root!];
     return ['month', 'week', 'today', 'past'].map((id) => notes[id]!);

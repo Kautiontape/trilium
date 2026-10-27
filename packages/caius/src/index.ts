@@ -1,7 +1,6 @@
-export { etapiClient, label } from './trilium/etapi.js';
-export type { PlanEtapi } from './trilium/etapi.js';
-export { normalizeBaseUrl } from './trilium/etapi.js';
-export type { Etapi, EtapiNote, EtapiAttribute } from './trilium/etapi.js';
+export { etapiClient, normalizeBaseUrl } from './trilium/etapi.js';
+export { label } from './trilium/store.js';
+export type { NoteStore, NoteReader, StoreNote, StoreAttribute } from './trilium/store.js';
 export { htmlToMarkdown, DEFAULT_STATE_SYMBOLS } from './trilium/markdown.js';
 export type { StateSymbols } from './trilium/markdown.js';
 export { loadJournal, loadStateSymbols } from './trilium/journal.js';

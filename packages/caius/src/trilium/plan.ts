@@ -10,7 +10,7 @@ import { scanTokens } from '../core/index.js';
 import { loadJournal, loadStateSymbols } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import type { NoteChange } from './forward.js';
-import type { EtapiNote, PlanEtapi } from './etapi.js';
+import type { StoreNote, NoteStore } from './store.js';
 import { JIRA_BASE, markdownLinks, parseEstimate, parseSource, taskKeys } from './keys.js';
 import {
   escapeHtml,
@@ -115,7 +115,7 @@ async function eachSequentially<Q, R>(reqs: Q[], fn: (req: Q) => Promise<Done<Q>
   return out;
 }
 
-function usable(note: EtapiNote): string | null {
+function usable(note: StoreNote): string | null {
   return note.type !== 'text' || note.isProtected ? 'note is protected or not a text note' : null;
 }
 
@@ -158,7 +158,7 @@ function describe(req: AddRequest, source: NonNullable<ReturnType<typeof parseSo
 }
 
 /** Live task keys across the whole Journal (Suggested items excluded), key → "period: text". */
-async function journalKeys(api: PlanEtapi, now: Date): Promise<Map<string, string>> {
+async function journalKeys(api: NoteStore, now: Date): Promise<Map<string, string>> {
   const load = await loadJournal(api);
   const scan = scanDocs(load.docs, TRILIUM_CONFIG, now);
   const keys = new Map<string, string>();
@@ -171,7 +171,7 @@ async function journalKeys(api: PlanEtapi, now: Date): Promise<Map<string, strin
   return keys;
 }
 
-export async function addTasks(api: PlanEtapi, reqs: AddRequest[], opts: PlanOptions & { now?: Date } = {}): Promise<Done<AddRequest>[]> {
+export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOptions & { now?: Date } = {}): Promise<Done<AddRequest>[]> {
   const now = opts.now ?? new Date();
   let journal: Map<string, string> | null = null;
   const newId = opts.newId ?? newListItemId;
@@ -212,7 +212,7 @@ export async function addTasks(api: PlanEtapi, reqs: AddRequest[], opts: PlanOpt
 
     const id = newId();
     const markup = itemMarkup(id, describe(req, source, est));
-    let target_: EtapiNote | null = note;
+    let target_: StoreNote | null = note;
     let created = false;
     if (!note) {
       if (!opts.dryRun) {
@@ -261,7 +261,7 @@ export async function addTasks(api: PlanEtapi, reqs: AddRequest[], opts: PlanOpt
 
 // ---- accept / dismiss ----------------------------------------------------
 
-async function loadNote(api: PlanEtapi, noteId: string): Promise<{ note: EtapiNote } | { problem: string }> {
+async function loadNote(api: NoteStore, noteId: string): Promise<{ note: StoreNote } | { problem: string }> {
   const note = await api.note(noteId);
   const problem = usable(note);
   return problem ? { problem } : { note };
@@ -269,7 +269,7 @@ async function loadNote(api: PlanEtapi, noteId: string): Promise<{ note: EtapiNo
 
 const validItem = (r: ItemRequest | AcceptRequest) => !!r.noteId && !!r.listItemId;
 
-export async function acceptTasks(api: PlanEtapi, reqs: AcceptRequest[], opts: PlanOptions = {}): Promise<Done<AcceptRequest>[]> {
+export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: PlanOptions = {}): Promise<Done<AcceptRequest>[]> {
   return eachSequentially(reqs, async (req) => {
     if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
     const given = [req.section !== undefined, !!req.critical].filter(Boolean).length;
@@ -293,7 +293,7 @@ export async function acceptTasks(api: PlanEtapi, reqs: AcceptRequest[], opts: P
   });
 }
 
-export async function dismissTasks(api: PlanEtapi, reqs: ItemRequest[], opts: PlanOptions = {}): Promise<Done<ItemRequest>[]> {
+export async function dismissTasks(api: NoteStore, reqs: ItemRequest[], opts: PlanOptions = {}): Promise<Done<ItemRequest>[]> {
   return eachSequentially(reqs, async (req) => {
     if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
     const loaded = await loadNote(api, req.noteId);
@@ -328,7 +328,7 @@ export async function dismissTasks(api: PlanEtapi, reqs: ItemRequest[], opts: Pl
 const RESULT_STATE: Record<StateAction, string> = { done: 'done', start: 'doing', drop: 'cancelled' };
 
 export async function setStates(
-  api: PlanEtapi,
+  api: NoteStore,
   action: StateAction,
   reqs: ItemRequest[],
   opts: PlanOptions = {},
