@@ -16,23 +16,27 @@ function setupContextMenu() {
     const api = eApi.contextMenu;
 
     api.onContextMenu(async (params) => {
+        // Electron reports the point in device-independent pixels; the page works in CSS pixels.
+        const zoomLevel = zoomService.getCurrentZoom();
+        const x = params.x / zoomLevel;
+        const y = params.y / zoomLevel;
+
         const items = await buildNoteContextMenuItems({
             linkURL: params.linkURL,
             linkText: params.linkText,
             isMedia: params.mediaType !== "none",
             isEditable: params.isEditable,
-            selectionText: params.selectionText
+            selectionText: params.selectionText,
+            element: document.elementFromPoint(x, y)
         }, electronHost(eApi, params));
 
         if (items.length === 0) {
             return;
         }
 
-        const zoomLevel = zoomService.getCurrentZoom();
-
         contextMenu.show({
-            x: params.x / zoomLevel,
-            y: params.y / zoomLevel,
+            x,
+            y,
             items,
             selectMenuItemHandler: ({ command, spellingSuggestion }) => {
                 if (command === "replaceMisspelling" && spellingSuggestion) {

@@ -9,7 +9,13 @@ const h = vi.hoisted(() => {
         getActiveContextNote: () => tabManager.activeNote,
         getActiveContext: () => tabManager.activeContext
     };
-    return { tabManager, triggerCommand: vi.fn() };
+    return {
+        tabManager,
+        triggerCommand: vi.fn(),
+        /** The element `isOverJournalTask()` treats as a task in a Journal note. */
+        taskElement: null as Element | null,
+        buildTaskActionsMenuItem: vi.fn(async (): Promise<unknown> => null)
+    };
 });
 
 vi.mock("../components/app_context.js", () => ({
@@ -27,6 +33,11 @@ vi.mock("../services/utils.js", () => ({
     default: { escapeHtml: (s: string) => s, isMac: () => false }
 }));
 vi.mock("./context_menu.js", () => ({ default: { show: vi.fn() } }));
+vi.mock("../services/caius.js", () => ({ isCaiusEnabled: vi.fn(async () => true) }));
+vi.mock("./task_actions.js", () => ({
+    buildTaskActionsMenuItem: h.buildTaskActionsMenuItem,
+    isOverJournalTask: (element: Element | null) => !!element && element === h.taskElement
+}));
 
 import { copyHtml, copyTextWithToast } from "../services/clipboard_ext.js";
 import server from "../services/server.js";
@@ -218,6 +229,31 @@ describe("buildNoteContextMenuItems", () => {
     });
 });
 
+describe("the Task submenu", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("goes above the editing rows for the element under the pointer", async () => {
+        const element = document.createElement("li");
+        const task = { title: "caius.task", items: [] };
+        h.buildTaskActionsMenuItem.mockResolvedValueOnce(task);
+
+        const items = await build({ element, isEditable: true, selectionText: "" });
+
+        expect(h.buildTaskActionsMenuItem).toHaveBeenCalledWith(element);
+        expect(titles(items).slice(0, 3)).toEqual([ "caius.task", "---", "electron_context_menu.cut" ]);
+    });
+
+    it("is left out when no element is known or it is not on a task", async () => {
+        await build({ isEditable: true });
+        expect(h.buildTaskActionsMenuItem).not.toHaveBeenCalled();
+
+        const items = await build({ element: document.createElement("p"), isEditable: true });
+        expect(titles(items)).not.toContain("caius.task");
+    });
+});
+
 describe("setupContextMenu (browser)", () => {
     beforeAll(() => setupContextMenu());
 
@@ -284,6 +320,41 @@ describe("setupContextMenu (browser)", () => {
 
         expect(event.defaultPrevented).toBe(false);
         expect(contextMenu.show).not.toHaveBeenCalled();
+    });
+
+    it("opens over a task in a Journal note with nothing selected, and nowhere else", async () => {
+        const task = document.createElement("li");
+        const paragraph = document.createElement("p");
+        document.body.append(task, paragraph);
+        h.taskElement = task;
+        h.buildTaskActionsMenuItem.mockResolvedValueOnce({ title: "caius.task", items: [] });
+        setSelection(null, "", "");
+
+        const onParagraph = rightClick(paragraph);
+        await settle();
+        expect(onParagraph.defaultPrevented).toBe(false);
+        expect(contextMenu.show).not.toHaveBeenCalled();
+
+        const onTask = rightClick(task);
+        expect(onTask.defaultPrevented).toBe(true);
+        await vi.waitFor(() => expect(contextMenu.show).toHaveBeenCalled());
+        expect(h.buildTaskActionsMenuItem).toHaveBeenCalledWith(task);
+        h.taskElement = null;
+    });
+
+    it("passes no selection text for a task clicked away from the selection", async () => {
+        const task = document.createElement("li");
+        document.body.appendChild(task);
+        h.taskElement = task;
+        h.buildTaskActionsMenuItem.mockResolvedValueOnce({ title: "caius.task", items: [] });
+        setSelection(task, "<b>text</b>", "text");
+
+        rightClick(task, { clientX: 500, clientY: 500 });
+        await vi.waitFor(() => expect(contextMenu.show).toHaveBeenCalled());
+
+        const items = vi.mocked(contextMenu.show).mock.calls[0][0].items;
+        expect(titles(items)).toEqual([ "caius.task", "---" ]);
+        h.taskElement = null;
     });
 
     it("leaves it up for a click away from the selection, which is what the rows act on", async () => {
