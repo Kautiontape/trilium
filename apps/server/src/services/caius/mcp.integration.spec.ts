@@ -35,7 +35,7 @@ it("lists the caius tools on /mcp and returns real JSON from one call", async ()
 
 it("rejects days, weeks and months that don't exist, and creates no calendar note for them", async () => {
     const client = await connect();
-    const isError = async (name: string, args: object) => (await client.callTool({ name, arguments: args })).isError;
+    const isError = async (name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })).isError;
 
     for (const when of [{ date: "2026-02-30" }, { week: "2025-W53" }, { month: "2026-13" }]) {
         expect(await isError("caius_add", { items: [{ ...when, section: "Work", text: "Never written" }] }), JSON.stringify(when)).toBe(true);

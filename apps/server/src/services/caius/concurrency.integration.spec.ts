@@ -199,7 +199,7 @@ describe("caius tools under concurrent calls", () => {
         const recording: NoteStore = {
             ...store,
             async search(query, ancestorNoteId) {
-                events.push(cls.get("componentId"));
+                events.push(cls.getComponentId() ?? "none");
                 await new Promise((resolve) => setImmediate(resolve));
                 return store.search(query, ancestorNoteId);
             }
