@@ -200,10 +200,10 @@ function currentKey(period: "day" | "week" | "month", now: Date): string {
  * Monday 26 October, which is past." It reads the period and how it relates to now from `source`
  * (`past day 2026-10-26 vs now`), and falls back to `rule` and `source` for any other horizon rule.
  */
-export function explainSummary(lane: string, rule: string, source: string, lateBy: number | null): string {
+export function explainSummary(lane: string | null, rule: string, source: string, lateBy: number | null): string {
     const laneLabel = lane === "overdue" && lateBy
         ? t("caius.explain.overdue_by", { count: lateBy })
-        : t(`caius.explain.lane.${lane}`, { defaultValue: lane.replaceAll("_", " ") });
+        : t(`caius.explain.lane.${lane ?? "none"}`, { defaultValue: (lane ?? "none").replaceAll("_", " ") });
     const { relation, unit, key } = source.match(
         /^(?<relation>past|current|future) (?<unit>day|week|month) (?<key>\S+) vs now$/
     )?.groups ?? {};

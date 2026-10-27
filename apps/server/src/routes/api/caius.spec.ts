@@ -96,6 +96,8 @@ describe("Caius routes", () => {
             .toBe("In orbit: it's in the month note for May 2031, which is this month.");
         expect(explainSummary("later", "default", "no horizon rule matched", null))
             .toBe("later: default (no horizon rule matched).");
+        expect(explainSummary(null, "default", "no horizon rule matched", null))
+            .toBe("No lane: default (no horizon rule matched).");
     });
 
     it("accepts and dismisses Suggested items, skips an item whose note changed as stale, and skips the check without expectedBlobId", async () => {

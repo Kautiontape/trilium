@@ -565,7 +565,8 @@
         "orbit": "In orbit",
         "planning_ahead": "Planning ahead",
         "overdue": "Overdue",
-        "someday": "Someday"
+        "someday": "Someday",
+        "none": "No lane"
       },
       "past": {
         "day": "{{- lane}}: it's in the day note for {{- period}}, which is past.",
