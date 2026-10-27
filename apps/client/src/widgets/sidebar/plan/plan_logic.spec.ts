@@ -5,7 +5,7 @@ import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
     acceptSections, capacityStatus, closeCandidates, groupFates, isCloseable, parsePeriodKey,
-    periodKey, periodOfNote, stepPeriod, unestimatedTasks, type ViewedPeriod
+    periodKey, periodOfNote, stepPeriod, taskLabel, unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
 
 const NOW = new Date(2026, 9, 27, 10, 0);
@@ -105,6 +105,12 @@ describe("plan tasks", () => {
         const html = "<h2>Morning</h2><ul><li>x</li></ul><h2> Deep&nbsp;work </h2><h3></h3>"
             + "<h2>Morning</h2><h2>💡 Suggested</h2>";
         expect(acceptSections(html)).toEqual([ "Morning", "Deep work" ]);
+    });
+
+    it("shows a Markdown link in a task's text as its label", () => {
+        expect(taskLabel("Forward me [from Sunday 25](#root/irdD0L4zQixz) and [x](y)"))
+            .toBe("Forward me from Sunday 25 and x");
+        expect(taskLabel("Plain [brackets] (and parens)")).toBe("Plain [brackets] (and parens)");
     });
 
     it("groups the decided fates into one forward call and one drop call", () => {

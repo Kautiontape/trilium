@@ -14,7 +14,7 @@ import NoItems from "../../react/NoItems";
 import SegmentedChoice from "../../react/SegmentedChoice";
 import RightPanelWidget from "../RightPanelWidget";
 import {
-    closeCandidates, type Fate, type FateKind, fateTarget, groupFates, isDecided
+    closeCandidates, type Fate, type FateKind, fateTarget, groupFates, isDecided, taskLabel
 } from "./plan_logic";
 import type { PlanTaskRef } from "./PlanTab";
 
@@ -64,8 +64,9 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
         );
         setApplying(false);
         if (outcome) {
-            const textOf = (listItemId: string) =>
-                candidates.find((task) => task.listItemId === listItemId)?.text ?? listItemId;
+            const textOf = (listItemId: string) => taskLabel(
+                candidates.find((task) => task.listItemId === listItemId)?.text ?? listItemId
+            );
             setResults(items.map((item, index) => ({
                 text: textOf(item.listItemId),
                 message: describeResult(item, outcome[index], flushed)
@@ -164,7 +165,11 @@ function CloseRow({ task, fate, onFate, onOpen }: {
 
     return (
         <li>
-            <LinkButton className="plan-task-text" text={task.text} onClick={() => onOpen(task)} />
+            <LinkButton
+                className="plan-task-text"
+                text={taskLabel(task.text)}
+                onClick={() => onOpen(task)}
+            />
             {listItemId ? (
                 <div className="plan-close-fate">
                     <SegmentedChoice<FateKind>

@@ -12,6 +12,7 @@ import Dropdown from "../../react/Dropdown";
 import { FormDropdownDivider, FormListItem } from "../../react/FormList";
 import NoItems from "../../react/NoItems";
 import RightPanelWidget from "../RightPanelWidget";
+import { taskLabel } from "./plan_logic";
 
 type Placement = { section: string } | { critical: true };
 
@@ -82,7 +83,7 @@ function SuggestedRow({ task, sections, outcome, onAccept, onDismiss }: {
 }) {
     return (
         <li>
-            <span className="plan-task-text">{task.text}</span>
+            <span className="plan-task-text">{taskLabel(task.text)}</span>
             <div className="plan-task-actions">
                 <Dropdown
                     className="plan-accept"

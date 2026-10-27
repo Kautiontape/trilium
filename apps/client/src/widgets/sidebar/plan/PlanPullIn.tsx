@@ -11,6 +11,7 @@ import { Badge } from "../../react/Badge";
 import Button from "../../react/Button";
 import LinkButton from "../../react/LinkButton";
 import RightPanelWidget from "../RightPanelWidget";
+import { taskLabel } from "./plan_logic";
 import type { PlanTaskRef } from "./PlanTab";
 
 /**
@@ -95,7 +96,7 @@ function PullInRow({ task, target, outcome, onOpen, onPullIn }: {
             <div className="plan-pull-in-row">
                 <LinkButton
                     className="plan-task-text"
-                    text={task.text}
+                    text={taskLabel(task.text)}
                     onClick={() => onOpen(task)}
                 />
                 {task.daysLate !== undefined && (

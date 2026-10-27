@@ -7,7 +7,7 @@ import type { CaiusPlan } from "../../../services/caius";
 import { t } from "../../../services/i18n";
 import LinkButton from "../../react/LinkButton";
 import RightPanelWidget from "../RightPanelWidget";
-import { capacityStatus, unestimatedTasks } from "./plan_logic";
+import { capacityStatus, taskLabel, unestimatedTasks } from "./plan_logic";
 import type { PlanTaskRef } from "./PlanTab";
 
 /** Mirrors the library's `DEFAULT_ESTIMATE`: the minutes a task without `~est` counts for. */
@@ -64,7 +64,10 @@ export default function PlanCapacity({ plan, onOpen }: {
                     <ul className="plan-task-list">
                         {unestimatedTasks(plan).map((task) => (
                             <li key={task.listItemId ?? task.text}>
-                                <LinkButton text={task.text} onClick={() => onOpen(task)} />
+                                <LinkButton
+                                    text={taskLabel(task.text)}
+                                    onClick={() => onOpen(task)}
+                                />
                             </li>
                         ))}
                     </ul>

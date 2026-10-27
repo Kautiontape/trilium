@@ -93,6 +93,11 @@ export function isCloseable(period: ViewedPeriod, now: Date) {
 
 const CLOSE_DAY_FROM_HOUR = 15;
 
+/** A task's text as the tab shows it: a Markdown link reads as its label alone. */
+export function taskLabel(text: string) {
+    return text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+}
+
 export function isLive(task: Pick<CaiusPlanTask, "state">) {
     return task.state === "open" || task.state === "in_progress";
 }
