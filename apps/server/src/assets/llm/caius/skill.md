@@ -91,7 +91,7 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
 
 1. **`open`.** `data.items` is one list of what is still open: the day's leftovers (`group: "today"`), what slipped (`"overdue"`) and the week note's tasks (`"week"`), each with a proposed fate. After Shawn answers, mark the ones he calls done with `caius_set_state`, forward the rest whose fate is `{ forward }` to that day or week with `caius_forward`, and leave the `{ stay }` ones in the week note, unless he says otherwise.
 2. **`next`.** `data.candidates` are what could go into the next workday's Suggested, each as `text` ("Get X done"), `because`, `minutes` and `source`.
-   - Add the candidates to that day's Suggested with `caius_add`: the `text`, `source` (a Jira key), `est` from `minutes`.
+   - Add the candidates to that day's Suggested with `caius_add` and `suggested: true`: the `text`, `source` (a Jira key), `est` from `minutes`.
    - A candidate with `noteId` and `listItemId` is a task in the week note already; `caius_add` would skip it as `duplicate`. Mention it, and forward it to the day with `caius_forward` only if Shawn names it.
    - The question covers what needs asking, in one go: the day over capacity ("which of these can wait?"), meetings that overlap, an empty evening. An overlap's answer goes to the day's Context with `caius_context_add`. An evening task he names goes in through Suggested and `caius_accept`, under the evening heading.
    - `data.errors` names a source that could not be read. Say which, in one line; with Jira missing there are no ticket candidates.
