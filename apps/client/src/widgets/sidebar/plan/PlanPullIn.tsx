@@ -100,7 +100,9 @@ export default function PlanPullIn({ plan, lanes, onOpen, onChanged }: {
                                     <PullInRow
                                         key={`${task.noteId}-${task.listItemId ?? task.text}`}
                                         task={task}
-                                        outcome={outcomes[task.listItemId ?? ""]}
+                                        outcome={task.listItemId
+                                            ? outcomes[task.listItemId]
+                                            : t("caius.plan.no_id")}
                                         onOpen={onOpen}
                                         onPullIn={pullIn}
                                         onDone={(row) => setState(row, "done")}

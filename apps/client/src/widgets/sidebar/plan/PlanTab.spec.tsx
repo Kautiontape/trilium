@@ -281,6 +281,19 @@ describe("PlanTab", () => {
         } ]);
     });
 
+    it("says why a Pull in task without an id has no actions", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const idless = openTask({
+            noteId: "week44", period: "2026-W44", text: "Unsaved task", lane: "week"
+        });
+        api.open.mockResolvedValue({ total: 1, tasks: [ idless ] });
+        const tab = await mount();
+
+        expect(text(tab, "[data-lane=week] .plan-task-outcome"))
+            .toBe("This task has no id yet. Open its note and save it first.");
+        expect(tab.querySelector("[data-lane=overdue] .plan-task-outcome")).toBeNull();
+    });
+
     it("shows no Pull in card for a past period", async () => {
         activeNote.current = buildNote({
             id: "yesterday", title: "26", "#dateNote": "2026-10-26", content: DAY_HTML
