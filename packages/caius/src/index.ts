@@ -27,4 +27,3 @@ export type { AddRequest, AcceptRequest, ItemRequest, PlanResult, PlanOptions, P
 export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './trilium/keys.js';
 export { placeTask, setTaskState, takeSuggested } from './trilium/plan-html.js';
 export type { StateAction, Target } from './trilium/plan-html.js';
-export { formatMinutes, formatMinutesRange } from './core/duration.js';

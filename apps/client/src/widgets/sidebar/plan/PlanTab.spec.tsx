@@ -103,7 +103,7 @@ describe("PlanTab", () => {
         expect(text(tab, ".plan-period-key")).toBe("2026-10-27");
         expect(text(tab, ".plan-capacity-summary")).toBe("1 h 15 m planned of 3–4 h");
         expect(tab.querySelector("meter")?.getAttribute("value")).toBe("75");
-        expect(text(tab, ".plan-capacity-unestimated")).toBe("1 unestimated, counted at 30 min");
+        expect(text(tab, ".plan-capacity-unestimated")).toBe("1 unestimated, counted at 30 m");
 
         act(() => click(tab.querySelector(".plan-capacity-unestimated")));
         expect(texts(tab, "#plan-capacity .plan-task-list li")).toEqual([ "No estimate" ]);
@@ -418,6 +418,19 @@ describe("PlanTab", () => {
         expect(tab.querySelector("#plan-close")).toBeNull();
         await press(button(tab, "Today"));
         expect(api.plan).toHaveBeenLastCalledWith("day", "2026-10-27");
+    });
+
+    it("writes the planned total and target in hours and minutes", async () => {
+        const shown = async (totalMinutes: number, target: { min: number; max: number } | null) => {
+            api.plan.mockResolvedValue({
+                ...dayPlan(), capacity: { ...dayPlan().capacity, totalMinutes, target }
+            });
+            return text(await mount(), ".plan-capacity-summary");
+        };
+        expect(await shown(220, { min: 180, max: 240 })).toBe("3 h 40 m planned of 3–4 h");
+        expect(await shown(45, { min: 720, max: 900 })).toBe("45 m planned of 12–15 h");
+        expect(await shown(240, { min: 150, max: 240 })).toBe("4 h planned of 2 h 30 m–4 h");
+        expect(await shown(0, null)).toBe("0 m planned");
     });
 
     it("says why the plan could not be read, and reads it again on Retry", async () => {
