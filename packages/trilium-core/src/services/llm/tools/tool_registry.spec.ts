@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 const transactionalMock = vi.hoisted(() => vi.fn(<T>(cb: () => T) => cb()));
+const transactionalAsyncMock = vi.hoisted(() => vi.fn(<T>(cb: () => Promise<T>) => cb()));
 
 // toToolSet wraps mutating tools in sql.transactional; stub it to just run the
 // callback so we can assert the wrapping happens without a real transaction.
 vi.mock("../../sql/index.js", () => ({
-    getSql: () => ({ transactional: transactionalMock })
+    getSql: () => ({ transactional: transactionalMock, transactionalAsync: transactionalAsyncMock })
 }));
 
 import { allToolRegistries } from "./index.js";
@@ -66,5 +67,33 @@ describe("ToolRegistry", () => {
         const writeResult = await set.write_thing.execute!({ id: "w1" }, {} as any);
         expect(writeResult).toEqual({ id: "w1", written: true });
         expect(transactionalMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("toToolSet awaits async tools and wraps only the mutating one in transactionalAsync", async () => {
+        transactionalMock.mockClear();
+        transactionalAsyncMock.mockClear();
+        const asyncRegistry = defineTools({
+            read_async: {
+                description: "r",
+                inputSchema: z.object({}),
+                async: true,
+                execute: async () => ({ value: 1 })
+            },
+            write_async: {
+                description: "w",
+                inputSchema: z.object({}),
+                async: true,
+                mutates: true,
+                execute: async () => ({ value: 2 })
+            }
+        });
+        const set = asyncRegistry.toToolSet();
+
+        expect(await set.read_async.execute!({}, {} as any)).toEqual({ value: 1 });
+        expect(transactionalAsyncMock).not.toHaveBeenCalled();
+
+        expect(await set.write_async.execute!({}, {} as any)).toEqual({ value: 2 });
+        expect(transactionalAsyncMock).toHaveBeenCalledTimes(1);
+        expect(transactionalMock).not.toHaveBeenCalled();
     });
 });

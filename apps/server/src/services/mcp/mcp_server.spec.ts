@@ -20,7 +20,10 @@ class FakeMcpServer {
 
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({ McpServer: FakeMcpServer }));
 
-const mockSql = { transactional: vi.fn((cb: () => unknown) => cb()) };
+const mockSql = {
+    transactional: vi.fn((cb: () => unknown) => cb()),
+    transactionalAsync: vi.fn(async (cb: () => Promise<unknown>) => cb())
+};
 vi.mock("../sql.js", () => ({ default: mockSql }));
 
 const clsCalls: { init: number; set: Array<[string, unknown]> } = { init: 0, set: [] };
@@ -45,6 +48,13 @@ vi.mock("@triliumnext/core", async (importOriginal) => {
 const readExecute = vi.fn(() => ({ ok: "read" }));
 const mutateExecute = vi.fn(() => ({ ok: "mutate" }));
 
+const asyncReadExecute = vi.fn(async () => ({ ok: "async-read" }));
+const asyncMutateExecute = vi.fn(async () => ({ ok: "async-mutate" }));
+const asyncRegistry: any = [
+    ["async_read_tool", { description: "ar", inputSchema: {}, async: true, execute: asyncReadExecute }],
+    ["async_mutate_tool", { description: "am", inputSchema: {}, async: true, mutates: true, execute: asyncMutateExecute }]
+];
+
 const readRegistry: any = [
     ["read_tool", { description: "r", inputSchema: {}, execute: readExecute }]
 ];
@@ -54,7 +64,7 @@ const mutateRegistry: any = [
 
 const resolveToolRegistriesMock = vi.fn(async () => {});
 vi.mock("@triliumnext/core/src/services/llm/tools/index.js", () => ({
-    allToolRegistries: [readRegistry, mutateRegistry],
+    allToolRegistries: [readRegistry, mutateRegistry, asyncRegistry],
     resolveToolRegistries: resolveToolRegistriesMock
 }));
 
@@ -76,7 +86,7 @@ describe("createMcpServer", () => {
 
         expect(server).toBeInstanceOf(FakeMcpServer);
         expect((server as any).info).toMatchObject({ name: "trilium-notes", version: "9.9.9-test" });
-        expect(registered.map((r) => r.name)).toEqual(["read_tool", "mutate_tool"]);
+        expect(registered.map((r) => r.name)).toEqual(["read_tool", "mutate_tool", "async_read_tool", "async_mutate_tool"]);
         expect(resolveToolRegistriesMock).toHaveBeenCalled();
     });
 
@@ -101,5 +111,29 @@ describe("createMcpServer", () => {
         expect(mutateExecute).toHaveBeenCalledWith({ bar: 2 });
         expect(mockSql.transactional).toHaveBeenCalledTimes(1);
         expect(result).toEqual({ content: [{ type: "text", text: JSON.stringify({ ok: "mutate" }) }] });
+    });
+
+    it("awaits an async tool and returns its object, not an empty Promise", async () => {
+        await createMcpServer();
+        const tool = registered.find((r) => r.name === "async_read_tool")!;
+
+        const result = await tool.callback({ a: 1 });
+
+        expect(asyncReadExecute).toHaveBeenCalledWith({ a: 1 });
+        expect(mockSql.transactional).not.toHaveBeenCalled();
+        expect(mockSql.transactionalAsync).not.toHaveBeenCalled();
+        expect(mockCls.set).toHaveBeenCalledWith("componentId", "mcp");
+        expect(result).toEqual({ content: [{ type: "text", text: JSON.stringify({ ok: "async-read" }) }] });
+    });
+
+    it("runs a mutating async tool in transactionalAsync, not transactional", async () => {
+        await createMcpServer();
+        const tool = registered.find((r) => r.name === "async_mutate_tool")!;
+
+        const result = await tool.callback({ b: 2 });
+
+        expect(mockSql.transactionalAsync).toHaveBeenCalledTimes(1);
+        expect(mockSql.transactional).not.toHaveBeenCalled();
+        expect(result).toEqual({ content: [{ type: "text", text: JSON.stringify({ ok: "async-mutate" }) }] });
     });
 });
