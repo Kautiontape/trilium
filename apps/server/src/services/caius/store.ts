@@ -99,6 +99,29 @@ export function createBeccaStore(): NoteStore {
     };
 }
 
+let lockTail: Promise<void> = Promise.resolve();
+
+/**
+ * Runs `fn` once every Caius call queued before it has settled, so one call at a time reads and
+ * writes the Journal. The tools wrap each `execute` in it, and anything else that drives the
+ * library against becca must too. Each call waits inside its own async function, so `fn` runs in
+ * the caller's CLS context (`localNowDateTime`, `componentId`). A call that rejects still releases
+ * the next one.
+ */
+export async function withCaiusLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = lockTail;
+    let release = () => {};
+    lockTail = new Promise((resolve) => {
+        release = resolve;
+    });
+    try {
+        await previous;
+        return await fn();
+    } finally {
+        release();
+    }
+}
+
 function getNote(noteId: string): BNote {
     const note = becca.getNote(noteId);
     if (!note) {

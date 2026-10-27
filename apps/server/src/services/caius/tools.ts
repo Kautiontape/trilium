@@ -1,8 +1,8 @@
 /**
  * The Caius planning tools for the AI assistant and the MCP server, backed by the becca
  * `NoteStore`. Each tool composes the `@triliumnext/caius` library the way the Caius CLI does for
- * its Trilium commands, without the argv and process I/O. The writes are async and mutating, so
- * the tool layer runs them in `transactionalAsync`.
+ * its Trilium commands, without the argv and process I/O. Every call runs under `withCaiusLock`,
+ * and each store write commits in its own transaction behind a compare-and-swap.
  */
 
 import {
@@ -24,10 +24,10 @@ import {
     TRILIUM_CONFIG
 } from "@triliumnext/caius";
 import { date_utils as dateUtils } from "@triliumnext/core";
-import { defineTools } from "@triliumnext/core/src/services/llm/tools/tool_registry.js";
+import { defineTools, type ToolDefinition } from "@triliumnext/core/src/services/llm/tools/tool_registry.js";
 import { z } from "zod";
 
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, withCaiusLock } from "./store.js";
 
 const LANES = ["overdue", "today", "week", "orbit", "planning_ahead", "someday", "suggested"] as const;
 const DEFAULT_OPEN_LIMIT = 50;
@@ -133,7 +133,7 @@ function toLaneTask(task: OpenTask, lane: string | null, now: Date): LaneTask {
 }
 
 export function createCaiusTools(store = createBeccaStore()) {
-    return defineTools({
+    return defineTools(serialized({
         caius_plan: {
             description: "Read the plan of one day, week or month note: its sections, tasks, estimates and capacity. Use it to see what is planned for a period.",
             inputSchema: z.object({
@@ -252,7 +252,18 @@ export function createCaiusTools(store = createBeccaStore()) {
             mutates: true,
             execute: async ({ items, dryRun, html }) => ({ results: (await forwardTasks(store, items, { dryRun })).map((r) => presentResult(r, html)) })
         }
-    });
+    }));
 }
 
 export const caiusTools = createCaiusTools();
+
+type AsyncTool = Extract<ToolDefinition, { async: true }>;
+
+/** Wraps each tool's `execute` in `withCaiusLock`. */
+function serialized(tools: Record<string, AsyncTool>): Record<string, AsyncTool> {
+    const wrapped: Record<string, AsyncTool> = {};
+    for (const [name, def] of Object.entries(tools)) {
+        wrapped[name] = { ...def, execute: (args) => withCaiusLock(() => def.execute(args)) };
+    }
+    return wrapped;
+}
