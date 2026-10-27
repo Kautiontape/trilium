@@ -49,7 +49,9 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
         jira: {
             handoff: jira.handoff.map(mark),
             asks: jira.asks.map((ask) => ({ ...ask, ticket: mark(ask.ticket) })),
-            done: jira.done.filter((key) => !overridden.has(key))
+            // As the real reader does: only tickets it read as hand-offs or asks can be done.
+            done: jira.done.filter((key) => !overridden.has(key)
+                && [ ...jira.handoff, ...jira.asks.map((ask) => ask.ticket) ].some((t) => t.key === key))
         },
         calendar,
         capacity: dayCapacity(calendar, { workStart: input.workStart, workEnd: input.workEnd }),
@@ -190,7 +192,7 @@ describe("caius_winddown", () => {
     it("context: notices an override that lapses before Monday and asks to keep it", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "context" });
         expect(answer).toMatchObject({ step: "context", targetDay: MONDAY, next: null });
-        expect(answer.data.noticed).toEqual([ { line: "ZAP-2590 is open", until: FRIDAY, key: "ZAP-2590", question: "Keep 'ZAP-2590 is open'?" } ]);
+        expect(answer.data.noticed).toEqual([ { line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?" } ]);
         expect(answer.data.context.map((line: any) => line.text)).toContain("ZAP-2600 is open");
         expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Anything to know for Monday?");
 

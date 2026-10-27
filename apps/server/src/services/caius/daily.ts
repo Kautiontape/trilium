@@ -111,14 +111,14 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         }, questions.length ? questions.join(" ") : null, "context");
     }
 
-    // A line in force today that lapses before the target day and keeps a ticket Jira calls done open.
+    // A line in force today that lapses before the target day and keeps a ticket open: Jira's own
+    // answer is not consulted, since it covers only tickets that are hand-offs or have an ask.
     const today = await deps.locked("caius_winddown", () => gatherContext(deps.store, date));
-    const done = new Set(read.inputs.jira.done);
     const noticed = today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)
-        .flatMap((line) => [ ...overriddenKeys([ line.text ]) ].filter((key) => done.has(key)).map((key) => ({
-            line: line.text, until: line.until, key, question: t("caius.daily.keep", { line: line.text })
-        })));
+        .map((line) => ({ line: line.text, until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
+        .filter((line) => line.keys.length)
+        .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
     const question = noticed.length ? [ ...noticed.map((n) => n.question), t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
     return reply(read.standing, { context: read.context, noticed }, question, null);
 }
