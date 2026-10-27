@@ -58,15 +58,17 @@ type Ev = TerrainEvent & Item;
 type Wk = TerrainWork & Item;
 
 export function renderDayTerrain(input: TerrainInput): string {
-  const events: Ev[] = input.events.map((e) => ({ ...e, s: mins(e.start), e: mins(e.end) }));
-  const work: Wk[] = input.work.map((w) => ({ ...w, s: mins(w.start), e: mins(w.end) }));
-  let t0 = mins(input.start);
+  const t0 = mins(input.start);
   let t1 = mins(input.end);
-  // Stretch the window, on the hour, if anything falls outside it.
-  for (const item of [...events, ...work]) {
-    t0 = Math.min(t0, Math.floor(item.s / 60) * 60);
-    t1 = Math.max(t1, Math.ceil(item.e / 60) * 60);
-  }
+  // Nothing is drawn before start: items that end by then are dropped, the rest begin at start.
+  const clipped = <T extends { start: string; end: string }>(item: T): (T & Item) | undefined => {
+    const e = mins(item.end);
+    return e > t0 ? { ...item, s: Math.max(mins(item.start), t0), e } : undefined;
+  };
+  const events: Ev[] = input.events.map(clipped).filter((e) => e !== undefined);
+  const work: Wk[] = input.work.map(clipped).filter((w) => w !== undefined);
+  // A late item stretches the end, on the hour.
+  for (const item of [...events, ...work]) t1 = Math.max(t1, Math.ceil(item.e / 60) * 60);
   const x = (minute: number) => PAD + ((W - 2 * PAD) * (minute - t0)) / (t1 - t0);
   const overlaps = (ev: Ev) => events.some((o) => o !== ev && o.s < ev.e && ev.s < o.e);
   const height = (minute: number) => {
@@ -84,45 +86,76 @@ export function renderDayTerrain(input: TerrainInput): string {
   };
 
   const step = Math.max(1, Math.floor((t1 - t0) / 400));
-  const pts: string[] = [];
-  for (let m = t0; m <= t1; m += step) pts.push(`${(x(m)).toFixed(1)},${(GROUND - height(m)).toFixed(1)}`);
+  const pts: [number, number][] = [];
+  for (let m = t0; m <= t1; m += step) pts.push([x(m), GROUND - height(m)]);
+
+  // Label layout. Labels rise in rows of 18 until they clear earlier labels, the dots and the
+  // line, and slide left of the weather mark. When they rise above the canvas, `top` grows the
+  // canvas upward (the viewBox starts above 0) so nothing is cut.
+  const layout = (top: number) => {
+    const weatherBox = input.weather ? weatherArea(input.weather.label, top) : undefined;
+    const placed: Box[] = events.map((ev) => {
+      const mid = (ev.s + ev.e) / 2;
+      return { x0: x(mid) - 9, x1: x(mid) + 9, y0: GROUND - height(mid) - 9, y1: GROUND - height(mid) + 9 };
+    });
+    const onCurve = (box: Box) => pts.some(([px, py]) => px > box.x0 && px < box.x1 && py > box.y0 - 2 && py < box.y1 + 2);
+    return events.map((ev) => {
+      const mid = (ev.s + ev.e) / 2;
+      const cx = x(mid);
+      const cy = GROUND - height(mid);
+      const half = 4.6 * ev.title.length + 6;
+      // The dot stays on the line; the label shifts inward so it is never cut by the edge.
+      const edge = 3.7 * ev.title.length + 4;
+      let tx = Math.min(Math.max(cx, edge), W - edge);
+      const boxAt = (at: number, rise: number): Box => ({ x0: at - half, x1: at + half, y0: cy - 16 - rise - 14, y1: cy - 16 - rise + 4 });
+      let lift = 0;
+      let box = boxAt(tx, lift);
+      for (; lift < 400; lift += 18) {
+        box = boxAt(tx, lift);
+        if (weatherBox && hits(box, weatherBox)) {
+          tx = Math.max(edge, weatherBox.x0 - half);
+          box = boxAt(tx, lift);
+        }
+        if (!(placed.some((p) => hits(p, box)) || onCurve(box))) break;
+      }
+      placed.push(box);
+      return { title: ev.title, overlap: !!ev.overlap || overlaps(ev), cx, cy, tx, baseline: cy - 16 - lift, box };
+    });
+  };
+  let top = 0;
+  let labels = layout(top);
+  for (let pass = 0; pass < 3; pass++) {
+    const need = Math.max(0, Math.ceil(2 - Math.min(...labels.map((l) => l.box.y0))));
+    if (need <= top) break;
+    top = need;
+    labels = layout(top);
+  }
 
   const out: string[] = [];
   out.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${HEIGHT}" width="${W}" height="${HEIGHT}" role="img" aria-label="${esc(describe(events, work))}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-top} ${W} ${HEIGHT + top}" width="${W}" height="${HEIGHT + top}" role="img" aria-label="${esc(describe(events, work))}">`,
   );
 
   const workEnd = mins(input.workEnd ?? DEFAULT_WORK_END);
   if (workEnd > t0 && workEnd < t1) {
     const wx = x(workEnd).toFixed(1);
     out.push(
-      `<path data-part="work-end" d="M${wx},44 L${wx},${BAR_Y + BAR_H}" stroke="${SOFT}" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="3 5"/>`,
+      `<path data-part="work-end" d="M${wx},${GROUND + 8} L${wx},${BAR_Y + BAR_H}" stroke="${SOFT}" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="3 5"/>`,
     );
   }
 
   out.push(
-    `<path d="M${pts.join(' L')}" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`,
+    `<path d="M${pts.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' L')}" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`,
   );
 
-  const placed: [number, number, number][] = [];
-  for (const ev of events) {
-    const mid = (ev.s + ev.e) / 2;
-    const cx = x(mid);
-    const cy = GROUND - height(mid);
+  for (const l of labels) {
     out.push(
-      ev.overlap || overlaps(ev)
-        ? `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="7.5" fill="none" stroke="${INK}" stroke-width="2.6"/>`
-        : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="8" fill="${INK}"/>`,
+      l.overlap
+        ? `<circle cx="${l.cx.toFixed(1)}" cy="${l.cy.toFixed(1)}" r="7.5" fill="none" stroke="${INK}" stroke-width="2.6"/>`
+        : `<circle cx="${l.cx.toFixed(1)}" cy="${l.cy.toFixed(1)}" r="8" fill="${INK}"/>`,
     );
-    const half = 4.6 * ev.title.length + 6;
-    // The dot stays on the line; the label shifts inward so it is never cut by the edge.
-    const edge = 3.7 * ev.title.length + 4;
-    const tx = Math.min(Math.max(cx, edge), W - edge);
-    let lift = 0;
-    while (placed.some(([px, ph, pl]) => Math.abs(tx - px) < half + ph && lift === pl)) lift += 18;
-    placed.push([tx, half, lift]);
     out.push(
-      `<text x="${tx.toFixed(1)}" y="${(cy - 16 - lift).toFixed(1)}" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="${INK}">${esc(ev.title)}</text>`,
+      `<text x="${l.tx.toFixed(1)}" y="${l.baseline.toFixed(1)}" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="${INK}">${esc(l.title)}</text>`,
     );
   }
 
@@ -172,7 +205,7 @@ export function renderDayTerrain(input: TerrainInput): string {
     }
   }
 
-  if (input.weather) out.push(weatherMark(input.weather.code, input.weather.label));
+  if (input.weather) out.push(weatherMark(input.weather.code, input.weather.label, top));
   out.push('</svg>');
   return out.join('\n') + '\n';
 }
@@ -198,14 +231,28 @@ const ICONS: Record<WeatherIcon, string> = {
   storm: `<path d="${CLOUD}" transform="translate(0,-3)"/><path d="M15,18 L11,24 H16 L13,28"/>`,
 };
 
+interface Box {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+const hits = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/** The corner the weather mark takes: its icon, its label, and a margin. */
+function weatherArea(label: string, top: number): Box {
+  return { x0: W - PAD - 28 - 8 - 0.6 * 13 * label.length - 6, x1: W, y0: -top, y1: 36 - top };
+}
+
 /** The icon at the right edge and its label to the left of it, in the hour labels' style. */
-function weatherMark(code: number, label: string): string {
+function weatherMark(code: number, label: string, top: number): string {
   const icon = weatherIcon(code);
   const left = W - PAD - 28;
   return (
     `<g data-part="weather" data-icon="${icon}">` +
-    `<g transform="translate(${left},4)" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[icon]}</g>` +
-    `<text x="${left - 8}" y="24" text-anchor="end" font-family="sans-serif" font-size="13" fill="${SOFT}">${esc(label)}</text>` +
+    `<g transform="translate(${left},${4 - top})" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[icon]}</g>` +
+    `<text x="${left - 8}" y="${24 - top}" text-anchor="end" font-family="sans-serif" font-size="13" fill="${SOFT}">${esc(label)}</text>` +
     '</g>'
   );
 }
@@ -218,7 +265,7 @@ function mins(hhmm: string): number {
 function fmt12(m: number): string {
   const h = Math.floor(m / 60);
   const mm = m % 60;
-  const suffix = h < 12 ? 'a' : 'p';
+  const suffix = h % 24 < 12 ? 'a' : 'p';
   const h12 = h % 12 || 12;
   return mm === 0 ? `${h12}${suffix}` : `${h12}:${String(mm).padStart(2, '0')}${suffix}`;
 }

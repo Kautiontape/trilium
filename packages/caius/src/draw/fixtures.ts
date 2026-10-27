@@ -41,3 +41,17 @@ export const OPEN_DAY: TerrainInput = {
   events: [{ start: '10:00', end: '10:15', title: 'Standup' }],
   work: [],
 };
+
+export const LATE_HEAVY_DAY: TerrainInput = {
+  start: '10:00',
+  end: '23:00',
+  events: [
+    { start: '10:00', end: '10:15', title: 'Standup' },
+    { start: '17:00', end: '17:45', title: 'Sprint review' },
+    { start: '17:30', end: '18:30', title: 'Customer call', overlap: true },
+    { start: '18:00', end: '19:00', title: 'Board prep', overlap: true },
+    { start: '18:30', end: '19:00', title: 'Wrap-up', overlap: true },
+  ],
+  work: [{ start: '13:00', end: '14:30', label: 'ZAP-9', focus: true }],
+  weather: { code: 95, label: 'Thunderstorm' },
+};

@@ -285,6 +285,19 @@ describe("caius tools", () => {
             expect(svg).not.toContain('data-part="weather"');
         });
 
+        it("refuses a protected note and writes nothing", async () => {
+            const { weather, run } = headerTool();
+            const note = becca.notes[noteIds.past];
+            note.isProtected = true;
+            try {
+                expect(await run({ noteId: noteIds.past, ...day, latitude: 1, longitude: 2 })).toMatchObject({ error: "bad_request" });
+            } finally {
+                note.isProtected = false;
+            }
+            expect(note.getAttachments()).toHaveLength(0);
+            expect(weather).toHaveBeenCalledTimes(1);
+        });
+
         it("draws without weather when the lookup fails, and rejects a missing note or half a coordinate", async () => {
             const { run } = headerTool(vi.fn(async (_lat: number, _lon: number) => undefined));
             expect(await run({ noteId: noteIds.week, ...day, latitude: 1, longitude: 2 })).toMatchObject({ created: true });
