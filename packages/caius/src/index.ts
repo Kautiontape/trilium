@@ -28,3 +28,4 @@ export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './tri
 export { placeTask, setTaskState, takeSuggested } from './trilium/plan-html.js';
 export type { StateAction, Target } from './trilium/plan-html.js';
 export { now as caiusClock, clockOverride } from './clock.js';
+export { nextWorkday, lastWorkday } from './workday.js';
