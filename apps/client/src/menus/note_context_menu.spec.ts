@@ -35,6 +35,7 @@ vi.mock("../services/utils.js", () => ({
 vi.mock("./context_menu.js", () => ({ default: { show: vi.fn() } }));
 vi.mock("../services/caius.js", () => ({ isCaiusEnabled: vi.fn(async () => true) }));
 vi.mock("./task_actions.js", () => ({
+    TASK_ACTIONS_CLASS: "caius-task-actions",
     buildTaskActionsMenuItem: h.buildTaskActionsMenuItem,
     isOverJournalTask: (element: Element | null) => !!element && element === h.taskElement
 }));
@@ -236,7 +237,7 @@ describe("the Task submenu", () => {
 
     it("goes above the editing rows for the element under the pointer", async () => {
         const element = document.createElement("li");
-        const task = { title: "caius.task", items: [] };
+        const task = { title: "caius.task", className: "caius-task-actions", items: [] };
         h.buildTaskActionsMenuItem.mockResolvedValueOnce(task);
 
         const items = await build({ element, isEditable: true, selectionText: "" });
@@ -327,7 +328,7 @@ describe("setupContextMenu (browser)", () => {
         const paragraph = document.createElement("p");
         document.body.append(task, paragraph);
         h.taskElement = task;
-        h.buildTaskActionsMenuItem.mockResolvedValueOnce({ title: "caius.task", items: [] });
+        h.buildTaskActionsMenuItem.mockResolvedValueOnce({ title: "caius.task", className: "caius-task-actions", items: [] });
         setSelection(null, "", "");
 
         const onParagraph = rightClick(paragraph);
@@ -342,11 +343,29 @@ describe("setupContextMenu (browser)", () => {
         h.taskElement = null;
     });
 
+    it("shows no menu when the task stops offering actions between the click and the menu", async () => {
+        // A task in an editable, as at the click; its editor locks before the Task submenu is built,
+        // which would leave a menu of disabled Cut and Copy rows.
+        const editable = codeEditable();
+        const task = document.createElement("li");
+        editable.appendChild(task);
+        h.taskElement = task;
+        h.buildTaskActionsMenuItem.mockResolvedValueOnce(null);
+        setSelection(null, "", "");
+
+        const event = rightClick(task);
+        await vi.waitFor(() => expect(h.buildTaskActionsMenuItem).toHaveBeenCalled());
+        await settle();
+        expect(event.defaultPrevented).toBe(true);
+        expect(contextMenu.show).not.toHaveBeenCalled();
+        h.taskElement = null;
+    });
+
     it("passes no selection text for a task clicked away from the selection", async () => {
         const task = document.createElement("li");
         document.body.appendChild(task);
         h.taskElement = task;
-        h.buildTaskActionsMenuItem.mockResolvedValueOnce({ title: "caius.task", items: [] });
+        h.buildTaskActionsMenuItem.mockResolvedValueOnce({ title: "caius.task", className: "caius-task-actions", items: [] });
         setSelection(task, "<b>text</b>", "text");
 
         rightClick(task, { clientX: 500, clientY: 500 });

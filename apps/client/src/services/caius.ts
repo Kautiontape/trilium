@@ -189,11 +189,11 @@ export async function caiusWrite(
 }
 
 export interface CaiusWriteOptions {
-    /** Other notes the write changes, such as a forward's target, whose editors are locked and saved too. */
+    /** Other notes the write changes, such as a forward's target; their editors are locked too. */
     alsoLock?: string[];
 }
 
-/** How long `caiusWrite()` waits for the save to come back over the WebSocket, and for the request. */
+/** How long `caiusWrite()` waits for the save to come back over the WebSocket, and for the call. */
 export const ANSWER_TIMEOUT_MS = 10_000;
 
 /** The end of the last write queued on each note. */
@@ -290,7 +290,7 @@ async function settleReload(reload: PendingReload) {
     }
 }
 
-/** Drops froca's cached blobs of `noteIds` and has every widget showing them fetch their content. */
+/** Drops froca's cached blobs of `noteIds` and has the widgets showing them fetch them again. */
 function fetchContentAgain(noteIds: string[]) {
     const loadResults = new LoadResults([]);
     for (const noteId of new Set(noteIds)) {

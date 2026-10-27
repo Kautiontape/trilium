@@ -8,7 +8,7 @@ import options from "../services/options.js";
 import server from "../services/server.js";
 import utils from "../services/utils.js";
 import contextMenu, { type MenuItem } from "./context_menu.js";
-import { buildTaskActionsMenuItem, isOverJournalTask } from "./task_actions.js";
+import { buildTaskActionsMenuItem, isOverJournalTask, TASK_ACTIONS_CLASS } from "./task_actions.js";
 import { buildAiActionsMenuItem, getTextEditorAtSelection } from "./text_editor_context_menu.js";
 
 /** What the pointer was over when the menu was summoned. */
@@ -286,6 +286,12 @@ async function showBrowserContextMenu(x: number, y: number, target: ContextMenuT
     const editor = await getTextEditorAtSelection();
     const items = await buildNoteContextMenuItems(target, browserHost(editor));
     if (!items.length) return;
+
+    // The menu opened for a task with nothing selected. If the task's editor locked meanwhile, the
+    // Task submenu is gone and only disabled rows would be left.
+    const hasTaskActions = items.some((item) =>
+        "className" in item && item.className === TASK_ACTIONS_CLASS);
+    if (!target.selectionText.trim() && !hasTaskActions) return;
 
     contextMenu.show({ x, y, items, selectMenuItemHandler: () => {} });
 }

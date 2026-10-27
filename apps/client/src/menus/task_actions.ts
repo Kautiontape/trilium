@@ -141,9 +141,13 @@ export async function buildTaskActionsMenuItem(
     return {
         title: t("caius.task"),
         uiIcon: "bx bx-task",
+        className: TASK_ACTIONS_CLASS,
         items: buildTaskActionItems(target)
     };
 }
+
+/** The class of the Task submenu's row, by which the browser's menu recognises it. */
+export const TASK_ACTIONS_CLASS = "caius-task-actions";
 
 /**
  * Whether a right-click on `element` would show the Task submenu, answered synchronously from the
@@ -320,7 +324,7 @@ function isHeading(node: ModelNode): node is ModelElement {
     return isElement(node) && node.name.startsWith("heading");
 }
 
-/** Matches the library's `isSuggestedName()`, which ignores case and anything but letters and digits. */
+/** Matches the library's `isSuggestedName()`: ignores case and anything but letters and digits. */
 function isSuggested(heading: string) {
     return heading.replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase() === "suggested";
 }
