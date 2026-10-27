@@ -18,21 +18,25 @@ export type InputsDeps = JiraDeps;
 
 export async function readInputs(input: InputsInput, deps: InputsDeps = defaultDeps()): Promise<CaiusInputs> {
     const errors: InputError[] = [];
+    const [ jiraRead, calendarRead ] = await Promise.allSettled([
+        readJira(deps, input.context),
+        readCalendar(deps, input.date)
+    ]);
+
     let jira: JiraInputs = { handoff: [], asks: [], done: [] };
-    try {
-        const read = await readJira(deps, input.context);
-        jira = read.inputs;
-        for (const warning of read.warnings) errors.push({ source: "jira", error: warning });
-    } catch (e) {
-        errors.push({ source: "jira", error: e instanceof JiraError ? e.code : "unexpected" });
+    if (jiraRead.status === "fulfilled") {
+        jira = jiraRead.value.inputs;
+        for (const warning of jiraRead.value.warnings) errors.push({ source: "jira", error: warning });
+    } else {
+        const reason = jiraRead.reason;
+        errors.push({ source: "jira", error: reason instanceof JiraError ? reason.code : "unexpected" });
     }
 
     let calendar: CalendarEvent[] = [];
-    try {
-        const read = await readCalendar(deps, input.date);
-        calendar = read.events;
-        errors.push(...read.errors);
-    } catch {
+    if (calendarRead.status === "fulfilled") {
+        calendar = calendarRead.value.events;
+        errors.push(...calendarRead.value.errors);
+    } else {
         errors.push({ source: "calendar", error: "unexpected" });
     }
 
