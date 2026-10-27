@@ -201,20 +201,23 @@ function getBlockIdentities(model: Model, root: ModelElement): BlockIdentity[] {
 }
 
 /**
- * Blocks match by list item id, so an edited list item still matches, or by name and text, so an
- * unchanged list item matches even when content without `data-list-item-id` got new ids.
- */
-function isSameBlock(a: BlockIdentity, b: BlockIdentity) {
-    return (a.listItemId !== undefined && a.listItemId === b.listItemId)
-        || (a.name === b.name && a.text === b.text);
-}
-
-/**
  * Moves the top-level index of a path from the old document to the new one. The blocks before the
  * first difference keep their index and the blocks after the last one shift by the change in the
  * block count. A block in between follows its list item if that still exists, or keeps its index.
  */
 function createPathMapper(oldBlocks: BlockIdentity[], newBlocks: BlockIdentity[]) {
+    const newListItemIds = new Set(newBlocks.map((block) => block.listItemId));
+
+    // A list item whose id is still in the document matches by id only, so an edited item still
+    // matches and items with the same text stay apart. Other blocks match by name and text, which
+    // covers list items that got new ids because the content had no `data-list-item-id`.
+    function isSameBlock(oldBlock: BlockIdentity, newBlock: BlockIdentity) {
+        if (oldBlock.listItemId !== undefined && newListItemIds.has(oldBlock.listItemId)) {
+            return oldBlock.listItemId === newBlock.listItemId;
+        }
+        return oldBlock.name === newBlock.name && oldBlock.text === newBlock.text;
+    }
+
     const shared = Math.min(oldBlocks.length, newBlocks.length);
     let head = 0;
     while (head < shared && isSameBlock(oldBlocks[head], newBlocks[head])) {

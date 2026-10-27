@@ -191,6 +191,15 @@ describe("setDataKeepingSelection", () => {
         expect(reload(reordered)).toBe(listBlock("b", "be[]ta") + listBlock("a", "alpha"));
     });
 
+    it("tells list items with the same text apart by their ids", () => {
+        _setModelData(editor.model, listBlock("r1", "Review") + listBlock("r2", "Rev[]iew"));
+
+        const item = (id: string) => `<li data-list-item-id="${id}">Review</li>`;
+        expect(reload(`<ul>${item("r3")}${item("r1")}${item("r2")}</ul>`)).toBe(
+            listBlock("r3", "Review") + listBlock("r1", "Review") + listBlock("r2", "Rev[]iew")
+        );
+    });
+
     it("matches unchanged list items by text when the content has no list item ids", () => {
         _setModelData(
             editor.model,
