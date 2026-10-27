@@ -19,7 +19,7 @@ describe("the caius service without a Journal", () => {
         expect(await service.explain({ noteId: "n1", listItemId: "e1" }))
             .toMatchObject({ error: "not_found" });
         expect(await service.assignIds({ dryRun: true })).toEqual({
-            dryRun: true, notes: 0, added: 0, results: []
+            dryRun: true, notes: 0, added: 0, results: [], blobIds: {}
         });
     });
 });

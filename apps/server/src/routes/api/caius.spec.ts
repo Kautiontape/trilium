@@ -76,6 +76,7 @@ describe("Caius routes", () => {
         expect(await store.content(noteIds.today)).not.toContain("Added over HTTP");
 
         const real = await post("/api/caius/add", { items: [item] }).expect(200);
+        expect(real.body.blobIds).toEqual({ [noteIds.today]: blobOf(noteIds.today) });
         expect(real.body.results[0]).toMatchObject({ status: "added", writtenNoteId: noteIds.today });
         const html = await store.content(noteIds.today);
         expect(html).toContain("Added over HTTP");
@@ -110,7 +111,9 @@ describe("Caius routes", () => {
         expect(accepted.body.results[0]).toMatchObject({ status: "accepted" });
         expect(blobOf(noteIds.today)).not.toBe(blobBeforeAccept);
 
+        expect(accepted.body.blobIds).toEqual({ [noteIds.today]: blobOf(noteIds.today) });
         const dismissed = await post("/api/caius/dismiss", { items: [{ noteId: noteIds.today, listItemId: "s2" }] }).expect(200);
+        expect(dismissed.body.blobIds).toEqual({ [noteIds.today]: blobOf(noteIds.today) });
         expect(dismissed.body.results[0]).toMatchObject({ status: "dismissed" });
     });
 
@@ -130,6 +133,8 @@ describe("Caius routes", () => {
             ["t2", "updated", undefined]
         ]);
         expect(blobOf(noteIds.today)).not.toBe(blobId);
+        // The note's blobId after the whole batch, read inside the same lock.
+        expect(result.body.blobIds).toEqual({ [noteIds.today]: blobOf(noteIds.today) });
         await post("/api/caius/set-state", { items: [{ noteId: noteIds.today, listItemId: "t3", state: "cancelled" }] }).expect(400);
     });
 
@@ -137,6 +142,7 @@ describe("Caius routes", () => {
         const result = await post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: "2031-05-07", expectedBlobId: blobOf(noteIds.today) }] }).expect(200);
         const target = await cls.init(() => store.calendarDay("2031-05-07"));
         expect(result.body.results[0]).toMatchObject({ status: "moved", writtenNoteIds: [ target.noteId, noteIds.today ] });
+        expect(result.body.blobIds).toEqual({ [noteIds.today]: blobOf(noteIds.today), [target.noteId]: blobOf(target.noteId) });
         await post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: "tomorrow" }] }).expect(400);
     });
 
@@ -148,6 +154,7 @@ describe("Caius routes", () => {
         expect(await store.content(noteIds.older)).toBe("<ul><li>Older task</li></ul>");
 
         const real = await post("/api/caius/assign-ids", { dryRun: false }).expect(200);
+        expect(real.body.blobIds).toEqual({ [noteIds.older]: blobOf(noteIds.older) });
         expect(real.body).toMatchObject({ notes: 1, added: 1 });
         expect(await store.content(noteIds.older)).toMatch(/^<ul><li data-list-item-id="e[0-9a-f]{32}">Older task<\/li><\/ul>$/);
         await post("/api/caius/assign-ids", { dryRun: "yes" }).expect(400);

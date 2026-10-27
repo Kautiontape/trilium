@@ -210,7 +210,7 @@ describe("caius tools", () => {
         expect(filled.match(/data-list-item-id="e[0-9a-f]{32}"/g)).toHaveLength(3);
         expect(filled).toContain('data-list-item-id="kept"');
 
-        expect(await call("caius_assign_ids", { dryRun: false })).toEqual({ notes: 0, added: 0, results: [] });
+        expect(await call("caius_assign_ids", { dryRun: false })).toEqual({ notes: 0, added: 0, results: [], blobIds: {} });
         expect(await store.content(noteId)).toBe(filled);
     });
 

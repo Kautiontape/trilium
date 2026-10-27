@@ -40,7 +40,12 @@ export type ForwardResult = ForwardRequest &
         writtenNoteIds?: string[];
       }
     | { status: 'skipped'; reason: SkipReason; detail?: string }
-    | { status: 'failed'; error: string }
+    | {
+        status: 'failed';
+        error: string;
+        /** The target, when its copy was written before the source failed. */
+        writtenNoteIds?: string[];
+      }
   );
 
 export interface NoteChange {
@@ -168,6 +173,7 @@ async function forwardOne(
       error: alreadyCopied
         ? 'source note changed while forwarding; nothing written'
         : 'source note changed after the copy was written; re-run to finish marking it',
+      writtenNoteIds: alreadyCopied ? [] : [target!.noteId],
     };
   }
   return {

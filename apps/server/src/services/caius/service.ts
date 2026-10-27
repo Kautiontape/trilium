@@ -116,32 +116,25 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
             };
         }),
 
-        add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => ({
-            results: (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html))
-        })),
+        add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => withBlobIds(
+            (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html))
+        )),
 
-        accept: ({ items, dryRun, html }: AcceptInput) => withCaiusLock("caius_accept", async () => ({
-            results: (await unlessStale(items, (fresh) => acceptTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
-        })),
+        accept: ({ items, dryRun, html }: AcceptInput) => withCaiusLock("caius_accept", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => acceptTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
 
-        dismiss: ({ items, dryRun, html }: DismissInput) => withCaiusLock("caius_dismiss", async () => ({
-            results: (await unlessStale(items, (fresh) => dismissTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
-        })),
+        dismiss: ({ items, dryRun, html }: DismissInput) => withCaiusLock("caius_dismiss", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => dismissTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
 
-        setState: ({ items, dryRun, html }: SetStateInput) => withCaiusLock("caius_set_state", async () => ({
-            results: (await unlessStale(items, async (fresh) => {
-                const states = await loadStateSymbols(store);
-                const results: object[] = [];
-                for (const { state, ...item } of fresh) {
-                    results.push(...await setStates(store, STATE_ACTION[state], [item], { dryRun, states }));
-                }
-                return results;
-            })).map((r) => presentResult(r, html))
-        })),
+        setState: ({ items, dryRun, html }: SetStateInput) => withCaiusLock("caius_set_state", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => setStatesOf(store, fresh, dryRun))).map((r) => presentResult(r, html))
+        )),
 
-        forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => ({
-            results: (await unlessStale(items, (fresh) => forwardTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
-        })),
+        forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => forwardTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
 
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);
@@ -156,7 +149,7 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
                 ...(dryRun ? { dryRun: true } : {}),
                 notes: results.length,
                 added: results.reduce((sum, r) => sum + (r.added ?? 0), 0),
-                results
+                ...withBlobIds(results)
             };
         })
     };
@@ -243,6 +236,42 @@ const MONTHS = [
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december"
 ];
+
+/** Runs set state over `items` one at a time, each with its own action. */
+async function setStatesOf(
+    store: NoteStore,
+    items: Omit<SetStateInput["items"][number], "expectedBlobId">[],
+    dryRun?: boolean
+) {
+    const states = await loadStateSymbols(store);
+    const results: object[] = [];
+    for (const { state, ...item } of items) {
+        results.push(...await setStates(store, STATE_ACTION[state], [item], { dryRun, states }));
+    }
+    return results;
+}
+
+/**
+ * `results` with the current `blobId` of every note they name (an item's `noteId`, and the
+ * `writtenNoteId` or `writtenNoteIds` it wrote). Read inside the Caius lock, right after the
+ * writes, so a client knows which version of each note is the final one.
+ */
+function withBlobIds<R extends object>(results: R[]) {
+    const blobIds: Record<string, string> = {};
+    for (const result of results) {
+        const named = result as { noteId?: unknown; writtenNoteId?: unknown; writtenNoteIds?: unknown };
+        const noteIds = [
+            named.noteId, named.writtenNoteId, ...(Array.isArray(named.writtenNoteIds) ? named.writtenNoteIds : [])
+        ];
+        for (const noteId of noteIds) {
+            const blobId = typeof noteId === "string" ? becca.notes[noteId]?.blobId : undefined;
+            if (typeof noteId === "string" && blobId) {
+                blobIds[noteId] = blobId;
+            }
+        }
+    }
+    return { results, blobIds };
+}
 
 /**
  * The Journal's notes, or none when no note carries `#calendarRoot`: a document that doesn't use

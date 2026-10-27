@@ -131,7 +131,8 @@ describe('forwardTasks', () => {
       },
     });
     const [r] = await forwardTasks(f.api, [req], opts);
-    expect(r).toMatchObject({ status: 'failed' });
+    // The target copy was written before the source failed.
+    expect(r).toMatchObject({ status: 'failed', writtenNoteIds: ['tue'] });
     expect(f.log.filter((l) => l.startsWith('put'))).toEqual(['put tue']);
     expect(f.html.mon).not.toContain('_rescheduled');
     edit = false;
