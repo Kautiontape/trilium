@@ -213,7 +213,7 @@ describe('addContext', () => {
     const res = await addContext(fake.api, { date: '2026-11-06', text: 'Release frozen', until: '2026-11-13' }, { now: NOW });
     expect(res).toMatchObject({ status: 'added', writtenNoteId: 'd', line: 'Release frozen (until Fri 13 Nov)' });
     expect(fake.html.d).toContain('<li>Release frozen (until Fri 13 Nov)</li></ul>');
-    const again = await addContext(fake.api, { date: '2026-11-06', text: ' release  FROZEN ' }, { now: NOW });
+    const again = await addContext(fake.api, { date: '2026-11-06', text: ' release  FROZEN ', until: '2026-11-10' }, { now: NOW });
     expect(again).toMatchObject({ status: 'skipped', reason: 'duplicate' });
     // An expired line is not in force, so the same text can be written again.
     expect(await addContext(fake.api, { date: '2026-11-06', text: 'Jaco out all week' }, { now: NOW })).toMatchObject({ status: 'added' });
@@ -238,5 +238,37 @@ describe('addContext', () => {
     expect(await addContext(real.api, { date: '2026-11-09', text: 'x' }, { now: NOW })).toMatchObject({ status: 'added', writtenNoteId: 'new-2026-11-09' });
     expect(real.log).toEqual(['create dateNote=2026-11-09', 'put new-2026-11-09']);
     expect(await addContext(real.api, { date: '2026-11-09', text: 'y', until: '2026-11-06' }, { now: NOW })).toMatchObject({ status: 'skipped', reason: 'bad_request' });
+  });
+});
+
+describe('addContext keeping a line that lapses', () => {
+  const WED = new Date(2026, 10, 4, 19, 0);
+  const lapsing = (until: string) => `<h3>Context</h3><ul><li>ZAP-2590 is open (until ${until})</li></ul>${TASKS}`;
+
+  it('extends the until of the copy in force in the week note in place, as a dry run first', async () => {
+    const fake = fakeTrilium({ w: [periodNote('w', 'weekNote', '2026-W45'), lapsing('Wed 4 Nov')] });
+    const dry = await addContext(fake.api, { week: '2026-W45', text: 'ZAP-2590 is open', until: '2026-11-13' }, { dryRun: true, now: WED });
+    expect(dry).toMatchObject({ status: 'dry-run', writtenNoteId: 'w', line: 'ZAP-2590 is open (until Fri 13 Nov)' });
+    expect(fake.log).toEqual([]);
+
+    const res = await addContext(fake.api, { week: '2026-W45', text: 'ZAP-2590 is open', until: '2026-11-13' }, { now: WED });
+    expect(res).toMatchObject({ status: 'updated', writtenNoteId: 'w', line: 'ZAP-2590 is open (until Fri 13 Nov)' });
+    expect(fake.html.w).toBe(lapsing('Fri 13 Nov'));
+    // Already in force that long: a duplicate.
+    expect(await addContext(fake.api, { week: '2026-W45', text: 'ZAP-2590 is open', until: '2026-11-10' }, { now: WED })).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+    // No until keeps it for good.
+    expect(await addContext(fake.api, { date: '2026-11-05', text: 'ZAP-2590 is open' }, { now: WED })).toMatchObject({ status: 'updated', writtenNoteId: 'w', line: 'ZAP-2590 is open' });
+    expect(fake.html.w).toBe(`<h3>Context</h3><ul><li>ZAP-2590 is open</li></ul>${TASKS}`);
+  });
+
+  it('extends a copy in the target day note in place, and writes a copy in an older day note to the target', async () => {
+    const same = fakeTrilium({ t: [periodNote('t', 'dateNote', '2026-11-05'), lapsing('Thu 5 Nov')] });
+    expect(await addContext(same.api, { date: '2026-11-05', text: 'ZAP-2590 is open', until: '2026-11-13' }, { now: WED })).toMatchObject({ status: 'updated', writtenNoteId: 't' });
+    expect(same.html.t).toBe(lapsing('Fri 13 Nov'));
+
+    const older = fakeTrilium({ w: [periodNote('w', 'dateNote', '2026-11-04'), lapsing('Thu 5 Nov')], t: [periodNote('t', 'dateNote', '2026-11-05'), TASKS] });
+    expect(await addContext(older.api, { date: '2026-11-05', text: 'ZAP-2590 is open', until: '2026-11-13' }, { now: WED })).toMatchObject({ status: 'added', writtenNoteId: 't' });
+    expect(older.html.w).toBe(lapsing('Thu 5 Nov'));
+    expect(older.html.t).toContain('<li>ZAP-2590 is open (until Fri 13 Nov)</li>');
   });
 });

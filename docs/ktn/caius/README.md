@@ -154,6 +154,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
   - **A missing note:** it is created, except on a dry run.
   - **Expiry:** `until` is written as ` (until Fri 6 Nov)`, with the year only when it is needed to read the date right. An `until` before the note's date is refused.
   - **Duplicates:** text already in force is skipped as `duplicate`. For a day, that is anything `caius_context` returns for it, the week note's lines included.
+  - **Keeping a line:** when the copy in force ends sooner than the `until` asked for, or the request has no `until`, the copy's `(until …)` is rewritten where it stands and the answer is `updated`. A copy in an older day note, which leaves the Context window after three workdays, is written to the target note instead.
 - **`caius_brief_write`** `{ date, headline, acts, picks, sections, header, latitude?, longitude?, dryRun }` writes the brief.
   - **The brief note:** a `🌅 Morning Brief` child of the day note, labelled `#morningBrief=<date>`, `#caiusPlannedAt=<local time>` and `#cssClass=briefdemo`.
   - **The header note:** the brief's `Header` child, with the same `#cssClass`. It holds the date line, the headline, the drawing (as `caius_header` draws it) and the three acts as a 3-column table.

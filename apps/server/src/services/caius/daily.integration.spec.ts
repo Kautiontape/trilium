@@ -138,7 +138,7 @@ describe("caius_context_add", () => {
         expect(html).toContain("<li data-list-item-id=");
         expect(html).toContain(">Release frozen (until Fri 13 Nov)</li>");
 
-        expect((await call("caius_context_add", { date: "2026-11-11", text: "release frozen" })).results[0])
+        expect((await call("caius_context_add", { date: "2026-11-11", text: "release frozen", until: "2026-11-12" })).results[0])
             .toMatchObject({ status: "skipped", reason: "duplicate" });
     });
 
