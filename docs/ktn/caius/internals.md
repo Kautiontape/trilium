@@ -183,7 +183,7 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 
 The lock is never taken twice by one call, since it isn't re-entrant.
 
-**The inputs cache** lives in the service instance. Its key is the whole `caius_inputs` input (date, Context lines and the work window from the Rhythm), so an answer read without the Context's overrides is never reused for one that needs them. An entry lasts `INPUTS_TTL_MS` (15 minutes), timed on the real clock (`Date.now`, injectable), since the dev clock `CAIUS_NOW` stands still. `createCaiusService` and `createCaiusTools` take the inputs reader as an argument, as they do the weather fetcher, so specs stub `caius_inputs`.
+**The inputs cache** lives in the service instance. Its key is the whole `caius_inputs` input (date, Context lines and the work window from the Rhythm), so an answer read without the Context's overrides is never reused for one that needs them. An entry lasts `INPUTS_TTL_MS` (15 minutes), timed on the real clock (`Date.now`, injectable), since the dev clock `CAIUS_NOW` stands still. An answer with an error that `isInputWarning` (`inputs/index.ts`) does not call a warning is not stored, so a failed source is tried again on the next call. `createCaiusService` and `createCaiusTools` take the inputs reader as an argument, as they do the weather fetcher, so specs stub `caius_inputs`.
 
 **Lanes in the wind-down.** `open` works out lanes from noon of `date`, not from now, so a wind-down run the next morning still treats `date` as today.
 

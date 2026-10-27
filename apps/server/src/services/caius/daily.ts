@@ -37,6 +37,7 @@ import {
 import { t } from "i18next";
 
 import { PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, findBrief } from "./brief.js";
+import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
 
@@ -154,7 +155,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     }
 
     const read = await deps.dayRead(date, refresh);
-    const calendarFailed = read.inputs.errors.some((e) => e.source === "calendar" && !e.error.endsWith("_unknown_tz"));
+    const calendarFailed = read.inputs.errors.some((e) => e.source === "calendar" && !isInputWarning(e.error));
 
     if (step === "inputs") {
         const facts = await deps.locked("caius_planday", async () => {

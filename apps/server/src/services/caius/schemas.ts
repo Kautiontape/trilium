@@ -157,7 +157,8 @@ const inputs = z.object({
 const meetings = z.object({
     date: periodKey("day").describe("The day note to write the Meetings block of, YYYY-MM-DD"),
     items: z.array(z.string()).optional().describe("The clock lines to write, such as \"10:00 Standup (Sam, Riley)\". Without them, the lines come from the day's calendar."),
-    dryRun
+    dryRun,
+    refresh: z.boolean().optional().describe("Without items: read the calendar again instead of reusing what was read for that day in the last 15 minutes")
 });
 
 const contextAdd = z.object({

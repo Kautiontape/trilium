@@ -108,6 +108,24 @@ describe("caius_meetings", () => {
     });
 });
 
+describe("the inputs cache", () => {
+    const callsFor = (date: string) => inputsCalls.filter((input) => input.date === date).length;
+
+    it("does not keep an answer with a failed source, keeps one with only warnings, and refreshes on request", async () => {
+        calendarErrors["2026-11-17"] = [ { source: "calendar", error: "feed_0_timeout" } ];
+        await call("caius_meetings", { date: "2026-11-17", dryRun: true });
+        await call("caius_meetings", { date: "2026-11-17", dryRun: true });
+        expect(callsFor("2026-11-17")).toBe(2);
+
+        calendarErrors["2026-11-18"] = [ { source: "calendar", error: "feed_0_unknown_tz" }, { source: "jira", error: "asks_partial" } ];
+        await call("caius_meetings", { date: "2026-11-18", dryRun: true });
+        await call("caius_meetings", { date: "2026-11-18", dryRun: true });
+        expect(callsFor("2026-11-18")).toBe(1);
+        await call("caius_meetings", { date: "2026-11-18", dryRun: true, refresh: true });
+        expect(callsFor("2026-11-18")).toBe(2);
+    });
+});
+
 describe("caius_context_add", () => {
     it("writes a line with its until to the next workday's note, creating the note, and skips a duplicate", async () => {
         const dry = await call("caius_context_add", { date: "2026-11-11", text: "Release frozen", until: "2026-11-13", dryRun: true });

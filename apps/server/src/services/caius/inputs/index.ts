@@ -16,6 +16,14 @@ export type { CaiusInputs } from "./types.js";
 
 export type InputsDeps = JiraDeps;
 
+/**
+ * Whether an `errors` entry is a warning, after which the source still answered: a cap that bit
+ * (`*_truncated`), some tickets unread (`*_partial`) or an unknown time zone read as local time.
+ */
+export function isInputWarning(error: string): boolean {
+    return /_(?:truncated|partial|unknown_tz)$/.test(error);
+}
+
 export async function readInputs(input: InputsInput, deps: InputsDeps = defaultDeps()): Promise<CaiusInputs> {
     const errors: InputError[] = [];
     const [ jiraRead, calendarRead ] = await Promise.allSettled([

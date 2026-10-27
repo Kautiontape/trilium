@@ -141,11 +141,11 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **The rules:** the standing note's Brief rules section, word for word.
    - **The brief:** the input `caius_brief_write` takes, to fill in.
 
-`caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. `refresh: true` on a step fetches again. The work window passed to it is the Rhythm's standup and end of work.
+`caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. An answer in which a source failed is not reused; one with only warnings (`*_partial`, `*_truncated`, `*_unknown_tz`) is. `refresh: true` on a step or on `caius_meetings` fetches again. The work window passed to it is the Rhythm's standup and end of work.
 
 ### The write tools
 
-- **`caius_meetings`** `{ date, items?, dryRun }` replaces only the Meetings block.
+- **`caius_meetings`** `{ date, items?, dryRun, refresh? }` replaces only the Meetings block.
   - **Default lines:** without `items`, they come from the day's calendar: `10:00 Standup (Sam, Riley)`, with up to four first names. Declined and all-day events are left out, a repeated line is written once, and a meeting that overlaps another ends in `(overlaps)`.
   - **A failed calendar:** when the calendar could not be read, it writes nothing and answers `calendar_unavailable`, so a failing feed never empties the block.
   - **A missing note:** it is created, except on a dry run.

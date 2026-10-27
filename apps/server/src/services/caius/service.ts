@@ -71,7 +71,7 @@ import {
 } from "./schemas.js";
 import { SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
 import { type DayRead, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
-import { type CaiusInputs, readInputs } from "./inputs/index.js";
+import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 
@@ -117,7 +117,7 @@ export function createCaiusService(
     /**
      * `caius_inputs` for a day, with the Context in force passed along and the work window from the
      * standing note's Rhythm. An answer for the same input is reused for `INPUTS_TTL_MS`, timed on
-     * the real clock since `CAIUS_NOW` stands still; `refresh` fetches again. The notes are read
+     * the real clock since `CAIUS_NOW` stands still, unless a source failed; `refresh` fetches again. The notes are read
      * under the lock, the sources outside it.
      */
     async function dayRead(date: string, refresh = false): Promise<DayRead> {
@@ -136,7 +136,10 @@ export function createCaiusService(
         for (const [ old, entry ] of inputsCache) {
             if (clockMs() - entry.at >= INPUTS_TTL_MS) inputsCache.delete(old);
         }
-        inputsCache.set(key, { at: clockMs(), inputs });
+        // An answer missing a source is fetched again next time, so the source can come back.
+        if (inputs.errors.every((e) => isInputWarning(e.error))) {
+            inputsCache.set(key, { at: clockMs(), inputs });
+        }
         return { inputs, context, standing, rhythm };
     }
 
@@ -251,11 +254,11 @@ export function createCaiusService(
          * clock lines. A calendar that could not be read writes nothing, so a feed that fails never
          * empties the block.
          */
-        meetings: async ({ date, items, dryRun }: MeetingsInput) => {
+        meetings: async ({ date, items, dryRun, refresh }: MeetingsInput) => {
             let lines = items;
             if (!lines) {
-                const { inputs } = await dayRead(date);
-                const errors = inputs.errors.filter((e) => e.source === "calendar" && !e.error.endsWith("_unknown_tz"));
+                const { inputs } = await dayRead(date, refresh);
+                const errors = inputs.errors.filter((e) => e.source === "calendar" && !isInputWarning(e.error));
                 if (errors.length) {
                     return { date, status: "skipped", reason: "calendar_unavailable", errors };
                 }
