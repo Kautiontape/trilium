@@ -13,6 +13,7 @@ import protectedSessionHolder from "./protected_session_holder.js";
 import server from "./server.js";
 import toastService from "./toast.js";
 import treeService from "./tree.js";
+import { getErrorMessage } from "./utils.js";
 import ws from "./ws.js";
 
 export interface CreateNoteOpts {
@@ -96,7 +97,9 @@ async function createNote(parentNotePath: string | undefined, options: CreateNot
 
     if (options.saveSelection) {
         // we remove the selection only after it was saved to server to make sure we don't lose anything
-        options.textEditor?.removeSelection();
+        options.textEditor?.removeSelection().catch((e) => {
+            logError(`Saving the note the selection was cut from failed: ${getErrorMessage(e)}`);
+        });
     }
 
     for (const cloneParentNoteId of options.cloneToNoteIds ?? []) {
