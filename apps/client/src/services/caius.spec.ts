@@ -27,7 +27,7 @@ vi.mock("./i18n.js", () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key)
 }));
 
-import { setEditorNoteId } from "../widgets/react/NoteStore.js";
+import { noteSavedDataStore, setEditorNoteId } from "../widgets/react/NoteStore.js";
 import {
     ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, type CaiusItemResult, caiusWrite, describeSkip,
     flushEditors,
@@ -483,6 +483,7 @@ describe("flushEditors", () => {
         const editor = openEditor("n1");
         const save = stubSaves("n1");
         const stored = "<ul><li>No id yet</li></ul>";
+        noteSavedDataStore.set("n1", stored);
         h.getBlob.mockResolvedValue({ content: stored });
 
         // CKEditor gives an id to every list item it loads without one; that alone is no change.
@@ -491,7 +492,21 @@ describe("flushEditors", () => {
         expect(save).toHaveBeenCalledWith("saveNoteDetailNow", { force: true });
 
         save.mockClear();
+        noteSavedDataStore.set("n1", editor.html);
         h.getBlob.mockResolvedValue({ content: editor.html });
+        await flushEditors([ editor as unknown as CKTextEditor ]);
+        expect(save.mock.calls).toEqual([ [ "saveNoteDetailNow" ] ]);
+    });
+
+    it("doesn't force a save over an outside write the editor hasn't loaded yet", async () => {
+        const editor = openEditor("n1");
+        const save = stubSaves("n1");
+        noteSavedDataStore.set("n1", "<ul><li>No id yet</li></ul>");
+        editor.html = "<ul><li data-list-item-id=\"einvented\">No id yet</li></ul>";
+
+        // The store gave the item an id of its own; the editor still holds the version it loaded.
+        const stored = "<ul><li data-list-item-id=\"estore\">No id yet</li></ul>";
+        h.getBlob.mockResolvedValue({ content: stored });
         await flushEditors([ editor as unknown as CKTextEditor ]);
         expect(save.mock.calls).toEqual([ [ "saveNoteDetailNow" ] ]);
     });

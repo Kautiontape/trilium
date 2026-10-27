@@ -1,7 +1,7 @@
 import type { CKTextEditor } from "@triliumnext/ckeditor5";
 
 import appContext from "../components/app_context.js";
-import { getEditorNoteId } from "../widgets/react/NoteStore.js";
+import { getEditorNoteId, noteSavedDataStore } from "../widgets/react/NoteStore.js";
 import froca from "./froca.js";
 import { t } from "./i18n.js";
 import LoadResults from "./load_results.js";
@@ -514,16 +514,18 @@ export async function flushEditors(editors: CKTextEditor[]) {
 /**
  * Whether `editor` holds list item ids its note's stored content lacks. CKEditor gives an id to
  * every list item it loads without one, which is no change to save, so the server would not know
- * the id a task action sends.
+ * the id a task action sends. Only the version the editor last loaded or saved counts: when the
+ * stored content has changed since, a forced save would revert that outside write.
  */
 async function holdsUnsavedListItemIds(editor: CKTextEditor) {
     const noteId = getEditorNoteId(editor);
+    const loaded = noteId ? noteSavedDataStore.get(noteId) : undefined;
     const blob = noteId ? await froca.getBlob("notes", noteId) : null;
-    if (!blob || typeof blob.content !== "string") {
+    if (loaded === undefined || blob?.content !== loaded) {
         return false;
     }
 
-    const stored = new Set(listItemIds(blob.content));
+    const stored = new Set(listItemIds(loaded));
     return listItemIds(editor.getData()).some((id) => !stored.has(id));
 }
 
