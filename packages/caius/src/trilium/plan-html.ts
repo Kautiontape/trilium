@@ -5,7 +5,7 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { isSuggestedName, normName } from './sections.js';
+import { isSuggestedName, normName, ProseTracker } from './sections.js';
 import {
   apply,
   checkboxEdit,
@@ -13,6 +13,7 @@ import {
   elements,
   findItem,
   isCriticalAside,
+  inProseSection,
   isHeading,
   isPlaceholder,
   isTask,
@@ -66,7 +67,7 @@ function insertInList(html: string, list: HTMLElement, item: string, position?: 
 
 /** True when the note has a task outside Suggested, so an untouched template can be told apart. */
 function hasRealTasks(root: HTMLElement): boolean {
-  return root.querySelectorAll('li').some((li) => isTask(li) && !isSuggestedName(sectionOf(root, li)));
+  return root.querySelectorAll('li').some((li) => isTask(li) && !isSuggestedName(sectionOf(root, li)) && !inProseSection(root, li));
 }
 
 /** Level for a header Caius creates: one below the template's lone title, else the level in use. */
@@ -133,7 +134,7 @@ export function placeTask(html: string, item: string, target: Target, position?:
 
 /**
  * Where `forward` puts a copy: the list under the header with the same name,
- * else the first task list outside the critical block and Suggested, else a new
+ * else the first task list outside the critical block, Suggested, Meetings and Context, else a new
  * "Tasks" list (above Suggested). An untouched template's placeholder is
  * replaced rather than left above the new list.
  */
@@ -152,8 +153,12 @@ export function placeForwarded(html: string, item: string, section: string | nul
   }
 
   let inSuggested = false;
+  const tracker = new ProseTracker();
   for (const el of top) {
-    if (isHeading(el)) inSuggested = isSuggestedName(el.text);
+    if (isHeading(el)) {
+      inSuggested = isSuggestedName(el.text);
+      tracker.enter(el.text, levelOf(el));
+    } else if (tracker.kind) continue;
     else if (!inSuggested && isTodoList(el)) return apply(html, [insertInList(html, el, item)]);
     else if (!inSuggested && isPlaceholder(el)) return apply(html, [{ start: el.range[0], end: el.range[1], text: newList(item) }]);
   }

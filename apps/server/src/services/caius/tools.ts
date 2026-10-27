@@ -16,7 +16,7 @@ export function createCaiusTools(store?: NoteStore) {
 
     return defineTools({
         caius_plan: {
-            description: "Read the plan of one day, week or month note: its sections, tasks, estimates and capacity. Use it to see what is planned for a period.",
+            description: "Read the plan of one day, week or month note: its sections, tasks, estimates and capacity, plus its Meetings bullets and the Context lines in force (expired ones apart). Use it to see what is planned for a period.",
             inputSchema: toolInputs.plan,
             async: true,
             execute: parsed(toolInputs.plan, service.plan)

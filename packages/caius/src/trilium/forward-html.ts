@@ -20,6 +20,7 @@ import {
   newListItemId,
   rewriteOpenTag,
   sectionOf,
+  inProseSection,
   spanEnd,
   tokenZoneStartInHtml,
   isHeading,
@@ -114,7 +115,7 @@ function lookup(
   const li = findItem(root, id);
   if (!li) return { reason: 'not_found', scheduledTo: [] };
   if (li.getAttribute('data-trilium-task-state') === stateId) return { reason: 'already_moved', scheduledTo: scheduledTo(li) };
-  if (!isLive(li, states)) return { reason: 'not_live', scheduledTo: [] };
+  if (!isLive(li, states) || inProseSection(root, li)) return { reason: 'not_live', scheduledTo: [] };
   return { li };
 }
 

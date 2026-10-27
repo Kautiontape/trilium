@@ -29,3 +29,7 @@ export { placeTask, setTaskState, takeSuggested } from './trilium/plan-html.js';
 export type { StateAction, Target } from './trilium/plan-html.js';
 export { now as caiusClock, clockOverride } from './clock.js';
 export { nextWorkday, lastWorkday } from './workday.js';
+export { replaceMeetings, setMeetings } from './trilium/daynote.js';
+export { parseContext, periodSpan } from './trilium/until.js';
+export type { MeetingsResult } from './trilium/daynote.js';
+export type { ContextLine } from './trilium/until.js';

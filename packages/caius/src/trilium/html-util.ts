@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { HTMLElement, parse } from 'node-html-parser';
 import { scanTokens } from '../core/index.js';
 import type { StateSymbols } from './markdown.js';
+import { ProseTracker } from './sections.js';
 
 export function newListItemId(): string {
   return `e${randomBytes(16).toString('hex')}`;
@@ -102,6 +103,18 @@ export function sectionOf(root: HTMLElement, li: HTMLElement): string | null {
     if (isHeading(siblings[i]!)) return siblings[i]!.text.replace(/\s+/g, ' ').trim();
   }
   return null;
+}
+
+/** Whether the item sits under a Meetings or Context heading (down to the next of that level or higher). */
+export function inProseSection(root: HTMLElement, li: HTMLElement): boolean {
+  let top: HTMLElement = li;
+  while (top.parentNode && top.parentNode !== root) top = top.parentNode as HTMLElement;
+  const tracker = new ProseTracker();
+  for (const el of elements(root)) {
+    if (el === top) break;
+    if (isHeading(el)) tracker.enter(el.text, Number(el.tagName[1]));
+  }
+  return tracker.kind !== null && !isCriticalAside(top);
 }
 
 export const attrRe = (name: string) => new RegExp(`\\s+${name}(?:=(?:"[^"]*"|'[^']*'|[^\\s>]+))?(?=[\\s>/])`);

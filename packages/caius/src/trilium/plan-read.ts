@@ -9,6 +9,7 @@ import { buildDoc, loadStateSymbols, type TriliumDoc } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import { headingsByLine, isSuggestedName, sectionKind, type SectionKind } from './sections.js';
 import { parentItemId } from './open.js';
+import { parseContext, periodSpan, type ContextLine } from './until.js';
 
 export type PeriodKind = 'day' | 'week' | 'month';
 
@@ -97,6 +98,12 @@ export interface PlanView {
   /** Source keys dismissed on this note (`#caiusDismissed`). */
   dismissed: string[];
   capacity: Capacity;
+  /** The bullets under `### Meetings`, as written (`10:00 Standup (Sasha)`). */
+  meetings: string[];
+  /** The Context lines in force on the plan's date. */
+  context: ContextLine[];
+  /** Context lines whose `(until …)` date is before the plan's date. */
+  expiredContext: ContextLine[];
 }
 
 const TARGETS: Record<PeriodKind, { min: number; max: number } | null> = {
@@ -195,7 +202,19 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
       target: TARGETS[period],
       horizons,
     },
+    meetings: doc.meetings,
+    ...parseContext(doc.contextLines, periodSpan(period, key).start, planDate(period, key, now)),
   };
+}
+
+/**
+ * The day Context expires against: the day itself, or `now` when it falls inside the week or
+ * month (otherwise the nearer end of it).
+ */
+function planDate(period: PeriodKind, key: string, now: Date): string {
+  const { start, end } = periodSpan(period, key);
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return today < start ? start : today > end ? end : today;
 }
 
 function emptyView(period: PeriodKind, key: string): PlanView {
@@ -217,6 +236,9 @@ function emptyView(period: PeriodKind, key: string): PlanView {
       target: TARGETS[period],
       horizons: {},
     },
+    meetings: [],
+    context: [],
+    expiredContext: [],
   };
 }
 

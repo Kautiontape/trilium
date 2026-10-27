@@ -30,6 +30,7 @@ import {
     presentResult,
     readPlan,
     scanDocs,
+    setMeetings,
     setStates,
     type StateAction,
     suggestedTasks,
@@ -159,6 +160,12 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
                     ...(dropping.length ? await setStatesOf(store, dropping) : [])
                 ];
             })).map((r) => presentResult(r)));
+        }),
+
+        /** Replaces the Meetings block of a day note; no tool or route reaches it yet. */
+        setMeetings: ({ date, lines, dryRun }: { date: string; lines: string[]; dryRun?: boolean }) => withCaiusLock("caius_set_meetings", async () => {
+            const result = await setMeetings(store, { date, lines }, { dryRun });
+            return withBlobIds([ result ]);
         }),
 
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
