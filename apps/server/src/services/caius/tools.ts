@@ -120,6 +120,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.contextAdd, service.contextAdd)
         },
 
+        caius_brief_write: {
+            description: "Write the day's Morning Brief: a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there. A re-run updates the same notes. Dry run first.",
+            inputSchema: toolInputs.briefWrite,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.briefWrite, service.briefWrite)
+        },
+
         caius_header: {
             description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,

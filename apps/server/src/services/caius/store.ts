@@ -132,6 +132,28 @@ export function putAttachment(noteId: string, { role, mime, title, content }: At
     });
 }
 
+/**
+ * Creates a text note under `parentNoteId` with `content` as its HTML and answers its id, in one
+ * transaction, the way the `create_note` tool does. Like `putAttachment`, it sits beside
+ * `createBeccaStore` rather than in `NoteStore`. The caller provides the `cls.init()` context.
+ */
+export function createChildNote(parentNoteId: string, title: string, content: string): string {
+    const parent = getNote(parentNoteId);
+    if (parent.isProtected) {
+        throw new Error(`Note '${parentNoteId}' is protected and cannot be modified.`);
+    }
+    return sql.transactional(() => noteService.createNewNote({ parentNoteId, title, content, type: "text" }).note.noteId);
+}
+
+/**
+ * Gives a note one label `name` with `value`: an existing one is changed in place, so a re-run never
+ * adds a second copy, as `NoteStore.addLabel` would. The caller provides the `cls.init()` context.
+ */
+export function setLabel(noteId: string, name: string, value: string): void {
+    const note = getNote(noteId);
+    sql.transactional(() => note.setLabel(name, value));
+}
+
 let lockTail: Promise<void> = Promise.resolve();
 
 /** How long a call can hold the lock before `withCaiusLock` warns that it is blocking the others. */

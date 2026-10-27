@@ -1,5 +1,5 @@
 import { dayCapacity } from "@triliumnext/caius";
-import { cls, sql_init } from "@triliumnext/core";
+import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent } from "./inputs/types.js";
@@ -134,5 +134,112 @@ describe("caius_context_add", () => {
         expect(schema?.safeParse({ text: "x" }).success).toBe(false);
         expect(schema?.safeParse({ date: MONDAY, week: "2026-W46", text: "x" }).success).toBe(false);
         expect(schema?.safeParse({ date: MONDAY, text: "x", until: "6 Nov" }).success).toBe(false);
+    });
+});
+
+describe("caius_brief_write", () => {
+    const BRIEF_DAY = "2026-11-12";
+    const brief = {
+        date: BRIEF_DAY,
+        headline: "Ship the fix, then review",
+        acts: [
+            { range: "10:00 to 12:00", text: "Standup, then the fix." },
+            { range: "12:00 to 18:00", text: "Review around the release call." },
+            { range: "Evening", text: "A walk." }
+        ],
+        picks: [
+            { text: "Get ZAP-101 done", because: "sitting in Dev Verify for 3 days", minutes: 30 },
+            { text: "Get the review done", because: "because Sam asked on Tuesday", minutes: 90 }
+        ],
+        sections: [
+            { title: "Follow up", markdown: "**Sam** asked for the numbers." },
+            { title: "Heads-up", markdown: "- Two packages shipped overnight" }
+        ],
+        header: {
+            start: "10:00", end: "23:00",
+            events: [ { start: "10:00", end: "10:15", title: "Standup" } ],
+            work: [ { start: "10:15", end: "11:00", label: "ZAP-101", focus: true } ]
+        }
+    };
+    const DAY_HTML = `<h3>Meetings</h3><ul><li data-list-item-id="em1">10:00 Standup</li></ul><h2>☑️ Tasks</h2>${ul(li("bt1", "Brief day thing"))}`;
+    let dayId = "";
+
+    beforeAll(async () => {
+        dayId = await cls.init(async () => {
+            const day = await store.calendarDay(BRIEF_DAY);
+            await store.putContent(day.noteId, DAY_HTML);
+            return day.noteId;
+        });
+    });
+
+    it("dry-runs without creating a note or an attachment", async () => {
+        const dry = await call("caius_brief_write", { ...brief, dryRun: true });
+        expect(dry).toMatchObject({ date: BRIEF_DAY, dryRun: true, dayNoteId: dayId, briefNoteId: null, headerNoteId: null });
+        expect(dry.header).toContain("<h2>Ship the fix, then review</h2>");
+        expect(dry.brief).toContain("Get ZAP-101 done: because sitting in Dev Verify for 3 days (~30m)");
+        expect(becca.notes[dayId]?.getChildNotes()).toEqual([]);
+    });
+
+    it("writes the brief and its header under the day note and includes the header at the top of the day note", async () => {
+        const answer = await call("caius_brief_write", brief);
+        expect(answer).toMatchObject({ date: BRIEF_DAY, dayNoteId: dayId, created: { brief: true, header: true }, includeAdded: true, plannedAt: "2026-11-06T17:30:00" });
+
+        const briefNote = becca.notes[answer.briefNoteId];
+        expect(briefNote?.title).toBe("🌅 Morning Brief");
+        expect(briefNote?.getParentNotes().map((n) => n.noteId)).toEqual([ dayId ]);
+        expect(briefNote?.getLabelValue("morningBrief")).toBe(BRIEF_DAY);
+        expect(briefNote?.getLabelValue("caiusPlannedAt")).toBe("2026-11-06T17:30:00");
+        expect(briefNote?.getLabelValue("cssClass")).toBe("briefdemo");
+
+        const header = becca.notes[answer.headerNoteId];
+        expect(header?.title).toBe("Header");
+        expect(header?.getParentNotes().map((n) => n.noteId)).toEqual([ answer.briefNoteId ]);
+        expect(header?.getLabelValue("cssClass")).toBe("briefdemo");
+        const [ attachment ] = header?.getAttachments() ?? [];
+        expect(attachment).toMatchObject({ role: "image", title: "terrain.svg" });
+        const headerHtml = String(header?.getContent());
+        expect(headerHtml).toMatch(/^<p>Thursday · November 12 2026<\/p><h2>Ship the fix, then review<\/h2><p><img src="api\/attachments\/[^/]+\/image\/terrain\.svg" alt="[^"]+"><\/p><figure class="table">/);
+        expect(headerHtml.match(/<td>/g)).toHaveLength(3);
+
+        const body = String(briefNote?.getContent());
+        expect(body.startsWith(`<section class="include-note" data-note-id="${answer.headerNoteId}" data-box-size="full">&nbsp;</section><h2>Get done today</h2><ul><li`)).toBe(true);
+        expect(body).toContain(">Get ZAP-101 done: because sitting in Dev Verify for 3 days (~30m)</li>");
+        expect(body).toContain(">Get the review done: because Sam asked on Tuesday (~1h30m)</li>");
+        expect(body).not.toContain("todo-list");
+        expect(body).toMatch(/<h2>Follow up<\/h2><p><strong>Sam<\/strong> asked for the numbers\.<\/p><h2>Heads-up<\/h2><ul>/);
+
+        const day = await cls.init(() => store.content(dayId));
+        expect(day).toBe(`<section class="include-note" data-note-id="${answer.headerNoteId}" data-box-size="full">&nbsp;</section>${DAY_HTML}`);
+    });
+
+    it("updates the same notes on a re-run, replaces the planned time and adds the include-note once", async () => {
+        const first = becca.notes[dayId]?.getChildNotes().find((n) => n.title === "🌅 Morning Brief");
+        vi.stubEnv("CAIUS_NOW", `${FRIDAY}T18:05`);
+        try {
+            const again = await call("caius_brief_write", { ...brief, headline: "Review first" });
+            expect(again).toMatchObject({ briefNoteId: first?.noteId, created: { brief: false, header: false }, includeAdded: false });
+        } finally {
+            vi.stubEnv("CAIUS_NOW", `${FRIDAY}T17:30`);
+        }
+        expect(becca.notes[dayId]?.getChildNotes()).toHaveLength(1);
+        expect(first?.getChildNotes()).toHaveLength(1);
+        expect(first?.getChildNotes()[0]?.getAttachments()).toHaveLength(1);
+        expect(first?.getLabels("caiusPlannedAt").map((l) => l.value)).toEqual([ "2026-11-06T18:05:00" ]);
+        expect(String(first?.getChildNotes()[0]?.getContent())).toContain("<h2>Review first</h2>");
+        const day = await cls.init(() => store.content(dayId));
+        expect(day.match(/class="include-note"/g)).toHaveLength(1);
+    });
+
+    it("keeps the brief's lines out of the lanes", async () => {
+        const open = await call("caius_open", {});
+        expect(open.tasks.map((t: any) => t.text).join("\n")).not.toContain("Get ZAP-101 done");
+        expect(open.tasks.map((t: any) => t.text)).toContain("Brief day thing");
+    });
+
+    it("takes three acts, and latitude with longitude", () => {
+        const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
+        expect(schema?.safeParse(brief).success).toBe(true);
+        expect(schema?.safeParse({ ...brief, acts: brief.acts.slice(0, 2) }).success).toBe(false);
+        expect(schema?.safeParse({ ...brief, latitude: 1 }).success).toBe(false);
     });
 });

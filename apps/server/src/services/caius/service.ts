@@ -41,7 +41,7 @@ import {
     TRILIUM_CONFIG,
     withListItemIds
 } from "@triliumnext/caius";
-import { becca, date_utils as dateUtils } from "@triliumnext/core";
+import { becca, date_utils as dateUtils, markdownImportService } from "@triliumnext/core";
 import { t } from "i18next";
 
 import {
@@ -49,12 +49,14 @@ import {
     type AddInput,
     type ApplyInput,
     type AssignIdsInput,
+    type BriefWriteInput,
     type ContextAddInput,
     type ContextInput,
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
     type ExplainInput,
     type ForwardInput,
+    type HeaderDay,
     type HeaderInput,
     type InputsInput,
     type MeetingsInput,
@@ -62,6 +64,7 @@ import {
     type PlanInput,
     type SetStateInput
 } from "./schemas.js";
+import { writeBrief } from "./brief.js";
 import { type CaiusInputs, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -253,10 +256,23 @@ export function createCaiusService(
                 if (note.isProtected) {
                     return { error: "bad_request", detail: `Note '${noteId}' is protected and cannot be modified` };
                 }
-                const svg = renderDayTerrain({ ...day, ...(weather ? { weather } : {}) });
-                const { attachmentId, created } = putAttachment(noteId, { role: "image", mime: "image/svg+xml", title: TERRAIN_TITLE, content: svg });
+                const { attachmentId, created } = drawHeader(noteId, day, weather);
                 return { attachmentId, created, snippet: `<img src="api/attachments/${attachmentId}/image/${TERRAIN_TITLE}">` };
             });
+        },
+
+        /**
+         * Writes the day's Morning Brief, its `Header` child with the drawing, and the header's
+         * include-note at the top of the day note. The weather is fetched before the lock.
+         */
+        briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
+            const weather = input.dryRun || latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude);
+            return withCaiusLock("caius_brief_write", () => writeBrief({
+                store,
+                draw: (noteId) => drawHeader(noteId, input.header, weather).attachmentId,
+                render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
+                plannedAt: localIso(caiusNow())
+            }, input));
         },
 
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
@@ -295,11 +311,19 @@ export function caiusNow(env: Record<string, string | undefined> = process.env):
 /** `CAIUS_NOW` as the local `YYYY-MM-DDTHH:mm:ss` the client reads, or `undefined` outside dev. */
 export function caiusDevNow(env: Record<string, string | undefined> = process.env): string | undefined {
     const at = clockOverride(env);
-    if (!at) {
-        return undefined;
-    }
+    return at ? localIso(at) : undefined;
+}
+
+/** A moment as local `YYYY-MM-DDTHH:mm:ss`. */
+function localIso(at: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
+
+/** Draws the day on a note as its `terrain.svg` attachment, created or updated. The caller holds the lock. */
+function drawHeader(noteId: string, day: HeaderDay, weather: DayWeather | undefined) {
+    const svg = renderDayTerrain({ ...day, ...(weather ? { weather } : {}) });
+    return putAttachment(noteId, { role: "image", mime: "image/svg+xml", title: TERRAIN_TITLE, content: svg });
 }
 
 function triliumNow(): Date {

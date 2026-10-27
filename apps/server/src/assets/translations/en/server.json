@@ -587,6 +587,12 @@
       "day_name": "{{- weekday}} {{day}} {{- month}}",
       "week_name": "week {{week}} of {{year}}",
       "month_name": "{{- month}} {{year}}"
+    },
+    "brief": {
+      "date_line": "{{- weekday}} · {{- month}} {{day}} {{year}}",
+      "picks_title": "Get done today",
+      "pick": "{{- text}}: because {{- because}} (~{{estimate}})",
+      "image_alt": "The day: meetings on a line, planned work as bars under it"
     }
   }
 }

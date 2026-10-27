@@ -40,4 +40,7 @@ export type { ContextLine } from './trilium/until.js';
 export { renderDayTerrain, weatherIcon } from './draw/terrain.js';
 export { meetingLines, overlapPairs } from './daily/meetings.js';
 export type { MeetingEvent } from './daily/meetings.js';
+export { formatEstimate, formatHours } from './daily/format.js';
+export { briefBodyHtml, headerHtml, includeNote, withInclude } from './trilium/brief-html.js';
+export type { BriefAct } from './trilium/brief-html.js';
 export type { TerrainInput, TerrainEvent, TerrainWork, WeatherIcon } from './draw/terrain.js';
