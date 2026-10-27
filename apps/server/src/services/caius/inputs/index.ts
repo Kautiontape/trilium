@@ -18,10 +18,11 @@ export type InputsDeps = JiraDeps;
 
 /**
  * Whether an `errors` entry is a warning, after which the source still answered: a cap that bit
- * (`*_truncated`), some tickets unread (`*_partial`) or an unknown time zone read as local time.
+ * (`*_truncated`), some tickets unread (`*_partial`), a search Jira only answered without one of its
+ * clauses (`*_narrowed`) or an unknown time zone read as local time.
  */
 export function isInputWarning(error: string): boolean {
-    return /_(?:truncated|partial|unknown_tz)$/.test(error);
+    return /_(?:truncated|partial|narrowed|unknown_tz)$/.test(error);
 }
 
 export async function readInputs(input: InputsInput, deps: InputsDeps = defaultDeps()): Promise<CaiusInputs> {

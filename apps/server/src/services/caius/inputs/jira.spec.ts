@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { readInputs } from "./index.js";
+import { isInputWarning, readInputs } from "./index.js";
 import { adfToText, asksIn, isHandoffStatus, overriddenKeys } from "./jira.js";
 
 const NOW = new Date("2026-10-27T15:00:00Z");
@@ -138,6 +138,28 @@ describe("caius_inputs Jira under strain", () => {
 
         const twice = await runWith(withFixtures((url) => url.pathname === "/rest/api/3/myself" ? new Response("{}", { status: 429 }) : undefined));
         expect(twice.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "http_429" } ]);
+    });
+
+    it("drops the comment clause once when Jira rejects the involved search with a 400", async () => {
+        const involvedJql: string[] = [];
+        const rejecting = (always: boolean) => withFixtures((url) => {
+            const jql = url.searchParams.get("jql") ?? "";
+            if (url.pathname !== "/rest/api/3/search/jql" || jql.startsWith("assignee = currentUser() AND statusCategory")) return undefined;
+            involvedJql.push(jql);
+            return always || jql.includes("comment ~") ? new Response("{}", { status: 400 }) : undefined;
+        });
+
+        const narrowed = await runWith(rejecting(false));
+        expect(narrowed.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "involved_narrowed" } ]);
+        expect(isInputWarning("involved_narrowed")).toBe(true);
+        expect(involvedJql).toHaveLength(2);
+        expect(involvedJql[1]).toBe("(assignee = currentUser() OR watcher = currentUser()) AND updated >= -8d ORDER BY updated DESC");
+        expect(narrowed.jira.asks.map((a) => a.ticket.key)).toContain("ZAP-104");
+
+        involvedJql.length = 0;
+        const rejected = await runWith(rejecting(true));
+        expect(rejected.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "http_400" } ]);
+        expect(involvedJql).toHaveLength(2);
     });
 
     it("keeps going when one ticket's comments or changelog fail, and says so once each", async () => {

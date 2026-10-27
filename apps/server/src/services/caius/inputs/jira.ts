@@ -82,11 +82,7 @@ export async function readJira(deps: JiraDeps, context: string[] = []): Promise<
     const me = await api.get<{ accountId: string }>("/rest/api/3/myself");
     const assigned = await search(api, "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC");
     const since = new Date(now.getTime() - ASK_WINDOW_DAYS * DAY_MS);
-    // `-8d` on Jira's clock always covers the 7 days measured on ours; `asksIn` applies the exact cutoff.
-    const involved = await search(
-        api,
-        "(assignee = currentUser() OR watcher = currentUser() OR comment ~ currentUser()) AND updated >= -8d ORDER BY updated DESC"
-    );
+    const involved = await searchInvolved(api, warnings);
     if (assigned.truncated || involved.truncated) warnings.add("search_truncated");
 
     const handoffIssues = assigned.issues.filter(isHandoff);
@@ -128,6 +124,22 @@ export async function readJira(deps: JiraDeps, context: string[] = []): Promise<
         },
         warnings: [ ...warnings ]
     };
+}
+
+/**
+ * The tickets the user is assigned, watches or commented on, updated in the last 8 days. A Jira that
+ * rejects `comment ~ currentUser()` with a 400 is asked once more without it (`involved_narrowed`).
+ */
+async function searchInvolved(api: Api, warnings: Set<string>): Promise<{ issues: RawIssue[]; truncated: boolean }> {
+    // `-8d` on Jira's clock always covers the 7 days measured on ours; `asksIn` applies the exact cutoff.
+    const window = "AND updated >= -8d ORDER BY updated DESC";
+    try {
+        return await search(api, `(assignee = currentUser() OR watcher = currentUser() OR comment ~ currentUser()) ${window}`);
+    } catch (e) {
+        if (!(e instanceof JiraError) || e.code !== "http_400") throw e;
+    }
+    warnings.add("involved_narrowed");
+    return search(api, `(assignee = currentUser() OR watcher = currentUser()) ${window}`);
 }
 
 /** Maps `items` with at most `CONCURRENCY` calls in flight, keeping their order. */

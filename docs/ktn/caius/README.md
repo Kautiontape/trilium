@@ -123,7 +123,7 @@ On a dry run a write changes nothing and reports what it would do. Add `html: tr
 
 ### `caius_inputs`
 
-`{ date, context?, workStart?, workEnd? }` returns `{ date, jira, calendar, capacity, errors }`. `context` is the day's Context lines. The work window defaults to 10:00–18:00. It reads no notes and writes nothing. A source that fails adds `{ source, error }` to `errors`, and the other still returns. Some entries are warnings and the source still answers: `asks_truncated` and `search_truncated` (a cap bit), `asks_partial` and `handoff_partial` (some tickets' comments or changelog failed), and `feed_<n>_unknown_tz` (an event names a time zone its feed doesn't define, so it was read as local time).
+`{ date, context?, workStart?, workEnd? }` returns `{ date, jira, calendar, capacity, errors }`. `context` is the day's Context lines. The work window defaults to 10:00–18:00. It reads no notes and writes nothing. A source that fails adds `{ source, error }` to `errors`, and the other still returns. Some entries are warnings and the source still answers: `asks_truncated` and `search_truncated` (a cap bit), `asks_partial` and `handoff_partial` (some tickets' comments or changelog failed), `involved_narrowed` (Jira rejected `comment ~ currentUser()`, so tickets you only commented on are not scanned for asks), and `feed_<n>_unknown_tz` (an event names a time zone its feed doesn't define, so it was read as local time).
 
 - **`jira.handoff`:** your tickets in Code Review, Dev Verify, Ready For QA, QA Testing or Pending Feedback, with `daysInStatus`.
 - **`jira.asks`:** comments from the last 7 days that mention you or end in a question and came after your own last comment on that ticket.
@@ -170,7 +170,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **The rules:** the standing note's Brief rules section, word for word.
    - **The brief:** the input `caius_brief_write` takes, to fill in.
 
-`caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. An answer in which a source failed is not reused; one with only warnings (`*_partial`, `*_truncated`, `*_unknown_tz`) is. `caius_inputs` itself goes through the same cache. `refresh: true` on `caius_inputs`, on a step or on `caius_meetings` fetches again. The work window passed to it is the Rhythm's standup and end of work.
+`caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. An answer in which a source failed is not reused; one with only warnings (`*_partial`, `*_truncated`, `*_narrowed`, `*_unknown_tz`) is. `caius_inputs` itself goes through the same cache. `refresh: true` on `caius_inputs`, on a step or on `caius_meetings` fetches again. The work window passed to it is the Rhythm's standup and end of work.
 
 ### The write tools
 
