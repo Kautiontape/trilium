@@ -3,7 +3,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { getSkillsSummary, readSkill, registerSkillReader, SKILLS } from "./skills.js";
+import { getSkillsSummary, listSkills, readSkill, registerSkill, registerSkillReader, SKILLS } from "./skills.js";
 
 /**
  * This file's directory, taken apart rather than composed with
@@ -63,5 +63,27 @@ describe("llm skill sheets", () => {
         for (const skill of SKILLS) {
             expect(summary).toContain(`"${skill.name}"`);
         }
+    });
+});
+
+describe("host-registered skills", () => {
+    const hosted = { name: "hosted_only", description: "Only some hosts have this.", summary: "a host-only thing", read: () => "HOSTED" };
+
+    it("are listed, summarised and read only while registered, and cannot shadow the catalog", () => {
+        expect(listSkills().map((s) => s.name)).toEqual(SKILLS.map((s) => s.name));
+
+        const unregister = registerSkill(hosted);
+        expect(listSkills().map((s) => s.name)).toEqual([...SKILLS.map((s) => s.name), "hosted_only"]);
+        expect(getSkillsSummary()).toContain('"hosted_only" for a host-only thing');
+        expect(readSkill("hosted_only")).toBe("HOSTED");
+
+        const replaced = registerSkill({ ...hosted, read: () => "SECOND" });
+        unregister();
+        expect(readSkill("hosted_only")).toBe("SECOND");
+        replaced();
+        expect(readSkill("hosted_only")).toBeNull();
+        expect(getSkillsSummary()).not.toContain("hosted_only");
+
+        expect(() => registerSkill({ ...hosted, name: "search_syntax" })).toThrow("already in the core catalog");
     });
 });

@@ -5,7 +5,9 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 
 import { createMcpServer } from "../mcp/mcp_server.js";
-import { loadCaiusTools } from "./register.js";
+import { listSkills, readSkill } from "@triliumnext/core/src/services/llm/skills.js";
+
+import { loadCaiusTools, registerCaiusSkill } from "./register.js";
 
 registerToolRegistryLoader(() => loadCaiusTools(() => Promise.reject(new Error("cannot import the library"))));
 
@@ -34,4 +36,20 @@ it("keeps every other tool listed when Caius fails to load", async () => {
 
     expect(names).toContain("search_notes");
     expect(names.some((n) => n.startsWith("caius_"))).toBe(false);
+});
+
+it("offers the caius skill only while it is registered, and names every tool the sheet teaches", async () => {
+    expect(listSkills().map((s) => s.name)).not.toContain("caius");
+
+    const unregister = registerCaiusSkill();
+    expect(listSkills().map((s) => s.name)).toContain("caius");
+    const sheet = readSkill("caius") ?? "";
+    const { caiusTools } = await import("./tools.js");
+    for (const [name] of caiusTools) {
+        expect(sheet, `the sheet should mention ${name}`).toContain(`\`${name}\``);
+    }
+    expect(sheet.split("\n").length).toBeGreaterThanOrEqual(80);
+
+    unregister();
+    expect(readSkill("caius")).toBeNull();
 });

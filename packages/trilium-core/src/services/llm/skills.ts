@@ -12,7 +12,7 @@
  * to some length to keep out of its startup path.
  */
 
-interface SkillDefinition {
+export interface SkillDefinition {
     name: string;
     /** Long description shown in the load_skill tool's listing. */
     description: string;
@@ -64,11 +64,49 @@ export function registerSkillReader(reader: (file: string) => string | null) {
     skillReader = reader;
 }
 
+/** A sheet a host contributes at runtime, with its own way of producing the markdown. */
+type HostSkill = Omit<SkillDefinition, "file"> & { read: () => string | null };
+
+const hostSkills = new Map<string, HostSkill>();
+
+/**
+ * Add a skill that only some hosts have, such as one that teaches tools the
+ * browser build does not carry. The catalog in {@link SKILLS} stays what every
+ * host serves; this adds to what {@link listSkills} and {@link readSkill}
+ * report, so the `load_skill` listing and the system prompt name the skill only
+ * where it was registered.
+ *
+ * `read` has the same contract as the reader of {@link registerSkillReader}:
+ * synchronous, null when the sheet cannot be produced. A name already in
+ * {@link SKILLS} is refused, and registering a name again replaces it. Returns
+ * a function that removes the skill again.
+ */
+export function registerSkill(skill: HostSkill): () => void {
+    if (SKILLS.some((s) => s.name === skill.name)) {
+        throw new Error(`Skill '${skill.name}' is already in the core catalog`);
+    }
+    hostSkills.set(skill.name, skill);
+    return () => {
+        if (hostSkills.get(skill.name) === skill) {
+            hostSkills.delete(skill.name);
+        }
+    };
+}
+
+/** Every skill this host serves: the core catalog, then what the host registered. */
+export function listSkills(): Pick<SkillDefinition, "name" | "description" | "summary">[] {
+    return [...SKILLS, ...hostSkills.values()];
+}
+
 /**
  * The sheet's markdown, or null when the skill is unknown to the catalog or the
  * host cannot produce it.
  */
 export function readSkill(name: string): string | null {
+    const hosted = hostSkills.get(name);
+    if (hosted) {
+        return hosted.read();
+    }
     const skill = SKILLS.find((s) => s.name === name);
     if (!skill || !skillReader) {
         return null;
@@ -83,5 +121,5 @@ export function readSkill(name: string): string | null {
  * calls to the skill names as if they were tools.
  */
 export function getSkillsSummary(): string {
-    return SKILLS.map((s) => `"${s.name}" for ${s.summary}`).join(", ");
+    return listSkills().map((s) => `"${s.name}" for ${s.summary}`).join(", ");
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { registerSkillReader, SKILLS } from "../skills.js";
+import { registerSkill, registerSkillReader, SKILLS } from "../skills.js";
 import type { ToolDefinition } from "./tool_registry.js";
 import { skillTools } from "./skill_tools.js";
 
@@ -45,5 +45,16 @@ describe("load_skill", () => {
         for (const skill of SKILLS) {
             expect(description).toContain(`- ${skill.name}: ${skill.description}`);
         }
+    });
+
+    it("offers and serves a skill registered after the tool was defined, until it is removed", () => {
+        const unregister = registerSkill({ name: "late", description: "Registered late.", summary: "late things", read: () => "LATE" });
+
+        expect(loadSkillTool().description).toContain("- late: Registered late.");
+        expect(loadSkillTool().execute({ name: "late" })).toEqual({ skill: "late", instructions: "LATE" });
+
+        unregister();
+        expect(loadSkillTool().description).not.toContain("late:");
+        expect(loadSkillTool().execute({ name: "late" })).toHaveProperty("error", expect.stringContaining("Unknown skill: 'late'"));
     });
 });
