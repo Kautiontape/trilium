@@ -5,7 +5,7 @@ import { MutableRef, useCallback, useEffect, useRef, useState } from "preact/hoo
 
 import { isIOS } from "../../../services/utils";
 import { useIsNoteReadOnly, useNoteContext, useNoteProperty, useTriliumEvent } from "../../react/hooks";
-import { attachListContextToolbar } from "./list_context_toolbar";
+import { attachListContextToolbar, createTaskToolbarButton } from "./list_context_toolbar";
 
 interface MobileEditorToolbarProps {
     inPopupEditor?: boolean;
@@ -38,11 +38,13 @@ export default function MobileEditorToolbar({ inPopupEditor }: MobileEditorToolb
             repositionDropdowns(editor);
         }
 
-        // Bring outdent/indent to the front of the bar while the caret is in a list, scrolling the
-        // bar back to its start when that happens so they are on screen without a hunt.
+        // Bring outdent/indent to the front of the bar while the caret is in a list, and the Task
+        // button ahead of them in a Journal task, scrolling the bar back to its start when that
+        // happens so they are on screen without a hunt.
         detachListContext.current();
         detachListContext.current = attachListContextToolbar(editor as ClassicEditor, {
-            onPinned: () => containerRef.current?.scrollTo({ left: 0 })
+            onPinned: () => containerRef.current?.scrollTo({ left: 0 }),
+            taskButton: createTaskToolbarButton(editor as ClassicEditor)
         });
 
         if (toolbar) {
