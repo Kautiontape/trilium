@@ -1,5 +1,7 @@
 import "./PlanTab.css";
 
+import type { CKTextEditor } from "@triliumnext/ckeditor5";
+
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import appContext from "../../../components/app_context";
@@ -7,7 +9,7 @@ import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
     caiusApi, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
-    isCaiusEnabled, wasCaiusEnabled
+    isCaiusEnabled, RELOAD_TIMEOUT_MS, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
 import { t } from "../../../services/i18n";
@@ -228,8 +230,34 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
     return { data, error, reload: () => void reload() };
 }
 
+/**
+ * Whether `editor` holds `noteId`, waiting up to {@link RELOAD_TIMEOUT_MS} for `EditableText` to
+ * load it.
+ */
+function editorLoads(editor: CKTextEditor, noteId: string) {
+    if (getEditorNoteId(editor) === noteId) {
+        return Promise.resolve(true);
+    }
+
+    return new Promise<boolean>((resolve) => {
+        const done = (loaded: boolean) => {
+            clearTimeout(timer);
+            editor.data.off("set", onSet);
+            resolve(loaded);
+        };
+        const onSet = () => {
+            if (getEditorNoteId(editor) === noteId) {
+                done(true);
+            }
+        };
+        const timer = setTimeout(() => done(false), RELOAD_TIMEOUT_MS);
+        // `set` is decorated, so a listener below `normal` runs after the data is in the model.
+        editor.data.on("set", onSet, { priority: "lowest" });
+    });
+}
+
 /** Opens the task's note in the active tab and, once its editor holds it, puts the caret on it. */
-async function openTaskInNote(
+export async function openTaskInNote(
     noteContext: NoteContext | undefined,
     { noteId, listItemId }: PlanTaskRef
 ) {
@@ -240,9 +268,10 @@ async function openTaskInNote(
 
     await context.setNote(noteId);
     const isText = context.note?.type === "text";
+    // The editor answers at once, possibly while it still holds the note shown before.
     const editor = listItemId && isText ? await context.getTextEditor() : null;
     const root = editor?.model.document.getRoot();
-    if (!editor || !root || getEditorNoteId(editor) !== noteId) {
+    if (!editor || !root || !(await editorLoads(editor, noteId))) {
         return;
     }
 

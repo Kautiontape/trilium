@@ -1,12 +1,15 @@
+import { ClassicEditor, Essentials, List, Paragraph, TodoList } from "ckeditor5";
 import type { ComponentChildren } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type NoteContext from "../../../components/note_context";
 import type FNote from "../../../entities/fnote";
 import type { CaiusOpenTask, CaiusPlan, CaiusPlanTask } from "../../../services/caius";
 import options from "../../../services/options";
 import { buildNote } from "../../../test/easy-froca";
 import { renderInto } from "../../../test/render";
+import { getEditorNoteId, setEditorNoteId } from "../../react/NoteStore";
 
 const api = vi.hoisted(() => ({
     plan: vi.fn(),
@@ -55,7 +58,7 @@ vi.mock("../../react/Dropdown", () => ({
     )
 }));
 
-import PlanTab, { useCaiusEnabled } from "./PlanTab";
+import PlanTab, { openTaskInNote, useCaiusEnabled } from "./PlanTab";
 
 const DAY_HTML = "<h2>Morning</h2><ul class=\"todo-list\"><li>…</li></ul>"
     + "<h2>Afternoon</h2><h2>Suggested</h2>";
@@ -398,3 +401,35 @@ function texts(root: Element, selector: string) {
 function text(root: Element, selector: string) {
     return root.querySelector(selector)?.textContent?.trim();
 }
+
+describe("openTaskInNote", () => {
+    it("puts the caret on the task once the editor has loaded the note it opened", async () => {
+        const el = document.createElement("div");
+        document.body.appendChild(el);
+        const editor = await ClassicEditor.create(el, {
+            plugins: [ Essentials, Paragraph, List, TodoList ], licenseKey: "GPL"
+        });
+        editor.setData("<p>The note shown before</p>");
+        setEditorNoteId(editor, "today");
+        // happy-dom has no layout to scroll.
+        vi.spyOn(editor.editing.view, "scrollToTheSelection").mockImplementation(() => {});
+        // The editor answers getTextEditor() at once, while it still holds the note shown before.
+        const context = {
+            note: { type: "text" },
+            setNote: vi.fn(async () => {}),
+            getTextEditor: async () => editor
+        } as unknown as NoteContext;
+
+        const opening = openTaskInNote(context, { noteId: "yesterday", listItemId: "etwo" });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        setEditorNoteId(editor, "yesterday");
+        editor.setData("<p>Marker</p><ul class=\"todo-list\"><li data-list-item-id=\"eone\">One</li>"
+            + "<li data-list-item-id=\"etwo\">Two</li></ul>");
+        await opening;
+
+        expect(getEditorNoteId(editor)).toBe("yesterday");
+        expect(editor.model.document.selection.getFirstPosition()?.parent.getAttribute("listItemId"))
+            .toBe("etwo");
+        await editor.destroy();
+    });
+});
