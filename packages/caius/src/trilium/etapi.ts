@@ -33,14 +33,18 @@ export function etapiClient(baseUrl: string, token: string): NoteStore {
     async content(noteId) {
       return (await get(`/notes/${encodeURIComponent(noteId)}/content`)).text();
     },
-    async putContent(noteId, html) {
+    async putContent(noteId, html, expected) {
       const path = `/notes/${encodeURIComponent(noteId)}/content`;
+      // ETAPI has no conditional PUT, so the compare-and-swap is a read then a write: an edit that
+      // lands between the two is overwritten. The window is one round trip.
+      if (expected !== undefined && (await (await get(path)).text()) !== expected) return false;
       const res = await fetch(`${root}${path}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=utf-8' },
         body: html,
       });
       if (!res.ok) throw new Error(`ETAPI PUT /notes/:id/content: HTTP ${res.status}`);
+      return true;
     },
     async calendarDay(date) {
       return (await (await get(`/calendar/days/${encodeURIComponent(date)}`)).json()) as StoreNote;

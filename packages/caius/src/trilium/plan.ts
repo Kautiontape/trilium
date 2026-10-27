@@ -1,8 +1,9 @@
 // The planning writes: add, accept, dismiss, done, start, drop. Each works on one
 // Trilium note's HTML (positions found with node-html-parser, edits spliced into
 // the string) and follows `forward`'s safety rules: build the new HTML in memory,
-// re-read the note just before the PUT and drop the write if it changed, never
-// call the calendar endpoints on a dry run, and be safe to run twice.
+// write it as a compare-and-swap against the HTML it was built from and drop the
+// write if the note changed, never call the calendar endpoints on a dry run, and
+// be safe to run twice.
 
 import { scanDocs } from '../index/index.js';
 import { newListItemId, tokenZoneStart } from './html-util.js';
@@ -245,8 +246,7 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
         changes: [{ noteId, role: 'target', before: html, after }],
       };
     }
-    if ((await api.content(target_!.noteId)) !== html) return skip(req, 'edited', `${when.key} changed meanwhile; nothing written`);
-    await api.putContent(target_!.noteId, after);
+    if (!(await api.putContent(target_!.noteId, after, html))) return skip(req, 'edited', `${when.key} changed meanwhile; nothing written`);
     track();
     return {
       ...req,
@@ -287,8 +287,7 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     if (opts.dryRun) {
       return { ...req, status: 'accepted', dryRun: true, listItemId: req.listItemId, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };
     }
-    if ((await api.content(req.noteId)) !== html) return skip(req, 'edited', 'note changed meanwhile; nothing written');
-    await api.putContent(req.noteId, after);
+    if (!(await api.putContent(req.noteId, after, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
     return { ...req, status: 'accepted', listItemId: req.listItemId };
   });
 }
@@ -315,10 +314,13 @@ export async function dismissTasks(api: NoteStore, reqs: ItemRequest[], opts: Pl
         changes: [{ noteId: req.noteId, role: 'target', before: html, after: taken.html }],
       };
     }
+    // The label goes on before the content, so this re-read keeps an edit made before then from leaving a label behind.
     if ((await api.content(req.noteId)) !== html) return skip(req, 'edited', 'note changed meanwhile; nothing written');
     // Label first: if the PUT then fails, the item is still there but already dismissed, and a re-run finishes.
     if (!labelled) await api.addLabel(req.noteId, DISMISSED_LABEL, key);
-    await api.putContent(req.noteId, taken.html);
+    if (!(await api.putContent(req.noteId, taken.html, html))) {
+      return skip(req, 'edited', 'note changed after the dismissal label was added; the item is still listed, so re-run to remove it');
+    }
     return { ...req, status: 'dismissed', key };
   });
 }
@@ -350,8 +352,7 @@ export async function setStates(
     if (opts.dryRun) {
       return { ...req, status: 'updated', dryRun: true, state: RESULT_STATE[action], changes: [{ noteId: req.noteId, role: 'target', before: html, after: r.html }] };
     }
-    if ((await api.content(req.noteId)) !== html) return skip(req, 'edited', 'note changed meanwhile; nothing written');
-    await api.putContent(req.noteId, r.html);
+    if (!(await api.putContent(req.noteId, r.html, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
     return { ...req, status: 'updated', state: RESULT_STATE[action] };
   });
 }

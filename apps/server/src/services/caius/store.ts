@@ -41,21 +41,29 @@ export function createBeccaStore(): NoteStore {
                 throw new Error(`Note '${noteId}' is protected and content cannot be read.`);
             }
 
-            const content = note.getContent();
-            return typeof content === "string" ? content : Buffer.from(content).toString("utf8");
+            return readContent(note);
         },
 
-        async putContent(noteId, html) {
+        async putContent(noteId, html, expected) {
             const note = getNote(noteId);
             if (note.isProtected) {
                 throw new Error(`Note '${noteId}' is protected and cannot be modified.`);
             }
 
-            sql.transactional(() => {
+            // The comparison and the write share one synchronous transaction, so no other write
+            // can land between them.
+            const written = sql.transactional(() => {
+                if (expected !== undefined && readContent(note) !== expected) {
+                    return false;
+                }
                 noteService.saveRevisionIfNeeded(note);
                 note.setContent(html);
+                return true;
             });
-            void noteService.asyncPostProcessContent(note, html);
+            if (written) {
+                void noteService.asyncPostProcessContent(note, html);
+            }
+            return written;
         },
 
         async calendarDay(date) {
@@ -97,6 +105,11 @@ function getNote(noteId: string): BNote {
         throw new Error(`Note '${noteId}' not found.`);
     }
     return note;
+}
+
+function readContent(note: BNote): string {
+    const content = note.getContent();
+    return typeof content === "string" ? content : Buffer.from(content).toString("utf8");
 }
 
 function isValidDate(date: string): boolean {

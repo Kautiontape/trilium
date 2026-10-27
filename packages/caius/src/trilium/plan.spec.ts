@@ -137,14 +137,7 @@ describe('addTasks', () => {
   });
 
   it('skips when the note changed between the read and the write (edit guard)', async () => {
-    const f = fakeTrilium(seed('<h3>Work</h3>'));
-    let reads = 0;
-    const content = f.api.content;
-    f.api.content = async (id) => {
-      // reads of d: the Journal scan, the note itself, then the guard's re-read
-      if (id === 'd' && ++reads === 3) f.html.d += '<p>edited elsewhere</p>';
-      return content(id);
-    };
+    const f = fakeTrilium(seed('<h3>Work</h3>'), { onPut: (id) => (f.html[id] += '<p>edited elsewhere</p>') });
     const [r] = await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'X' }], base);
     expect(r).toMatchObject({ status: 'skipped', reason: 'edited' });
     expect(puts(f.log)).toEqual([]);
@@ -205,9 +198,8 @@ describe('acceptTasks', () => {
     const [r] = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'Work' }], { ...base, dryRun: true });
     expect(r.status).toBe('accepted');
     expect(puts(f.log)).toEqual([]);
-    const content = f.api.content;
-    let reads = 0;
-    f.api.content = async (id) => { if (++reads === 2) f.html.d += '<p>x</p>'; return content(id); };
+    const put = f.api.putContent;
+    f.api.putContent = async (id, body, expected) => { f.html.d += '<p>x</p>'; return put(id, body, expected); };
     expect((await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'Work' }], base))[0]).toMatchObject({ reason: 'edited' });
   });
   it('rejects bad requests', async () => {
@@ -251,6 +243,13 @@ describe('dismissTasks', () => {
     expect((await dismissTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base))[0]).toMatchObject({ reason: 'edited' });
     expect(f.log).toEqual([]);
   });
+  it('reports a note edited after the label went on, and keeps the edit', async () => {
+    const f = fakeTrilium(seed(html), { onPut: (id) => (f.html[id] += '<p>x</p>') });
+    const [r] = await dismissTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base);
+    expect(r).toMatchObject({ status: 'skipped', reason: 'edited', detail: expect.stringContaining('re-run') });
+    expect(f.log).toEqual(['label d caiusDismissed=ZAP-9']);
+    expect(f.html.d).toContain('<p>x</p>');
+  });
 });
 
 describe('done, start, drop', () => {
@@ -284,9 +283,8 @@ describe('done, start, drop', () => {
     const [r] = await setStates(f.api, 'done', [{ noteId: 'd', listItemId: 'e1' }], { ...base, dryRun: true });
     expect(r).toMatchObject({ status: 'updated', dryRun: true });
     expect(puts(f.log)).toEqual([]);
-    const content = f.api.content;
-    let reads = 0;
-    f.api.content = async (id) => { if (++reads === 2) f.html.d += '<p>x</p>'; return content(id); };
+    const put = f.api.putContent;
+    f.api.putContent = async (id, body, expected) => { f.html.d += '<p>x</p>'; return put(id, body, expected); };
     expect((await setStates(f.api, 'done', [{ noteId: 'd', listItemId: 'e1' }], base))[0]).toMatchObject({ reason: 'edited' });
   });
   it('reports a failed put without stopping the batch', async () => {

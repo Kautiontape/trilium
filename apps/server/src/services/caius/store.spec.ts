@@ -45,8 +45,13 @@ describe("becca NoteStore", () => {
     it("writes content as is and reads it back", async () => {
         const day = await inRequest(() => store.calendarDay("2031-03-05"));
         const html = "<h3>Work</h3><ul><li>a &amp; b</li></ul>";
-        await inRequest(() => store.putContent(day.noteId, html));
+        expect(await inRequest(() => store.putContent(day.noteId, html))).toBe(true);
         expect(await store.content(day.noteId)).toBe(html);
+
+        expect(await inRequest(() => store.putContent(day.noteId, "<p>stale</p>", "<p>not what it holds</p>"))).toBe(false);
+        expect(await store.content(day.noteId)).toBe(html);
+        expect(await inRequest(() => store.putContent(day.noteId, "<p>swapped</p>", html))).toBe(true);
+        expect(await store.content(day.noteId)).toBe("<p>swapped</p>");
     });
 
     it("finds notes by label under an ancestor, and adds a repeated label", async () => {

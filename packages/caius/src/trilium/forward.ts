@@ -3,9 +3,10 @@
 // open copy appears under the same section of the target day.
 //
 // Safety, in order: both notes are read; the new HTML is built in memory; each
-// note is re-read right before its write and left alone if it changed since the
-// first read (the edit guard); the target is written before the source, so a
-// failure never leaves a task marked moved with no copy. Re-running is safe: an
+// write is a compare-and-swap against the HTML it was built from, so a note that
+// changed since the read is left alone (the edit guard); the target is written
+// before the source, so a failure never leaves a task marked moved with no copy.
+// Re-running is safe: an
 // item already Rescheduled is skipped, and a copy already sitting in the target
 // (a forward that died between the two writes) is not duplicated.
 
@@ -149,11 +150,10 @@ async function forwardOne(
   }
 
   // Target first, each behind its own guard.
-  if (!alreadyCopied) {
-    if ((await api.content(target!.noteId)) !== targetHtml) return skip('edited', `${req.to} changed while forwarding; nothing written`);
-    await api.putContent(target!.noteId, newTarget);
+  if (!alreadyCopied && !(await api.putContent(target!.noteId, newTarget, targetHtml))) {
+    return skip('edited', `${req.to} changed while forwarding; nothing written`);
   }
-  if ((await api.content(source.noteId)) !== sourceHtml) {
+  if (!(await api.putContent(source.noteId, marked.html, sourceHtml))) {
     return {
       ...req,
       status: 'failed',
@@ -162,7 +162,6 @@ async function forwardOne(
         : 'source note changed after the copy was written; re-run to finish marking it',
     };
   }
-  await api.putContent(source.noteId, marked.html);
   return { ...req, status: 'moved', detail: alreadyCopied ? 'target already held the copy' : undefined };
 }
 

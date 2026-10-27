@@ -57,7 +57,7 @@ const fake: NoteReader = {
   async content(id) {
     return content[id] ?? '';
   },
-  async putContent() {
+  async putContent(): Promise<boolean> {
     throw new Error('read-only fake');
   },
   async calendarDay() {

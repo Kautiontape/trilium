@@ -22,8 +22,12 @@ export interface NoteReader {
   search(query: string, ancestorNoteId?: string): Promise<StoreNote[]>;
   note(noteId: string): Promise<StoreNote>;
   content(noteId: string): Promise<string>;
-  /** Replace a note's content with raw HTML (no markdown conversion). */
-  putContent(noteId: string, html: string): Promise<void>;
+  /**
+   * Replace a note's content with raw HTML (no markdown conversion). With `expected`, the write is a
+   * compare-and-swap: it happens only while the note still holds exactly `expected`, and otherwise
+   * writes nothing and resolves false.
+   */
+  putContent(noteId: string, html: string, expected?: string): Promise<boolean>;
   /** The day note for YYYY-MM-DD; Trilium creates it if it doesn't exist yet. */
   calendarDay(date: string): Promise<StoreNote>;
 }

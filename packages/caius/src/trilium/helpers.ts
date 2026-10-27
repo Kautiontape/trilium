@@ -34,7 +34,7 @@ export interface Fake {
   api: NoteStore;
   html: Record<string, string>;
   notes: Record<string, StoreNote>;
-  /** Every non-GET-ish call in order: `put id`, `label id name=value`, `create day …`. */
+  /** Every write in order: `put id`, `label id name=value`, `create day …`. A put that lost its compare-and-swap is not one. */
   log: string[];
 }
 
@@ -42,7 +42,10 @@ export interface Fake {
  * A fake with a Journal: `notes` maps noteId → [note, html]. Creating a day, week or month
  * makes a note whose content is the Journal template.
  */
-export function fakeTrilium(seed: Record<string, [StoreNote, string]>, o: { template?: string; failPut?: string } = {}): Fake {
+export function fakeTrilium(
+  seed: Record<string, [StoreNote, string]>,
+  o: { template?: string; failPut?: string; onPut?: (noteId: string) => void } = {},
+): Fake {
   const notes: Record<string, StoreNote> = {};
   const html: Record<string, string> = {};
   for (const [id, [n, h]] of Object.entries(seed)) {
@@ -73,10 +76,13 @@ export function fakeTrilium(seed: Record<string, [StoreNote, string]>, o: { temp
     async content(id) {
       return html[id] ?? '';
     },
-    async putContent(id, body) {
+    async putContent(id, body, expected) {
+      o.onPut?.(id);
+      if (expected !== undefined && (html[id] ?? '') !== expected) return false;
       log.push(`put ${id}`);
       if (o.failPut === id) throw new Error('HTTP 500');
       html[id] = body;
+      return true;
     },
     async calendarDay(date) {
       return Object.values(notes).find((n) => n.attributes.some((a) => a.name === 'dateNote' && a.value === date)) ?? create('dateNote', date);

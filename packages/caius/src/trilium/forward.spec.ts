@@ -21,14 +21,13 @@ const day = (noteId: string, date: string, extra: Partial<StoreNote> = {}): Stor
   ...extra,
 });
 
-function fake(opts: { onGetContent?: (id: string, n: number) => void; failPut?: string } = {}) {
+function fake(opts: { onPut?: (id: string) => void; failPut?: string } = {}) {
   const notes: Record<string, StoreNote> = { mon: day('mon', '2026-10-26'), tue: day('tue', '2026-10-27') };
   const html: Record<string, string> = {
     mon: '<h2>☑️ Tasks</h2><h3>Work</h3>' + ul(li('eone', 'Write it'), li('etwo', 'Other')),
     tue: '<h2>☑️ Tasks</h2><h3>Work</h3>' + ul(li('eexisting', 'Already here')),
   };
   const log: string[] = [];
-  const reads: Record<string, number> = {};
   const api: NoteReader = {
     async search(q) {
       log.push(`search ${q}`);
@@ -41,14 +40,15 @@ function fake(opts: { onGetContent?: (id: string, n: number) => void; failPut?: 
       return n;
     },
     async content(id) {
-      reads[id] = (reads[id] ?? 0) + 1;
-      opts.onGetContent?.(id, reads[id]!);
       return html[id] ?? '';
     },
-    async putContent(id, body) {
+    async putContent(id, body, expected) {
+      opts.onPut?.(id);
+      if (expected !== undefined && (html[id] ?? '') !== expected) return false;
       log.push(`put ${id}`);
       if (opts.failPut === id) throw new Error('HTTP 500');
       html[id] = body;
+      return true;
     },
     async calendarDay(date) {
       log.push(`calendar ${date}`);
@@ -112,13 +112,11 @@ describe('forwardTasks', () => {
   });
 
   it('aborts without writing when the target changed since the first read', async () => {
-    let mutate = false;
     const f = fake({
-      onGetContent: (id, count) => {
-        if (id === 'tue' && count === 2 && mutate) f.html.tue += '<p>typed meanwhile</p>';
+      onPut: (id) => {
+        if (id === 'tue') f.html.tue += '<p>typed meanwhile</p>';
       },
     });
-    mutate = true;
     const [r] = await forwardTasks(f.api, [req], opts);
     expect(r).toMatchObject({ status: 'skipped', reason: 'edited' });
     expect(f.log.some((l) => l.startsWith('put'))).toBe(false);
@@ -128,8 +126,8 @@ describe('forwardTasks', () => {
   it('leaves the source unmarked when it changed, and the next run finishes without duplicating', async () => {
     let edit = true;
     const f = fake({
-      onGetContent: (id, count) => {
-        if (id === 'mon' && count === 2 && edit) f.html.mon += '<p>typed meanwhile</p>';
+      onPut: (id) => {
+        if (id === 'mon' && edit) f.html.mon += '<p>typed meanwhile</p>';
       },
     });
     const [r] = await forwardTasks(f.api, [req], opts);

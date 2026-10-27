@@ -29,6 +29,22 @@ describe('base URL', () => {
     expect(JSON.parse(calls[1]!.init!.body as string)).toEqual({ noteId: 'abc', type: 'label', name: 'caiusDismissed', value: 'ZAP-1', isInheritable: false });
     expect(calls.some((c) => c.url.includes('secret'))).toBe(false);
   });
+
+  it('puts content with an expected value only while the note still holds it', async () => {
+    const calls: string[] = [];
+    let stored = '<p>now</p>';
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (init?.method === 'PUT') stored = init.body as string;
+      return new Response(init?.method === 'PUT' ? null : stored, { status: init?.method === 'PUT' ? 204 : 200 });
+    });
+    const api = etapiClient('http://h', 't');
+    expect(await api.putContent('n', '<p>new</p>', '<p>was</p>')).toBe(false);
+    expect(stored).toBe('<p>now</p>');
+    expect(await api.putContent('n', '<p>new</p>', '<p>now</p>')).toBe(true);
+    expect(stored).toBe('<p>new</p>');
+    expect(calls).toEqual(['GET http://h/etapi/notes/n/content', 'GET http://h/etapi/notes/n/content', 'PUT http://h/etapi/notes/n/content']);
+  });
 });
 
 describe('write headers against a server that mimics express.text() and express.json()', () => {
