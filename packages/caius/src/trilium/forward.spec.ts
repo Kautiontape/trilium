@@ -71,7 +71,7 @@ describe('forwardTasks', () => {
   it('writes the target first, then the source', async () => {
     const f = fake();
     const [r] = await forwardTasks(f.api, [req], opts);
-    expect(r).toMatchObject({ status: 'moved' });
+    expect(r).toMatchObject({ status: 'moved', writtenNoteIds: ['tue', 'mon'] });
     expect(f.log.filter((l) => l.startsWith('put'))).toEqual(['put tue', 'put mon']);
     expect(f.html.tue).toContain('Write it <a href="#root/mon">from Monday 26</a>');
     expect(f.html.mon).toContain('data-trilium-task-state="_rescheduled"');
@@ -136,7 +136,7 @@ describe('forwardTasks', () => {
     expect(f.html.mon).not.toContain('_rescheduled');
     edit = false;
     const [retry] = await forwardTasks(f.api, [req], opts);
-    expect(retry).toMatchObject({ status: 'moved', detail: 'target already held the copy' });
+    expect(retry).toMatchObject({ status: 'moved', detail: 'target already held the copy', writtenNoteIds: ['mon'] });
     expect(f.html.tue.match(/Write it/g)).toHaveLength(1);
     expect(f.html.mon).toContain('_rescheduled');
   });

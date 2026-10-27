@@ -31,7 +31,14 @@ export type SkipReason = ItemProblem | 'edited' | 'same_day' | 'bad_request' | '
 
 export type ForwardResult = ForwardRequest &
   (
-    | { status: 'moved'; detail?: string; dryRun?: boolean; changes?: NoteChange[] }
+    | {
+        status: 'moved';
+        detail?: string;
+        dryRun?: boolean;
+        changes?: NoteChange[];
+        /** A real run: the notes it wrote, the target first, without it when it already held the copy. */
+        writtenNoteIds?: string[];
+      }
     | { status: 'skipped'; reason: SkipReason; detail?: string }
     | { status: 'failed'; error: string }
   );
@@ -163,7 +170,12 @@ async function forwardOne(
         : 'source note changed after the copy was written; re-run to finish marking it',
     };
   }
-  return { ...req, status: 'moved', detail: alreadyCopied ? 'target already held the copy' : undefined };
+  return {
+    ...req,
+    status: 'moved',
+    detail: alreadyCopied ? 'target already held the copy' : undefined,
+    writtenNoteIds: alreadyCopied ? [source.noteId] : [target!.noteId, source.noteId],
+  };
 }
 
 /** The period a `to` value names, or null when it isn't a day, ISO week or month that exists. */

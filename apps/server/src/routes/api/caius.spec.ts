@@ -135,7 +135,8 @@ describe("Caius routes", () => {
 
     it("forwards a task", async () => {
         const result = await post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: "2031-05-07", expectedBlobId: blobOf(noteIds.today) }] }).expect(200);
-        expect(result.body.results[0]).toMatchObject({ status: "moved" });
+        const target = await cls.init(() => store.calendarDay("2031-05-07"));
+        expect(result.body.results[0]).toMatchObject({ status: "moved", writtenNoteIds: [ target.noteId, noteIds.today ] });
         await post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: "tomorrow" }] }).expect(400);
     });
 
