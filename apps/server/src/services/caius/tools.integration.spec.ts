@@ -1,8 +1,9 @@
+import type { NoteStore } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createBeccaStore } from "./store.js";
-import { caiusTools } from "./tools.js";
+import { caiusTools, createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
 
@@ -51,11 +52,11 @@ beforeAll(async () => {
 afterAll(() => vi.useRealTimers());
 
 describe("caius tools", () => {
-    it("lists the eight tools, with reads non-mutating and writes async and mutating", () => {
+    it("lists the nine tools, with reads non-mutating and writes async and mutating", () => {
         const defs = new Map([...caiusTools]);
         expect([...defs.keys()]).toEqual([
             "caius_plan", "caius_open", "caius_explain", "caius_add",
-            "caius_accept", "caius_dismiss", "caius_set_state", "caius_forward"
+            "caius_accept", "caius_dismiss", "caius_set_state", "caius_forward", "caius_assign_ids"
         ]);
         for (const [name, def] of defs) {
             expect(def.async).toBe(true);
@@ -176,5 +177,54 @@ describe("caius tools", () => {
         for (const to of ["tomorrow", "2031", "2031-W2"]) {
             expect(schema.safeParse({ items: [{ ...base, to }] }).success).toBe(false);
         }
+    });
+
+    it("caius_assign_ids fills missing list item ids across the Journal, dry run first, and then has nothing to do", async () => {
+        const bare = `<h3>Work</h3><ul class="todo-list">${li("", "First bare").replace(' data-list-item-id=""', "")}`
+            + `${li("kept", "Has one")}</ul><ul><li>Bullet<ol><li>Nested</li></ol></li></ul>`;
+        const noteId = await cls.init(async () => {
+            const note = await store.calendarDay("2031-05-20");
+            await store.putContent(note.noteId, bare);
+            return note.noteId;
+        });
+
+        const dry = await call("caius_assign_ids", { dryRun: true });
+        expect(dry).toMatchObject({ dryRun: true, notes: 1, added: 3 });
+        expect(dry.results).toEqual([{
+            noteId, title: expect.any(String), path: "Journal/Daily/2031-05-20.md", added: 3, status: "updated",
+            items: ["First bare", "Bullet", "Nested"]
+        }]);
+        expect(await store.content(noteId)).toBe(bare);
+        expect((await call("caius_assign_ids", { dryRun: true, html: true })).results[0]).toMatchObject({ before: bare, after: expect.stringContaining("data-list-item-id=\"e") });
+
+        const real = await call("caius_assign_ids", {});
+        expect(real).toMatchObject({ notes: 1, added: 3, results: [{ noteId, added: 3, status: "updated" }] });
+        const filled = await store.content(noteId);
+        expect(filled.match(/data-list-item-id="e[0-9a-f]{32}"/g)).toHaveLength(3);
+        expect(filled).toContain('data-list-item-id="kept"');
+
+        expect(await call("caius_assign_ids", {})).toEqual({ notes: 0, added: 0, results: [] });
+        expect(await store.content(noteId)).toBe(filled);
+    });
+
+    it("caius_assign_ids skips a note edited between the read and the write", async () => {
+        const noteId = await cls.init(async () => {
+            const note = await store.calendarDay("2031-05-21");
+            await store.putContent(note.noteId, "<ul><li>Raced</li></ul>");
+            return note.noteId;
+        });
+        const racing: NoteStore = {
+            ...store,
+            async putContent(id, html, expected) {
+                await store.putContent(id, "<p>Edited by hand</p>");
+                return store.putContent(id, html, expected);
+            }
+        };
+        const [, assignIds] = [...createCaiusTools(racing)].find(([name]) => name === "caius_assign_ids") ?? [];
+
+        const result = await cls.init(() => assignIds?.execute({}) as Promise<any>);
+
+        expect(result.results).toEqual([expect.objectContaining({ noteId, status: "skipped", reason: "edited", added: 1 })]);
+        expect(await store.content(noteId)).toBe("<p>Edited by hand</p>");
     });
 });

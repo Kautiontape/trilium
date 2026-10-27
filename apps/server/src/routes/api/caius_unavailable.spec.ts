@@ -21,7 +21,7 @@ describe("Caius routes when the service fails to load", () => {
 
         const requests = [
             ...["plan?period=day", "open", "explain?noteId=root&listItemId=x"].map((path) => () => ctx.agent.get(`/api/caius/${path}`)),
-            ...["add", "accept", "dismiss", "set-state", "forward"].map((path) => () =>
+            ...["add", "accept", "dismiss", "set-state", "forward", "assign-ids"].map((path) => () =>
                 ctx.agent.post(`/api/caius/${path}`).set("x-csrf-token", ctx.csrfToken).send({ items: [] }))
         ];
         for (const request of requests) {

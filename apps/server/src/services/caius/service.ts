@@ -15,8 +15,10 @@ import {
     addTasks,
     daysLate,
     dismissTasks,
+    ensureListItemIds,
     forwardTasks,
     isPeriodKey,
+    listItemsWithoutIds,
     loadJournal,
     loadStateSymbols,
     type NoteStore,
@@ -36,6 +38,7 @@ import { becca, date_utils as dateUtils } from "@triliumnext/core";
 import {
     type AcceptInput,
     type AddInput,
+    type AssignIdsInput,
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
     type ExplainInput,
@@ -134,7 +137,24 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
 
         forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => ({
             results: (await unlessStale(items, (fresh) => forwardTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
-        }))
+        })),
+
+        assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
+            const { docs } = await loadJournal(store);
+            const results: AssignIdsResult[] = [];
+            for (const doc of docs) {
+                const result = await assignIdsInNote(store, doc.noteId, doc.path, { dryRun, html });
+                if (result) {
+                    results.push(result);
+                }
+            }
+            return {
+                ...(dryRun ? { dryRun: true } : {}),
+                notes: results.length,
+                added: results.reduce((sum, r) => sum + (r.added ?? 0), 0),
+                results
+            };
+        })
     };
 }
 
@@ -169,6 +189,49 @@ function currentKey(period: "day" | "week" | "month", now: Date): string {
     thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
     const week = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
     return `${thursday.getUTCFullYear()}-W${pad(week)}`;
+}
+
+/** One note's part in `assignIds`. */
+interface AssignIdsResult {
+    noteId: string;
+    title?: string;
+    path: string;
+    /** How many list items get an id. */
+    added?: number;
+    status: "updated" | "skipped" | "failed";
+    reason?: "edited";
+    error?: string;
+    /** Dry run: the text of each list item that gets an id. */
+    items?: string[];
+    /** Dry run with `html`: the note's HTML before and after. */
+    before?: string;
+    after?: string;
+}
+
+/**
+ * Gives the note's list items without an id one, through the compare-and-swap, and reports how
+ * many. Returns null when every item already has an id. A dry run lists the text of each item
+ * instead of writing, and with `html` also carries the note's HTML before and after.
+ */
+async function assignIdsInNote(store: NoteStore, noteId: string, path: string, { dryRun, html }: AssignIdsInput): Promise<AssignIdsResult | null> {
+    try {
+        const before = await store.content(noteId);
+        const items = listItemsWithoutIds(before);
+        if (!items.length) {
+            return null;
+        }
+
+        const after = ensureListItemIds(before);
+        const base = { noteId, title: (await store.note(noteId)).title, path, added: items.length };
+        if (dryRun) {
+            return { ...base, status: "updated", items, ...(html ? { before, after } : {}) };
+        }
+        return await store.putContent(noteId, after, before)
+            ? { ...base, status: "updated" }
+            : { ...base, status: "skipped", reason: "edited" };
+    } catch (e) {
+        return { noteId, path, status: "failed", error: e instanceof Error ? e.message : String(e) };
+    }
 }
 
 /** An item skipped because its note changed since the client read the `blobId` it sent. */

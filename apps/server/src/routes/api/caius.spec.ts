@@ -30,7 +30,9 @@ describe("Caius routes", () => {
             const today = await store.calendarDay(TODAY);
             await store.putContent(today.noteId, `<h3>Work</h3>${ul(li("t1", "Finish me"), li("t2", "Start me"), li("t3", "Drop me"), li("t4", "Move me"))}`
                 + `<ul><li>Bullet without an id</li></ul><h2>Suggested</h2>${ul(li("s1", "Accept me"), li("s2", "Dismiss me"))}`);
-            Object.assign(noteIds, { past: past.noteId, today: today.noteId });
+            const older = await store.calendarDay("2031-05-01");
+            await store.putContent(older.noteId, "<ul><li>Older task</li></ul>");
+            Object.assign(noteIds, { past: past.noteId, today: today.noteId, older: older.noteId });
         });
     });
 
@@ -115,6 +117,16 @@ describe("Caius routes", () => {
         await post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: "tomorrow" }] }).expect(400);
     });
 
+    it("assigns missing list item ids, dry run first", async () => {
+        const dry = await post("/api/caius/assign-ids", { dryRun: true }).expect(200);
+        expect(dry.body).toMatchObject({ dryRun: true, notes: 1, added: 1, results: [{ noteId: noteIds.older, items: ["Older task"] }] });
+
+        const real = await post("/api/caius/assign-ids", {}).expect(200);
+        expect(real.body).toMatchObject({ notes: 1, added: 1 });
+        expect(await store.content(noteIds.older)).toMatch(/^<ul><li data-list-item-id="e[0-9a-f]{32}">Older task<\/li><\/ul>$/);
+        await post("/api/caius/assign-ids", { dryRun: "yes" }).expect(400);
+    });
+
     it("runs every operation route under the Caius lock", async () => {
         let release = () => {};
         const held = withCaiusLock("spec", () => new Promise<void>((resolve) => {
@@ -128,7 +140,8 @@ describe("Caius routes", () => {
             accept: post("/api/caius/accept", { items: [{ noteId: noteIds.today, listItemId: "s1", section: "Work" }], dryRun: true }),
             dismiss: post("/api/caius/dismiss", { items: [{ noteId: noteIds.today, listItemId: "s2" }], dryRun: true }),
             setState: post("/api/caius/set-state", { items: [{ noteId: noteIds.today, listItemId: "t1", state: "doing" }], dryRun: true }),
-            forward: post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t1", to: "2031-05-08" }], dryRun: true })
+            forward: post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t1", to: "2031-05-08" }], dryRun: true }),
+            assignIds: post("/api/caius/assign-ids", { dryRun: true })
         };
         const answered: string[] = [];
         const pending = Object.entries(requests).map(([name, request]) => request.then((res) => {
