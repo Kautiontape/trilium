@@ -159,7 +159,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
   - **The brief note:** a `🌅 Morning Brief` child of the day note, labelled `#morningBrief=<date>`, `#caiusPlannedAt=<local time>` and `#cssClass=briefdemo`.
   - **The header note:** the brief's `Header` child, with the same `#cssClass`. It holds the date line, the headline, the drawing (as `caius_header` draws it) and the three acts as a 3-column table.
   - **The brief's body:** the header's include-note, then "Get done today" with the picks as `Get X done: because Y (~30m)` lines, then each section rendered from markdown.
-  - **The day note:** gets one include-note of the header at the very top, only when it has none; nothing else in it changes.
+  - **The day note:** gets one include-note of the header at the very top, only when it has none; nothing else in it changes. When the Header is new because the old brief or Header was deleted, the include-note of the old one at the top is replaced, not kept above the new one.
   - **Re-runs:** update the same notes and replace the planned time.
   - **Dry run:** creates nothing and returns the HTML it would write.
 - **`caius_skip_catchup`** `{ date }` labels the day note `#caiusSkipCatchup=<date>`.

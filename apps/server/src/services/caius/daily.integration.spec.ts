@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
+import sql from "../sql.js";
 import { createBeccaStore } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
@@ -246,6 +247,22 @@ describe("caius_brief_write", () => {
         expect(String(first?.getChildNotes()[0]?.getContent())).toContain("<h2>Review first</h2>");
         const day = await cls.init(() => store.content(dayId));
         expect(day.match(/class="include-note"/g)).toHaveLength(1);
+    });
+
+    it("replaces the include-note of a deleted brief or Header rather than adding a second", async () => {
+        const remove = (noteId: string) => cls.init(() => sql.transactional(() => becca.notes[noteId]?.deleteNote()));
+        const includes = async () => [ ...(await cls.init(() => store.content(dayId))).matchAll(/data-note-id="([^"]+)"/g) ].map((m) => m[1]);
+
+        const first = await call("caius_brief_write", brief);
+        remove(first.briefNoteId);
+        const afterBrief = await call("caius_brief_write", brief);
+        expect(afterBrief).toMatchObject({ created: { brief: true, header: true } });
+        expect(await includes()).toEqual([ afterBrief.headerNoteId ]);
+
+        remove(afterBrief.headerNoteId);
+        const afterHeader = await call("caius_brief_write", brief);
+        expect(afterHeader).toMatchObject({ briefNoteId: afterBrief.briefNoteId, created: { brief: false, header: true } });
+        expect(await includes()).toEqual([ afterHeader.headerNoteId ]);
     });
 
     it("keeps the brief's lines out of the lanes", async () => {

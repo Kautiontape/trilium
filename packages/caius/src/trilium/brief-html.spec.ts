@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefBodyHtml, headerHtml, includeNote, withInclude } from './brief-html.js';
+import { briefBodyHtml, headerHtml, includeNote, leadingInclude, withInclude } from './brief-html.js';
 
 const INCLUDE = '<section class="include-note" data-note-id="hdr" data-box-size="full">&nbsp;</section>';
 
@@ -17,6 +17,18 @@ describe('withInclude', () => {
     expect(withInclude(moved, 'hdr')).toBe(moved);
     const other = INCLUDE.replace('hdr', 'old');
     expect(withInclude(other, 'hdr')).toBe(INCLUDE + other);
+  });
+});
+
+describe('withInclude replacing a stale header', () => {
+  it('replaces a leading include-note the caller calls stale, and only a leading one', () => {
+    const day = '<h3>Meetings</h3><ul><li>10:00 Standup</li></ul>';
+    const stale = includeNote('gone');
+    expect(leadingInclude(stale + day)).toBe('gone');
+    expect(leadingInclude(day)).toBeNull();
+    expect(withInclude(stale + day, 'hdr', (id) => id === 'gone')).toBe(INCLUDE + day);
+    expect(withInclude(stale + day, 'hdr', () => false)).toBe(INCLUDE + stale + day);
+    expect(withInclude(`<p>x</p>${stale}`, 'hdr', () => true)).toBe(`${INCLUDE}<p>x</p>${stale}`);
   });
 });
 

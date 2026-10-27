@@ -11,6 +11,7 @@ import {
     formatEstimate,
     headerHtml,
     label,
+    leadingInclude,
     type NoteStore,
     type StoreNote,
     withInclude
@@ -97,11 +98,14 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
     setLabel(brief.noteId, "cssClass", CSS_CLASS);
     setLabel(header.noteId, "cssClass", CSS_CLASS);
 
+    // A new Header takes the place of the include-note of one that was deleted or replaced.
+    const leading = created.header ? leadingInclude(await store.content(day.noteId)) : null;
+    const stale = leading && await isStaleHeader(store, leading, date) ? leading : null;
     const attachmentId = deps.draw(header.noteId);
     const writes = [
         await replace(store, header.noteId, "header", () => headerContent(attachmentId)),
         await replace(store, brief.noteId, "brief", () => bodyContent(header.noteId)),
-        await replace(store, day.noteId, "day", (before) => withInclude(before, header.noteId))
+        await replace(store, day.noteId, "day", (before) => withInclude(before, header.noteId, (id) => id === stale))
     ];
     return {
         date, dayNoteId: day.noteId, briefNoteId: brief.noteId, headerNoteId: header.noteId, attachmentId,
@@ -117,6 +121,18 @@ export async function findBrief(store: NoteStore, dayNoteId: string, date: strin
     return found.find((note) => note.parentNoteIds.includes(dayNoteId)
         && label(note, BRIEF_LABEL) === date
         && !PAGE_LABELS.some((name) => label(note, name) !== undefined)) ?? null;
+}
+
+/** Whether `noteId` is gone, or is the Header of a `#morningBrief=<date>` brief. */
+async function isStaleHeader(store: NoteStore, noteId: string, date: string): Promise<boolean> {
+    const note = await store.note(noteId).catch(() => null);
+    if (!note) return true;
+    if (note.title !== HEADER_TITLE) return false;
+    for (const parentId of note.parentNoteIds) {
+        const parent = await store.note(parentId).catch(() => null);
+        if (parent && label(parent, BRIEF_LABEL) === date) return true;
+    }
+    return false;
 }
 
 async function findHeader(store: NoteStore, briefNoteId: string): Promise<StoreNote | null> {
