@@ -73,7 +73,7 @@ export function liveKeys(docs: TriliumDoc[], now: Date): Map<string, string[]> {
 
 /**
  * The candidates for a day, hand-offs first, then asks (the latest per ticket), then week items,
- * each key once. Left out: a ticket Jira calls done, anything whose key is in `exclude` (the day's
+ * each key once. Left out: a ticket Jira calls done (and a week item that names one), anything whose key is in `exclude` (the day's
  * Suggested items and dismissed keys), a ticket live anywhere in `live`, and a week item whose key
  * is live anywhere but in that item itself. With `since`, only what is newer: asks made after it,
  * hand-offs updated after it, and no week items.
@@ -112,6 +112,7 @@ export function dayCandidates(o: {
   for (const ask of latest.values()) offer(ticket(ask.ticket, { kind: 'ask', author: ask.author, created: ask.created }));
   if (o.week && !o.since) {
     for (const task of o.week.tasks) {
+      if (keysOf(task.text).some((key) => done.has(key))) continue;
       offer({
         subject: task.text, reason: { kind: 'week', week: o.week.key }, minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
         source: o.week.key, keys: keysOf(task.text), noteId: task.noteId, listItemId: task.listItemId,

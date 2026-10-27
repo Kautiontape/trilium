@@ -8,6 +8,7 @@
 import {
     type Candidate,
     type ContextEntry,
+    contextNotes,
     dayCandidates,
     DEFAULT_ESTIMATE,
     findPeriodNote,
@@ -90,7 +91,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
     if (step === "next") {
         const facts = await deps.locked("caius_winddown", () => dayFacts(deps.store, targetDay, deps.now));
         const candidates = dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present);
-        const plannedMinutes = facts.plan.capacity.totalMinutes;
+        const { eveningMinutes } = facts;
+        const plannedMinutes = facts.plan.capacity.totalMinutes - eveningMinutes;
         const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
         const targetMinutes = read.inputs.capacity.targetMinutes;
         const overlaps = overlapPairs(read.inputs.calendar);
@@ -106,21 +108,26 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         };
         return reply(read.standing, {
             candidates,
-            capacity: { plannedMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
+            capacity: { plannedMinutes, eveningMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
             overlaps, evening, errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
     }
 
-    // A line in force today that lapses before the target day and keeps a ticket Jira calls done open.
+    // A line in force today that lapses before the target day and keeps a ticket open: Jira's own
+    // answer is not consulted, since it covers only tickets that are hand-offs or have an ask.
     const today = await deps.locked("caius_winddown", () => gatherContext(deps.store, date));
-    const done = new Set(read.inputs.jira.done);
-    const noticed = today.context
+    const keep = today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)
-        .flatMap((line) => [ ...overriddenKeys([ line.text ]) ].filter((key) => done.has(key)).map((key) => ({
-            line: line.text, until: line.until, key, question: t("caius.daily.keep", { line: line.text })
-        })));
-    const question = noticed.length ? [ ...noticed.map((n) => n.question), t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
-    return reply(read.standing, { context: read.context, noticed }, question, null);
+        .map((line) => ({ kind: "keep" as const, line: line.text, until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
+        .filter((line) => line.keys.length)
+        .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
+    const targetWeek = isoWeekKey(utcDay(targetDay));
+    const carry = carryLines(today.context, targetDay, read.context);
+    const noticed = [ ...keep, ...carry ];
+    const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
+    const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
+    const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
+    return reply(read.standing, { context: read.context, targetWeek, noticed }, question, null);
 }
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";
@@ -154,7 +161,8 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         const facts = await deps.locked("caius_planday", async () => {
             const day = await dayFacts(deps.store, date, deps.now);
             const brief = day.plan.noteId ? await findBrief(deps.store, day.plan.noteId, date) : null;
-            return { ...day, plannedAt: brief ? label(brief, PLANNED_AT_LABEL) ?? null : null };
+            const lastContext = await gatherContext(deps.store, dayKey(lastWorkday(localDay(date))));
+            return { ...day, plannedAt: brief ? label(brief, PLANNED_AT_LABEL) ?? null : null, lastContext: lastContext.context };
         });
         const since = facts.plannedAt ? localMoment(facts.plannedAt) : undefined;
         const candidates = dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude, since }).map(present);
@@ -167,21 +175,27 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         const nextDay = dayKey(nextWorkday(localDay(date)));
         const heavy = read.inputs.capacity.bookedRatio > HEAVY_RATIO && last?.listItemId;
         const forwardSuggestion = heavy && last ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: nextDay } : null;
+        // Run every morning, whatever the catch-up answer was, so a missed wind-down doesn't let a line lapse.
+        // The day being planned is in the week its lines go to, so the question never says "next week".
+        const carry = carryLines(facts.lastContext, date, read.context);
         const questions = [
             ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
             ...(forwardSuggestion ? [ t("caius.daily.heavy", {
                 percent: Math.round(read.inputs.capacity.bookedRatio * 100), task: forwardSuggestion.text, day: weekdayName(nextDay)
-            }) ] : [])
+            }) ] : []),
+            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
         ];
         return reply(read.standing, {
             plannedAt: facts.plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
+            targetWeek: isoWeekKey(utcDay(date)), carry,
             context: read.context, forwardSuggestion, errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
     const plan = await deps.locked("caius_planday", () => readPlan(deps.store, "day", date, deps.now));
     const { start, end, workEnd, from } = read.rhythm;
-    const events = calendarFailed ? [] : read.inputs.calendar
+    // The drawing takes whatever the feeds returned; only the Meetings block refuses a partial calendar.
+    const events = read.inputs.calendar
         .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
         .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
@@ -221,6 +235,38 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
     return { lastWorkday: last, note, skipped, tasks };
 }
 
+/**
+ * The lines in force on an earlier day (`inForce`) that `day` won't read, to offer to carry into
+ * `day`'s week note: from a note `contextNotes(day)` leaves out, with no `until` or one not before
+ * `day`, and not already read on `day` from a note it reads (`dayContext`, its Context in force).
+ * Last week's note counts as unread: on a Monday it is read for that day only.
+ */
+function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEntry[]) {
+    const reads = new Set(contextNotes(day).filter((n) => !n.oneDay).map((n) => `${n.period}:${n.key}`));
+    const readThen = new Set(dayContext.filter((line) => reads.has(`${line.period}:${line.key}`)).map((line) => sameText(line.text)));
+    return inForce
+        .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= day) && !readThen.has(sameText(line.text)))
+        .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
+}
+
+/** Lines named in the carry question before the rest are counted; the step's data lists them all. */
+const CARRY_NAMED = 4;
+
+/**
+ * The one carry question, naming the lines: "Carry 'A' and 'B' into next week?", or, when the next
+ * workday is in the same week, "Keep 'A' going?".
+ */
+export function carryQuestion(lines: string[], sameWeek: boolean): string {
+    const quoted = lines.map((line) => `'${line}'`);
+    const named = quoted.slice(0, CARRY_NAMED);
+    const list = quoted.length > CARRY_NAMED
+        ? t("caius.daily.list_more", { head: named.join(", "), count: quoted.length - CARRY_NAMED })
+        : named.length > 1
+            ? t("caius.daily.list_and", { head: named.slice(0, -1).join(", "), last: named.at(-1) })
+            : named[0] ?? "";
+    return sameWeek ? t("caius.daily.carry_day", { lines: list }) : t("caius.daily.carry_week", { lines: list });
+}
+
 /** A work bar's label: the task's first Jira key, else its text cut to `LABEL_LENGTH`. */
 function workLabel(text: string): string {
     const key = keysOf(text).find((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k));
@@ -257,15 +303,22 @@ async function stillOpen(store: NoteStore, date: string, targetDay: string) {
         }));
 }
 
-/** What a day's candidates are checked against: its plan, the week's items, the live keys and what is already suggested or dismissed there. */
+/**
+ * What a day's candidates are checked against: its plan, the week's items, the live keys and what
+ * is already suggested or dismissed there, plus whether the evening (Evening or Recharge) has a task
+ * and how many minutes it holds, which are not work.
+ */
 async function dayFacts(store: NoteStore, date: string, now: Date) {
     const plan = await readPlan(store, "day", date, now);
     const weekKey = isoWeekKey(utcDay(date));
     const weekPlan = await readPlan(store, "week", weekKey, now);
     const live = liveKeys((await loadJournal(store)).docs, now);
     const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)) ];
-    const evening = plan.sections.some((section) => EVENING_SECTIONS.has(normName(section.name ?? "")) && section.tasks.some(isLive));
-    return { plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, evening };
+    const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks).filter(isLive);
+    // As the plan's capacity counts them: a task with live sub-items counts through them.
+    const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
+    const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
+    return { plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, evening: eveningTasks.length > 0, eveningMinutes };
 }
 
 /** The live top-level tasks of a plan, the Important block first, then in his order. */
@@ -287,6 +340,8 @@ export function present(candidate: Candidate) {
             : t("caius.daily.because_week");
     return { text: reason.kind === "week" ? subject : t("caius.daily.get_done", { subject }), because, ...rest };
 }
+
+const sameText = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 
 /** The weekday of a `YYYY-MM-DD`, from the server catalogue: "Monday". */
 export function weekdayName(date: string): string {

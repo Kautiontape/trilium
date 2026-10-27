@@ -36,6 +36,7 @@ const event = (start: string, end: string, title: string, o: Partial<CalendarEve
 /** What the stubbed `caius_inputs` answers, by date. Context lines that say a ticket is open override `done`, as the real one does. */
 const jiraByDate: Record<string, JiraInputs> = {};
 const calendars: Record<string, CalendarEvent[]> = {};
+const errorsByDate: Record<string, CaiusInputs["errors"]> = {};
 const inputsCalls: InputsInput[] = [];
 
 async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
@@ -49,11 +50,13 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
         jira: {
             handoff: jira.handoff.map(mark),
             asks: jira.asks.map((ask) => ({ ...ask, ticket: mark(ask.ticket) })),
-            done: jira.done.filter((key) => !overridden.has(key))
+            // As the real reader does: only tickets it read as hand-offs or asks can be done.
+            done: jira.done.filter((key) => !overridden.has(key)
+                && [ ...jira.handoff, ...jira.asks.map((ask) => ask.ticket) ].some((t) => t.key === key))
         },
         calendar,
         capacity: dayCapacity(calendar, { workStart: input.workStart, workEnd: input.workEnd }),
-        errors: []
+        errors: errorsByDate[input.date] ?? []
     };
 }
 
@@ -90,7 +93,7 @@ beforeAll(async () => {
             li("f3", "Parent task", { sub: ul(li("f4", "Sub step")) })
         )}`);
         const week = await store.calendarWeek("2026-W45");
-        await store.putContent(week.noteId, `<h3>Work</h3>${ul(li("w1", "Week item ~45m"))}`);
+        await store.putContent(week.noteId, `<h3>Context</h3>${bullets("Release branch is cut", "Sam is out (until Wed 11 Nov)", "Freeze ends (until Fri 6 Nov)")}<h3>Work</h3>${ul(li("w1", "Week item ~45m"))}`);
         notes.week = week.noteId;
         notes.monday = await dayNote(MONDAY, `<h3>Work</h3>${ul(li("m1", "Monday thing ~1h"))}<h3>Suggested</h3>${ul(li("ms1", "Get ZAP-105 Summary ZAP-105 done"))}`);
         await store.addLabel(notes.monday, "caiusDismissed", "ZAP-103");
@@ -176,27 +179,60 @@ describe("caius_winddown", () => {
     it("next: asks which tasks can wait on an over-capacity day", async () => {
         const answer = await call("caius_winddown", { date: MONDAY, step: "next" });
         expect(answer.targetDay).toBe(TUESDAY);
-        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 285, candidateMinutes: 45, targetMinutes: 234 });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 240, eveningMinutes: 45, candidateMinutes: 45, targetMinutes: 234 });
         expect(answer.data.evening).toEqual({ hasTask: true });
-        expect(answer.question).toBe("Tuesday is over by about 1.5 h. Which of these can wait?");
+        expect(answer.question).toBe("Tuesday is over by about 1 h. Which of these can wait?");
     });
 
     it("next: says the day fits when nothing needs asking", async () => {
         const answer = await call("caius_winddown", { date: TUESDAY, step: "next" });
         expect(answer.question).toBeNull();
-        expect(answer.data.summary).toBe("Wednesday holds 1 h 45 m of work against 4 h open. Fits.");
+        expect(answer.data.summary).toBe("Wednesday holds 1 h 15 m of work against 4 h open. Fits.");
+    });
+
+    it("next: leaves the evening's tasks out of the work it weighs against the target", async () => {
+        await cls.init(() => dayNote("2026-11-12", `<h3>Work</h3>${ul(li("th1", "Spec ~1h30m"), li("th2", "Review ~1h"), li("th3", "Fix ~30m"))}<h3>Evening</h3>${ul(li("th4", "Walk ~45m"))}`));
+        const answer = await call("caius_winddown", { date: WEDNESDAY, step: "next" });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180, eveningMinutes: 45, candidateMinutes: 45, targetMinutes: 240 });
+        expect(answer.question).toBeNull();
+        expect(answer.data.summary).toBe("Thursday holds 3 h 45 m of work against 4 h open. Fits.");
     });
 
     it("context: notices an override that lapses before Monday and asks to keep it", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "context" });
         expect(answer).toMatchObject({ step: "context", targetDay: MONDAY, next: null });
-        expect(answer.data.noticed).toEqual([ { line: "ZAP-2590 is open", until: FRIDAY, key: "ZAP-2590", question: "Keep 'ZAP-2590 is open'?" } ]);
+        expect(answer.data.targetWeek).toBe("2026-W46");
+        expect(answer.data.noticed).toEqual([
+            { kind: "keep", line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?" },
+            // The week ends before Monday: the week note's lines still in force then are offered to carry.
+            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
+            { kind: "carry", line: "Release branch is cut" }
+        ]);
         expect(answer.data.context.map((line: any) => line.text)).toContain("ZAP-2600 is open");
-        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Anything to know for Monday?");
+        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry 'Sam is out' and 'Release branch is cut' into next week? Anything to know for Monday?");
 
         const quiet = await call("caius_winddown", { date: TUESDAY, step: "context" });
         expect(quiet.question).toBeNull();
         expect(quiet.data.noticed).toEqual([]);
+    });
+
+    it("context: on Monday offers last week's lines that Tuesday will no longer read (a missed Friday)", async () => {
+        const answer = await call("caius_winddown", { date: MONDAY, step: "context" });
+        expect(answer.data.targetWeek).toBe("2026-W46");
+        expect(answer.data.noticed).toEqual([
+            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
+            { kind: "carry", line: "Release branch is cut" }
+        ]);
+        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going? Anything to know for Tuesday?");
+    });
+
+    it("context: offers a day note's line that outlasts the days its note is read", async () => {
+        expect((await call("caius_context_add", { date: THURSDAY, text: "Vendor freeze", until: "2026-11-13" })).results[0]).toMatchObject({ status: "added" });
+        // Tuesday still reads Thursday's note; Wednesday does not.
+        expect((await call("caius_winddown", { date: MONDAY, step: "context" })).data.noticed.map((n: any) => n.line)).not.toContain("Vendor freeze");
+        const answer = await call("caius_winddown", { date: TUESDAY, step: "context" });
+        expect(answer.data.noticed).toEqual([ { kind: "carry", line: "Vendor freeze", until: "2026-11-13" } ]);
+        expect(answer.question).toBe("Keep 'Vendor freeze' going? Anything to know for Wednesday?");
     });
 
     it("next: a candidate put in Suggested and then dismissed does not come back", async () => {
@@ -252,14 +288,15 @@ describe("caius_planday", () => {
             lines: [ "10:00 Standup", "12:00 Release call (overlaps)", "12:30 Review (overlaps)" ], current: [], changed: true
         });
         expect(answer.data.forwardSuggestion).toBeNull();
-        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take?");
+        // Friday's wind-down never ran, so last week's lines are offered too.
+        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Keep 'Sam is out' and 'Release branch is cut' going?");
     });
 
     it("inputs: on a day over 60% booked, offers to move the last task of the list to the next workday", async () => {
         calendars[WEDNESDAY] = [ event("10:00", "15:30", "Offsite") ];
         const answer = await call("caius_planday", { date: WEDNESDAY, step: "inputs", refresh: true });
         expect(answer.data.forwardSuggestion).toMatchObject({ noteId: notes.wednesday, listItemId: "we2", text: "Read", to: "2026-11-12" });
-        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday?");
+        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor freeze' going?");
     });
 
     it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
@@ -290,5 +327,49 @@ describe("caius_planday", () => {
         const answer = await call("caius_planday", { date: MONDAY, step: "inputs", refresh: true });
         expect(answer.data.plannedAt).toBe(`${FRIDAY}T17:30:00`);
         expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-106" ]);
+    });
+
+    it("brief: draws the meetings the other feeds returned when one feed failed, and leaves the Meetings block alone", async () => {
+        errorsByDate[TUESDAY] = [ { source: "calendar", error: "feed_1_timeout" } ];
+        try {
+            const inputs = await call("caius_planday", { date: TUESDAY, step: "inputs", refresh: true });
+            expect(inputs.data.meetings).toMatchObject({ lines: null, changed: false });
+            const brief = await call("caius_planday", { date: TUESDAY, step: "brief" });
+            expect(brief.data.header.events).toEqual([ { start: "10:00", end: "12:00", title: "Workshop" } ]);
+            expect(brief.data.header.work[0]).toMatchObject({ start: "12:00", label: "Huge thing" });
+        } finally {
+            delete errorsByDate[TUESDAY];
+        }
+    });
+});
+
+describe("carrying Context", () => {
+    it("Plan my day offers last week's lines on Tuesday after a missed Friday and Monday", async () => {
+        const answer = await call("caius_planday", { date: TUESDAY, step: "inputs", refresh: true });
+        expect(answer.data.targetWeek).toBe("2026-W46");
+        expect(answer.data.carry).toEqual([
+            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
+            { kind: "carry", line: "Release branch is cut" }
+        ]);
+        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going?");
+    });
+
+    it("Plan my day offers Thursday's line on Wednesday after a missed Tuesday, after the step's other questions", async () => {
+        const answer = await call("caius_planday", { date: WEDNESDAY, step: "inputs", refresh: true });
+        expect(answer.data.carry).toEqual([ { kind: "carry", line: "Vendor freeze", until: "2026-11-13" } ]);
+        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor freeze' going?");
+    });
+
+    it("neither conversation offers a line already carried into a note the day reads", async () => {
+        for (const item of [ { text: "Sam is out", until: "2026-11-11" }, { text: "Release branch is cut" }, { text: "Vendor freeze", until: "2026-11-13" } ]) {
+            expect((await call("caius_context_add", { week: "2026-W46", ...item })).results[0]).toMatchObject({ status: "added" });
+        }
+        for (const date of [ FRIDAY, MONDAY, TUESDAY ]) {
+            const answer = await call("caius_winddown", { date, step: "context" });
+            expect(answer.data.noticed.filter((n: any) => n.kind === "carry"), date).toEqual([]);
+        }
+        for (const date of [ TUESDAY, WEDNESDAY ]) {
+            expect((await call("caius_planday", { date, step: "inputs", refresh: true })).data.carry, date).toEqual([]);
+        }
     });
 });

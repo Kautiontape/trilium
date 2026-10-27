@@ -3,7 +3,7 @@
 
 import { parse, type HTMLElement } from 'node-html-parser';
 import { now as clock } from '../clock.js';
-import { gatherContext } from './context.js';
+import { gatherContext, type ContextEntry } from './context.js';
 import { apply, elements, isCriticalAside, isHeading, isIncludeNote, isTodoList, type Edit } from './html-util.js';
 import { escapeHtml } from './plan-html.js';
 import { findPeriodNote, isPeriodKey, readPlan } from './plan-read.js';
@@ -141,7 +141,7 @@ export function formatUntil(until: string, noteDate: string): string {
 }
 
 export type ContextAddResult =
-  | { status: 'added'; writtenNoteId: string; line: string; detail?: string }
+  | { status: 'added' | 'updated'; writtenNoteId: string; line: string; detail?: string }
   | { status: 'dry-run'; writtenNoteId: string; line: string; before: string; after: string; detail?: string }
   | { status: 'skipped'; reason: 'bad_request' | 'unreadable' | 'edited' | 'duplicate'; detail?: string };
 
@@ -180,7 +180,17 @@ export async function addContext(
     : (await readPlan(api, 'week', key, opts.now ?? clock())).context;
   const same = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
   const hit = inForce.find((line) => same(line.text) === same(text));
-  if (hit) return { status: 'skipped', reason: 'duplicate', detail: `already in force: ${hit.text}` };
+  if (hit) {
+    const longer = hit.until !== undefined && (until === undefined || hit.until < until);
+    if (!longer) return { status: 'skipped', reason: 'duplicate', detail: `already in force: ${hit.text}` };
+    // The copy in force ends sooner. In the note asked for, its `(until …)` is rewritten where it
+    // stands. In another note, which can stop being read before the new date (an older day, last
+    // week), the line is written to the note asked for instead, where it is the newer copy.
+    const where = 'noteId' in hit ? (hit as ContextEntry) : { period: 'week' as const, key, noteId: note!.noteId };
+    if (where.noteId === note?.noteId) {
+      return extendUntil(api, where, hit.text, until, opts.dryRun);
+    }
+  }
 
   const line = until ? `${text} (until ${formatUntil(until, noteDate)})` : text;
   let created = false;
@@ -199,4 +209,51 @@ export async function addContext(
     return { status: 'skipped', reason: 'edited', detail: `${key} changed meanwhile; nothing written` };
   }
   return { status: 'added', writtenNoteId: noteId, line, ...(created ? { detail: `created the ${period} note` } : {}) };
+}
+
+/** Rewrites the `(until …)` of the Context line `text` in a note: to `until`, or away when there is none. */
+async function extendUntil(
+  api: NoteStore,
+  where: { period: 'day' | 'week'; key: string; noteId: string },
+  text: string,
+  until: string | undefined,
+  dryRun?: boolean,
+): Promise<ContextAddResult> {
+  const noteDate = periodSpan(where.period, where.key).start;
+  const line = until ? `${text} (until ${formatUntil(until, noteDate)})` : text;
+  const before = await api.content(where.noteId);
+  const after = setContextLine(before, text, line, noteDate);
+  if (after === null) return { status: 'skipped', reason: 'edited', detail: `${where.key} changed meanwhile; nothing written` };
+  if (dryRun) return { status: 'dry-run', writtenNoteId: where.noteId, line, before, after };
+  if (!(await api.putContent(where.noteId, after, before))) {
+    return { status: 'skipped', reason: 'edited', detail: `${where.key} changed meanwhile; nothing written` };
+  }
+  return { status: 'updated', writtenNoteId: where.noteId, line, detail: `extended the line in ${where.key}` };
+}
+
+/**
+ * `html` with the Context bullet whose text (without its `(until …)`) is `text` rewritten to `line`,
+ * or null when there is no such bullet. `noteDate` resolves a year-less `until`. Of several copies, the one in force longest is rewritten:
+ * no `until`, else the latest. The bullet's own markup is kept; only its text changes.
+ */
+export function setContextLine(html: string, text: string, line: string, noteDate: string): string | null {
+  const top = elements(parse(html, { comment: true }));
+  const block = proseBlock(top, html, 'context');
+  const same = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const copies = (block?.inside ?? [])
+    .flatMap((el) => el.querySelectorAll('li'))
+    .map((item) => {
+      const { context, expiredContext } = parseContext([item.text.replace(/\s+/g, ' ').trim()], noteDate);
+      return { item, parsed: context[0] ?? expiredContext[0] };
+    })
+    .filter(({ parsed }) => same(parsed?.text ?? '') === same(text));
+  // A copy without an until outlasts any with one.
+  const longest = copies.reduce<(typeof copies)[number] | undefined>(
+    (best, copy) => !best || (best.parsed?.until !== undefined && (copy.parsed?.until === undefined || copy.parsed.until > best.parsed.until)) ? copy : best,
+    undefined,
+  );
+  if (!longest) return null;
+  const start = html.indexOf('>', longest.item.range[0]) + 1;
+  const end = longest.item.range[1] - '</li>'.length;
+  return apply(html, [{ start, end, text: escapeHtml(line) }]);
 }

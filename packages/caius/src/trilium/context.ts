@@ -21,12 +21,10 @@ const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSt
 const sameText = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
 /**
- * Context lines in force on `date` (`YYYY-MM-DD`), from the notes named above. A line whose
- * `(until …)` date is before `date` is dropped. When the same text is in several notes, the
- * newest note's line is kept: a day note is dated by its day, a week note by its Monday, and a
- * day note beats a week note that starts the same day. The result is newest first.
+ * The notes `gatherContext` reads for `date`: the ISO week note, last week's on a Monday (marked
+ * `oneDay`, since it is read on that Monday only), the day note and the last three workday notes.
  */
-export async function gatherContext(api: NoteReader, date: string): Promise<{ date: string; context: ContextEntry[] }> {
+export function contextNotes(date: string): { period: 'day' | 'week'; key: string; oneDay?: true }[] {
   const day = new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
   const days = [date];
   for (let at = day, i = 0; i < WORKDAYS_BACK; i++) {
@@ -34,14 +32,24 @@ export async function gatherContext(api: NoteReader, date: string): Promise<{ da
     days.push(dayKey(at));
   }
   const utc = Date.UTC(day.getFullYear(), day.getMonth(), day.getDate());
-  const weeks = [isoWeekKey(new Date(utc))];
-  if (day.getDay() === 1) weeks.push(isoWeekKey(new Date(utc - 7 * DAY_MS)));
+  return [
+    { period: 'week', key: isoWeekKey(new Date(utc)) },
+    ...(day.getDay() === 1 ? [{ period: 'week' as const, key: isoWeekKey(new Date(utc - 7 * DAY_MS)), oneDay: true as const }] : []),
+    ...days.map((key) => ({ period: 'day' as const, key })),
+  ];
+}
 
+/**
+ * Context lines in force on `date` (`YYYY-MM-DD`), from the notes `contextNotes` names. A line whose
+ * `(until …)` date is before `date` is dropped. When the same text is in several notes, the
+ * newest note's line is kept: a day note is dated by its day, a week note by its Monday, and a
+ * day note beats a week note that starts the same day. The result is newest first.
+ */
+export async function gatherContext(api: NoteReader, date: string): Promise<{ date: string; context: ContextEntry[] }> {
   const states = await loadStateSymbols(api);
-  const sources = [
-    ...weeks.map((key) => ({ period: 'week' as const, key, dated: periodSpan('week', key).start })),
-    ...days.map((key) => ({ period: 'day' as const, key, dated: key })),
-  ].sort((a, b) => (a.dated === b.dated ? Number(a.period === 'day') - Number(b.period === 'day') : a.dated < b.dated ? -1 : 1));
+  const sources = contextNotes(date)
+    .map(({ period, key }) => ({ period, key, dated: period === 'week' ? periodSpan('week', key).start : key }))
+    .sort((a, b) => (a.dated === b.dated ? Number(a.period === 'day') - Number(b.period === 'day') : a.dated < b.dated ? -1 : 1));
 
   // Oldest first, so that a later note's line replaces an earlier one with the same text.
   const kept = new Map<string, { entry: ContextEntry; expired: boolean }>();

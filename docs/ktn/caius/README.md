@@ -140,7 +140,7 @@ Two conversations in the sidebar chat, run by the AI assistant with the Caius to
 Each step is one call, `caius_winddown` or `caius_planday` with `{ date, step }`, and answers:
 
 - `data`: the facts for that step.
-- `question`: the exact text to ask, or `null` when there is nothing to ask, so the step is skipped.
+- `question`: the exact text to ask, or `null` when there is nothing to ask; the step's writes are still made, dry run first.
 - `next`: the step to call after it, or `null` at the end.
 - `standing`: the note labelled `#assistantContext` (the standing note, "How I work") as markdown, or `null` with `standingMissing`, a one-line reason.
 
@@ -153,8 +153,8 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **Sources:** Jira hand-offs that aren't done ("sitting in Dev Verify for 3 days"), the latest ask on each ticket ("Sam asked on Wednesday"), and the next workday's week note items. A ticket a Context line says is open counts as not done.
    - **Left out:** anything whose key is already a live task anywhere in the Journal, already in that day's Suggested, or dismissed there.
 
-   It also gives that day's planned minutes against the capacity target, the meetings that overlap, and whether the evening has a task (one under an Evening or Recharge heading). It asks only when the day is over capacity, a meeting overlaps another or the evening is empty, joining those questions into one. Otherwise `data.summary` says the day fits ("Monday holds 3 h 20 m of work against 3 h 30 m open. Fits.").
-3. **`context`.** The Context in force for the next workday. When a Context line in force today lapses before then while it keeps open a ticket Jira calls done, the step notices it and asks "Keep '…'?" before "Anything to know for Monday?".
+   It also gives that day's planned work minutes against the capacity target (the evening's minutes apart, in `eveningMinutes`), the meetings that overlap, and whether the evening has a task (one under an Evening or Recharge heading). It asks only when the day is over capacity, a meeting overlaps another or the evening is empty, joining those questions into one. Otherwise `data.summary` says the day fits ("Monday holds 3 h 20 m of work against 3 h 30 m open. Fits.").
+3. **`context`.** The Context in force for the next workday. When a Context line in force today lapses before then and says a ticket is open, the step notices it, whatever Jira says, and asks "Keep '…'?". It also lists, as `carry`, every line in force today from a note the next workday won't read (the closing week's note after a Friday, last week's note after a Monday, a day note more than three workdays back) whose `until` is absent or on or after the next workday, unless that day already reads the same text. They are asked about in one question and, on a yes, written to the next workday's week note (`data.targetWeek`). "Anything to know for Monday?" comes last.
 
 **Plan my day** plans `date`:
 
@@ -163,8 +163,9 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **Candidates:** as in Wind down, but only what is new since the day's brief was last planned (`#caiusPlannedAt`).
    - **Meetings:** the Meetings block to write from the calendar, beside the current one.
    - **Questions:** one for each overlap. On a day over 60% booked, `forwardSuggestion` names the last task of the main list, with "The day is 69% booked. Move '…' to Thursday?".
+   - **Carry:** the wind-down's carry check, run every morning whatever the catch-up answer was: lines in force on the last workday that today won't read, unless today already reads the same text, are in `data.carry` with "Keep '…' going?", for writing to this week's note (`data.targetWeek`).
 3. **`brief`.**
-   - **The day:** its span, from the standing note's Rhythm: standup (default 10:00) to bedtime (default 23:00), with work ending at 18:00 by default.
+   - **The day:** its span, from the standing note's Rhythm: standup (default 10:00) to bedtime (default 23:00), with work ending at 18:00 by default. A bedtime or end of work written without am or pm that would fall before standup, such as "Bedtime: 11:30", is read as the evening.
    - **The drawing:** the main list laid out in order in the gaps between meetings, 30 minutes for a task without an estimate, and the first task as the focus block.
    - **The rules:** the standing note's Brief rules section, word for word.
    - **The brief:** the input `caius_brief_write` takes, to fill in.
@@ -182,11 +183,12 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
   - **A missing note:** it is created, except on a dry run.
   - **Expiry:** `until` is written as ` (until Fri 6 Nov)`, with the year only when it is needed to read the date right. An `until` before the note's date is refused.
   - **Duplicates:** text already in force is skipped as `duplicate`. For a day, that is anything `caius_context` returns for it, the week note's lines included.
+  - **Keeping a line:** when the copy in force ends sooner than the `until` asked for, or the request has no `until`, the copy's `(until …)` is rewritten where it stands and the answer is `updated`, when that copy is in the note asked for. A copy in any other note, which can stop being read before the new date (an older day note, last week's note), is left alone and the line is written to the note asked for.
 - **`caius_brief_write`** `{ date, headline, acts, picks, sections, header, latitude?, longitude?, dryRun }` writes the brief.
   - **The brief note:** a `🌅 Morning Brief` child of the day note, labelled `#morningBrief=<date>`, `#caiusPlannedAt=<local time>` and `#cssClass=briefdemo`.
   - **The header note:** the brief's `Header` child, with the same `#cssClass`. It holds the date line, the headline, the drawing (as `caius_header` draws it) and the three acts as a 3-column table.
-  - **The brief's body:** the header's include-note, then "Get done today" with the picks as `Get X done: because Y (~30m)` lines, then each section rendered from markdown.
-  - **The day note:** gets one include-note of the header at the very top, only when it has none; nothing else in it changes.
+  - **The brief's body:** the header's include-note, then "Get done today" with the picks as `Get X done: because Y (~30m)` lines, then each section rendered from markdown, with any image taken out, since section text can come from email or Jira.
+  - **The day note:** gets one include-note of the header at the very top, only when it has none; nothing else in it changes. When the Header is new because the old brief or Header was deleted, the include-note of the old one at the top is replaced, not kept above the new one.
   - **Re-runs:** update the same notes and replace the planned time.
   - **Dry run:** creates nothing and returns the HTML it would write.
 - **`caius_skip_catchup`** `{ date }` labels the day note `#caiusSkipCatchup=<date>`.

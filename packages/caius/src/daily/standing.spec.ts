@@ -40,6 +40,14 @@ describe('readRhythm', () => {
     });
   });
 
+  it('reads a bedtime or an end of work without am or pm as the evening, and falls back when that cannot be', () => {
+    const rhythm = (lines: string) => readRhythm(`## Rhythm\n\n- Work starts at standup, 10:00.\n${lines}`);
+    expect(rhythm('- Bedtime: 11:30\n- Work ends at 6:00\n')).toMatchObject({ start: '10:00', end: '23:30', workEnd: '18:00' });
+    expect(rhythm('- Bedtime: 1:00\n')).toMatchObject({ end: '23:00', from: { end: 'default' } });
+    expect(rhythm('- Bedtime: 9:00 am\n')).toMatchObject({ end: '23:00', from: { end: 'default' } });
+    expect(rhythm('- Bedtime: 10:30 pm\n')).toMatchObject({ end: '22:30', from: { end: 'rhythm' } });
+  });
+
   it('uses the defaults with no standing note or no Rhythm section', () => {
     const defaults = { start: '10:00', end: '23:00', workEnd: '18:00', from: { start: 'default', end: 'default', workEnd: 'default' } };
     expect(readRhythm(null)).toEqual(defaults);

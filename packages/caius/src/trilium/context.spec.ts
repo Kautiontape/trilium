@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fakeTrilium as seeded, periodNote } from './helpers.js';
-import { gatherContext } from './context.js';
+import { contextNotes, gatherContext } from './context.js';
 import type { StoreNote } from './store.js';
 
 /** A fake whose notes are keyed by their own noteId, as the fake store reads content by it. */
@@ -23,6 +23,20 @@ const NOTES = {
   w44: week('2026-W44', 'Two weeks back'),
 };
 const ids = (r: { context: { text: string }[] }) => r.context.map((c) => c.text);
+
+describe('contextNotes', () => {
+  it('names the notes gatherContext reads, marking last week on a Monday as read for that day only', () => {
+    expect(contextNotes('2026-11-09')).toEqual([
+      { period: 'week', key: '2026-W46' },
+      { period: 'week', key: '2026-W45', oneDay: true },
+      { period: 'day', key: '2026-11-09' },
+      { period: 'day', key: '2026-11-06' },
+      { period: 'day', key: '2026-11-05' },
+      { period: 'day', key: '2026-11-04' },
+    ]);
+    expect(contextNotes('2026-11-11').map((n) => n.key)).toEqual(['2026-W46', '2026-11-11', '2026-11-10', '2026-11-09', '2026-11-06']);
+  });
+});
 
 describe('gatherContext', () => {
   it('on a Monday reads the day, the last 3 workdays, this week and last week', async () => {

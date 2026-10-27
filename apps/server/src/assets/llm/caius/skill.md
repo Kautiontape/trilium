@@ -54,17 +54,17 @@ Forwarding works between any two periods: day to week, week to day, day to month
 ## Daily planning
 
 1. `caius_plan` for today. Note the critical block, the order and the capacity total against 180 to 240 minutes.
-2. `caius_open` with `lane: "overdue"`. These slipped. Each one needs a decision: pull it in, park it, or drop it.
+2. `caius_open` with `lane: "overdue"`. These slipped. Each one needs Shawn's decision: pull it in, park it, or drop it.
 3. Go through the Suggested items for today (`caius_open` with `lane: "suggested"`). Ask Shawn, then `caius_accept` the ones he wants and `caius_dismiss` the rest.
-4. `caius_open` with `lane: "week"` for what the week note holds. Pull tasks down into today with `caius_forward` until the day fits its capacity. Don't go over the top of the range.
-5. Put the one or two must-do tasks in the critical block, and check the order: the first three are what Shawn will do first.
+4. `caius_open` with `lane: "week"` for what the week note holds. Show Shawn what fits the day's capacity, and pull down into today with `caius_forward` only the tasks he names. Don't go over the top of the range.
+5. Ask Shawn which one or two tasks must happen, if any, for the critical block, and check the order with him: the first three are what he will do first. Never reorder his list yourself.
 6. Ask for a guess on any task flagged as unestimated, and `caius_plan` again to confirm the total.
 
 ## Daily shutdown
 
 1. `caius_plan` for today.
 2. Take every task that is still open: not done, not cancelled, not Rescheduled. Including tasks in the critical block.
-3. Give each one a single fate:
+3. Give each one a single fate, as Shawn decides:
    - Carry on tomorrow or later this week: `caius_forward` to that day, or back up to the week note.
    - Not this month: `caius_forward` to a future `YYYY-MM`.
    - Not doing it: `caius_set_state` with `cancelled` and a short reason from Shawn.
@@ -75,11 +75,13 @@ A week or month ends the same way at its own grain: forward to the next week or 
 
 ## Wind down and Plan my day
 
+For `Wind down` and `Plan my day` openers, follow only this section. The Daily planning and Daily shutdown steps above are for other requests.
+
 Two conversations, each started by a short opener that names a day: `Wind down 2026-11-06` closes that day, and `Plan my day 2026-11-09` plans it. The steps live in `caius_winddown` and `caius_planday`. Each answer is `{ step, data, question, next, standing }`:
 
 - **The standing note first.** `standing` is Shawn's "How I work" note as markdown. Read it before anything else and follow its Brief rules. When it is null, say `standingMissing` in one line and carry on with the defaults.
 - **The steps in order.** Call the first step, then the one `next` names, until `next` is null.
-- **The questions.** Ask each `question` word for word. A step whose `question` is null has nothing to ask: go on to the next one. Say `data.summary` when there is one.
+- **The questions.** Ask each `question` word for word. A null `question` means nothing to ask; still do the step's writes (dry run first), such as putting the candidates in Suggested, then go on to the next step. Say `data.summary` when there is one.
 - **The writes.** Every write is a dry run first, shown to Shawn in two lines, then applied on his yes (`caius_skip_catchup` has none: his "skip" is the yes). Only `caius_accept`, or a `caius_forward` of a task Shawn names, puts anything into his main list. Everything else he wants goes to Suggested with `caius_add` (`suggested: true`) and stays there.
 - **Never** ask Shawn to do something a tool can do, and never state a fact that is not in the tools' data.
 
@@ -89,11 +91,11 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
 
 1. **`open`.** `data.items` is one list of what is still open: the day's leftovers (`group: "today"`), what slipped (`"overdue"`) and the week note's tasks (`"week"`), each with a proposed fate. After Shawn answers, mark the ones he calls done with `caius_set_state`, forward the rest whose fate is `{ forward }` to that day or week with `caius_forward`, and leave the `{ stay }` ones in the week note, unless he says otherwise.
 2. **`next`.** `data.candidates` are what could go into the next workday's Suggested, each as `text` ("Get X done"), `because`, `minutes` and `source`.
-   - Add the candidates to that day's Suggested with `caius_add`: the `text`, `source` (a Jira key), `est` from `minutes`.
+   - Add the candidates to that day's Suggested with `caius_add` and `suggested: true`: the `text`, `source` (a Jira key), `est` from `minutes`.
    - A candidate with `noteId` and `listItemId` is a task in the week note already; `caius_add` would skip it as `duplicate`. Mention it, and forward it to the day with `caius_forward` only if Shawn names it.
    - The question covers what needs asking, in one go: the day over capacity ("which of these can wait?"), meetings that overlap, an empty evening. An overlap's answer goes to the day's Context with `caius_context_add`. An evening task he names goes in through Suggested and `caius_accept`, under the evening heading.
    - `data.errors` names a source that could not be read. Say which, in one line; with Jira missing there are no ticket candidates.
-3. **`context`.** `data.noticed` holds a Context line that lapses before the next workday while it keeps a ticket open. On "keep", write it again with `caius_context_add`. Whatever Shawn says Caius should know goes in with `caius_context_add`: the week note (`week`) for the state of things ("Sam is out all week", "ABC-1 is open"), the day note (`date`) for one day only. When `question` is null, say "Anything to add for {targetDayName}? (Fine to skip.)" once, and stop if he skips.
+3. **`context`.** `data.noticed` holds a Context line that lapses before the next workday while it keeps a ticket open (`kind: "keep"`). On "keep", write it again with `caius_context_add` to the next workday's week, `data.targetWeek`, not the closing week, whose note stops being read. `noticed` also holds the lines in force today from a note the next workday won't read, such as last week's note or a day note more than three workdays back (`kind: "carry"`). The question names them once; on yes, write each to the week `data.targetWeek` with `caius_context_add`, keeping its `until`. Whatever Shawn says Caius should know goes in with `caius_context_add`. Lines about the state of things go to the week note; a day note only for a line about that day. Use the next workday's week (`week: data.targetWeek`) for the first ("Sam is out all week", "ABC-1 is open"), and the day note (`date`) for the second. When `question` is null, say "Anything to add for {targetDayName}? (Fine to skip.)" once, and stop if he skips.
 
 ### Plan my day
 
@@ -107,6 +109,7 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
    - Add `data.candidates` to the day's Suggested as in Wind down. They are only what is new since the last brief, so a second plan adds only the new ones.
    - When `data.meetings.changed`, write `data.meetings.lines` with `caius_meetings`. Lines that are null mean the calendar could not be read: say so and leave the block as it is.
    - An overlap's answer goes to the day's Context. When `data.forwardSuggestion` is set and Shawn says yes, forward that task to its `to` day.
+   - `data.carry` holds Context lines from the last workday that today won't read, so they would lapse. The question names them once; on yes, write each to the week `data.targetWeek` with `caius_context_add`, keeping its `until`. This comes every morning, whatever the catch-up answer was.
 3. **`brief`.** Write the brief with `caius_brief_write`, filling in `data.shape`. It should take about 60 seconds to read:
    - `headline`: 14 words or fewer, naming the work. When the day is over 60% booked, say so.
    - `acts`: three, one sentence each, grouped by what fits around the meetings rather than listing them. The third is the evening. Their times come from `data.day` and `data.header`.

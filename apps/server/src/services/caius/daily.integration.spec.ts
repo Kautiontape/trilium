@@ -1,9 +1,10 @@
-import { dayCapacity } from "@triliumnext/caius";
+import { dayCapacity, type NoteStore } from "@triliumnext/caius";
 import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
+import sql from "../sql.js";
 import { createBeccaStore } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
@@ -138,7 +139,7 @@ describe("caius_context_add", () => {
         expect(html).toContain("<li data-list-item-id=");
         expect(html).toContain(">Release frozen (until Fri 13 Nov)</li>");
 
-        expect((await call("caius_context_add", { date: "2026-11-11", text: "release frozen" })).results[0])
+        expect((await call("caius_context_add", { date: "2026-11-11", text: "release frozen", until: "2026-11-12" })).results[0])
             .toMatchObject({ status: "skipped", reason: "duplicate" });
     });
 
@@ -171,7 +172,7 @@ describe("caius_brief_write", () => {
         ],
         sections: [
             { title: "Follow up", markdown: "**Sam** asked for the numbers." },
-            { title: "Heads-up", markdown: "- Two packages shipped overnight" }
+            { title: "Heads-up", markdown: "- Two packages shipped overnight\n\n![](https://tracker.example/pixel.png)" }
         ],
         header: {
             start: "10:00", end: "23:00",
@@ -224,6 +225,7 @@ describe("caius_brief_write", () => {
         expect(body).toContain(">Get ZAP-101 done: because sitting in Dev Verify for 3 days (~30m)</li>");
         expect(body).toContain(">Get the review done: because Sam asked on Tuesday (~1h30m)</li>");
         expect(body).not.toContain("todo-list");
+        expect(body).not.toContain("<img");
         expect(body).toMatch(/<h2>Follow up<\/h2><p><strong>Sam<\/strong> asked for the numbers\.<\/p><h2>Heads-up<\/h2><ul>/);
 
         const day = await cls.init(() => store.content(dayId));
@@ -246,6 +248,56 @@ describe("caius_brief_write", () => {
         expect(String(first?.getChildNotes()[0]?.getContent())).toContain("<h2>Review first</h2>");
         const day = await cls.init(() => store.content(dayId));
         expect(day.match(/class="include-note"/g)).toHaveLength(1);
+    });
+
+    it("sets the planned time only once every write went through, and refuses a protected brief or Header", async () => {
+        const { briefNoteId, headerNoteId } = await call("caius_brief_write", brief);
+        const before = becca.notes[briefNoteId]?.getLabelValue("caiusPlannedAt");
+        const losing: NoteStore = { ...store, putContent: (id, html, expected) => id === briefNoteId ? Promise.resolve(false) : store.putContent(id, html, expected) };
+        const [ , write ] = [ ...createCaiusTools(losing, async () => undefined, stubInputs) ].find(([ n ]) => n === "caius_brief_write") ?? [];
+        vi.stubEnv("CAIUS_NOW", `${FRIDAY}T19:00`);
+        try {
+            const raced = await cls.init(() => write?.execute({ ...brief, headline: "Raced", picks: [] }) as Promise<any>);
+            expect(raced).toMatchObject({ plannedAt: null });
+            expect(raced.writes.find((w: any) => w.role === "brief")).toMatchObject({ status: "skipped", reason: "edited" });
+        } finally {
+            vi.stubEnv("CAIUS_NOW", `${FRIDAY}T17:30`);
+        }
+        expect(becca.notes[briefNoteId]?.getLabelValue("caiusPlannedAt")).toBe(before);
+
+        for (const noteId of [ briefNoteId, headerNoteId ]) {
+            const note = becca.notes[noteId];
+            if (!note) throw new Error("missing note");
+            note.isProtected = true;
+            try {
+                expect(await call("caius_brief_write", brief)).toMatchObject({ error: "bad_request" });
+            } finally {
+                note.isProtected = false;
+            }
+        }
+    });
+
+    it("answers unchanged for every note on an identical re-run", async () => {
+        const withList = { ...brief, sections: [ ...brief.sections, { title: "List", markdown: "- one\n- two" } ] };
+        await call("caius_brief_write", withList);
+        const again = await call("caius_brief_write", withList);
+        expect(again.writes.map((w: any) => [ w.role, w.status ])).toEqual([ [ "header", "unchanged" ], [ "brief", "unchanged" ], [ "day", "unchanged" ] ]);
+    });
+
+    it("replaces the include-note of a deleted brief or Header rather than adding a second", async () => {
+        const remove = (noteId: string) => cls.init(() => sql.transactional(() => becca.notes[noteId]?.deleteNote()));
+        const includes = async () => [ ...(await cls.init(() => store.content(dayId))).matchAll(/data-note-id="([^"]+)"/g) ].map((m) => m[1]);
+
+        const first = await call("caius_brief_write", brief);
+        remove(first.briefNoteId);
+        const afterBrief = await call("caius_brief_write", brief);
+        expect(afterBrief).toMatchObject({ created: { brief: true, header: true } });
+        expect(await includes()).toEqual([ afterBrief.headerNoteId ]);
+
+        remove(afterBrief.headerNoteId);
+        const afterHeader = await call("caius_brief_write", brief);
+        expect(afterHeader).toMatchObject({ briefNoteId: afterBrief.briefNoteId, created: { brief: false, header: true } });
+        expect(await includes()).toEqual([ afterHeader.headerNoteId ]);
     });
 
     it("keeps the brief's lines out of the lanes", async () => {
