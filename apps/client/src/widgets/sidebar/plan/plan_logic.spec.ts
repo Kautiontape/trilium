@@ -103,7 +103,9 @@ describe("plan tasks", () => {
             task({
                 listItemId: "m3a", text: "Reply to Ann", parent: "Email", parentListItemId: "m3"
             }),
-            task({ listItemId: "m1a", text: "Reply to Bo", parent: "Email", parentListItemId: "m1" })
+            task({
+                listItemId: "m1a", text: "Reply to Bo", parent: "Email", parentListItemId: "m1"
+            })
         ]);
         expect(closeCandidates(emails).map((t) => t.listItemId)).toEqual([ "m1", "m2", "m3a" ]);
     });
