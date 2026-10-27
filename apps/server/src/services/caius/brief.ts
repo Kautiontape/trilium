@@ -7,6 +7,7 @@
 import {
     briefBodyHtml,
     diffSummary,
+    ensureListItemIds,
     findPeriodNote,
     formatEstimate,
     headerHtml,
@@ -16,6 +17,7 @@ import {
     type StoreNote,
     withInclude
 } from "@triliumnext/caius";
+import { createHash } from "crypto";
 import { t } from "i18next";
 
 import type { BriefWriteInput } from "./schemas.js";
@@ -70,7 +72,13 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
         image: { src: `api/attachments/${attachmentId}/image/terrain.svg`, alt: t("caius.brief.image_alt") },
         acts: input.acts
     });
-    const bodyContent = (headerNoteId: string) => briefBodyHtml({ headerNoteId, picksTitle: t("caius.brief.picks_title"), picks, sections });
+    // The list items get ids derived from the brief and their place, so an identical re-run writes
+    // the same HTML and answers unchanged instead of a new revision with fresh random ids.
+    const bodyContent = (headerNoteId: string, briefNoteId: string) => {
+        let index = 0;
+        const newId = () => `e${createHash("sha1").update(`${briefNoteId}:${index++}`).digest("hex").slice(0, 32)}`;
+        return ensureListItemIds(briefBodyHtml({ headerNoteId, picksTitle: t("caius.brief.picks_title"), picks, sections }), newId);
+    };
 
     if (dryRun) {
         const headerNoteId = header?.noteId ?? "NEW-HEADER";
@@ -80,7 +88,7 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
             dayNoteId: day?.noteId ?? null, briefNoteId: brief?.noteId ?? null, headerNoteId: header?.noteId ?? null,
             ...(day ? {} : { detail: `${date} has no day note yet; a real run creates it from the Journal template` }),
             header: headerContent("NEW-ATTACHMENT"),
-            brief: bodyContent(headerNoteId),
+            brief: bodyContent(headerNoteId, brief?.noteId ?? "NEW-BRIEF"),
             day: diffSummary(dayBefore, withInclude(dayBefore, headerNoteId))
         };
     }
@@ -104,7 +112,7 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
     const attachmentId = deps.draw(header.noteId);
     const writes = [
         await replace(store, header.noteId, "header", () => headerContent(attachmentId)),
-        await replace(store, brief.noteId, "brief", () => bodyContent(header.noteId)),
+        await replace(store, brief.noteId, "brief", () => bodyContent(header.noteId, brief.noteId)),
         await replace(store, day.noteId, "day", (before) => withInclude(before, header.noteId, (id) => id === stale))
     ];
     return {

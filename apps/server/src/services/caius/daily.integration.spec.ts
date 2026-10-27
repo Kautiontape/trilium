@@ -249,6 +249,13 @@ describe("caius_brief_write", () => {
         expect(day.match(/class="include-note"/g)).toHaveLength(1);
     });
 
+    it("answers unchanged for every note on an identical re-run", async () => {
+        const withList = { ...brief, sections: [ ...brief.sections, { title: "List", markdown: "- one\n- two" } ] };
+        await call("caius_brief_write", withList);
+        const again = await call("caius_brief_write", withList);
+        expect(again.writes.map((w: any) => [ w.role, w.status ])).toEqual([ [ "header", "unchanged" ], [ "brief", "unchanged" ], [ "day", "unchanged" ] ]);
+    });
+
     it("replaces the include-note of a deleted brief or Header rather than adding a second", async () => {
         const remove = (noteId: string) => cls.init(() => sql.transactional(() => becca.notes[noteId]?.deleteNote()));
         const includes = async () => [ ...(await cls.init(() => store.content(dayId))).matchAll(/data-note-id="([^"]+)"/g) ].map((m) => m[1]);
