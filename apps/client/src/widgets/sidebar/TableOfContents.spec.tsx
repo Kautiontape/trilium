@@ -1,4 +1,5 @@
 import type { CKTextEditor } from "@triliumnext/ckeditor5";
+import { ClassicEditor, Essentials, Heading, Paragraph } from "ckeditor5";
 import { render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +12,7 @@ import { buildNote } from "../../test/easy-froca";
 import { renderInto } from "../../test/render";
 import { setEditorNoteId } from "../react/NoteStore";
 import { ParentComponent } from "../react/react_utils";
-import TableOfContents, { useActiveHeading } from "./TableOfContents";
+import TableOfContents, { extractTocFromTextEditor, useActiveHeading } from "./TableOfContents";
 
 // `TableOfContents` loads `attributeChangeAffectsHeading` through a lazy `import()`. Pulling the
 // real module in loads the whole editor package from source, which takes longer than these tests
@@ -163,6 +164,35 @@ describe("TableOfContents while an auto-read-only note is temporarily editable",
     });
 });
 
+describe("extractTocFromTextEditor", () => {
+    it("reads the headings without changing the model, with an id that stays with each heading", async () => {
+        const el = document.createElement("div");
+        document.body.appendChild(el);
+        const editor = await ClassicEditor.create(el, {
+            plugins: [ Essentials, Paragraph, Heading ], licenseKey: "GPL"
+        });
+        editor.setData("<h2>One</h2><p>text</p><h3>Two</h3>");
+        // A model change here is undoable and schedules a save of the note, even read-only.
+        let changes = 0;
+        editor.model.document.on("change:data", () => changes++);
+
+        const first = extractTocFromTextEditor(editor as unknown as CKTextEditor);
+        const again = extractTocFromTextEditor(editor as unknown as CKTextEditor);
+        expect(changes).toBe(0);
+        expect(first.map((heading) => heading.text)).toEqual([ "One", "Two" ]);
+        expect(new Set(first.map((heading) => heading.id)).size).toBe(2);
+        expect(again.map((heading) => heading.id)).toEqual(first.map((heading) => heading.id));
+
+        // A reload makes new heading elements, which get ids of their own, still without a change.
+        editor.setData("<h2>One</h2><h3>Two</h3>");
+        changes = 0;
+        const reloaded = extractTocFromTextEditor(editor as unknown as CKTextEditor);
+        expect(changes).toBe(0);
+        expect(new Set(reloaded.map((heading) => heading.id)).size).toBe(2);
+        await editor.destroy();
+    });
+});
+
 async function setupUnlockScenario() {
     options.load({ rightPaneCollapsedItems: "[]" } as Parameters<typeof options.load>[0]);
 
@@ -238,8 +268,6 @@ function fakeTextEditor() {
                 on: (_event: string, callback: () => void) => listeners.add(callback),
                 off: (_event: string, callback: () => void) => listeners.delete(callback)
             },
-            change: (callback: (writer: { setAttribute(name: string, value: string, item: FakeHeadingItem): void }) => void) =>
-                callback({ setAttribute: (name, value, item) => item.attrs.set(name, value) }),
             createRangeIn: () => ({ getWalker: () => items.map((item) => ({ type: "elementStart", item })) })
         },
         editing: {
