@@ -55,6 +55,7 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(sheet).toContain("For `Wind down` and `Plan my day` openers, follow only this section.");
     expect(sheet).not.toContain("until the day fits its capacity");
     expect(sheet).toContain("A null `question` means nothing to ask; still do the step's writes (dry run first)");
+    expect(sheet).toContain("On \"keep\", write it again with `caius_context_add` to the next workday's week, `data.targetWeek`, not the closing week");
 
     unregister();
     expect(readSkill("caius")).toBeNull();
