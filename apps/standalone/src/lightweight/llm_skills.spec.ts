@@ -1,4 +1,4 @@
-import { readSkill, SKILLS } from "@triliumnext/core/src/services/llm/skills.js";
+import { listSkills, readSkill, SKILLS } from "@triliumnext/core/src/services/llm/skills.js";
 import { describe, expect, it } from "vitest";
 
 import { registerStandaloneLlmExtensions } from "./llm_skills.js";
@@ -20,5 +20,11 @@ describe("standalone skill sheets", () => {
     it("answers with nothing for a file it does not carry", () => {
         registerStandaloneLlmExtensions();
         expect(readSkill("no_such_skill")).toBeNull();
+    });
+
+    it("serves exactly core's catalog, so the server-only caius skill never shows up", () => {
+        registerStandaloneLlmExtensions();
+        expect(listSkills().map((s) => s.name)).toEqual(SKILLS.map((s) => s.name));
+        expect(readSkill("caius")).toBeNull();
     });
 });

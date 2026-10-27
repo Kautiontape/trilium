@@ -10,6 +10,9 @@
       "path": "./packages/turndown-plugin-gfm"
     },
     {
+      "path": "./packages/caius"
+    },
+    {
       "path": "./apps/server"
     },
     {

@@ -1,0 +1,19 @@
+{
+  "name": "@triliumnext/caius",
+  "version": "0.106.0",
+  "description": "Caius task-planning engine for Journal notes: task-line grammar, horizon rules and Trilium HTML transforms.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "node-html-parser": "9.0.4",
+    "turndown": "7.2.4"
+  },
+  "devDependencies": {
+    "@types/turndown": "5.0.5"
+  }
+}

@@ -4143,7 +4143,15 @@
       "search_icons": "Search icons",
       "search_help": "Search User Guide",
       "get_help_toc": "Get User Guide contents",
-      "read_web_page": "Read web page"
+      "read_web_page": "Read web page",
+      "caius_plan": "Read plan",
+      "caius_open": "List open tasks",
+      "caius_explain": "Explain task lane",
+      "caius_add": "Add tasks",
+      "caius_accept": "Accept suggested tasks",
+      "caius_dismiss": "Dismiss suggested tasks",
+      "caius_set_state": "Set task state",
+      "caius_forward": "Forward tasks"
     }
   },
   "common": {

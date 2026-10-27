@@ -25,9 +25,11 @@ interface MutatingToolDefinition {
     inputSchema: z.ZodType;
     /** Marks this tool as modifying data (needs CLS + transaction wrapping). */
     mutates: true;
+    async?: false;
     /**
      * Execute the tool synchronously. Must NOT be async because better-sqlite3
      * transactions are synchronous and would commit before awaits complete.
+     * A tool that must await declares `async: true` instead.
      */
     execute: (args: any) => NotAPromise<object>;
 }
@@ -36,11 +38,28 @@ interface ReadOnlyToolDefinition {
     description: string;
     inputSchema: z.ZodType;
     mutates?: false;
+    async?: false;
     /** Execute the tool synchronously. Kept sync for consistency with MCP. */
     execute: (args: any) => NotAPromise<object>;
 }
 
-export type ToolDefinition = MutatingToolDefinition | ReadOnlyToolDefinition;
+/**
+ * A tool whose `execute` awaits. Consumers await it and wrap it in no
+ * transaction: it manages its own, committing each write in a synchronous
+ * `sql.transactional()`. A transaction held open across an await would take in
+ * whatever another call writes meanwhile. The declaration is explicit so that a
+ * sync tool that returns a Promise by accident still fails to compile.
+ */
+interface AsyncToolDefinition {
+    description: string;
+    inputSchema: z.ZodType;
+    /** Marks this tool as modifying data. Unlike on a sync tool, it adds no transaction. */
+    mutates?: boolean;
+    async: true;
+    execute: (args: any) => Promise<object>;
+}
+
+export type ToolDefinition = MutatingToolDefinition | ReadOnlyToolDefinition | AsyncToolDefinition;
 
 /**
  * A named collection of tool definitions that can be iterated or converted
@@ -56,13 +75,13 @@ export class ToolRegistry implements Iterable<[string, ToolDefinition]> {
 
     /**
      * Convert to an AI SDK ToolSet for use with the LLM chat providers.
-     * Mutating tools are wrapped in a transaction for consistency with MCP.
+     * Mutating sync tools are wrapped in a transaction for consistency with MCP.
      * (CLS context is provided by the route handler.)
      */
     toToolSet(): ToolSet {
         const set: ToolSet = {};
         for (const [name, def] of this) {
-            const execute = def.mutates
+            const execute = !def.async && def.mutates
                 ? (args: unknown) => getSql().transactional(() => def.execute(args))
                 : def.execute;
 
@@ -86,8 +105,9 @@ export class ToolRegistry implements Iterable<[string, ToolDefinition]> {
  * });
  * ```
  *
- * Note: All tools MUST have synchronous execute functions (no async/await)
- * because better-sqlite3 transactions are synchronous and MCP expects sync results.
+ * Note: Tools have synchronous execute functions (no async/await) because
+ * better-sqlite3 transactions are synchronous. A tool that has to await sets
+ * `async: true` and runs its own transactions.
  */
 export function defineTools(tools: Record<string, ToolDefinition>): ToolRegistry {
     return new ToolRegistry(tools);

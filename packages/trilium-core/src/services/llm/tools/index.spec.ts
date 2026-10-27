@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { getLog } from "../../log.js";
 import { allToolRegistries, resolveToolRegistries } from "./index.js";
 import { registerToolRegistryLoader } from "./registration.js";
 import { defineTools, type ToolRegistry } from "./tool_registry.js";
@@ -66,6 +67,20 @@ describe("resolveToolRegistries", () => {
         release(registry);
         await Promise.all([first, second]);
         expect(allToolRegistries).toContain(registry);
+    });
+
+    it("loads the loaders after one that throws, and logs the failure", async () => {
+        const later = makeRegistry("after_throw_tool");
+        added.push(later);
+        const error = vi.spyOn(getLog(), "error").mockImplementation(() => {});
+        registerToolRegistryLoader(() => Promise.reject(new Error("no guide on disk")));
+        registerToolRegistryLoader(async () => later);
+
+        await resolveToolRegistries();
+
+        expect(allToolRegistries).toContain(later);
+        expect(error).toHaveBeenCalledWith(expect.stringContaining("no guide on disk"));
+        error.mockRestore();
     });
 
     it("picks up a loader registered after an earlier resolve completed", async () => {

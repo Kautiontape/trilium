@@ -12,6 +12,7 @@ export { skillTools } from "./skill_tools.js";
 export type { ToolDefinition } from "./tool_registry.js";
 export { ToolRegistry } from "./tool_registry.js";
 
+import { getLog } from "../../log.js";
 import { attachmentTools } from "./attachment_tools.js";
 import { attributeTools } from "./attribute_tools.js";
 import { hierarchyTools } from "./hierarchy_tools.js";
@@ -64,6 +65,9 @@ let inFlightResolve: Promise<void> | null = null;
  * entry points, which is what lets `buildTools()` and other readers stay
  * synchronous: by the time they iterate the array, it is complete.
  *
+ * A loader that throws is logged and skipped, so the loaders after it still
+ * run and the chat or MCP request goes on without that registry.
+ *
  * Concurrent callers share one in-flight resolution. Draining the queue
  * empties it before the imports finish, so without the shared promise a
  * second first-use request would see nothing left to load and proceed
@@ -87,7 +91,11 @@ export function resolveToolRegistries(): Promise<void> {
     inFlightResolve = (async () => {
         try {
             for (const loader of loaders) {
-                registerToolRegistry(await loader());
+                try {
+                    registerToolRegistry(await loader());
+                } catch (e) {
+                    getLog().error(`Failed to load a tool registry: ${e instanceof Error ? e.message : String(e)}`);
+                }
             }
         } finally {
             inFlightResolve = null;

@@ -22,6 +22,8 @@ vi.mock("@triliumnext/core/src/services/llm/tools/registration.js", () => ({
     registerToolRegistryLoader: (loader: () => Promise<unknown>) => { registrations.toolRegistryLoaders.push(loader); }
 }));
 
+import { listSkills, readSkill } from "@triliumnext/core/src/services/llm/skills.js";
+
 import { registerServerLlmExtensions } from "./index.js";
 import { AntigravityAgentProvider } from "./providers/antigravity_agent.js";
 import { ClaudeAgentProvider } from "./providers/claude_agent.js";
@@ -45,9 +47,15 @@ describe("registerServerLlmExtensions", () => {
         // The skill sheets: core owns the catalog and the tool, the server only
         // knows how to get a sheet off disk.
         expect(registrations.skillReader?.("search_syntax.md")).toContain("#");
-        // The one registry still backed by files this build alone carries,
-        // registered as a loader so the tool stack stays out of the startup path.
-        expect(registrations.toolRegistryLoaders).toHaveLength(1);
+        // The registries backed by files or libraries this build alone carries (the
+        // help tools, then Caius), registered as loaders so the tool stack stays out
+        // of the startup path.
+        expect(registrations.toolRegistryLoaders).toHaveLength(2);
         expect(await registrations.toolRegistryLoaders[0]()).toBe(helpTools);
+        // The Caius planning skill, offered once the caius_* tools have loaded.
+        expect(listSkills().map((s) => s.name)).not.toContain("caius");
+        expect([...(await registrations.toolRegistryLoaders[1]() as Iterable<[string]>)].map(([name]) => name)).toContain("caius_plan");
+        expect(listSkills().map((s) => s.name)).toContain("caius");
+        expect(readSkill("caius")).toContain("# Planning with Caius");
     });
 });

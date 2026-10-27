@@ -18,14 +18,24 @@ import sql from "../sql.js";
 /**
  * Register a tool definition on the MCP server.
  *
- * Write operations are wrapped in CLS + transaction context so that
- * Becca entity tracking works correctly.
+ * Every call runs in a CLS context so that Becca entity tracking works, and a
+ * sync tool's writes run in one transaction.
  */
 function registerTool(server: McpServer, name: string, def: ToolDefinition) {
     server.registerTool(name, {
         description: def.description,
         inputSchema: def.inputSchema
-    }, (args: any): CallToolResult => {
+    }, (args: any): CallToolResult | Promise<CallToolResult> => {
+        const toContent = (result: object): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(result) }] });
+
+        if (def.async) {
+            return cls.init(async () => {
+                cls.set("componentId", "mcp");
+
+                return toContent(await def.execute(args));
+            });
+        }
+
         const result = cls.init(() => {
             cls.set("componentId", "mcp");
 
@@ -34,7 +44,7 @@ function registerTool(server: McpServer, name: string, def: ToolDefinition) {
                 : def.execute(args);
         });
 
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        return toContent(result);
     });
 }
 
