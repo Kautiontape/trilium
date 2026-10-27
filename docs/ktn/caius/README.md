@@ -100,7 +100,7 @@ On a dry run a write changes nothing and reports what it would do. Add `html: tr
 - **`jira.handoff`:** your tickets in Code Review, Dev Verify, Ready For QA, QA Testing or Pending Feedback, with `daysInStatus`.
 - **`jira.asks`:** comments from the last 7 days that mention you or end in a question and came after your own last comment on that ticket.
 - **`jira.done`:** of the tickets in `handoff` and `asks`, those whose resolution is set or whose status category is Done. A Context line that names a ticket and says it is open (for example "ZAP-2590 is open"; "not open", "isn't open" and "no longer open" don't count) marks it `overridden: true` and takes it out of `done`.
-- **`calendar`:** the day's events with `start`, `end`, `title`, `attendees`, `allDay`, `declined`, `source` and, where two meetings overlap, `overlap`. The same title and start in two feeds is one event.
+- **`calendar`:** the day's events with `start`, `end`, `title`, `attendees`, `allDay`, `declined`, `source` and, where two meetings overlap, `overlap`. `attendees` leaves you out (the `JIRA_EMAIL` and `CAIUS_USER_EMAILS` addresses). The same title and start in two feeds is one event.
 - **`capacity`:** `{ windowMinutes, bookedMinutes, openMinutes, targetMinutes, bookedRatio }`. The target is 65% of the open time, at most 240 minutes.
 
 The settings are in [internals.md](internals.md#caius_inputs).

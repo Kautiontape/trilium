@@ -63,9 +63,9 @@ describe("caius_inputs calendar", () => {
         ]);
         expect(calendar[0]).toMatchObject({ allDay: true, declined: false, source: [ 0 ] });
         expect(calendar.find((e) => e.title === "Vendor Demo")).toMatchObject({
-            attendees: [ "Sam Example", "Riley Sample" ], declined: true, allDay: false, source: [ 0, 1 ]
+            attendees: [ "Riley Sample" ], declined: true, allDay: false, source: [ 0, 1 ]
         });
-        expect(calendar.find((e) => e.title === "Sprint Retro")).toMatchObject({ attendees: [ "sam", "jordan" ], declined: false });
+        expect(calendar.find((e) => e.title === "Sprint Retro")).toMatchObject({ attendees: [ "jordan" ], declined: false });
     });
 
     it("shows the recurring meeting on a day without the EXDATE, at its usual time", async () => {
@@ -159,11 +159,11 @@ describe("caius_inputs calendar", () => {
         expect(JSON.stringify([ jiraDown, feedDown, badFeed ])).not.toMatch(/secret-token/);
     });
 
-    it("treats the attendee at CAIUS_USER_EMAILS, as well as JIRA_EMAIL, as the user", async () => {
+    it("treats the attendee at CAIUS_USER_EMAILS, as well as JIRA_EMAIL, as the user, and leaves the user out of the attendees", async () => {
         const other = await run("2026-10-27", { ...ENV, JIRA_EMAIL: "someone@example.org", CAIUS_USER_EMAILS: "Sam@Example.com" });
-        expect(other.calendar.find((e) => e.title === "Vendor Demo")?.declined).toBe(true);
+        expect(other.calendar.find((e) => e.title === "Vendor Demo")).toMatchObject({ declined: true, attendees: [ "Riley Sample" ] });
 
         const nobody = await run("2026-10-27", { ...ENV, JIRA_EMAIL: "someone@example.org" });
-        expect(nobody.calendar.find((e) => e.title === "Vendor Demo")?.declined).toBe(false);
+        expect(nobody.calendar.find((e) => e.title === "Vendor Demo")).toMatchObject({ declined: false, attendees: [ "Sam Example", "Riley Sample" ] });
     });
 });

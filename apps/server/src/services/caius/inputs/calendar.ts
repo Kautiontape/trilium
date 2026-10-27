@@ -164,7 +164,7 @@ function describe(event: IcalEvent, start: IcalTime, end: IcalTime, me: Set<stri
         end: end.toJSDate(),
         allDay: start.isDate,
         title: event.summary || "(no title)",
-        attendees: attendees.map((attendee) => attendee.name).filter(Boolean),
+        attendees: attendees.filter((attendee) => !me.has(attendee.address)).map((attendee) => attendee.name).filter(Boolean),
         declined: mine?.partstat.toUpperCase() === "DECLINED",
         unknownZone
     };
