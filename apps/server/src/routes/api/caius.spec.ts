@@ -176,6 +176,14 @@ describe("Caius routes", () => {
         expect(applied.body.blobIds).toEqual({ [day.noteId]: blobOf(day.noteId), [target.noteId]: blobOf(target.noteId) });
 
         await post("/api/caius/apply", { forwards: [], drops: [] }).expect(400);
+
+        // One `expectedBlobId` versions one note, so it can't cover items in another.
+        const other = { noteId: noteIds.today, listItemId: "t1", state: "done" };
+        const mixedNotes = { ...body(blobOf(day.noteId)), drops: [ other ] };
+        const mixed = await post("/api/caius/apply", mixedNotes).expect(400);
+        expect(JSON.stringify(mixed.body)).toContain("one note");
+        await post("/api/caius/apply", { forwards: body(undefined).forwards, drops: [ other ] })
+            .expect(200);
     });
 
     it("assigns missing list item ids, as a dry run unless told otherwise", async () => {

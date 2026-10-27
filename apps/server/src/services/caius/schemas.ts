@@ -111,6 +111,11 @@ export const routeInputs = {
         drops: z.array(stateItem).default([]),
         expectedBlobId: version.expectedBlobId
     }).refine((input) => input.forwards.length + input.drops.length > 0, "Give at least one forward or drop")
+        .refine(
+            ({ expectedBlobId, forwards, drops }) => expectedBlobId === undefined
+                || new Set([ ...forwards, ...drops ].map(({ noteId }) => noteId)).size === 1,
+            "An expectedBlobId versions one note, so every forward and drop must be in one note"
+        )
 };
 
 export type PlanInput = z.infer<typeof reads.plan>;
