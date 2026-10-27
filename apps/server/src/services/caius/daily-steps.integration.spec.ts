@@ -209,7 +209,7 @@ describe("caius_winddown", () => {
             { kind: "carry", line: "Release branch is cut" }
         ]);
         expect(answer.data.context.map((line: any) => line.text)).toContain("ZAP-2600 is open");
-        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry these into next week? Anything to know for Monday?");
+        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry 'Sam is out' and 'Release branch is cut' into next week? Anything to know for Monday?");
 
         const quiet = await call("caius_winddown", { date: TUESDAY, step: "context" });
         expect(quiet.question).toBeNull();
@@ -223,6 +223,7 @@ describe("caius_winddown", () => {
             { kind: "carry", line: "Sam is out", until: "2026-11-11" },
             { kind: "carry", line: "Release branch is cut" }
         ]);
+        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going into Tuesday? Anything to know for Tuesday?");
     });
 
     it("context: offers a day note's line that outlasts the days its note is read", async () => {
@@ -231,7 +232,7 @@ describe("caius_winddown", () => {
         expect((await call("caius_winddown", { date: MONDAY, step: "context" })).data.noticed.map((n: any) => n.line)).not.toContain("Vendor freeze");
         const answer = await call("caius_winddown", { date: TUESDAY, step: "context" });
         expect(answer.data.noticed).toEqual([ { kind: "carry", line: "Vendor freeze", until: "2026-11-13" } ]);
-        expect(answer.question).not.toBeNull();
+        expect(answer.question).toBe("Keep 'Vendor freeze' going into Wednesday? Anything to know for Wednesday?");
     });
 
     it("context: does not offer a line already carried into a note the next day reads", async () => {

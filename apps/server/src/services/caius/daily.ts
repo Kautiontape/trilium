@@ -131,7 +131,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= targetDay) && !readThen.has(sameText(line.text)))
         .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
     const noticed = [ ...keep, ...carry ];
-    const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ t("caius.daily.carry") ] : []) ];
+    const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
+    const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek, weekdayName(targetDay)) ] : []) ];
     const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
     return reply(read.standing, { context: read.context, targetWeek, noticed }, question, null);
 }
@@ -226,6 +227,24 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         },
         errors: read.inputs.errors
     }, null, null);
+}
+
+/** Lines named in the carry question before the rest are counted; the step's data lists them all. */
+const CARRY_NAMED = 4;
+
+/**
+ * The one carry question, naming the lines: "Carry 'A' and 'B' into next week?", or, when the next
+ * workday is in the same week, "Keep 'A' going into Wednesday?".
+ */
+export function carryQuestion(lines: string[], sameWeek: boolean, dayName: string): string {
+    const quoted = lines.map((line) => `'${line}'`);
+    const named = quoted.slice(0, CARRY_NAMED);
+    const list = quoted.length > CARRY_NAMED
+        ? t("caius.daily.list_more", { head: named.join(", "), count: quoted.length - CARRY_NAMED })
+        : named.length > 1
+            ? t("caius.daily.list_and", { head: named.slice(0, -1).join(", "), last: named.at(-1) })
+            : named[0] ?? "";
+    return sameWeek ? t("caius.daily.carry_day", { lines: list, day: dayName }) : t("caius.daily.carry_week", { lines: list });
 }
 
 /** A work bar's label: the task's first Jira key, else its text cut to `LABEL_LENGTH`. */
