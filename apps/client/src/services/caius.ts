@@ -199,13 +199,29 @@ function isNotFoundBody(responseText: unknown) {
 }
 
 async function postItems(action: string, items: object[]): Promise<CaiusItemResult[]> {
-    const response = await server.post<{ results: CaiusItemResult[] }>(
-        `caius/${action}`,
-        { items, dryRun: false }
-    );
+    return postWrite(`caius/${action}`, { items, dryRun: false });
+}
 
+/** Posts a Caius write, and records the final `blobId` of each note it wrote. */
+async function postWrite(url: string, body: object): Promise<CaiusItemResult[]> {
+    const response = await server.post<CaiusWriteResponse>(url, body);
+    for (const [ noteId, blobId ] of Object.entries(response.blobIds ?? {})) {
+        finalBlobIds.set(noteId, blobId);
+    }
     return response.results;
 }
+
+interface CaiusWriteResponse {
+    results: CaiusItemResult[];
+    /** Each note the results name, with its `blobId` once the request was done. */
+    blobIds?: Record<string, string>;
+}
+
+/**
+ * The `blobId` the latest Caius response gave each note, so that `caiusWrite()` can tell its
+ * editor's reload of the final version from an intermediate one. A write's turn clears its notes.
+ */
+const finalBlobIds = new Map<string, string>();
 
 /**
  * Runs a Caius write on `noteId` without racing the editors that show it, and toasts the outcome.
@@ -274,14 +290,20 @@ async function writeInTurn(
     const editorsByNote = new Map(noteIds.map((id) => [ id, findOpenEditors(id) ]));
     const editors = [ ...new Set([ ...editorsByNote.values() ].flat()) ];
     lockEditors(editors, lock, locked);
+    releaseMovedAway(editors, lock, locked);
 
+    let blobIdsBefore = new Map<string, string | undefined>();
     const attempt = async () => {
+        for (const id of noteIds) {
+            finalBlobIds.delete(id);
+        }
         if (!editors.length) {
             return { results: await answerInTime(call(undefined)), reload: NO_RELOAD };
         }
 
         await answerInTime(flushEditors(editors));
-        const expectedBlobId = froca.notes[noteId]?.blobId;
+        blobIdsBefore = new Map(noteIds.map((id) => [ id, froca.notes[id]?.blobId ]));
+        const expectedBlobId = blobIdsBefore.get(noteId);
         const reload = waitForReload(editors);
         try {
             return { results: await answerInTime(call(expectedBlobId)), reload };
@@ -298,10 +320,10 @@ async function writeInTurn(
             written = await attempt();
         }
 
-        if (written.results.some(isChange)) {
-            const writtenNoteIds = new Set(written.results.flatMap((r) => r.writtenNoteIds ?? []));
-            const changed = noteIds.filter((id) => id === noteId || writtenNoteIds.has(id));
-            const expected = changed.flatMap((id) => editorsByNote.get(id) ?? []);
+        const changed = changedNotes(noteId, noteIds, written.results, blobIdsBefore);
+        if (changed.length) {
+            const expected = changed.flatMap((id) => (editorsByNote.get(id) ?? [])
+                .map((editor) => ({ editor, noteId: id, blobId: finalBlobIds.get(id) })));
             await settleReload(written.reload, expected);
         } else {
             written.reload.cancel();
@@ -317,6 +339,37 @@ async function writeInTurn(
             toast.showError(t("caius.request_failed", { message: describeError(error) }));
         }
         return null;
+    }
+}
+
+/**
+ * The notes of the write that changed: those whose final `blobId` in the response differs from the
+ * one before the request. Without one, `noteId` changed when any result did, and an `alsoLock`
+ * note when a result names it in `writtenNoteIds`.
+ */
+function changedNotes(
+    noteId: string,
+    noteIds: string[],
+    results: CaiusItemResult[],
+    blobIdsBefore: Map<string, string | undefined>
+) {
+    const writtenNoteIds = new Set(results.flatMap((result) => result.writtenNoteIds ?? []));
+    return noteIds.filter((id) => {
+        const final = finalBlobIds.get(id);
+        if (final !== undefined) {
+            return final !== blobIdsBefore.get(id);
+        }
+        return id === noteId ? results.some(isChange) : writtenNoteIds.has(id);
+    });
+}
+
+/** Unlocks the editors in `locked` that no longer show one of the write's notes. */
+function releaseMovedAway(editors: CKTextEditor[], lock: symbol, locked: CKTextEditor[]) {
+    for (const editor of [ ...locked ]) {
+        if (!editors.includes(editor)) {
+            unlock([ editor ], lock);
+            locked.splice(locked.indexOf(editor), 1);
+        }
     }
 }
 
@@ -360,15 +413,17 @@ async function answerInTime<T>(promise: Promise<T>): Promise<T> {
  * fetched again and get another {@link RELOAD_TIMEOUT_MS}; if that fails too, the user is told to
  * reload the note before typing, since a save of the stale content would undo the write.
  */
-async function settleReload(reload: PendingReload, expected: CKTextEditor[]) {
+async function settleReload(reload: PendingReload, expected: ReloadExpectation[]) {
     const missed = await reload.settle(expected);
     if (!missed.length) {
         return;
     }
 
-    const retry = waitForReload(missed);
-    fetchContentAgain(missed.map(getEditorNoteId).filter((id): id is string => !!id));
-    if ((await retry.settle(missed)).length) {
+    // The refetch reads the note after the write, so any reload it brings is the final version.
+    const retry = waitForReload(missed.map(({ editor }) => editor));
+    fetchContentAgain(missed.map(({ noteId }) => noteId));
+    const anyReload = missed.map((expectation) => ({ ...expectation, blobId: undefined }));
+    if ((await retry.settle(anyReload)).length) {
         toast.showError(t("caius.reload_before_typing"));
     }
 }
@@ -442,7 +497,8 @@ export async function flushEditors(editors: CKTextEditor[]) {
  * response; `settle()` then waits for the editors the write turned out to change.
  */
 function waitForReload(editors: CKTextEditor[]): PendingReload {
-    const reloaded = new Set<CKTextEditor>();
+    // For each editor, the `blobId` froca held for its note at each reload.
+    const reloads = new Map<CKTextEditor, (string | undefined)[]>();
     const onReloaded: (() => void)[] = [];
     const cleanups: (() => void)[] = [];
     const cancel = () => {
@@ -453,8 +509,9 @@ function waitForReload(editors: CKTextEditor[]): PendingReload {
 
     for (const editor of editors) {
         const onSet = () => {
-            editor.data.off("set", onSet);
-            reloaded.add(editor);
+            const noteId = getEditorNoteId(editor);
+            const blobId = noteId ? froca.notes[noteId]?.blobId : undefined;
+            reloads.set(editor, [ ...reloads.get(editor) ?? [], blobId ]);
             for (const notify of onReloaded) {
                 notify();
             }
@@ -464,13 +521,18 @@ function waitForReload(editors: CKTextEditor[]): PendingReload {
         cleanups.push(() => editor.data.off("set", onSet));
     }
 
+    const isMet = ({ editor, blobId }: ReloadExpectation) => {
+        const seen = reloads.get(editor) ?? [];
+        return blobId === undefined ? seen.length > 0 : seen.includes(blobId);
+    };
+
     return {
         async settle(expected) {
             let timer: ReturnType<typeof setTimeout> | undefined;
             try {
                 await new Promise<void>((resolve) => {
                     const check = () => {
-                        if (expected.every((editor) => reloaded.has(editor))) {
+                        if (expected.every(isMet)) {
                             resolve();
                         }
                     };
@@ -478,7 +540,7 @@ function waitForReload(editors: CKTextEditor[]): PendingReload {
                     check();
                     timer = setTimeout(resolve, RELOAD_TIMEOUT_MS);
                 });
-                return expected.filter((editor) => !reloaded.has(editor));
+                return expected.filter((expectation) => !isMet(expectation));
             } finally {
                 clearTimeout(timer);
                 cancel();
@@ -488,12 +550,19 @@ function waitForReload(editors: CKTextEditor[]): PendingReload {
     };
 }
 
+/** An editor that must reload `noteId`; at `blobId`, when the response named the final one. */
+interface ReloadExpectation {
+    editor: CKTextEditor;
+    noteId: string;
+    blobId?: string;
+}
+
 interface PendingReload {
     /**
-     * Waits up to {@link RELOAD_TIMEOUT_MS} for `expected` to reload, stops listening, and resolves
-     * to those that did not.
+     * Waits up to {@link RELOAD_TIMEOUT_MS} for `expected` to be met, stops listening, and resolves
+     * to those that were not.
      */
-    settle(expected: CKTextEditor[]): Promise<CKTextEditor[]>;
+    settle(expected: ReloadExpectation[]): Promise<ReloadExpectation[]>;
     cancel(): void;
 }
 

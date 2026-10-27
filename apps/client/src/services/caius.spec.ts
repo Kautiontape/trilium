@@ -356,12 +356,72 @@ describe("caiusWrite", () => {
         await vi.waitFor(() => expect(secondCall).toHaveBeenCalled());
         expect(saved).toEqual([ first.editing.view.getDomRoot(), opened.editing.view.getDomRoot() ]);
         expect(opened.isReadOnly).toBe(true);
+        // The editor that moved away is released at the second write's turn, not at its end.
+        expect(first.isReadOnly).toBe(false);
         opened.reload();
         await secondWrite;
         expect(first.isReadOnly).toBe(false);
         expect(opened.isReadOnly).toBe(false);
         expect(opened.enableReadOnlyMode).toHaveBeenCalledTimes(1);
         expect(opened.disableReadOnlyMode).toHaveBeenCalledTimes(1);
+    });
+
+    it("stays locked through an intermediate reload until the editor holds the batch's final version", async () => {
+        const editor = openEditor("n1");
+        stubSaves("n1");
+        // Three items are three commits; the response names the note's version after the last.
+        h.post.mockResolvedValueOnce({
+            results: [ { status: "updated" }, { status: "updated" }, { status: "updated" } ],
+            blobIds: { n1: "final" }
+        });
+        let settled = false;
+        const write = caiusWrite("n1", (expectedBlobId) => caiusApi.setState([ "e1", "e2", "e3" ].map((listItemId) => (
+            { noteId: "n1", listItemId, state: "done" as const, expectedBlobId }
+        ))), "done!").then(() => {
+            settled = true;
+        });
+        await vi.waitFor(() => expect(h.post).toHaveBeenCalled());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        h.notes.n1 = { blobId: "after-the-first-commit" };
+        editor.reload();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(settled).toBe(false);
+        expect(editor.isReadOnly).toBe(true);
+
+        h.notes.n1 = { blobId: "final" };
+        editor.reload();
+        await write;
+        expect(editor.isReadOnly).toBe(false);
+        expect(h.triggerEvent).not.toHaveBeenCalled();
+    });
+
+    it("waits on the target of a failed forward whose copy was written", async () => {
+        const source = openEditor("n1");
+        const target = openEditor("n2");
+        stubSaves("n1");
+        h.notes.n2 = { blobId: "target-before" };
+        h.post.mockResolvedValueOnce({
+            results: [ { status: "failed", error: "source changed", noteId: "n1", writtenNoteIds: [ "n2" ] } ],
+            // Both editors were saved first, so the source is at blob2 before and after.
+            blobIds: { n1: "blob2", n2: "target-after" }
+        });
+        let settled = false;
+        const write = caiusWrite("n1", (expectedBlobId) => caiusApi.forward([
+            { noteId: "n1", listItemId: "e1", to: "2026-10-28", expectedBlobId }
+        ]), "done!", { alsoLock: [ "n2" ] }).then(() => {
+            settled = true;
+        });
+        await vi.waitFor(() => expect(h.post).toHaveBeenCalled());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(settled).toBe(false);
+        expect(target.isReadOnly).toBe(true);
+
+        h.notes.n2 = { blobId: "target-after" };
+        target.reload();
+        await write;
+        expect(source.isReadOnly || target.isReadOnly).toBe(false);
+        expect(h.showError).toHaveBeenCalledWith(expect.stringContaining("source changed"));
     });
 
     it("runs two overlapping writes on one note in turn, locked until the second has reloaded", async () => {
