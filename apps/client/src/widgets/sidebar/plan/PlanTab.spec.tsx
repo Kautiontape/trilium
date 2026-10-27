@@ -429,8 +429,8 @@ describe("openTaskInNote", () => {
         await opening;
 
         expect(getEditorNoteId(editor)).toBe("yesterday");
-        const caret = editor.model.document.selection.getFirstPosition();
-        expect(caret?.parent.getAttribute("listItemId")).toBe("etwo");
+        const block = editor.model.document.selection.getFirstPosition()?.parent;
+        expect(block?.is("element") && block.getAttribute("listItemId")).toBe("etwo");
         await editor.destroy();
     });
 });
