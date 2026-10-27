@@ -66,7 +66,7 @@ With the caret outside a Journal task you get "Put the caret in a task in a Jour
 
 ## MCP and the AI assistant
 
-Caius registers twelve tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
+Caius registers eighteen tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
 
 | Tool | Does |
 |---|---|
@@ -81,6 +81,12 @@ Caius registers twelve tools on Trilium's `/mcp` endpoint (which needs an ETAPI 
 | `caius_set_state` | Marks tasks `done`, `doing` or `cancelled` (needs a reason). |
 | `caius_forward` | Forwards tasks to a day, week or month. |
 | `caius_assign_ids` | Gives every Journal list item an id; see below. |
+| `caius_meetings` | Writes a day note's Meetings block: the lines given, or the day's calendar as clock lines. See below. |
+| `caius_context_add` | Adds one Context line to a day or week note, with an optional `until`. See below. |
+| `caius_brief_write` | Writes the day's Morning Brief and its header, and includes the header at the top of the day note. See below. |
+| `caius_skip_catchup` | Lets Plan my day leave the last workday's open tasks where they are, for one day. |
+| `caius_winddown` | One step of the Wind down conversation. Read-only; see below. |
+| `caius_planday` | One step of the Plan my day conversation. Read-only; see below. |
 | `caius_header` | Draws the day as terrain and attaches it to a note as `terrain.svg`; see below. |
 
 The **`caius` skill sheet** (`load_skill` with `caius`) teaches an agent the method, the tools, and how to run daily planning and shutdown. Only agents that can load it see it, and only while Caius is on.
@@ -98,6 +104,64 @@ On a dry run a write changes nothing and reports what it would do. Add `html: tr
 - **`capacity`:** `{ windowMinutes, bookedMinutes, openMinutes, targetMinutes, bookedRatio }`. The target is 65% of the open time, at most 240 minutes.
 
 The settings are in [internals.md](internals.md#caius_inputs).
+
+## Wind down and Plan my day
+
+Two conversations in the sidebar chat, run by the AI assistant with the Caius tools and the `caius` skill sheet. Each starts from a short opener that names a day: `Wind down 2026-11-06` closes that day, and `Plan my day 2026-11-09` plans it. Caius holds the steps and the exact questions, so the wording is the same every time; the skill sheet tells the assistant how to run the conversation.
+
+Each step is one call, `caius_winddown` or `caius_planday` with `{ date, step }`, and answers:
+
+- `data`: the facts for that step.
+- `question`: the exact text to ask, or `null` when there is nothing to ask, so the step is skipped.
+- `next`: the step to call after it, or `null` at the end.
+- `standing`: the note labelled `#assistantContext` (the standing note, "How I work") as markdown, or `null` with `standingMissing`, a one-line reason.
+
+Nothing is kept between calls except what the notes hold, so calling a step again reads them again and a conversation that stopped can pick up where it was. The steps only read. Every change goes through the write tools, as a dry run first.
+
+**Wind down** closes `date` and works against the next workday after it (Friday → Monday):
+
+1. **`open`.** One list of every live task in the day's note, the overdue ones and those in the day's week note. Each item has a proposed fate: the next workday for the day's and the overdue tasks, staying in the week for week tasks. A sub-item goes with its parent.
+2. **`next`.** Candidates for the next workday's Suggested, each as "Get X done" with a `because`, `minutes` and `source`:
+   - **Sources:** Jira hand-offs that aren't done ("sitting in Dev Verify for 3 days"), the latest ask on each ticket ("Sam asked on Wednesday"), and the next workday's week note items. A ticket a Context line says is open counts as not done.
+   - **Left out:** anything whose key is already a live task anywhere in the Journal, already in that day's Suggested, or dismissed there.
+
+   It also gives that day's planned minutes against the capacity target, the meetings that overlap, and whether the evening has a task (one under an Evening or Recharge heading). It asks only when the day is over capacity, a meeting overlaps another or the evening is empty, joining those questions into one. Otherwise `data.summary` says the day fits ("Monday holds 3 h 20 m of work against 3 h 30 m open. Fits.").
+3. **`context`.** The Context in force for the next workday. When a Context line in force today lapses before then while it keeps open a ticket Jira calls done, the step notices it and asks "Keep '…'?" before "Anything to know for Monday?".
+
+**Plan my day** plans `date`:
+
+1. **`catchup`.** When the last workday still has live tasks: "Friday has 2 open tasks. Move all to today, review them, or skip?". After `caius_skip_catchup` for the day, it no longer asks.
+2. **`inputs`.**
+   - **Candidates:** as in Wind down, but only what is new since the day's brief was last planned (`#caiusPlannedAt`).
+   - **Meetings:** the Meetings block to write from the calendar, beside the current one.
+   - **Questions:** one for each overlap. On a day over 60% booked, `forwardSuggestion` names the last task of the main list, with "The day is 69% booked. Move '…' to Thursday?".
+3. **`brief`.**
+   - **The day:** its span, from the standing note's Rhythm: standup (default 10:00) to bedtime (default 23:00), with work ending at 18:00 by default.
+   - **The drawing:** the main list laid out in order in the gaps between meetings, 30 minutes for a task without an estimate, and the first task as the focus block.
+   - **The rules:** the standing note's Brief rules section, word for word.
+   - **The brief:** the input `caius_brief_write` takes, to fill in.
+
+`caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. `refresh: true` on a step fetches again. The work window passed to it is the Rhythm's standup and end of work.
+
+### The write tools
+
+- **`caius_meetings`** `{ date, items?, dryRun }` replaces only the Meetings block.
+  - **Default lines:** without `items`, they come from the day's calendar: `10:00 Standup (Sam, Riley)`, with up to four first names. Declined and all-day events are left out, a repeated line is written once, and a meeting that overlaps another ends in `(overlaps)`.
+  - **A failed calendar:** when the calendar could not be read, it writes nothing and answers `calendar_unavailable`, so a failing feed never empties the block.
+  - **A missing note:** it is created, except on a dry run.
+- **`caius_context_add`** `{ date | week, text, until?, dryRun }` adds one plain bullet under `### Context`.
+  - **The heading:** when the note has none, it is added below the Meetings block, else at the top below the header's include-note.
+  - **A missing note:** it is created, except on a dry run.
+  - **Expiry:** `until` is written as ` (until Fri 6 Nov)`, with the year only when it is needed to read the date right. An `until` before the note's date is refused.
+  - **Duplicates:** text already in force is skipped as `duplicate`. For a day, that is anything `caius_context` returns for it, the week note's lines included.
+- **`caius_brief_write`** `{ date, headline, acts, picks, sections, header, latitude?, longitude?, dryRun }` writes the brief.
+  - **The brief note:** a `🌅 Morning Brief` child of the day note, labelled `#morningBrief=<date>`, `#caiusPlannedAt=<local time>` and `#cssClass=briefdemo`.
+  - **The header note:** the brief's `Header` child, with the same `#cssClass`. It holds the date line, the headline, the drawing (as `caius_header` draws it) and the three acts as a 3-column table.
+  - **The brief's body:** the header's include-note, then "Get done today" with the picks as `Get X done: because Y (~30m)` lines, then each section rendered from markdown.
+  - **The day note:** gets one include-note of the header at the very top, only when it has none; nothing else in it changes.
+  - **Re-runs:** update the same notes and replace the planned time.
+  - **Dry run:** creates nothing and returns the HTML it would write.
+- **`caius_skip_catchup`** `{ date }` labels the day note `#caiusSkipCatchup=<date>`.
 
 ## The one-off id backfill
 
