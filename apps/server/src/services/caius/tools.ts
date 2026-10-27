@@ -9,6 +9,7 @@ import { defineTools } from "@triliumnext/core/src/services/llm/tools/tool_regis
 import type { z } from "zod";
 
 import { toolInputs } from "./schemas.js";
+import { readInputs } from "./inputs/index.js";
 import { createCaiusService } from "./service.js";
 
 export function createCaiusTools(store?: NoteStore) {
@@ -41,6 +42,13 @@ export function createCaiusTools(store?: NoteStore) {
             inputSchema: toolInputs.context,
             async: true,
             execute: parsed(toolInputs.context, service.context)
+        },
+
+        caius_inputs: {
+            description: "Read the day's outside inputs live: Jira tickets handed off to the user (Dev Verify, QA, Code Review) with their age, recent comments that mention or ask the user, which tickets Jira calls done, the day's calendar events from the iCal feeds, and the capacity the meetings leave. Pass the day's Context lines so a line such as \"ZAP-2590 is open\" beats Jira's Done. A source that fails is named in errors and the rest still return.",
+            inputSchema: toolInputs.inputs,
+            async: true,
+            execute: parsed(toolInputs.inputs, (input) => readInputs(input))
         },
 
         caius_add: {

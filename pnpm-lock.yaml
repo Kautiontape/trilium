@@ -663,6 +663,9 @@ importers:
       i18next:
         specifier: 26.4.2
         version: 26.4.2(typescript@6.0.3)
+      ical.js:
+        specifier: 2.2.1
+        version: 2.2.1
       ipaddr.js:
         specifier: ^2.4.0
         version: 2.5.0
@@ -8164,6 +8167,9 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  ical.js@2.2.1:
+    resolution: {integrity: sha512-yK/UlPbEs316igb/tjRgbFA8ZV75rCsBJp/hWOatpyaPNlgw0dGDmU+FoicOcwX4xXkeXOkYiOmCqNPFpNPkQg==}
 
   iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
@@ -20928,6 +20934,8 @@ snapshots:
   i18next@26.4.2(typescript@6.0.3):
     optionalDependencies:
       typescript: 6.0.3
+
+  ical.js@2.2.1: {}
 
   iconv-lite@0.4.24:
     dependencies:

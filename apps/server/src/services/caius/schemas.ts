@@ -92,8 +92,18 @@ const reads = {
     })
 };
 
+const clock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Must be HH:MM, from 00:00 to 24:00");
+
+const inputs = z.object({
+    date: periodKey("day").describe("The day to read inputs for, YYYY-MM-DD"),
+    context: z.array(z.string()).optional().describe("The day's Context lines. A line that names a ticket key and says it is open overrides Jira's Done."),
+    workStart: clock.optional().describe("Start of the work window, HH:MM. Defaults to 10:00."),
+    workEnd: clock.optional().describe("End of the work window, HH:MM. Defaults to 18:00.")
+});
+
 export const toolInputs = {
     ...reads,
+    inputs,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -121,6 +131,7 @@ export const routeInputs = {
         )
 };
 
+export type InputsInput = z.infer<typeof inputs>;
 export type PlanInput = z.infer<typeof reads.plan>;
 export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;

@@ -1,4 +1,6 @@
 export { etapiClient, normalizeBaseUrl } from './trilium/etapi.js';
+export { dayCapacity, parseClock, DEFAULT_WORK_START, DEFAULT_WORK_END, FOCUS_FACTOR, MAX_TARGET_MINUTES } from './inputs/capacity.js';
+export type { DayCapacity, CapacityMeeting, CapacityOptions } from './inputs/capacity.js';
 export { label, withListItemIds } from './trilium/store.js';
 export { ensureListItemIds, listItemsWithoutIds } from './trilium/html-util.js';
 export type { NoteStore, NoteReader, StoreNote, StoreAttribute } from './trilium/store.js';

@@ -1,0 +1,51 @@
+{
+  "total": 2,
+  "comments": [
+    {
+      "id": "1",
+      "author": {
+        "accountId": "acc-riley-0002",
+        "displayName": "Riley Sample"
+      },
+      "created": "2026-10-26T15:00:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Thanks, closing this out."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2",
+      "author": {
+        "accountId": "acc-riley-0002",
+        "displayName": "Riley Sample"
+      },
+      "created": "2026-10-26T15:30:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Can you confirm the job is gone from production?"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
