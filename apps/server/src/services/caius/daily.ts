@@ -97,15 +97,19 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         const targetMinutes = read.inputs.capacity.targetMinutes;
         const overlaps = overlapPairs(read.inputs.calendar);
         const evening = { hasTask: facts.evening };
-        const over = plannedMinutes + candidateMinutes - targetMinutes;
+        // Without the calendar, the target is that of a day with no meetings, so the day is not weighed.
+        const calendarFailed = failedCalendar(read);
+        const over = calendarFailed ? 0 : plannedMinutes + candidateMinutes - targetMinutes;
         const questions = [
             ...(over > 0 ? [ t("caius.daily.over", { day: weekdayName(targetDay), hours: Math.max(0.5, Math.round(over / 30) / 2) }) ] : []),
             ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
             ...(evening.hasTask ? [] : [ t("caius.daily.evening") ])
         ];
-        const summary = questions.length ? {} : {
-            summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), open: formatHours(targetMinutes) })
-        };
+        const summary = calendarFailed
+            ? { summary: t("caius.daily.capacity_unknown", { day: weekdayName(targetDay) }) }
+            : questions.length ? {} : {
+                summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), focus: formatHours(targetMinutes) })
+            };
         return reply(read.standing, {
             candidates,
             capacity: { plannedMinutes, eveningMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
@@ -155,7 +159,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     }
 
     const read = await deps.dayRead(date, refresh);
-    const calendarFailed = read.inputs.errors.some((e) => e.source === "calendar" && !isInputWarning(e.error));
+    const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
         const facts = await deps.locked("caius_planday", async () => {
@@ -250,6 +254,11 @@ function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEnt
     return inForce
         .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= day) && !readThen.has(sameText(line.text)))
         .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
+}
+
+/** Whether the day's calendar could not be read: an error that is not a warning. */
+function failedCalendar(read: DayRead): boolean {
+    return read.inputs.errors.some((e) => e.source === "calendar" && !isInputWarning(e.error));
 }
 
 /** Lines named in the carry question before the rest are counted; the step's data lists them all. */
