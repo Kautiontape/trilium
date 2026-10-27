@@ -65,7 +65,10 @@ The tool layer originally took only synchronous tools. It now also takes tools d
 | Route | |
 |---|---|
 | `GET status`, `plan`, `open`, `explain` | Reads. `status` always answers 200: `{ enabled: true }` or `{ enabled: false, detail }`. |
-| `POST add`, `accept`, `dismiss`, `set-state`, `forward`, `assign-ids` | Writes. Body `{ items, dryRun }`; answer `{ results }`, one per item. |
+| `POST add`, `accept`, `dismiss`, `set-state`, `forward`, `assign-ids` | Writes. Body `{ items, dryRun }`; answer `{ results, blobIds }`, one result per item. |
+| `POST apply` | Closes a period in one request. Body `{ forwards, drops, expectedBlobId? }`. Runs the forwards, then the drops, in one lock, checks the token once before the first write, and answers `{ results, blobIds }`. There is no MCP tool for it. |
+
+`blobIds` maps each note the results name to its `blobId` after the writes, read inside the lock (`withBlobIds()`). A forward that fails after writing the target copy still lists the target in `writtenNoteIds`. The plan and open results carry `parentListItemId` on a sub-item, and `journal: false` when the document has no `#calendarRoot`.
 
 The service loads on the first request, off the startup path. If it fails to load, the cause is logged once as `Caius disabled: …`, the failure is cached until restart, and every route answers `503 caius_unavailable`. A `bad_request` or `not_found` result becomes a 400 or 404.
 
@@ -106,13 +109,13 @@ Every Caius write happens on the server. Caius logic is never re-implemented aga
 4. **Sends the token.** POSTs the route with `expectedBlobId`.
 5. **Retries once.** On a `stale` skip, saves again and repeats once. A second `stale` is shown as the "changed while Caius was writing" toast.
 6. **Waits for the reload.** If any result changed something, waits until each locked editor of a note that was actually written has had its data replaced. A forward's `moved` result carries `writtenNoteIds` (the target, then the source; only the source when the target already held the copy), and editors of other locked notes stop listening and unlock at once. The reload shows as an `editor.data` `set` event, with listeners registered before the request, since the reload can beat the response over the WebSocket. Editors that miss it for 3 s (`RELOAD_TIMEOUT_MS`) have the note fetched again and get another 3 s; if that fails too, the "Reload the note before typing" toast appears.
-7. **Unlocks**, in a `finally`.
+7. **Unlocks**, in a `finally`, once its editors hold the final version. `postWrite()` records each response's `blobIds`, the last call of a multi-call write wins, and a note counts as changed when its final `blobId` differs from the one froca held before. An editor's wait is met only by a `set` that happens while froca holds that final `blobId`, so a three-item batch stays locked through the reload of an intermediate version. After a refetch, any reload counts.
 
 **Time bounds.** The save and the request each get 10 s (`ANSWER_TIMEOUT_MS`); past that the write is abandoned with "Caius didn't answer in time. The change may still arrive…". The editor lock is held for the whole write.
 
 `EditableText` keeps the caret across the reload when the reloaded note is the same note, through `setDataKeepingSelection`.
 
-**Known limits.** A key pressed while the editor is read-only is dropped. Opening a note with headings saves it (the table of contents writes `tocId` into the model), so every Caius write to an open day note is followed by one harmless echo save. Writes that do not start in the open editor (MCP, the Plan tab on another note, another device) can still race someone typing in that note, as Trilium sync does today.
+**Known limits.** A key pressed while the editor is read-only is dropped. The table of contents no longer saves a note on open or reload: it keeps each heading's id in a `WeakMap`, not a `tocId` attribute in the model, so there is no echo save to send a mid-reload version back and revert a later write (this fix is in the editor-reload PR, not Caius). The one save Caius adds is `flushEditors` forcing a save (`saveNoteDetailNow` with `{ force: true }`) when the editor holds list item ids its note lacks, which CKEditor invents for id-less items. Writes that do not start in the open editor (MCP, the Plan tab on another note, another device) can still race someone typing in that note, as Trilium sync does today.
 
 ## Tools, skill and loading
 

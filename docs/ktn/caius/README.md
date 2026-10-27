@@ -39,12 +39,12 @@ The button disappears for a moment during a write (the editor is read-only) and 
 
 ## The Plan tab
 
-On desktop, the right pane has a **Plan** tab. It follows the active note: a day, week or month note shows its period, and any other note shows the current period. The Day / Week / Month switch and the ‹ › buttons move between periods, and Today jumps back. It reloads when Journal notes change. Each card collapses.
+On desktop, the right pane has a **Plan** tab. It follows the active note: a day, week or month note shows its period, and any other note shows the current period. The Day / Week / Month switch and the ‹ › buttons move between periods, and Today jumps back. It reloads when Journal notes change, with one `/api/caius/open` call per refresh, and reads nothing while the tab is hidden: it reads once when you show it. Each card collapses.
 
 - **Capacity.** Minutes planned against the target: 180–240 for a day, 720–900 for a week, none for a month. "N unestimated, counted at 30 min" opens a list of those tasks; click one to jump to it and add an estimate.
 - **Suggested.** The Suggested items of the period, each with Accept (pick a heading, or Critical) and Dismiss.
-- **Pull in.** Three lanes: Overdue, This week and This month, 20 rows each. A row's text opens the task in its note. The **→** button forwards the task into the period you are viewing; an editor open on that note is locked and reloaded along with the task's own note. Tasks already in this note are left out.
-- **Close.** Offered for a past period, today from 15:00, and the current week or month. Every open task gets one fate. A past period offers Today first (This week or This month when closing a week or month), then Tomorrow, Next week, Next month and Drop (with a reason). Fates count from now, not from the period being closed, and the picker names the target note, such as "Today → 2026-10-27". The card counts "N of M decided". **Apply** writes them all in one go, and lists any task that was skipped. A task with open sub-items carries them along, so the sub-items are not listed on their own. Pushing a task to its project note is not offered yet.
+- **Pull in.** Three lanes: Overdue, This week and This month, 20 rows each. A row's text opens the task in its note. The **→** button forwards the task into the period you are viewing; an editor open on that note is locked and reloaded along with the task's own note. Tasks already in this note are left out. A past period has no Pull in card, since nothing should be pulled into a closed note.
+- **Close.** Offered for a past period, today from 15:00, and the current week or month. Every open task gets one fate. A past period offers Today first (This week or This month when closing a week or month), then Tomorrow, Next week, Next month and Drop (with a reason). Fates count from now, not from the period being closed, and the picker names the target note, such as "Today → 2026-10-27". The card counts "N of M decided". **Apply** writes them all in one go, and lists any task that was skipped. Apply is one request (`POST /api/caius/apply`): the forwards, then the drops. A task with open sub-items carries them along, so the sub-items are not listed on their own; a sub-item is told from its parent by the parent's list item id, so two tasks with the same text are not confused. Pushing a task to its project note is not offered yet.
 
 ## Shortcuts
 
@@ -94,7 +94,7 @@ If the Caius code fails to load, Trilium logs `Caius disabled: <reason>` in the 
 
 The failure is remembered until the server restarts. Find the reason in the server log, fix it and restart.
 
-A document with no `#calendarRoot` (no Journal) is not "off": Caius is running, and the Plan tab shows empty lanes instead of errors.
+A document with no `#calendarRoot` (no Journal) is not "off": Caius is running, and the Plan tab shows empty lanes instead of errors. The tools mark such answers `journal: false`, so an agent can say there is no Journal instead of reporting that you have no tasks.
 
 ## Troubleshooting
 
