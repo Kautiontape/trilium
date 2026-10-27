@@ -8,7 +8,8 @@ import { loadJournal } from './journal.js';
 import { scanDocs } from '../index/index.js';
 import { TRILIUM_CONFIG } from './config.js';
 import { forwardTasks } from './forward.js';
-import { placeForwarded } from './plan-html.js';
+import { inspectSuggested, placeForwarded, setTaskState } from './plan-html.js';
+import { acceptTasks, addTasks } from './plan.js';
 
 const NOW = new Date(2026, 10, 6, 9, 0);
 const INCLUDE = '<section class="include-note" data-note-id="brief" data-box-size="expandable">&nbsp;</section>';
@@ -69,6 +70,37 @@ describe('Meetings and Context are not tasks', () => {
     const fake = journal(html);
     const [res] = await forwardTasks(fake.api, [{ noteId: 'd', listItemId: 'ex', to: '2026-11-09' }], { dryRun: true });
     expect(res).toMatchObject({ status: 'skipped', reason: 'not_live' });
+  });
+});
+
+describe('to-dos under Meetings and Context, everywhere', () => {
+  const html = INCLUDE + CONTEXT.replace('</ul>', `</ul>${ul(li('ex', 'Chase it'))}`) + '<h4>Suggested</h4>' + ul(li('ey', 'Hidden suggestion')) + TASKS;
+  const states = new Map<string, string>();
+
+  it('cannot be set done, doing or cancelled, nor taken as suggested', () => {
+    for (const action of ['done', 'start', 'drop'] as const) {
+      expect(setTaskState(html, 'ex', action, { states, reason: 'r' })).toMatchObject({ ok: false, reason: 'not_live' });
+    }
+    expect(setTaskState(html, 'e1', 'done', { states })).toMatchObject({ ok: true });
+    expect(inspectSuggested(html, 'ey')).toEqual({ ok: false, reason: 'not_live' });
+    expect(inspectSuggested(INCLUDE + TASKS + SUGGESTED, 'es')).toMatchObject({ ok: true });
+  });
+
+  it('answer not_live for an already-moved item, before already_moved', async () => {
+    const moved = li('ex', 'Done', { state: '_rescheduled' });
+    const fake = journal(INCLUDE + MEETINGS + ul(moved) + TASKS);
+    const [res] = await forwardTasks(fake.api, [{ noteId: 'd', listItemId: 'ex', to: '2026-11-09' }], { dryRun: true });
+    expect(res).toMatchObject({ status: 'skipped', reason: 'not_live' });
+  });
+
+  it('are never made by adding or accepting into a Meetings or Context heading', async () => {
+    const fake = journal(DAY);
+    const adds = await addTasks(fake.api, [{ date: '2026-11-06', section: 'Context', text: 'x' }, { date: '2026-11-06', section: '🗓 Meetings', text: 'y' }]);
+    expect(adds).toMatchObject([{ status: 'skipped', reason: 'prose_section' }, { status: 'skipped', reason: 'prose_section' }]);
+    const [acc] = await acceptTasks(fake.api, [{ noteId: 'd', listItemId: 'es', section: 'Context' }]);
+    expect(acc).toMatchObject({ status: 'skipped', reason: 'prose_section' });
+    expect(fake.html.d).toBe(DAY);
+    expect(await addTasks(fake.api, [{ date: '2026-11-06', section: 'Work', text: 'z' }])).toMatchObject([{ status: 'added' }]);
   });
 });
 

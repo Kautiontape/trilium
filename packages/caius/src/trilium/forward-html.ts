@@ -114,8 +114,9 @@ function lookup(
 ): { li: HTMLElement } | { reason: ItemProblem; scheduledTo: string[] } {
   const li = findItem(root, id);
   if (!li) return { reason: 'not_found', scheduledTo: [] };
+  if (inProseSection(root, li)) return { reason: 'not_live', scheduledTo: [] };
   if (li.getAttribute('data-trilium-task-state') === stateId) return { reason: 'already_moved', scheduledTo: scheduledTo(li) };
-  if (!isLive(li, states) || inProseSection(root, li)) return { reason: 'not_live', scheduledTo: [] };
+  if (!isLive(li, states)) return { reason: 'not_live', scheduledTo: [] };
   return { li };
 }
 

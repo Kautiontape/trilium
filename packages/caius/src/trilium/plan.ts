@@ -6,6 +6,7 @@
 // be safe to run twice.
 
 import { now as clock } from '../clock.js';
+import { proseKind } from './sections.js';
 import { scanDocs } from '../index/index.js';
 import { newListItemId, tokenZoneStart } from './html-util.js';
 import { scanTokens } from '../core/index.js';
@@ -64,6 +65,7 @@ export type PlanSkip =
   | 'not_found'
   | 'not_live'
   | 'not_suggested'
+  | 'prose_section'
   | 'already_done'
   | 'already_doing'
   | 'already_cancelled'
@@ -122,6 +124,9 @@ async function eachSequentially<Q, R>(reqs: Q[], fn: (req: Q) => Promise<Done<Q>
 function usable(note: StoreNote): string | null {
   return note.type !== 'text' || note.isProtected ? 'note is protected or not a text note' : null;
 }
+
+const isProseTarget = (target: Target) => target.kind === 'section' && proseKind(target.name) !== null;
+const PROSE_DETAIL = 'Meetings and Context hold plain bullets, never tasks';
 
 const symbolId = (states: StateSymbols, symbol: string) => [...states].find(([, s]) => s === symbol)?.[0];
 
@@ -186,6 +191,7 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
     if (typeof when === 'string') return skip(req, 'bad_request', when);
     const target = targetOf(req);
     if (typeof target === 'string') return skip(req, 'bad_request', target);
+    if (isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
     const est = req.est === undefined ? null : parseEstimate(req.est);
     if (req.est !== undefined && !est) return skip(req, 'bad_request', 'est must look like 30m, 2h or 1h30m');
     const source = req.source === undefined ? null : parseSource(req.source);
@@ -280,6 +286,7 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     if (req.position !== undefined && (!Number.isInteger(req.position) || req.position < 1)) return skip(req, 'bad_request', 'position must be 1 or more');
     const target: Target = req.critical ? { kind: 'critical' } : { kind: 'section', name: (req.section ?? '').trim() };
     if (target.kind === 'section' && !target.name) return skip(req, 'bad_request', 'section name is empty');
+    if (isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
 
     const loaded = await loadNote(api, req.noteId);
     if ('problem' in loaded) return skip(req, 'unreadable', loaded.problem);

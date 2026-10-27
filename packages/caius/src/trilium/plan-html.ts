@@ -167,7 +167,7 @@ export function placeForwarded(html: string, item: string, section: string | nul
   return suggested ? apply(html, [insertAt(suggested.range[0], block)]) : html + block;
 }
 
-export type TakeProblem = 'not_found' | 'not_suggested';
+export type TakeProblem = 'not_found' | 'not_live' | 'not_suggested';
 
 /** A task item under the Suggested heading: its markup, text and links. */
 export interface SuggestedItem {
@@ -179,6 +179,7 @@ export interface SuggestedItem {
 function suggestedLi(root: HTMLElement, id: string): { li: HTMLElement } | { reason: TakeProblem } {
   const li = findItem(root, id);
   if (!li || !isTask(li)) return { reason: 'not_found' };
+  if (inProseSection(root, li)) return { reason: 'not_live' };
   const nested = li.parentNode?.parentNode;
   if (nested instanceof HTMLElement && nested.tagName === 'LI') return { reason: 'not_suggested' };
   if (!isSuggestedName(sectionOf(root, li))) return { reason: 'not_suggested' };
@@ -239,6 +240,7 @@ export function setTaskState(
   const root = parse(html, { comment: true });
   const li = findItem(root, id);
   if (!li || !isTask(li)) return { ok: false, reason: 'not_found' };
+  if (inProseSection(root, li)) return { ok: false, reason: 'not_live' };
   const from = itemState(li, opts.states);
   const same = { done: 'done', start: 'doing', drop: 'cancelled' }[action] as ItemState;
   if (from === same) return { ok: false, reason: `already_${same}` as StateProblem, from };
