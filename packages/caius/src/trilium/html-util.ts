@@ -160,6 +160,14 @@ export function liveDescendants(li: HTMLElement, states: StateSymbols): HTMLElem
 }
 
 /** `<aside class="admonition important">`: the critical block. */
+/** Whether the item is inside the Important block. */
+export function inCriticalAside(li: HTMLElement): boolean {
+  for (let n = li.parentNode as HTMLElement | null; n; n = n.parentNode as HTMLElement | null) {
+    if (n.tagName && isCriticalAside(n)) return true;
+  }
+  return false;
+}
+
 export function isCriticalAside(el: HTMLElement): boolean {
   return el.tagName === 'ASIDE' && el.classList.contains('admonition') && el.classList.contains('important');
 }

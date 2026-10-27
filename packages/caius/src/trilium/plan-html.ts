@@ -134,11 +134,13 @@ export function placeTask(html: string, item: string, target: Target, position?:
 
 /**
  * Where `forward` puts a copy: the list under the header with the same name,
- * else the first task list outside the critical block, Suggested, Meetings and Context, else a new
+ * else the first task list outside the critical block, Suggested, Meetings and Context (an Important
+ * item goes to the target's Important block instead), else a new
  * "Tasks" list (above Suggested). An untouched template's placeholder is
  * replaced rather than left above the new list.
  */
-export function placeForwarded(html: string, item: string, section: string | null): string {
+export function placeForwarded(html: string, item: string, section: string | null, important = false): string {
+  if (important) return placeTask(html, item, { kind: 'critical' });
   const root = parse(html, { comment: true });
   const top = elements(root);
   const intoFound = (found: { list?: HTMLElement; placeholder?: HTMLElement }, headingEnd: number): string => {
@@ -148,7 +150,12 @@ export function placeForwarded(html: string, item: string, section: string | nul
   };
 
   if (section) {
-    const i = top.findIndex((e) => isHeading(e) && norm(e.text) === norm(section) && !isSuggestedName(e.text));
+    const tracker = new ProseTracker();
+    const i = top.findIndex((e) => {
+      if (!isHeading(e)) return false;
+      tracker.enter(e.text, levelOf(e));
+      return norm(e.text) === norm(section) && !isSuggestedName(e.text) && !tracker.kind;
+    });
     if (i >= 0) return intoFound(scanSection(top, i), top[i]!.range[1]);
   }
 

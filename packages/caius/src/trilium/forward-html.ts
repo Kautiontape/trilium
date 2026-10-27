@@ -20,6 +20,7 @@ import {
   newListItemId,
   rewriteOpenTag,
   sectionOf,
+  inCriticalAside,
   inProseSection,
   spanEnd,
   tokenZoneStartInHtml,
@@ -213,7 +214,7 @@ export function insertCopy(targetHtml: string, sourceHtml: string, id: string, o
   if (!('li' in found)) return { ok: false, ...found };
   const section = sectionOf(sourceRoot, found.li);
   const item = buildCopy(sourceHtml, found.li, opts);
-  return { ok: true, html: placeForwarded(targetHtml, item, section), section };
+  return { ok: true, html: placeForwarded(targetHtml, item, section, inCriticalAside(found.li)), section };
 }
 
 /** True when the target already holds a copy made from this source note (a half-finished forward). */
