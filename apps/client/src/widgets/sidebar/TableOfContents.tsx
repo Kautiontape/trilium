@@ -207,7 +207,11 @@ export function useActiveHeading<T extends RawHeading>({ headings, scrollingCont
 //#endregion
 
 //#region Editable text (CKEditor)
-const TOC_ID = 'tocId';
+/**
+ * Each heading element's id in the table of contents. Kept outside the model: a model attribute is
+ * an undoable change, and makes `EditableText` save the note on every load and reload.
+ */
+const tocIds = new WeakMap<ModelElement, string>();
 
 interface CKHeading extends RawHeading {
     element: ModelElement;
@@ -303,65 +307,59 @@ function EditableTextTableOfContents() {
     />;
 }
 
-function extractTocFromTextEditor(editor: CKTextEditor) {
+export function extractTocFromTextEditor(editor: CKTextEditor) {
     const headings: CKHeading[] = [];
 
     const root = editor.model.document.getRoot();
     if (!root) return [];
 
-    editor.model.change(writer => {
-        for (const { type, item } of editor.model.createRangeIn(root).getWalker()) {
-            if (type !== "elementStart" || !item.is('element') || !item.name.startsWith('heading')) continue;
+    for (const { type, item } of editor.model.createRangeIn(root).getWalker()) {
+        if (type !== "elementStart" || !item.is('element') || !item.name.startsWith('heading')) continue;
 
-            const level = Number(item.name.replace( 'heading', '' ));
+        const level = Number(item.name.replace( 'heading', '' ));
 
-            // Convert model element to view, then to DOM to get HTML.
-            // Math UIElements render their KaTeX content asynchronously, so
-            // ck-math-tex spans may be empty at read time. Replace them with
-            // math-tex spans (the data format) using the equation from the model,
-            // so useMathRendering can render them synchronously in the sidebar.
-            const viewEl = editor.editing.mapper.toViewElement(item);
-            let text = '';
-            if (viewEl) {
-                const domEl = editor.editing.view.domConverter.mapViewToDom(viewEl);
-                if (domEl instanceof HTMLElement) {
-                    const clone = domEl.cloneNode(true) as HTMLElement;
-                    const ckMathSpans = clone.querySelectorAll('.ck-math-tex');
-                    let mathIdx = 0;
-                    for (const child of item.getChildren()) {
-                        if (!child.is('element', 'mathtex-inline')) continue;
-                        if (mathIdx >= ckMathSpans.length) break;
-                        const equation = String(child.getAttribute('equation') ?? '');
-                        const span = document.createElement('span');
-                        span.className = 'math-tex';
-                        span.textContent = `\\(${equation}\\)`;
-                        ckMathSpans[mathIdx].replaceWith(span);
-                        mathIdx++;
-                    }
-                    text = clone.innerHTML;
+        // Convert model element to view, then to DOM to get HTML.
+        // Math UIElements render their KaTeX content asynchronously, so
+        // ck-math-tex spans may be empty at read time. Replace them with
+        // math-tex spans (the data format) using the equation from the model,
+        // so useMathRendering can render them synchronously in the sidebar.
+        const viewEl = editor.editing.mapper.toViewElement(item);
+        let text = '';
+        if (viewEl) {
+            const domEl = editor.editing.view.domConverter.mapViewToDom(viewEl);
+            if (domEl instanceof HTMLElement) {
+                const clone = domEl.cloneNode(true) as HTMLElement;
+                const ckMathSpans = clone.querySelectorAll('.ck-math-tex');
+                let mathIdx = 0;
+                for (const child of item.getChildren()) {
+                    if (!child.is('element', 'mathtex-inline')) continue;
+                    if (mathIdx >= ckMathSpans.length) break;
+                    const equation = String(child.getAttribute('equation') ?? '');
+                    const span = document.createElement('span');
+                    span.className = 'math-tex';
+                    span.textContent = `\\(${equation}\\)`;
+                    ckMathSpans[mathIdx].replaceWith(span);
+                    mathIdx++;
                 }
+                text = clone.innerHTML;
             }
-
-            // Fallback to plain text if DOM conversion fails
-            if (!text) {
-                text = Array.from( item.getChildren() )
-                    .map( (c: ModelNode) => c.is( '$text' ) ? c.data : '' )
-                    .join( '' );
-            }
-
-            // Assign a unique ID
-            let tocId = item.getAttribute(TOC_ID) as string | undefined;
-            // Splitting a heading with Enter copies its attributes onto the new element, so two
-            // headings can carry the same tocId and collide as React keys and as activeHeadingId.
-            const tocIdExists = headings.some(h => h.id === tocId);
-            if (!tocId || tocIdExists) {
-                tocId = randomString();
-                writer.setAttribute(TOC_ID, tocId, item);
-            }
-
-            headings.push({ level, text, element: item, id: tocId });
         }
-    });
+
+        // Fallback to plain text if DOM conversion fails
+        if (!text) {
+            text = Array.from( item.getChildren() )
+                .map( (c: ModelNode) => c.is( '$text' ) ? c.data : '' )
+                .join( '' );
+        }
+
+        let tocId = tocIds.get(item);
+        if (!tocId) {
+            tocId = randomString();
+            tocIds.set(item, tocId);
+        }
+
+        headings.push({ level, text, element: item, id: tocId });
+    }
 
     return headings;
 }
