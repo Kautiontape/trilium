@@ -126,7 +126,21 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 
 ## Tools, skill and loading
 
-`tools.ts` is registered with `registerToolRegistryLoader`, which puts the nine tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
+`tools.ts` is registered with `registerToolRegistryLoader`, which puts the ten tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
+
+## `caius_inputs`
+
+`apps/server/src/services/caius/inputs/` holds `jira.ts`, `calendar.ts` and `index.ts` (`readInputs`). The capacity arithmetic is `dayCapacity` in `packages/caius/src/inputs/capacity.ts`. The tool reads no notes, so it does not take `withCaiusLock`: holding the lock across Jira and feed requests would stall the Plan tab. Each source takes `fetch`, the environment and the clock as arguments, and a spec runs on recorded files under `services/caius/fixtures/`.
+
+| Setting | Meaning |
+|---|---|
+| `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_TOKEN` | Jira Cloud site and basic-auth credentials. With any unset the Jira source answers `not_configured`. |
+| `CAIUS_ICAL_URLS` | Comma-separated secret iCal URLs. Unset answers `calendar: not_configured`. |
+| `CAIUS_USER_EMAILS` | Optional, comma-separated. Addresses that count as you when reading an attendee's `PARTSTAT`, in addition to `JIRA_EMAIL`. |
+
+- **Jira.** REST v3 with a 10 s timeout per request. Issues come from `/search/jql` and are followed with `nextPageToken`; comments and the changelog page with `startAt`. `HANDOFF_STATUSES` (`jira.ts`) is compared case-insensitively and in full, so "QA Testing" is not "QA". `daysInStatus` is the age of the last changelog move into the current status, else of `statuscategorychangedate`. A comment mentions you when it has a `mention` node with your account id. Errors are codes (`not_configured`, `http_401`, `timeout`, `network`, `bad_response`); they never carry a URL, header or token.
+- **Calendar.** `ical.js` expands RRULE and EXDATE, and a RECURRENCE-ID override stands as its own event at its new time. Times are the server's local time; a `VTIMEZONE` in the feed is registered before reading. Cancelled events are skipped. All-day events read `00:00`–`24:00` and never count as booked. Events with the same title and start are merged across feeds and within one feed, sources combined, and one decline marks the merged event declined. Overlap is strict: back-to-back meetings don't overlap. A feed's error is `feed_<index>_<http_NNN|timeout|network|parse>`; the URL is never reported.
+- **Capacity.** Booked time is the union of the non-declined timed meetings clipped to the window, so overlapping meetings count once.
 
 ## Not done
 

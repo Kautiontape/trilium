@@ -59,13 +59,14 @@ With the caret outside a Journal task you get "Put the caret in a task in a Jour
 
 ## MCP and the AI assistant
 
-Caius registers nine tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
+Caius registers ten tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
 
 | Tool | Does |
 |---|---|
 | `caius_plan` | Reads one day, week or month: sections, tasks, estimates, capacity. |
 | `caius_open` | Lists open tasks across the Journal by lane, with `noteId`, `listItemId` and days late. |
 | `caius_explain` | Says why a task is in its lane. |
+| `caius_inputs` | Reads the day's outside inputs live: Jira hand-offs, asks and done checks, the calendar's events, and the capacity the meetings leave. Read-only; see below. |
 | `caius_add` | Adds a task to a period under a heading, in the Important block, or under Suggested. |
 | `caius_accept` | Moves a Suggested item up under a heading or into the Important block. |
 | `caius_dismiss` | Removes a Suggested item and remembers it was dismissed. |
@@ -76,6 +77,18 @@ Caius registers nine tools on Trilium's `/mcp` endpoint (which needs an ETAPI to
 The **`caius` skill sheet** (`load_skill` with `caius`) teaches an agent the method, the tools, and how to run daily planning and shutdown. Only agents that can load it see it, and only while Caius is on.
 
 On a dry run a write changes nothing and reports what it would do. Add `html: true` to get each note's full before and after HTML instead of a summary of the change. The skill tells agents to dry-run every batch and show you the summary first.
+
+### `caius_inputs`
+
+`{ date, context?, workStart?, workEnd? }` returns `{ date, jira, calendar, capacity, errors }`. `context` is the day's Context lines. The work window defaults to 10:00–18:00. It reads no notes and writes nothing. A source that fails adds `{ source, error }` to `errors`, and the other still returns.
+
+- **`jira.handoff`:** your tickets in Dev Verify, QA or Code Review, with `daysInStatus`.
+- **`jira.asks`:** comments from the last 7 days that mention you or end in a question and came after your own last comment on that ticket.
+- **`jira.done`:** tickets whose resolution is set or whose status category is Done. A Context line that names a ticket and says it is open (for example "ZAP-2590 is open") marks it `overridden: true` and takes it out of `done`.
+- **`calendar`:** the day's events with `start`, `end`, `title`, `attendees`, `allDay`, `declined`, `source` and, where two meetings overlap, `overlap`. The same title and start in two feeds is one event.
+- **`capacity`:** `{ windowMinutes, bookedMinutes, openMinutes, targetMinutes, bookedRatio }`. The target is 65% of the open time, at most 240 minutes.
+
+The settings are in [internals.md](internals.md#caius_inputs).
 
 ## The one-off id backfill
 
