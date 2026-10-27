@@ -20,13 +20,15 @@ describe("Caius routes when the service fails to load", () => {
         expect(status.body).toEqual({ enabled: false, detail: expect.any(String) });
 
         const requests = [
-            ...["plan?period=day", "open", "explain?noteId=root&listItemId=x"].map((path) => () => ctx.agent.get(`/api/caius/${path}`)),
-            ...["add", "accept", "dismiss", "set-state", "forward", "assign-ids"].map((path) => () =>
-                ctx.agent.post(`/api/caius/${path}`).set("x-csrf-token", ctx.csrfToken).send({ items: [] }))
+            ...["plan?period=day", "open", "explain?noteId=root&listItemId=x"].map((path) => ({ path, send: () => ctx.agent.get(`/api/caius/${path}`) })),
+            ...["add", "accept", "dismiss", "set-state", "forward", "assign-ids"].map((path) => ({
+                path,
+                send: () => ctx.agent.post(`/api/caius/${path}`).set("x-csrf-token", ctx.csrfToken).send({ items: [] })
+            }))
         ];
-        for (const request of requests) {
-            const res = await request();
-            expect(res.status, res.req.path).toBe(503);
+        for (const { path, send } of requests) {
+            const res = await send();
+            expect(res.status, path).toBe(503);
             expect(res.body).toEqual({ error: "caius_unavailable", detail: expect.any(String) });
         }
         expect(warn).toHaveBeenCalledWith(expect.stringContaining("Caius disabled: "));
