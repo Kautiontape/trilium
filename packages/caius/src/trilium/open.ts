@@ -101,3 +101,33 @@ export function suggestedTasks(docs: TriliumDoc[], now: Date): OpenTask[] {
       };
     });
 }
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Whole days between the last day of a period (`2026-10-26`, `2026-W44` or
+ * `2026-10`) and `now`'s calendar day, never negative. A task in a past period
+ * is that many days late; null when the key is not a period.
+ */
+export function daysLate(period: string, now: Date): number | null {
+  const end = periodEnd(period);
+  if (end === null) return null;
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((today - end) / DAY_MS));
+}
+
+/** The last day of a period as UTC midnight, or null if the key is malformed. */
+function periodEnd(period: string): number | null {
+  const day = period.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (day) return Date.UTC(+day[1]!, +day[2]! - 1, +day[3]!);
+  const month = period.match(/^(\d{4})-(\d{2})$/);
+  if (month) return Date.UTC(+month[1]!, +month[2]!, 0);
+  const week = period.match(/^(\d{4})-W(\d{2})$/);
+  if (week) {
+    // ISO week 1 contains 4 January; weeks run Monday to Sunday.
+    const jan4 = new Date(Date.UTC(+week[1]!, 0, 4));
+    const monday1 = jan4.getTime() - ((jan4.getUTCDay() + 6) % 7) * DAY_MS;
+    return monday1 + ((+week[2]! - 1) * 7 + 6) * DAY_MS;
+  }
+  return null;
+}
