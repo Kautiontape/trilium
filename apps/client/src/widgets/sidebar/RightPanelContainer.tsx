@@ -30,7 +30,7 @@ import PdfAttachments from "./pdf/PdfAttachments";
 import PdfLayers from "./pdf/PdfLayers";
 import PdfPages from "./pdf/PdfPages";
 import PlanTab, { useCaiusEnabled } from "./plan/PlanTab";
-import RightPanelWidget, { CollapsibleWidgets, ExpandWidgetRequest, ExpandWidgetRequests } from "./RightPanelWidget";
+import RightPanelWidget, { CollapsibleWidgets, ExpandWidgetRequest, ExpandWidgetRequests, RightPaneTabVisible } from "./RightPanelWidget";
 import RightPanePeekButton from "./RightPanePeekButton";
 import RightPaneTabs, { RIGHT_PANE_TABS, RightPaneTabDefinition, RightPaneTabId } from "./RightPaneTabs";
 import TableOfContents from "./TableOfContents";
@@ -166,11 +166,13 @@ export default function RightPanelContainer({ widgetsByParent }: { widgetsByPare
                                             so a tab of one offers no collapsing at all. */}
                                         <CollapsibleWidgets.Provider value={tab.items.length > 1}>
                                             <ExpandWidgetRequests.Provider value={expandRequest}>
-                                                {tab.items.length > 0 ? tab.items : (
-                                                    // A tab that stays for a note it has nothing to show
-                                                    // (see RightPaneTabDefinition.alwaysShown) says so.
-                                                    <NoItems icon={tab.icon} text={t("right_pane.empty_message")} />
-                                                )}
+                                                <RightPaneTabVisible.Provider value={visible && tab.id === activeTab?.id}>
+                                                    {tab.items.length > 0 ? tab.items : (
+                                                        // A tab that stays for a note it has nothing to show
+                                                        // (see RightPaneTabDefinition.alwaysShown) says so.
+                                                        <NoItems icon={tab.icon} text={t("right_pane.empty_message")} />
+                                                    )}
+                                                </RightPaneTabVisible.Provider>
                                             </ExpandWidgetRequests.Provider>
                                         </CollapsibleWidgets.Provider>
                                     </div>

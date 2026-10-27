@@ -2,7 +2,7 @@ import "./PlanTab.css";
 
 import type { CKTextEditor } from "@triliumnext/ckeditor5";
 
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useRef, useState } from "preact/hooks";
 
 import appContext from "../../../components/app_context";
 import type NoteContext from "../../../components/note_context";
@@ -21,7 +21,7 @@ import LoadingSpinner from "../../react/LoadingSpinner";
 import NoItems from "../../react/NoItems";
 import { getEditorNoteId } from "../../react/NoteStore";
 import SegmentedChoice from "../../react/SegmentedChoice";
-import { CollapsibleWidgets } from "../RightPanelWidget";
+import { CollapsibleWidgets, RightPaneTabVisible } from "../RightPanelWidget";
 import PlanCapacity from "./PlanCapacity";
 import PlanClose from "./PlanClose";
 import {
@@ -36,6 +36,12 @@ export const PULL_IN_LANES: CaiusLane[] = [ "overdue", "week", "orbit" ];
 
 /** How many tasks of each lane Pull in lists. */
 export const PULL_IN_LIMIT = 20;
+
+/**
+ * The most open tasks one read asks for, across every lane; Pull in shows {@link PULL_IN_LIMIT} of
+ * each lane and counts the rest.
+ */
+const OPEN_TASKS_LIMIT = 1000;
 
 /** How long the tab waits after a change to a Journal note before it reads the plan again. */
 export const REFRESH_DELAY_MS = 300;
@@ -56,7 +62,7 @@ export default function PlanTab() {
     useEffect(() => setPeriod(periodOfNote(note, new Date())), [ note ]);
 
     const key = periodKey(period);
-    const { data, error, reload } = usePlanData(period.kind, key);
+    const { data, error, reload, refresh } = usePlanData(period.kind, key);
     const openTask = useCallback(
         (task: PlanTaskRef) => void openTaskInNote(noteContext, task),
         [ noteContext ]
@@ -86,14 +92,14 @@ export default function PlanTab() {
                         key={key}
                         plan={current.plan}
                         sections={current.sections}
-                        onChanged={reload}
+                        onChanged={refresh}
                     />
                     {!isPastPeriod(current.plan.period, current.plan.key, new Date()) && (
                         <PlanPullIn
                             plan={current.plan}
                             lanes={current.lanes}
                             onOpen={openTask}
-                            onChanged={reload}
+                            onChanged={refresh}
                         />
                     )}
                     {current.plan.noteId && isCloseable(period, new Date()) && (
@@ -101,7 +107,7 @@ export default function PlanTab() {
                             key={key}
                             plan={current.plan}
                             onOpen={openTask}
-                            onChanged={reload}
+                            onChanged={refresh}
                         />
                     )}
                 </CollapsibleWidgets.Provider>
@@ -181,42 +187,79 @@ interface PlanData {
 }
 
 /**
- * Reads the plan of one period and the Pull in lanes, again after `reload()` and, debounced, after
- * a change to any Journal note.
+ * Reads the plan of one period and the Pull in lanes: at once after `reload()`, and debounced
+ * after `refresh()` or a change to any Journal note. One read runs at a time, with at most one more
+ * queued behind it, and none while the tab is hidden; a tab that missed one reads when it shows.
  */
 function usePlanData(kind: CaiusPeriodKind, key: string) {
+    const visible = useContext(RightPaneTabVisible);
     const [ data, setData ] = useState<PlanData | null>(null);
     const [ error, setError ] = useState<string | null>(null);
-    const lastRequest = useRef(0);
     const timer = useRef<ReturnType<typeof setTimeout>>();
+    const inFlight = useRef(false);
+    const queued = useRef(false);
+    const missed = useRef(false);
+    const visibleRef = useRef(visible);
+    visibleRef.current = visible;
 
-    const reload = useCallback(async () => {
-        const request = ++lastRequest.current;
+    const load = useCallback(async () => {
         try {
-            const [ plan, lanes ] = await Promise.all([
+            const [ plan, open ] = await Promise.all([
                 caiusApi.plan(kind, key),
-                Promise.all(PULL_IN_LANES.map(async (lane) => ({
-                    lane, ...await caiusApi.open(lane, PULL_IN_LIMIT)
-                })))
+                caiusApi.open(undefined, OPEN_TASKS_LIMIT)
             ]);
+            const lanes = PULL_IN_LANES.map((lane) => {
+                const tasks = open.tasks.filter((task) => task.lane === lane);
+                return { lane, total: tasks.length, tasks: tasks.slice(0, PULL_IN_LIMIT) };
+            });
             const note = plan.noteId ? await froca.getNote(plan.noteId) : null;
             const html = await note?.getContent();
-            if (request === lastRequest.current) {
-                const sections = typeof html === "string" ? acceptSections(html) : [];
-                setData({ plan, lanes, sections });
-                setError(null);
-            }
+            const sections = typeof html === "string" ? acceptSections(html) : [];
+            setData({ plan, lanes, sections });
+            setError(null);
         } catch (e) {
-            if (request === lastRequest.current) {
-                setError(e instanceof Error ? e.message : String(e));
-            }
+            setError(e instanceof Error ? e.message : String(e));
         }
     }, [ kind, key ]);
+    const loadRef = useRef(load);
+    loadRef.current = load;
+
+    const reload = useCallback(async () => {
+        if (!visibleRef.current) {
+            missed.current = true;
+            return;
+        }
+        if (inFlight.current) {
+            queued.current = true;
+            return;
+        }
+
+        inFlight.current = true;
+        try {
+            do {
+                queued.current = false;
+                await loadRef.current();
+            } while (queued.current);
+        } finally {
+            inFlight.current = false;
+        }
+    }, []);
+
+    const refresh = useCallback(() => {
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => void reload(), REFRESH_DELAY_MS);
+    }, [ reload ]);
 
     useEffect(() => {
         clearTimeout(timer.current);
         void reload();
-    }, [ reload ]);
+    }, [ load, reload ]);
+    useEffect(() => {
+        if (visible && missed.current) {
+            missed.current = false;
+            void reload();
+        }
+    }, [ visible, reload ]);
     useEffect(() => () => clearTimeout(timer.current), []);
 
     useTriliumEvent("entitiesReloaded", useCallback(({ loadResults }) => {
@@ -225,12 +268,11 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
             return !!changed && isJournalNote(changed);
         });
         if (changesJournal) {
-            clearTimeout(timer.current);
-            timer.current = setTimeout(() => void reload(), REFRESH_DELAY_MS);
+            refresh();
         }
-    }, [ reload ]));
+    }, [ refresh ]));
 
-    return { data, error, reload: () => void reload() };
+    return { data, error, reload: () => void reload(), refresh };
 }
 
 /**

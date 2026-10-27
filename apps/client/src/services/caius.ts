@@ -169,9 +169,11 @@ export const caiusApi = {
     plan: (period: CaiusPeriodKind, date: string) => server.get<CaiusPlan>(
         `caius/plan?${new URLSearchParams({ period, date }).toString()}`
     ),
-    open: (lane: CaiusLane, limit: number) => server.get<{ total: number; tasks: CaiusOpenTask[] }>(
-        `caius/open?${new URLSearchParams({ lane, limit: String(limit) }).toString()}`
-    ),
+    /** Open tasks of `lane`, or of every lane when it is left out. */
+    open: (lane: CaiusLane | undefined, limit: number) => {
+        const query = new URLSearchParams({ ...(lane ? { lane } : {}), limit: String(limit) });
+        return server.get<{ total: number; tasks: CaiusOpenTask[] }>(`caius/open?${query.toString()}`);
+    },
     setState: (items: CaiusSetStateItem[]) => postItems("set-state", items),
     forward: (items: CaiusForwardItem[]) => postItems("forward", items),
     accept: (items: CaiusAcceptItem[]) => postItems("accept", items),

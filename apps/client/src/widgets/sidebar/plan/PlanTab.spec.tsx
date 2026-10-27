@@ -1,15 +1,19 @@
 import { ClassicEditor, Essentials, List, Paragraph, TodoList } from "ckeditor5";
-import type { ComponentChildren } from "preact";
+import { type ComponentChildren, render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import Component from "../../../components/component";
 import type NoteContext from "../../../components/note_context";
 import type FNote from "../../../entities/fnote";
 import type { CaiusOpenTask, CaiusPlan, CaiusPlanTask } from "../../../services/caius";
+import LoadResults from "../../../services/load_results";
 import options from "../../../services/options";
 import { buildNote } from "../../../test/easy-froca";
 import { renderInto } from "../../../test/render";
 import { getEditorNoteId, setEditorNoteId } from "../../react/NoteStore";
+import { ParentComponent } from "../../react/react_utils";
+import { RightPaneTabVisible } from "../RightPanelWidget";
 
 const api = vi.hoisted(() => ({
     plan: vi.fn(),
@@ -59,7 +63,7 @@ vi.mock("../../react/Dropdown", () => ({
     )
 }));
 
-import PlanTab, { openTaskInNote, useCaiusEnabled } from "./PlanTab";
+import PlanTab, { openTaskInNote, REFRESH_DELAY_MS, useCaiusEnabled } from "./PlanTab";
 
 const DAY_HTML = "<h2>Morning</h2><ul class=\"todo-list\"><li>…</li></ul>"
     + "<h2>Afternoon</h2><h2>Suggested</h2>";
@@ -76,9 +80,10 @@ describe("PlanTab", () => {
             write.mockResolvedValue([ { status: "moved" } ]);
         }
         api.setState.mockResolvedValue([ { status: "updated" } ]);
-        api.open.mockImplementation(async (lane: string) => ({
-            total: LANES[lane]?.length ?? 0, tasks: LANES[lane] ?? []
-        }));
+        api.open.mockImplementation(async (lane?: string) => {
+            const tasks = lane ? LANES[lane] ?? [] : Object.values(LANES).flat();
+            return { total: tasks.length, tasks };
+        });
         activeNote.current = buildNote({
             id: "today", title: "27", "#dateNote": "2026-10-27", content: DAY_HTML
         });
@@ -91,7 +96,7 @@ describe("PlanTab", () => {
         const tab = await mount();
 
         expect(api.plan).toHaveBeenCalledWith("day", "2026-10-27");
-        expect(api.open.mock.calls.map(([ lane ]) => lane)).toEqual([ "overdue", "week", "orbit" ]);
+        expect(api.open.mock.calls.map(([ lane ]) => lane)).toEqual([ undefined ]);
         expect(text(tab, ".plan-period-key")).toBe("2026-10-27");
         expect(text(tab, ".plan-capacity-summary")).toBe("75 min planned of 180–240 min");
         expect(tab.querySelector("meter")?.getAttribute("value")).toBe("75");
@@ -137,8 +142,67 @@ describe("PlanTab", () => {
         // The skip is said in place, in describeSkip's words.
         expect(text(tab, "#plan-suggested .plan-task-outcome"))
             .toBe("Only a task under Suggested can be accepted or dismissed.");
-        // Every write reads the plan again.
-        expect(api.plan).toHaveBeenCalledTimes(4);
+        // The writes' refreshes fold into one, after the debounce.
+        expect(api.plan).toHaveBeenCalledTimes(1);
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(api.plan).toHaveBeenCalledTimes(2);
+    });
+
+    it("reads every Pull in lane with one open call, at most 20 tasks a lane", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const many = Array.from({ length: 25 }, (_, index) => openTask({
+            noteId: "yesterday", period: "2026-10-25", listItemId: `o${index}`, text: `Old ${index}`,
+            lane: "overdue"
+        }));
+        api.open.mockResolvedValue({ total: many.length + 1, tasks: [ ...many, ...LANES.week ?? [] ] });
+        const tab = await mount();
+
+        expect(api.open).toHaveBeenCalledTimes(1);
+        expect(api.open.mock.calls[0]?.[0]).toBeUndefined();
+        expect(tab.querySelectorAll("[data-lane=overdue] li:not(.plan-lane-more)")).toHaveLength(20);
+        expect(text(tab, "[data-lane=overdue] .plan-lane-more")).toBe("and 5 more");
+        expect(texts(tab, "[data-lane=week] li .plan-task-text")).toEqual([ "Week task" ]);
+    });
+
+    it("skips refreshes while the tab is hidden, and refreshes once when it shows", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const { container, setVisible, journalChanged } = mountInPane(false);
+        await flush();
+        expect(api.plan).not.toHaveBeenCalled();
+
+        await journalChanged();
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(api.plan).not.toHaveBeenCalled();
+
+        await setVisible(true);
+        await setVisible(true);
+        expect(api.plan).toHaveBeenCalledTimes(1);
+        expect(container.querySelector("#plan-capacity")).not.toBeNull();
+    });
+
+    it("starts no refresh while one is in flight, and runs at most one more after it", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const { journalChanged } = mountInPane(true);
+        await flush();
+        let answer = () => {};
+        api.plan.mockImplementation(() => new Promise((resolve) => {
+            answer = () => resolve(dayPlan());
+        }));
+
+        await journalChanged();
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(api.plan).toHaveBeenCalledTimes(2);
+        for (let i = 0; i < 3; i++) {
+            await journalChanged();
+            await wait(REFRESH_DELAY_MS + 50);
+        }
+        expect(api.plan).toHaveBeenCalledTimes(2);
+
+        api.plan.mockResolvedValue(dayPlan());
+        answer();
+        await flush();
+        await flush();
+        expect(api.plan).toHaveBeenCalledTimes(3);
     });
 
     it("pulls a task into the viewed period through a write on the task's own note", async () => {
@@ -368,6 +432,45 @@ function openTask(
     return {
         listItemId: null, state: "open", parent: null, section: null, lane: null, ...overrides
     };
+}
+
+/** Renders the tab as the right pane does, with a parent for its events and its visibility. */
+function mountInPane(visible: boolean) {
+    const parent = new Component();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const draw = (shown: boolean) => act(() => {
+        render(
+            <ParentComponent.Provider value={parent}>
+                <RightPaneTabVisible.Provider value={shown}>
+                    <PlanTab />
+                </RightPaneTabVisible.Provider>
+            </ParentComponent.Provider>,
+            host
+        );
+    });
+    draw(visible);
+    return {
+        container: host,
+        async setVisible(shown: boolean) {
+            draw(shown);
+            await flush();
+        },
+        /** An edit to today's note, a Journal note, as the WebSocket delivers it. */
+        async journalChanged() {
+            const loadResults = new LoadResults([]);
+            loadResults.addNote("today", "elsewhere");
+            await act(async () => {
+                await parent.handleEvent("entitiesReloaded", { loadResults });
+            });
+        }
+    };
+}
+
+async function wait(ms: number) {
+    await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+    });
 }
 
 async function mount() {
