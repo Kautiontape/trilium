@@ -178,15 +178,23 @@ describe("caius_winddown", () => {
     it("next: asks which tasks can wait on an over-capacity day", async () => {
         const answer = await call("caius_winddown", { date: MONDAY, step: "next" });
         expect(answer.targetDay).toBe(TUESDAY);
-        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 285, candidateMinutes: 45, targetMinutes: 234 });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 240, eveningMinutes: 45, candidateMinutes: 45, targetMinutes: 234 });
         expect(answer.data.evening).toEqual({ hasTask: true });
-        expect(answer.question).toBe("Tuesday is over by about 1.5 h. Which of these can wait?");
+        expect(answer.question).toBe("Tuesday is over by about 1 h. Which of these can wait?");
     });
 
     it("next: says the day fits when nothing needs asking", async () => {
         const answer = await call("caius_winddown", { date: TUESDAY, step: "next" });
         expect(answer.question).toBeNull();
-        expect(answer.data.summary).toBe("Wednesday holds 1 h 45 m of work against 4 h open. Fits.");
+        expect(answer.data.summary).toBe("Wednesday holds 1 h 15 m of work against 4 h open. Fits.");
+    });
+
+    it("next: leaves the evening's tasks out of the work it weighs against the target", async () => {
+        await cls.init(() => dayNote("2026-11-12", `<h3>Work</h3>${ul(li("th1", "Spec ~1h30m"), li("th2", "Review ~1h"), li("th3", "Fix ~30m"))}<h3>Evening</h3>${ul(li("th4", "Walk ~45m"))}`));
+        const answer = await call("caius_winddown", { date: WEDNESDAY, step: "next" });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180, eveningMinutes: 45, candidateMinutes: 45, targetMinutes: 240 });
+        expect(answer.question).toBeNull();
+        expect(answer.data.summary).toBe("Thursday holds 3 h 45 m of work against 4 h open. Fits.");
     });
 
     it("context: notices an override that lapses before Monday and asks to keep it", async () => {

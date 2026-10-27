@@ -90,7 +90,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
     if (step === "next") {
         const facts = await deps.locked("caius_winddown", () => dayFacts(deps.store, targetDay, deps.now));
         const candidates = dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present);
-        const plannedMinutes = facts.plan.capacity.totalMinutes;
+        const { eveningMinutes } = facts;
+        const plannedMinutes = facts.plan.capacity.totalMinutes - eveningMinutes;
         const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
         const targetMinutes = read.inputs.capacity.targetMinutes;
         const overlaps = overlapPairs(read.inputs.calendar);
@@ -106,7 +107,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         };
         return reply(read.standing, {
             candidates,
-            capacity: { plannedMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
+            capacity: { plannedMinutes, eveningMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
             overlaps, evening, errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
     }
@@ -250,15 +251,22 @@ async function stillOpen(store: NoteStore, date: string, targetDay: string) {
         }));
 }
 
-/** What a day's candidates are checked against: its plan, the week's items, the live keys and what is already suggested or dismissed there. */
+/**
+ * What a day's candidates are checked against: its plan, the week's items, the live keys and what
+ * is already suggested or dismissed there, plus whether the evening (Evening or Recharge) has a task
+ * and how many minutes it holds, which are not work.
+ */
 async function dayFacts(store: NoteStore, date: string, now: Date) {
     const plan = await readPlan(store, "day", date, now);
     const weekKey = isoWeekKey(utcDay(date));
     const weekPlan = await readPlan(store, "week", weekKey, now);
     const live = liveKeys((await loadJournal(store)).docs, now);
     const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)) ];
-    const evening = plan.sections.some((section) => EVENING_SECTIONS.has(normName(section.name ?? "")) && section.tasks.some(isLive));
-    return { plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, evening };
+    const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks).filter(isLive);
+    // As the plan's capacity counts them: a task with live sub-items counts through them.
+    const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
+    const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
+    return { plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, evening: eveningTasks.length > 0, eveningMinutes };
 }
 
 /** The live top-level tasks of a plan, the Important block first, then in his order. */

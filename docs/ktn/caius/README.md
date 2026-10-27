@@ -125,7 +125,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **Sources:** Jira hand-offs that aren't done ("sitting in Dev Verify for 3 days"), the latest ask on each ticket ("Sam asked on Wednesday"), and the next workday's week note items. A ticket a Context line says is open counts as not done.
    - **Left out:** anything whose key is already a live task anywhere in the Journal, already in that day's Suggested, or dismissed there.
 
-   It also gives that day's planned minutes against the capacity target, the meetings that overlap, and whether the evening has a task (one under an Evening or Recharge heading). It asks only when the day is over capacity, a meeting overlaps another or the evening is empty, joining those questions into one. Otherwise `data.summary` says the day fits ("Monday holds 3 h 20 m of work against 3 h 30 m open. Fits.").
+   It also gives that day's planned work minutes against the capacity target (the evening's minutes apart, in `eveningMinutes`), the meetings that overlap, and whether the evening has a task (one under an Evening or Recharge heading). It asks only when the day is over capacity, a meeting overlaps another or the evening is empty, joining those questions into one. Otherwise `data.summary` says the day fits ("Monday holds 3 h 20 m of work against 3 h 30 m open. Fits.").
 3. **`context`.** The Context in force for the next workday. When a Context line in force today lapses before then and says a ticket is open, the step notices it, whatever Jira says, and asks "Keep '…'?" before "Anything to know for Monday?".
 
 **Plan my day** plans `date`:
