@@ -146,6 +146,38 @@ describe("Caius routes", () => {
         await post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: "tomorrow" }] }).expect(400);
     });
 
+    it("applies a Close in one request: forwards, then drops, behind one version check", async () => {
+        const day = await cls.init(() => store.calendarDay("2031-05-10"));
+        await cls.init(() => store.putContent(day.noteId, `<h3>Work</h3>${ul(li("c1", "Move on"), li("c2", "Drop one"), li("c3", "Drop two"))}`));
+        const body = (expectedBlobId: string) => ({
+            forwards: [ { noteId: day.noteId, listItemId: "c1", to: "2031-05-11" } ],
+            drops: [
+                { noteId: day.noteId, listItemId: "c2", state: "cancelled", reason: "moot" },
+                { noteId: day.noteId, listItemId: "c3", state: "cancelled", reason: "also moot" }
+            ],
+            expectedBlobId
+        });
+
+        const stale = await post("/api/caius/apply", body("an-old-blob")).expect(200);
+        expect(stale.body.results.map((r: { status: string; reason?: string }) => [ r.status, r.reason ])).toEqual([
+            [ "skipped", "stale" ], [ "skipped", "stale" ], [ "skipped", "stale" ]
+        ]);
+        expect(await store.content(day.noteId)).not.toContain("_rescheduled");
+
+        const applied = await post("/api/caius/apply", body(blobOf(day.noteId))).expect(200);
+        expect(applied.body.results.map((r: { listItemId: string; status: string }) => [ r.listItemId, r.status ])).toEqual([
+            [ "c1", "moved" ], [ "c2", "updated" ], [ "c3", "updated" ]
+        ]);
+        const html = await store.content(day.noteId);
+        expect(html).toContain("_rescheduled");
+        expect(html).toContain("<em>moot</em>");
+        expect(html).toContain("<em>also moot</em>");
+        const target = await cls.init(() => store.calendarDay("2031-05-11"));
+        expect(applied.body.blobIds).toEqual({ [day.noteId]: blobOf(day.noteId), [target.noteId]: blobOf(target.noteId) });
+
+        await post("/api/caius/apply", { forwards: [], drops: [] }).expect(400);
+    });
+
     it("assigns missing list item ids, as a dry run unless told otherwise", async () => {
         const dry = await post("/api/caius/assign-ids", { dryRun: true }).expect(200);
         expect(dry.body).toMatchObject({ dryRun: true, notes: 1, added: 1, results: [{ noteId: noteIds.older, items: ["Older task"] }] });
@@ -174,7 +206,8 @@ describe("Caius routes", () => {
             dismiss: post("/api/caius/dismiss", { items: [{ noteId: noteIds.today, listItemId: "s2" }], dryRun: true }),
             setState: post("/api/caius/set-state", { items: [{ noteId: noteIds.today, listItemId: "t1", state: "doing" }], dryRun: true }),
             forward: post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t1", to: "2031-05-08" }], dryRun: true }),
-            assignIds: post("/api/caius/assign-ids", { dryRun: true })
+            assignIds: post("/api/caius/assign-ids", { dryRun: true }),
+            apply: post("/api/caius/apply", { forwards: [], drops: [ { noteId: noteIds.today, listItemId: "zz", state: "done" } ] })
         };
         const answered: string[] = [];
         const pending = Object.entries(requests).map(([name, request]) => request.then((res) => {

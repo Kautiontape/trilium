@@ -104,7 +104,13 @@ export const routeInputs = {
     accept: writes(acceptItem.safeExtend(version)),
     dismiss: writes(dismissItem.extend(version)),
     setState: writes(stateItem.safeExtend(version)),
-    forward: writes(forwardItem.extend(version))
+    forward: writes(forwardItem.extend(version)),
+    /** The Plan tab's Close: forwards, then state changes, behind one version check. */
+    apply: z.object({
+        forwards: z.array(forwardItem).default([]),
+        drops: z.array(stateItem).default([]),
+        expectedBlobId: version.expectedBlobId
+    }).refine((input) => input.forwards.length + input.drops.length > 0, "Give at least one forward or drop")
 };
 
 export type PlanInput = z.infer<typeof reads.plan>;
@@ -116,3 +122,4 @@ export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;
 export type SetStateInput = z.infer<typeof routeInputs.setState>;
 export type ForwardInput = z.infer<typeof routeInputs.forward>;
+export type ApplyInput = z.infer<typeof routeInputs.apply>;

@@ -40,6 +40,7 @@ import { t } from "i18next";
 import {
     type AcceptInput,
     type AddInput,
+    type ApplyInput,
     type AssignIdsInput,
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
@@ -135,6 +136,22 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
         forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => withBlobIds(
             (await unlessStale(items, (fresh) => forwardTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
+
+        apply: ({ forwards, drops, expectedBlobId }: ApplyInput) => withCaiusLock("caius_apply", async () => {
+            // One version check before the first write: every item is compared with the same token.
+            const items = [
+                ...forwards.map((item) => ({ ...item, expectedBlobId })),
+                ...drops.map((item) => ({ ...item, expectedBlobId }))
+            ];
+            return withBlobIds((await unlessStale(items, async (fresh) => {
+                const forwarding = fresh.filter((item): item is typeof forwards[number] => "to" in item);
+                const dropping = fresh.filter((item): item is typeof drops[number] => "state" in item);
+                return [
+                    ...(forwarding.length ? await forwardTasks(store, forwarding, {}) : []),
+                    ...(dropping.length ? await setStatesOf(store, dropping) : [])
+                ];
+            })).map((r) => presentResult(r)));
+        }),
 
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);
