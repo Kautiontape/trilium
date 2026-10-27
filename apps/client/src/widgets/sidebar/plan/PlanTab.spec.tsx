@@ -144,9 +144,29 @@ describe("PlanTab", () => {
         await press(button(tab, "→ 2026-10-27", tab.querySelector("[data-lane=overdue]")));
         // The viewed note is the target, so its editors are locked too.
         expect(caiusWrite).toHaveBeenLastCalledWith(
-            "yesterday", expect.any(Function), "Forwarded to 2026-10-27.", { alsoLock: [ "today" ] });
+            "yesterday", expect.any(Function), "Forwarded to 2026-10-27.",
+            { alsoLock: [ "today" ] });
         expect(api.forward).toHaveBeenCalledWith([
             { noteId: "yesterday", listItemId: "late", to: "2026-10-27", expectedBlobId: "blob-1" }
+        ]);
+    });
+
+    it("offers Today first when closing a past day, and forwards there", async () => {
+        activeNote.current = buildNote({
+            id: "yesterday", title: "26", "#dateNote": "2026-10-26", content: DAY_HTML
+        });
+        api.plan.mockResolvedValue({ ...dayPlan(), key: "2026-10-26", noteId: "yesterday" });
+        const tab = await mount();
+        const [ first ] = [ ...tab.querySelectorAll(".plan-close-list > li") ];
+        if (!first) throw new Error("no close row");
+
+        const titles = [ ...first.querySelectorAll("button") ].map((el) =>
+            el.getAttribute("title") ?? el.dataset.bsOriginalTitle);
+        expect(titles[0]).toBe("Today → 2026-10-27");
+        await press(button(first, "", first, "Today → 2026-10-27"));
+        await press(button(tab, "Apply"));
+        expect(api.forward).toHaveBeenCalledWith([
+            { noteId: "yesterday", listItemId: "t1", to: "2026-10-27", expectedBlobId: "blob-1" }
         ]);
     });
 
@@ -157,6 +177,8 @@ describe("PlanTab", () => {
         const tab = await mount();
         const [ first, second ] = [ ...tab.querySelectorAll(".plan-close-list > li") ];
 
+        // Today is not a fate for closing today.
+        expect(() => button(first, "", first, "Today → 2026-10-27")).toThrow();
         await press(button(first, "", first, "Tomorrow → 2026-10-28"));
         expect(text(first, ".plan-close-target")).toBe("Tomorrow → 2026-10-28");
         await press(button(second, "", second, "Drop"));

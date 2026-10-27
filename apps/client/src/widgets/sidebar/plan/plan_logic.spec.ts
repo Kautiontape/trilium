@@ -4,8 +4,9 @@ import type { CaiusPlan, CaiusPlanTask } from "../../../services/caius";
 import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
-    acceptSections, capacityStatus, closeCandidates, groupFates, isCloseable, parsePeriodKey,
-    periodKey, periodOfNote, stepPeriod, taskLabel, unestimatedTasks, type ViewedPeriod
+    acceptSections, capacityStatus, closeCandidates, closeFates, fateTarget, groupFates,
+    isCloseable, parsePeriodKey, periodKey, periodOfNote, stepPeriod, taskLabel, unestimatedTasks,
+    type ViewedPeriod
 } from "./plan_logic";
 
 const NOW = new Date(2026, 9, 27, 10, 0);
@@ -120,7 +121,7 @@ describe("plan tasks", () => {
             c: { kind: "drop", reason: "  Not needed " },
             d: { kind: "drop", reason: "  " },
             e: { kind: "next_month" }
-        }, new Date(2026, 11, 31, 18));
+        }, new Date(2026, 11, 31, 18), "day");
         expect(calls).toEqual({
             forward: [
                 { noteId: "day", listItemId: "a", to: "2027-01-01" },
@@ -129,7 +130,24 @@ describe("plan tasks", () => {
             ],
             drop: [ { noteId: "day", listItemId: "c", state: "cancelled", reason: "Not needed" } ]
         });
-        expect(groupFates("day", { d: { kind: "drop" } }, NOW)).toEqual({ forward: [], drop: [] });
+        expect(groupFates("day", { d: { kind: "drop" } }, NOW, "day"))
+            .toEqual({ forward: [], drop: [] });
+    });
+
+    it("offers the current period first when closing a past one, and sends tasks there", () => {
+        const later = [ "tomorrow", "next_week", "next_month", "drop" ];
+        expect(closeFates("day", "2026-10-26", NOW)).toEqual([ "current", ...later ]);
+        expect(closeFates("day", "2026-10-27", NOW)).toEqual(later);
+        expect(closeFates("week", "2026-W43", NOW)).toEqual([ "current", ...later ]);
+        expect(closeFates("week", "2026-W44", NOW)).toEqual(later);
+        expect(closeFates("month", "2026-09", NOW)).toEqual([ "current", ...later ]);
+        expect(closeFates("month", "2026-10", NOW)).toEqual(later);
+
+        expect(fateTarget("current", NOW, "day")).toBe("2026-10-27");
+        expect(fateTarget("current", NOW, "week")).toBe("2026-W44");
+        expect(fateTarget("current", NOW, "month")).toBe("2026-10");
+        expect(groupFates("week", { a: { kind: "current" } }, NOW, "week").forward)
+            .toEqual([ { noteId: "week", listItemId: "a", to: "2026-W44" } ]);
     });
 });
 

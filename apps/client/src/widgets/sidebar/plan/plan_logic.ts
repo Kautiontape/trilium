@@ -151,7 +151,8 @@ export function acceptSections(html: string) {
     return [ ...new Set(headings) ];
 }
 
-export type FateKind = "tomorrow" | "next_week" | "next_month" | "drop";
+/** `current` is today, this week or this month, for the kind of period being closed. */
+export type FateKind = "current" | "tomorrow" | "next_week" | "next_month" | "drop";
 
 export interface Fate {
     kind: FateKind;
@@ -159,9 +160,23 @@ export interface Fate {
     reason?: string;
 }
 
-/** The note a forwarding fate sends a task to, counted from `now` as the task menu counts it. */
-export function fateTarget(kind: Exclude<FateKind, "drop">, now: Date) {
+/**
+ * The fates for closing the `period` note `key`, in order. A past period also offers the current
+ * one, since Tomorrow counts from now and so skips today.
+ */
+export function closeFates(period: CaiusPeriodKind, key: string, now: Date): FateKind[] {
+    const later: FateKind[] = [ "tomorrow", "next_week", "next_month", "drop" ];
+    // Keys of one kind sort by date.
+    return key < periodKey({ kind: period, anchor: now }) ? [ "current", ...later ] : later;
+}
+
+/**
+ * The note a forwarding fate sends a task to, counted from `now` as the task menu counts it;
+ * `period` is the kind of period being closed, which `current` stays in.
+ */
+export function fateTarget(kind: Exclude<FateKind, "drop">, now: Date, period: CaiusPeriodKind) {
     switch (kind) {
+        case "current": return periodKey({ kind: period, anchor: now });
         case "tomorrow": return tomorrowKey(now);
         case "next_week": return nextWeekKey(now);
         case "next_month": return nextMonthKey(now);
@@ -177,7 +192,9 @@ export function isDecided(fate: Fate | undefined) {
  * `forward` call for every forwarding fate, since each item names its own target, and one
  * `set-state` call for the drops.
  */
-export function groupFates(noteId: string, fates: Record<string, Fate>, now: Date) {
+export function groupFates(
+    noteId: string, fates: Record<string, Fate>, now: Date, period: CaiusPeriodKind
+) {
     const forward: CaiusForwardItem[] = [];
     const drop: CaiusSetStateItem[] = [];
     for (const [ listItemId, fate ] of Object.entries(fates)) {
@@ -188,7 +205,7 @@ export function groupFates(noteId: string, fates: Record<string, Fate>, now: Dat
         if (fate.kind === "drop") {
             drop.push({ noteId, listItemId, state: "cancelled", reason: fate.reason?.trim() });
         } else {
-            forward.push({ noteId, listItemId, to: fateTarget(fate.kind, now) });
+            forward.push({ noteId, listItemId, to: fateTarget(fate.kind, now, period) });
         }
     }
 

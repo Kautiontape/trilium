@@ -3,8 +3,9 @@ import "./PlanClose.css";
 import { useState } from "preact/hooks";
 
 import {
-    caiusApi, type CaiusForwardItem, type CaiusItemResult, type CaiusPlan, type CaiusPlanTask,
-    type CaiusSetStateItem, caiusWrite, describeOutcome, findOpenEditors, openPeriodNoteIds
+    caiusApi, type CaiusForwardItem, type CaiusItemResult, type CaiusPeriodKind, type CaiusPlan,
+    type CaiusPlanTask, type CaiusSetStateItem, caiusWrite, describeOutcome, findOpenEditors,
+    openPeriodNoteIds
 } from "../../../services/caius";
 import { t } from "../../../services/i18n";
 import Button from "../../react/Button";
@@ -14,20 +15,24 @@ import NoItems from "../../react/NoItems";
 import SegmentedChoice from "../../react/SegmentedChoice";
 import RightPanelWidget from "../RightPanelWidget";
 import {
-    closeCandidates, type Fate, type FateKind, fateTarget, groupFates, isDecided, taskLabel
+    closeCandidates, closeFates, type Fate, type FateKind, fateTarget, groupFates, isDecided,
+    taskLabel
 } from "./plan_logic";
 import type { PlanTaskRef } from "./PlanTab";
 
-const FATES: { kind: FateKind; icon: string; name: string }[] = [
-    { kind: "tomorrow", icon: "bx-sun", name: "caius.forward_tomorrow" },
-    { kind: "next_week", icon: "bx-calendar-week", name: "caius.forward_next_week" },
-    { kind: "next_month", icon: "bx-calendar", name: "caius.forward_next_month" },
-    { kind: "drop", icon: "bx-block", name: "caius.plan.fate_drop" }
-];
+/** Each fate's icon and name; `current` is named after the kind of period being closed. */
+const FATES: Record<FateKind, { icon: string; name: (period: CaiusPeriodKind) => string }> = {
+    current: { icon: "bx-calendar-event", name: (period) => t(`caius.plan.current_${period}`) },
+    tomorrow: { icon: "bx-sun", name: () => t("caius.forward_tomorrow") },
+    next_week: { icon: "bx-calendar-week", name: () => t("caius.forward_next_week") },
+    next_month: { icon: "bx-calendar", name: () => t("caius.forward_next_month") },
+    drop: { icon: "bx-block", name: () => t("caius.plan.fate_drop") }
+};
 
 /**
- * Closes the period: every live task of its note gets a fate (Tomorrow, Next week, Next month or
- * Drop with a reason), and Apply carries out the decided ones. Undecided tasks stay where they are.
+ * Closes the period: every live task of its note gets a fate (Today, This week or This month for a
+ * past period, then Tomorrow, Next week, Next month, or Drop with a reason), and Apply carries out
+ * the decided ones. Undecided tasks stay where they are.
  */
 export default function PlanClose({ plan, onOpen, onChanged }: {
     plan: CaiusPlan;
@@ -38,6 +43,7 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
     const [ results, setResults ] = useState<{ text: string; message: string }[]>([]);
     const [ applying, setApplying ] = useState(false);
     const candidates = closeCandidates(plan);
+    const fateKinds = closeFates(plan.period, plan.key, new Date());
     const targetable = candidates.filter((task) => task.listItemId);
     const decided = targetable
         .filter((task) => task.listItemId && isDecided(fates[task.listItemId])).length;
@@ -53,10 +59,11 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
             return;
         }
 
-        const calls = groupFates(noteId, fates, new Date());
+        const calls = groupFates(noteId, fates, new Date(), plan.period);
         const items = [ ...calls.forward, ...calls.drop ];
         const flushed = findOpenEditors(noteId).length > 0;
-        const targets = [ ...new Set(calls.forward.map((item) => item.to)) ].flatMap(openPeriodNoteIds);
+        const targets = [ ...new Set(calls.forward.map((item) => item.to)) ]
+            .flatMap(openPeriodNoteIds);
         setApplying(true);
         const outcome = await caiusWrite(
             noteId,
@@ -98,6 +105,8 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
                             key={task.listItemId ?? task.text}
                             task={task}
                             fate={task.listItemId ? fates[task.listItemId] : undefined}
+                            kinds={fateKinds}
+                            period={plan.period}
                             onFate={setFate}
                             onOpen={onOpen}
                         />
@@ -156,9 +165,11 @@ export async function applyFates(
     return results;
 }
 
-function CloseRow({ task, fate, onFate, onOpen }: {
+function CloseRow({ task, fate, kinds, period, onFate, onOpen }: {
     task: CaiusPlanTask;
     fate: Fate | undefined;
+    kinds: FateKind[];
+    period: CaiusPeriodKind;
     onFate: (listItemId: string, fate: Fate | null) => void;
     onOpen: (task: PlanTaskRef) => void;
 }) {
@@ -175,8 +186,8 @@ function CloseRow({ task, fate, onFate, onOpen }: {
             {listItemId ? (
                 <div className="plan-close-fate">
                     <SegmentedChoice<FateKind>
-                        options={FATES.map(({ kind, icon }) => ({
-                            value: kind, icon, title: fateLabel(kind, now)
+                        options={kinds.map((kind) => ({
+                            value: kind, icon: FATES[kind].icon, title: fateLabel(kind, now, period)
                         }))}
                         currentValue={fate?.kind ?? ""}
                         // Pressing the chosen fate again takes it back.
@@ -186,7 +197,9 @@ function CloseRow({ task, fate, onFate, onOpen }: {
                         )}
                     />
                     {fate && fate.kind !== "drop" && (
-                        <span className="plan-close-target">{fateLabel(fate.kind, now)}</span>
+                        <span className="plan-close-target">
+                            {fateLabel(fate.kind, now, period)}
+                        </span>
                     )}
                     {fate?.kind === "drop" && (
                         <FormTextBox
@@ -205,11 +218,11 @@ function CloseRow({ task, fate, onFate, onOpen }: {
 }
 
 /** The fate's name, with the note a forwarding fate sends the task to. */
-function fateLabel(kind: FateKind, now: Date) {
-    const name = t(FATES.find((fate) => fate.kind === kind)?.name ?? "");
+function fateLabel(kind: FateKind, now: Date, period: CaiusPeriodKind) {
+    const name = FATES[kind].name(period);
     return kind === "drop"
         ? name
-        : t("caius.plan.fate_to", { fate: name, to: fateTarget(kind, now) });
+        : t("caius.plan.fate_to", { fate: name, to: fateTarget(kind, now, period) });
 }
 
 function describeResult(
