@@ -133,10 +133,19 @@ const meetings = z.object({
     dryRun
 });
 
+const contextAdd = z.object({
+    date: periodKey("day").optional().describe("The day note to add the line to, YYYY-MM-DD: for a fact about that one day"),
+    week: periodKey("week").optional().describe("The ISO week note to add the line to, YYYY-Www: the default for a fact about the state of things"),
+    text: z.string().trim().min(1).describe("The line, such as \"ZAP-2590 is open\""),
+    until: periodKey("day").optional().describe("The last day the line holds, YYYY-MM-DD; written as (until Fri 6 Nov)"),
+    dryRun
+}).refine((input) => (input.date === undefined) !== (input.week === undefined), "Give exactly one of date or week");
+
 export const toolInputs = {
     ...reads,
     inputs,
     meetings,
+    contextAdd,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -167,6 +176,7 @@ export const routeInputs = {
 
 export type InputsInput = z.infer<typeof inputs>;
 export type MeetingsInput = z.infer<typeof meetings>;
+export type ContextAddInput = z.infer<typeof contextAdd>;
 export type PlanInput = z.infer<typeof reads.plan>;
 export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;

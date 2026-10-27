@@ -1,11 +1,15 @@
-// The day note's Meetings block: replacing it in a note's HTML, and writing it to a day note.
+// The Meetings and Context blocks of day and week notes: replacing the Meetings block, adding a
+// Context line, and writing either to a note.
 
 import { parse, type HTMLElement } from 'node-html-parser';
-import { apply, elements, isCriticalAside, isHeading, isIncludeNote, type Edit } from './html-util.js';
+import { now as clock } from '../clock.js';
+import { gatherContext } from './context.js';
+import { apply, elements, isCriticalAside, isHeading, isIncludeNote, isTodoList, type Edit } from './html-util.js';
 import { escapeHtml } from './plan-html.js';
-import { findPeriodNote, isPeriodKey } from './plan-read.js';
-import { normName, proseKind } from './sections.js';
-import type { NoteStore } from './store.js';
+import { findPeriodNote, isPeriodKey, readPlan } from './plan-read.js';
+import { normName, proseKind, type ProseKind } from './sections.js';
+import type { NoteStore, StoreNote } from './store.js';
+import { parseContext, periodSpan } from './until.js';
 
 /**
  * The block under `### Meetings` in a note's HTML, replaced with a plain bullet list of `lines`
@@ -19,7 +23,7 @@ export function replaceMeetings(html: string, lines: string[], ids: (string | un
   const top = elements(root);
   const item = (line: string, i: number) => `<li${ids[i] ? ` data-list-item-id="${ids[i]}"` : ''}>${escapeHtml(line)}</li>`;
   const list = lines.length ? `<ul>${lines.map(item).join('')}</ul>` : '';
-  const block = meetingsBlock(top, html);
+  const block = proseBlock(top, html, 'meetings');
   const edits: Edit[] = [];
 
   if (block) {
@@ -32,19 +36,25 @@ export function replaceMeetings(html: string, lines: string[], ids: (string | un
   return apply(html, edits);
 }
 
-/** The span under the Meetings heading, and the text and id of each bullet in it. */
-function meetingsBlock(top: HTMLElement[], html: string): { start: number; end: number; texts: string[]; ids: (string | undefined)[] } | null {
-  const heading = top.findIndex((el) => isHeading(el) && proseKind(el.text) === 'meetings');
+/**
+ * The span under the Meetings or Context heading, the top-level elements in it, and the text and id
+ * of each bullet. It ends at a heading of the same or a higher level, the other section's heading of
+ * any level, or the Important block.
+ */
+function proseBlock(top: HTMLElement[], html: string, kind: ProseKind): { start: number; end: number; inside: HTMLElement[]; texts: string[]; ids: (string | undefined)[] } | null {
+  const heading = top.findIndex((el) => isHeading(el) && proseKind(el.text) === kind);
   if (heading < 0) return null;
   const level = Number(top[heading]!.tagName[1]);
+  const other = kind === 'meetings' ? 'context' : 'meetings';
   const ends = (el: HTMLElement) => isCriticalAside(el)
-    || (isHeading(el) && normName(el.text) !== '' && (Number(el.tagName[1]) <= level || proseKind(el.text) === 'context'));
+    || (isHeading(el) && normName(el.text) !== '' && (Number(el.tagName[1]) <= level || proseKind(el.text) === other));
   const next = top.findIndex((el, i) => i > heading && ends(el));
   const inside = top.slice(heading + 1, next < 0 ? undefined : next);
   const items = inside.flatMap((el) => el.querySelectorAll('li'));
   return {
     start: top[heading]!.range[1],
     end: next < 0 ? html.length : top[next]!.range[0],
+    inside,
     texts: items.map((li) => li.text.replace(/\s+/g, ' ').trim()),
     ids: items.map((li) => li.getAttribute('data-list-item-id')),
   };
@@ -77,7 +87,7 @@ export async function setMeetings(api: NoteStore, req: { date: string; lines: st
   }
 
   const before = note ? await api.content(note.noteId) : '';
-  const current = meetingsBlock(elements(parse(before, { comment: true })), before);
+  const current = proseBlock(elements(parse(before, { comment: true })), before, 'meetings');
   const same = (text: string, i: number) => text === lines[i]?.replace(/\s+/g, ' ').trim();
   const unchanged = current && current.texts.length === lines.length && current.texts.every(same);
   const after = unchanged ? before : replaceMeetings(before, lines, current?.ids);
@@ -91,4 +101,102 @@ export async function setMeetings(api: NoteStore, req: { date: string; lines: st
     return { date, status: 'skipped', reason: 'edited', detail: `${date} changed meanwhile; nothing written` };
   }
   return { date, status: 'updated', writtenNoteId: noteId, ...(created ? { detail: 'created the day note' } : {}) };
+}
+
+/**
+ * `html` with `line` (text, escaped) as one more plain bullet under `### Context`: at the end of the
+ * last plain list in the block, or in a new list at its end. With no Context heading, one is added
+ * below the Meetings block, else below a leading include-note, else at the top.
+ */
+export function addContextLine(html: string, line: string): string {
+  const top = elements(parse(html, { comment: true }));
+  const item = `<li>${escapeHtml(line)}</li>`;
+  const block = proseBlock(top, html, 'context');
+  if (block) {
+    const list = block.inside.filter((el) => el.tagName === 'UL' && !isTodoList(el)).pop();
+    if (list && html.slice(list.range[1] - '</ul>'.length, list.range[1]) === '</ul>') {
+      const at = list.range[1] - '</ul>'.length;
+      return apply(html, [{ start: at, end: at, text: item }]);
+    }
+    return apply(html, [{ start: block.end, end: block.end, text: `<ul>${item}</ul>` }]);
+  }
+  const meetings = proseBlock(top, html, 'meetings');
+  const first = top[0];
+  const at = meetings ? meetings.end : first && isIncludeNote(first) ? first.range[1] : 0;
+  return apply(html, [{ start: at, end: at, text: `<h3>Context</h3><ul>${item}</ul>` }]);
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * `YYYY-MM-DD` as the `(until …)` text a Context line carries, `Fri 6 Nov`, with the year added
+ * when `parseContext` would otherwise read it as another year from a note dated `noteDate`.
+ */
+export function formatUntil(until: string, noteDate: string): string {
+  const day = new Date(`${until}T00:00:00Z`);
+  const short = `${WEEKDAYS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]}`;
+  const read = parseContext([`x (until ${short})`], noteDate).context[0]?.until;
+  return read === until ? short : `${short} ${day.getUTCFullYear()}`;
+}
+
+export type ContextAddResult =
+  | { status: 'added'; writtenNoteId: string; line: string; detail?: string }
+  | { status: 'dry-run'; writtenNoteId: string; line: string; before: string; after: string; detail?: string }
+  | { status: 'skipped'; reason: 'bad_request' | 'unreadable' | 'edited' | 'duplicate'; detail?: string };
+
+/**
+ * Adds one Context line to a day note (`date`) or an ISO week note (`week`), with ` (until Fri 6 Nov)`
+ * when `until` is given. Text already in force there is skipped as `duplicate`: for a day, anything
+ * `gatherContext` returns for it (the week note's lines included); for a week, the week note's own
+ * lines in force. The text is compared ignoring case and spacing. A missing note is created from the
+ * template, except on a dry run. The write is a compare-and-swap.
+ */
+export async function addContext(
+  api: NoteStore,
+  req: { date?: string; week?: string; text: string; until?: string },
+  opts: { dryRun?: boolean; now?: Date } = {},
+): Promise<ContextAddResult> {
+  const period = req.date !== undefined ? 'day' : 'week';
+  const key = req.date ?? req.week ?? '';
+  if ((req.date === undefined) === (req.week === undefined) || !isPeriodKey(period, key)) {
+    return { status: 'skipped', reason: 'bad_request', detail: 'give exactly one of date (YYYY-MM-DD) or week (YYYY-Www) that exists' };
+  }
+  const parsed = parseContext([req.text], periodSpan(period, key).start).context[0];
+  const text = parsed?.text ?? '';
+  const until = req.until ?? parsed?.until;
+  const noteDate = periodSpan(period, key).start;
+  if (!text) return { status: 'skipped', reason: 'bad_request', detail: 'text is required' };
+  if (until !== undefined && (!isPeriodKey('day', until) || until < noteDate)) {
+    return { status: 'skipped', reason: 'bad_request', detail: `until must be a YYYY-MM-DD on or after ${noteDate}` };
+  }
+
+  let note: StoreNote | null = await findPeriodNote(api, period, key);
+  if (note && (note.type !== 'text' || note.isProtected)) {
+    return { status: 'skipped', reason: 'unreadable', detail: 'note is protected or not a text note' };
+  }
+  const inForce = period === 'day'
+    ? (await gatherContext(api, key)).context
+    : (await readPlan(api, 'week', key, opts.now ?? clock())).context;
+  const same = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const hit = inForce.find((line) => same(line.text) === same(text));
+  if (hit) return { status: 'skipped', reason: 'duplicate', detail: `already in force: ${hit.text}` };
+
+  const line = until ? `${text} (until ${formatUntil(until, noteDate)})` : text;
+  let created = false;
+  if (!note && !opts.dryRun) {
+    note = period === 'day' ? await api.calendarDay(key) : await api.calendarWeek(key);
+    created = true;
+  }
+  const before = note ? await api.content(note.noteId) : '';
+  const after = addContextLine(before, line);
+  const noteId = note?.noteId ?? 'NEW-NOTE';
+  if (opts.dryRun) {
+    const detail = note ? undefined : `${key} has no ${period} note yet; this is a diff against an empty note, and a real run would add the line to the Journal template`;
+    return { status: 'dry-run', writtenNoteId: noteId, line, before, after, ...(detail ? { detail } : {}) };
+  }
+  if (!(await api.putContent(noteId, after, before))) {
+    return { status: 'skipped', reason: 'edited', detail: `${key} changed meanwhile; nothing written` };
+  }
+  return { status: 'added', writtenNoteId: noteId, line, ...(created ? { detail: `created the ${period} note` } : {}) };
 }

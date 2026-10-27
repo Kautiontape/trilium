@@ -107,3 +107,32 @@ describe("caius_meetings", () => {
         expect(await dayNoteId("2026-11-10")).toBeUndefined();
     });
 });
+
+describe("caius_context_add", () => {
+    it("writes a line with its until to the next workday's note, creating the note, and skips a duplicate", async () => {
+        const dry = await call("caius_context_add", { date: "2026-11-11", text: "Release frozen", until: "2026-11-13", dryRun: true });
+        expect(dry.results[0]).toMatchObject({ status: "dry-run", line: "Release frozen (until Fri 13 Nov)", added: expect.stringContaining("<h3>Context</h3>") });
+        expect(await dayNoteId("2026-11-11")).toBeUndefined();
+
+        const real = await call("caius_context_add", { date: "2026-11-11", text: "Release frozen", until: "2026-11-13" });
+        expect(real.results[0]).toMatchObject({ status: "added", detail: "created the day note" });
+        const html = await cls.init(async () => store.content((await dayNoteId("2026-11-11")) ?? ""));
+        expect(html).toContain("<li data-list-item-id=");
+        expect(html).toContain(">Release frozen (until Fri 13 Nov)</li>");
+
+        expect((await call("caius_context_add", { date: "2026-11-11", text: "release frozen" })).results[0])
+            .toMatchObject({ status: "skipped", reason: "duplicate" });
+    });
+
+    it("writes to a week note, and takes exactly one of date or week", async () => {
+        const answer = await call("caius_context_add", { week: "2026-W46", text: "Jaco out all week" });
+        expect(answer.results[0]).toMatchObject({ status: "added", line: "Jaco out all week" });
+        const context = await call("caius_context", { date: "2026-11-11" });
+        expect(context.context.map((line: any) => line.text)).toEqual(expect.arrayContaining([ "Jaco out all week", "Release frozen" ]));
+
+        const schema = [ ...tools ].find(([ n ]) => n === "caius_context_add")?.[1].inputSchema;
+        expect(schema?.safeParse({ text: "x" }).success).toBe(false);
+        expect(schema?.safeParse({ date: MONDAY, week: "2026-W46", text: "x" }).success).toBe(false);
+        expect(schema?.safeParse({ date: MONDAY, text: "x", until: "6 Nov" }).success).toBe(false);
+    });
+});

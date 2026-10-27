@@ -12,6 +12,7 @@
 
 import {
     acceptTasks,
+    addContext,
     addTasks,
     caiusClock,
     clockOverride,
@@ -48,6 +49,7 @@ import {
     type AddInput,
     type ApplyInput,
     type AssignIdsInput,
+    type ContextAddInput,
     type ContextInput,
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
@@ -231,12 +233,14 @@ export function createCaiusService(
             const written = lines;
             return withCaiusLock("caius_meetings", async () => {
                 const result = await setMeetings(store, { date, lines: written }, { dryRun });
-                const shown = result.status === "dry-run"
-                    ? (({ before, after, ...rest }) => ({ ...rest, ...diffSummary(before, after) }))(result)
-                    : result;
-                return { date, source: items ? "items" : "calendar", lines: written, ...withBlobIds([ shown ]) };
+                return { date, source: items ? "items" : "calendar", lines: written, ...withBlobIds([ withDiff(result) ]) };
             });
         },
+
+        contextAdd: ({ dryRun, ...req }: ContextAddInput) => withCaiusLock("caius_context_add", async () => {
+            const result = await addContext(store, req, { dryRun, now: caiusNow() });
+            return withBlobIds([ withDiff(result) ]);
+        }),
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
             // The forecast can take 3 s, so it is fetched before the lock is taken.
@@ -405,6 +409,15 @@ function withBlobIds<R extends object>(results: R[]) {
         }
     }
     return { results, blobIds };
+}
+
+/** A dry run's result with its full `before` and `after` HTML reduced to the diff summary. */
+function withDiff<R extends object>(result: R): R | Omit<R, "before" | "after"> {
+    if (!("before" in result) || !("after" in result) || typeof result.before !== "string" || typeof result.after !== "string") {
+        return result;
+    }
+    const { before, after, ...rest } = result;
+    return { ...rest, ...diffSummary(before, after) };
 }
 
 /**

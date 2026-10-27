@@ -112,6 +112,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.meetings, service.meetings)
         },
 
+        caius_context_add: {
+            description: "Add one Context line to a day note (date) or an ISO week note (week): a plain bullet under ### Context, never a task. A line about the state of things goes in the week note; only a line about one day goes in that day's note. until is written as (until Fri 6 Nov). Text already in force is skipped as duplicate. Creates the heading and the note if missing. Dry run first.",
+            inputSchema: toolInputs.contextAdd,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.contextAdd, service.contextAdd)
+        },
+
         caius_header: {
             description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,

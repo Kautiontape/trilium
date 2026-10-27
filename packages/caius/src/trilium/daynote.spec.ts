@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { critical, fakeTrilium, li, periodNote, ul } from './helpers.js';
 import { parseContext } from './until.js';
-import { replaceMeetings, setMeetings } from './daynote.js';
+import { addContext, addContextLine, formatUntil, replaceMeetings, setMeetings } from './daynote.js';
 import { readPlan } from './plan-read.js';
 import { openTasks } from './open.js';
 import { loadJournal } from './journal.js';
@@ -178,5 +178,65 @@ describe('setMeetings', () => {
     racing.api.putContent = (id, html) => put(id, html, 'not what is stored');
     expect(await setMeetings(racing.api, { date: '2026-11-06', lines: ['x'] })).toMatchObject({ status: 'skipped', reason: 'edited' });
     expect(racing.html.d).toBe(DAY);
+  });
+});
+
+describe('addContextLine', () => {
+  it('appends a bullet to the Context list and leaves the rest byte for byte', () => {
+    const out = addContextLine(DAY, 'a & b');
+    expect(out).toBe(INCLUDE + MEETINGS + CONTEXT.replace('</ul>', '<li>a &amp; b</li></ul>') + ASIDE + TASKS + SUGGESTED);
+  });
+
+  it('creates the heading below Meetings, else below the include-note, else at the top', () => {
+    const added = '<h3>Context</h3><ul><li>x</li></ul>';
+    expect(addContextLine(INCLUDE + MEETINGS + ASIDE + TASKS, 'x')).toBe(INCLUDE + MEETINGS + added + ASIDE + TASKS);
+    expect(addContextLine(INCLUDE + TASKS, 'x')).toBe(INCLUDE + added + TASKS);
+    expect(addContextLine(TASKS, 'x')).toBe(added + TASKS);
+  });
+
+  it('adds a list to a Context heading that has none', () => {
+    expect(addContextLine('<h3>Context</h3><h2>Tasks</h2>', 'x')).toBe('<h3>Context</h3><ul><li>x</li></ul><h2>Tasks</h2>');
+  });
+});
+
+describe('formatUntil', () => {
+  it('writes the short weekday, day and month, and the year only when a reader would resolve it wrongly', () => {
+    expect(formatUntil('2026-11-06', '2026-11-02')).toBe('Fri 6 Nov');
+    expect(parseContext([`x (until ${formatUntil('2026-11-06', '2026-11-02')})`], '2026-11-02').context).toEqual([{ text: 'x', until: '2026-11-06' }]);
+    expect(formatUntil('2027-10-01', '2026-11-02')).toBe('Fri 1 Oct 2027');
+  });
+});
+
+describe('addContext', () => {
+  it('writes a line with its until to a day note, and skips text already in force as a duplicate', async () => {
+    const fake = journal(DAY);
+    const res = await addContext(fake.api, { date: '2026-11-06', text: 'Release frozen', until: '2026-11-13' }, { now: NOW });
+    expect(res).toMatchObject({ status: 'added', writtenNoteId: 'd', line: 'Release frozen (until Fri 13 Nov)' });
+    expect(fake.html.d).toContain('<li>Release frozen (until Fri 13 Nov)</li></ul>');
+    const again = await addContext(fake.api, { date: '2026-11-06', text: ' release  FROZEN ' }, { now: NOW });
+    expect(again).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+    // An expired line is not in force, so the same text can be written again.
+    expect(await addContext(fake.api, { date: '2026-11-06', text: 'Jaco out all week' }, { now: NOW })).toMatchObject({ status: 'added' });
+  });
+
+  it('counts a line in the week note as in force for a day of that week', async () => {
+    const fake = fakeTrilium({
+      w: [periodNote('w', 'weekNote', '2026-W45'), '<h3>Context</h3>' + bullets('Jaco out all week')],
+      d: [periodNote('d', 'dateNote', '2026-11-06'), TASKS],
+    });
+    expect(await addContext(fake.api, { date: '2026-11-06', text: 'Jaco out all week' }, { now: NOW })).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+    expect(await addContext(fake.api, { week: '2026-W45', text: 'Jaco out all week' }, { now: NOW })).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+    const res = await addContext(fake.api, { week: '2026-W45', text: 'Board review moved', until: '2026-11-06' }, { now: NOW });
+    expect(res).toMatchObject({ status: 'added', writtenNoteId: 'w', line: 'Board review moved (until Fri 6 Nov)' });
+  });
+
+  it('creates a missing note, but not on a dry run, and refuses an until before the note', async () => {
+    const dry = fakeTrilium({});
+    expect(await addContext(dry.api, { date: '2026-11-09', text: 'x' }, { dryRun: true, now: NOW })).toMatchObject({ status: 'dry-run', after: expect.stringContaining('<li>x</li>') });
+    expect(dry.log).toEqual([]);
+    const real = fakeTrilium({});
+    expect(await addContext(real.api, { date: '2026-11-09', text: 'x' }, { now: NOW })).toMatchObject({ status: 'added', writtenNoteId: 'new-2026-11-09' });
+    expect(real.log).toEqual(['create dateNote=2026-11-09', 'put new-2026-11-09']);
+    expect(await addContext(real.api, { date: '2026-11-09', text: 'y', until: '2026-11-06' }, { now: NOW })).toMatchObject({ status: 'skipped', reason: 'bad_request' });
   });
 });
