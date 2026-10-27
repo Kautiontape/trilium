@@ -21,6 +21,8 @@ export interface OpenTask {
   text: string;
   /** The parent task's text, when this is a sub-item. */
   parent: string | null;
+  /** The parent task's list item id, when this is a sub-item and the parent has one. */
+  parentListItemId: string | null;
   /** Nearest heading above the task, null before any heading. */
   section: string | null;
   sectionKind: SectionKind;
@@ -30,10 +32,16 @@ export interface OpenTask {
   rank: number;
 }
 
+/** The list item id of `parent`, a task of `doc`, or null without one. */
+export function parentItemId(doc: Pick<TriliumDoc, 'itemIds'>, parent: { line: number } | undefined): string | null {
+  return parent ? (doc.itemIds.get(parent.line) ?? null) : null;
+}
+
 export function openTasks(docs: TriliumDoc[], result: ScanResult): OpenTask[] {
   const noteIdByPath = new Map(docs.map((d) => [d.path, d.noteId]));
   const idsByPath = new Map(docs.map((d) => [d.path, d.itemIds]));
   const textByRowid = new Map(result.tasks.map((t) => [t.rowid, t.text]));
+  const taskByRowid = new Map(result.tasks.map((t) => [t.rowid, t]));
   const docByPath = new Map(docs.map((d) => [d.path, d]));
   const headingsByPath = new Map(docs.map((d) => [d.path, headingsByLine(d.fullText)]));
   const tasks = result.tasks
@@ -50,6 +58,10 @@ export function openTasks(docs: TriliumDoc[], result: ScanResult): OpenTask[] {
       horizon: t.horizon,
       text: t.text,
       parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
+      parentListItemId: parentItemId(
+        { itemIds: idsByPath.get(t.file) ?? new Map() },
+        t.parentRowid === null ? undefined : taskByRowid.get(t.parentRowid),
+      ),
       section,
       sectionKind: sectionKind(section),
       critical: docByPath.get(t.file)?.critical.has(t.line) ?? false,
@@ -79,6 +91,7 @@ export function suggestedTasks(docs: TriliumDoc[], now: Date): OpenTask[] {
   );
   const byPath = new Map(withSuggested.map((d) => [d.path, d]));
   const textByRowid = new Map(result.tasks.map((t) => [t.rowid, t.text]));
+  const taskByRowid = new Map(result.tasks.map((t) => [t.rowid, t]));
   return result.tasks
     .filter((t) => t.live && byPath.get(t.file)!.suggested.has(t.line))
     .map((t, i): OpenTask => {
@@ -94,6 +107,7 @@ export function suggestedTasks(docs: TriliumDoc[], now: Date): OpenTask[] {
         horizon: null,
         text: t.text,
         parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
+        parentListItemId: parentItemId(doc, t.parentRowid === null ? undefined : taskByRowid.get(t.parentRowid)),
         section,
         sectionKind: sectionKind(section),
         critical: false,

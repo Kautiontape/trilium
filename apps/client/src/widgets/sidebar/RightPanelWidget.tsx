@@ -26,6 +26,12 @@ export interface ExpandWidgetRequest {
 /** The pending {@link ExpandWidgetRequest}, set by whoever lays the widgets out. */
 export const ExpandWidgetRequests = createContext<ExpandWidgetRequest | null>(null);
 
+/**
+ * Whether the right pane tab the widgets below belong to is on screen: the pane open and the tab
+ * selected. A tab keeps its widgets mounted once opened, so this is how they tell they are hidden.
+ */
+export const RightPaneTabVisible = createContext(true);
+
 interface RightPanelWidgetProps {
     id: string;
     title: string;

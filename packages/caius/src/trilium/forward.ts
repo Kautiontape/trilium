@@ -26,13 +26,26 @@ export interface ForwardRequest {
 /** Weeks and months are only needed when a request targets one. */
 export type ForwardStore = NoteReader & Partial<Pick<NoteStore, 'calendarWeek' | 'calendarMonth'>>;
 
-export type SkipReason = ItemProblem | 'edited' | 'same_day' | 'bad_request' | 'unreadable';
+/** `stale` is reported by a host that checks the note's version before it calls the library. */
+export type SkipReason = ItemProblem | 'edited' | 'same_day' | 'bad_request' | 'unreadable' | 'stale';
 
 export type ForwardResult = ForwardRequest &
   (
-    | { status: 'moved'; detail?: string; dryRun?: boolean; changes?: NoteChange[] }
+    | {
+        status: 'moved';
+        detail?: string;
+        dryRun?: boolean;
+        changes?: NoteChange[];
+        /** A real run: the notes it wrote, the target first, without it when it already held the copy. */
+        writtenNoteIds?: string[];
+      }
     | { status: 'skipped'; reason: SkipReason; detail?: string }
-    | { status: 'failed'; error: string }
+    | {
+        status: 'failed';
+        error: string;
+        /** The target, when its copy was written before the source failed. */
+        writtenNoteIds?: string[];
+      }
   );
 
 export interface NoteChange {
@@ -160,9 +173,15 @@ async function forwardOne(
       error: alreadyCopied
         ? 'source note changed while forwarding; nothing written'
         : 'source note changed after the copy was written; re-run to finish marking it',
+      writtenNoteIds: alreadyCopied ? [] : [target!.noteId],
     };
   }
-  return { ...req, status: 'moved', detail: alreadyCopied ? 'target already held the copy' : undefined };
+  return {
+    ...req,
+    status: 'moved',
+    detail: alreadyCopied ? 'target already held the copy' : undefined,
+    writtenNoteIds: alreadyCopied ? [source.noteId] : [target!.noteId, source.noteId],
+  };
 }
 
 /** The period a `to` value names, or null when it isn't a day, ISO week or month that exists. */

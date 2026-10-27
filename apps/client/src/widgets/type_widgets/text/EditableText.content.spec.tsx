@@ -8,10 +8,13 @@ import { render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import appContext from "../../../components/app_context";
 import Component from "../../../components/component";
 import NoteContext from "../../../components/note_context";
 import FBlob from "../../../entities/fblob";
 import type FNote from "../../../entities/fnote";
+import { fetchContentAgain } from "../../../services/caius";
+import froca from "../../../services/froca";
 import LoadResults from "../../../services/load_results";
 import server from "../../../services/server";
 import { buildNote } from "../../../test/easy-froca";
@@ -146,6 +149,23 @@ describe("EditableText", () => {
         expect(settled).toBe(true);
     });
 
+    it("saves unchanged content only when saveNoteDetailNow is forced", async () => {
+        const harness = setupHarness();
+        cleanupHarness = harness.cleanup;
+        await harness.show(harness.noteA);
+        const putSpy = vi.spyOn(server, "put").mockResolvedValue(undefined);
+        // Whatever loading the note left pending is saved first; after that nothing is pending.
+        await harness.parent.triggerCommand("saveNoteDetailNow" as never);
+        putSpy.mockClear();
+
+        await harness.parent.triggerCommand("saveNoteDetailNow" as never);
+        expect(putSpy).not.toHaveBeenCalled();
+
+        await harness.parent.triggerCommand("saveNoteDetailNow" as never, { force: true } as never);
+        expect(putSpy).toHaveBeenCalledTimes(1);
+        expect(putSpy.mock.calls[0]?.[1]).toEqual({ content: "<p>first</p><p>second</p>" });
+    });
+
     it("keeps the caret when the open note reloads, but not across a note switch", async () => {
         const harness = setupHarness();
         cleanupHarness = harness.cleanup;
@@ -162,6 +182,31 @@ describe("EditableText", () => {
 
         await harness.show(harness.noteB);
         expect(editor.model.document.selection.getFirstPosition()?.path).toEqual([ 0, 0 ]);
+    });
+
+    it("loads the note's content again when Caius asks, past froca's cached blob", async () => {
+        const harness = setupHarness();
+        cleanupHarness = harness.cleanup;
+        const { noteA } = harness;
+        await harness.show(noteA);
+        vi.spyOn(server, "put").mockResolvedValue(undefined);
+
+        // The real fetch path, with a blob cached before the Caius write.
+        noteA.getBlob = () => froca.getBlob("notes", noteA.noteId);
+        froca.blobPromises[`notes-${noteA.noteId}`] = Promise.resolve(blobOf(noteA, "<p>stale</p>"));
+        const written = "<p>first [caius]</p><p>second</p>";
+        const fetch = vi.spyOn(server, "getWithSilentNotFound")
+            .mockResolvedValue({ ...blobOf(noteA, written) });
+        // `appContext` dispatches to the component tree, which here is `parent`.
+        vi.spyOn(appContext, "triggerEvent").mockImplementation(
+            (name, data) => harness.parent.handleEvent(name, data as never) as Promise<unknown> as never);
+
+        await act(async () => {
+            fetchContentAgain([ noteA.noteId ]);
+        });
+
+        await vi.waitFor(() => expect(harness.editor().getData()).toBe(written));
+        expect(fetch).toHaveBeenCalledWith(`notes/${noteA.noteId}/blob`);
     });
 });
 

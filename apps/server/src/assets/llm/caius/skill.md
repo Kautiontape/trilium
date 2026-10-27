@@ -36,6 +36,7 @@ Every write tool takes an `items` list. Every write also takes `dryRun`, and `ht
 | `caius_dismiss` | Remove a Suggested item and keep it from being suggested again on that note. | `{ "items": [{ "noteId": "abc", "listItemId": "e123" }] }` |
 | `caius_set_state` | Mark tasks `done`, `doing` or `cancelled`. Cancelled needs a `reason`. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "state": "cancelled", "reason": "no longer needed" }] }` |
 | `caius_forward` | Move a task to another day, week or month. The old copy is marked Rescheduled with a link; an open copy appears under the same header in the target. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "to": "2026-W45" }] }` |
+| `caius_assign_ids` | Give every Journal list item that has no `listItemId` one, so the other tools can target it. Reports per note how many items get an id and, on a dry run, their text. It is a dry run unless `dryRun` is `false`. Only when Shawn asks; show him the dry run first. | `{}` for the dry run, then `{ "dryRun": false }` |
 
 `noteId` and `listItemId` always come from `caius_plan` or `caius_open`. Never guess them.
 
@@ -68,10 +69,12 @@ A week or month ends the same way at its own grain: forward to the next week or 
 Each write returns one result per item, with a status:
 
 - A success status such as `moved` or `added`: it worked. On a dry run it also says what would change and carries `dryRun: true`.
-- `skipped` with a reason: nothing was written. Common reasons are `not_found`, `not_live` (already done or cancelled), `already_moved`, `same_day` (the target is the same note), `duplicate`, `dismissed` and `edited` (the note changed while the tool ran).
+- `skipped` with a reason: nothing was written. Common reasons are `not_found`, `not_live` (already done or cancelled), `already_moved`, `same_day` (the target is the same note), `duplicate`, `dismissed` and `edited` (the note changed while the tool ran). `stale` (the note changed since the app read it, with the note's current `blobId`) comes only from Trilium's own task actions, never from these tools.
 - `failed` with an error: read it. Don't retry blindly.
 
 A skipped item is often right. Report it to Shawn instead of working around it.
+
+`journal: false` on an answer from `caius_open`, `caius_explain` or `caius_assign_ids` means this Trilium has no Journal (no note carries `#calendarRoot`). That is not "nothing to do": say so to Shawn rather than reporting an empty plan.
 
 ## Rules
 

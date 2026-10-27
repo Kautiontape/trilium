@@ -1,7 +1,7 @@
 import { t } from "../../services/i18n";
 import TabStrip, { type TabStripTabDefinition } from "../react/TabStrip";
 
-export type RightPaneTabId = "outline" | "attributes" | "connections" | "chat" | "widgets";
+export type RightPaneTabId = "outline" | "plan" | "attributes" | "connections" | "chat" | "widgets";
 
 export interface RightPaneTabDefinition extends TabStripTabDefinition<RightPaneTabId> {
     /**
@@ -22,6 +22,8 @@ export const RIGHT_PANE_TABS: RightPaneTabDefinition[] = [
     // The outline is what a note's type decides the most: a text note has headings, a PDF has pages,
     // an image has neither. It stays put through all of them.
     { id: "outline", title: t("right_pane.tab_outline"), icon: "bx bx-list-ul", alwaysShown: true },
+    // Caius's planning panel, while the server runs Caius.
+    { id: "plan", title: t("right_pane.tab_plan"), icon: "bx bx-calendar-check" },
     { id: "attributes", title: t("right_pane.tab_attributes"), icon: "bx bx-hash" },
     // How the note relates to the others. Empty for now (its widgets are yet to come), so it leans on
     // alwaysShown to appear in the strip at all; any note can be linked to, so staying put fits it anyway.

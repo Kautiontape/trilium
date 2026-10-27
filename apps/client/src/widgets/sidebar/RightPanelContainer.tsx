@@ -29,7 +29,8 @@ import PdfAnnotations from "./pdf/PdfAnnotations";
 import PdfAttachments from "./pdf/PdfAttachments";
 import PdfLayers from "./pdf/PdfLayers";
 import PdfPages from "./pdf/PdfPages";
-import RightPanelWidget, { CollapsibleWidgets, ExpandWidgetRequest, ExpandWidgetRequests } from "./RightPanelWidget";
+import PlanTab, { useCaiusEnabled } from "./plan/PlanTab";
+import RightPanelWidget, { CollapsibleWidgets, ExpandWidgetRequest, ExpandWidgetRequests, RightPaneTabVisible } from "./RightPanelWidget";
 import RightPanePeekButton from "./RightPanePeekButton";
 import RightPaneTabs, { RIGHT_PANE_TABS, RightPaneTabDefinition, RightPaneTabId } from "./RightPaneTabs";
 import TableOfContents from "./TableOfContents";
@@ -165,11 +166,13 @@ export default function RightPanelContainer({ widgetsByParent }: { widgetsByPare
                                             so a tab of one offers no collapsing at all. */}
                                         <CollapsibleWidgets.Provider value={tab.items.length > 1}>
                                             <ExpandWidgetRequests.Provider value={expandRequest}>
-                                                {tab.items.length > 0 ? tab.items : (
-                                                    // A tab that stays for a note it has nothing to show
-                                                    // (see RightPaneTabDefinition.alwaysShown) says so.
-                                                    <NoItems icon={tab.icon} text={t("right_pane.empty_message")} />
-                                                )}
+                                                <RightPaneTabVisible.Provider value={visible && tab.id === activeTab?.id}>
+                                                    {tab.items.length > 0 ? tab.items : (
+                                                        // A tab that stays for a note it has nothing to show
+                                                        // (see RightPaneTabDefinition.alwaysShown) says so.
+                                                        <NoItems icon={tab.icon} text={t("right_pane.empty_message")} />
+                                                    )}
+                                                </RightPaneTabVisible.Provider>
                                             </ExpandWidgetRequests.Provider>
                                         </CollapsibleWidgets.Provider>
                                     </div>
@@ -208,6 +211,7 @@ function useItems(rightPaneVisible: boolean, widgetsByParent: WidgetsByParent): 
     const boardColumns = useGetContextData("boardColumns");
     // Subscribe to the AI toggle so the LLM chat is added/removed reactively without a page reload.
     const [ aiEnabled ] = useTriliumOptionBool("aiEnabled");
+    const caiusEnabled = useCaiusEnabled();
     const isPdf = noteType === "file" && noteMime === "application/pdf";
 
     if (!rightPaneVisible) return [];
@@ -277,6 +281,11 @@ function useItems(rightPaneVisible: boolean, widgetsByParent: WidgetsByParent): 
             // them shows the card's own empty state.
             enabled: boardColumns !== undefined,
             tab: "outline"
+        },
+        {
+            el: <PlanTab />,
+            enabled: caiusEnabled,
+            tab: "plan"
         },
         {
             el: <ChatHighlightsList />,

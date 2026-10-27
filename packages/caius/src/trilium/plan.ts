@@ -70,7 +70,9 @@ export type PlanSkip =
   | 'dismissed'
   | 'edited'
   | 'bad_request'
-  | 'unreadable';
+  | 'unreadable'
+  /** Reported by a host that checks the note's version before it calls the library. */
+  | 'stale';
 
 export type PlanResult<R> = R &
   (

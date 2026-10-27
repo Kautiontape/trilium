@@ -1,12 +1,14 @@
 import type { CKTextEditor } from "@triliumnext/ckeditor5";
 
 import appContext, { type CommandNames } from "../components/app_context.js";
+import { isCaiusEnabled } from "../services/caius.js";
 import { copyHtml, copyTextWithToast } from "../services/clipboard_ext.js";
 import { t } from "../services/i18n.js";
 import options from "../services/options.js";
 import server from "../services/server.js";
 import utils from "../services/utils.js";
 import contextMenu, { type MenuItem } from "./context_menu.js";
+import { buildTaskActionsMenuItem, isOverJournalTask, TASK_ACTIONS_CLASS } from "./task_actions.js";
 import { buildAiActionsMenuItem, getTextEditorAtSelection } from "./text_editor_context_menu.js";
 
 /** What the pointer was over when the menu was summoned. */
@@ -21,6 +23,8 @@ export interface ContextMenuTarget {
     isEditable: boolean;
     /** The selected text, or an empty string. */
     selectionText: string;
+    /** The element under the pointer, which decides whether the Task submenu applies. */
+    element?: Element | null;
 }
 
 /**
@@ -48,11 +52,15 @@ export interface ContextMenuHost {
 }
 
 /**
- * Puts Trilium's menu over the browser's own wherever the pointer sits on a selection. A click at a
- * bare caret keeps the native menu, the only way to spelling corrections and the browser's paste.
- * Electron replaces the menu everywhere; see `electron_context_menu.ts`.
+ * Puts Trilium's menu over the browser's own wherever the pointer sits on a selection or on a
+ * task in a Journal note. A click at a bare caret elsewhere keeps the native menu, the only way to
+ * spelling corrections and the browser's paste. Electron replaces the menu everywhere; see
+ * `electron_context_menu.ts`.
  */
 export function setupContextMenu() {
+    // `isOverJournalTask()` answers synchronously from the last known status, so ask for it early.
+    void isCaiusEnabled();
+
     document.addEventListener("contextmenu", (event) => {
         // A widget that answers the click itself — the note tree, an internal link — has already
         // put its own menu up.
@@ -66,24 +74,25 @@ export function setupContextMenu() {
             return;
         }
 
+        const element = event.target instanceof HTMLElement ? event.target : null;
+
         // `window.getSelection()` does not report a selection inside an `<input>` or `<textarea>`,
         // so those keep the browser's menu, which is the better one for a plain text field.
         const selection = window.getSelection();
-        const selectionText = selection?.toString() ?? "";
-        if (!selection || !selectionText.trim()) {
-            return;
-        }
-
         // The rows act on the selection, so the pointer has to be on it. A right-click on the
         // surrounding UI, which takes no selection of its own, leaves an earlier one standing.
-        if (!isPointInSelection(selection, event.clientX, event.clientY)) {
+        const pointIsInSelection = selection
+            && isPointInSelection(selection, event.clientX, event.clientY);
+        const selectionText = pointIsInSelection ? selection.toString() : "";
+
+        // A task's actions apply to the item under the pointer, selection or not.
+        if (!selectionText.trim() && !isOverJournalTask(element)) {
             return;
         }
 
         // Claimed before the items are built: after an await the default action has already run.
         event.preventDefault();
 
-        const element = event.target instanceof HTMLElement ? event.target : null;
         const link = element?.closest("a[href]");
 
         void showBrowserContextMenu(event.pageX, event.pageY, {
@@ -91,7 +100,8 @@ export function setupContextMenu() {
             linkText: link?.textContent ?? "",
             isMedia: !!element?.closest("img, video, audio"),
             isEditable: acceptsTyping(element),
-            selectionText
+            selectionText,
+            element
         });
     });
 }
@@ -115,6 +125,7 @@ export async function buildNoteContextMenuItems(
     // depend on how the editor answers, and `isEditable` keeps the lookup off every click that
     // lands somewhere a completion could not be committed anyway (a read-only note, the tree).
     const aiActions = target.isEditable ? await buildAiActionsMenuItem() : null;
+    const taskActions = target.element ? await buildTaskActionsMenuItem(target.element) : null;
 
     if (host.spelling?.misspelledWord) {
         const { misspelledWord, suggestions, addToDictionary } = host.spelling;
@@ -135,6 +146,10 @@ export async function buildNoteContextMenuItems(
         });
 
         items.push({ kind: "separator" });
+    }
+
+    if (taskActions) {
+        items.push(taskActions, { kind: "separator" });
     }
 
     if (aiActions) {
@@ -271,6 +286,12 @@ async function showBrowserContextMenu(x: number, y: number, target: ContextMenuT
     const editor = await getTextEditorAtSelection();
     const items = await buildNoteContextMenuItems(target, browserHost(editor));
     if (!items.length) return;
+
+    // The menu opened for a task with nothing selected. If the task's editor locked meanwhile, the
+    // Task submenu is gone and only disabled rows would be left.
+    const hasTaskActions = items.some((item) =>
+        "className" in item && item.className === TASK_ACTIONS_CLASS);
+    if (!target.selectionText.trim() && !hasTaskActions) return;
 
     contextMenu.show({ x, y, items, selectMenuItemHandler: () => {} });
 }

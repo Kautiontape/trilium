@@ -1,5 +1,6 @@
 export { etapiClient, normalizeBaseUrl } from './trilium/etapi.js';
-export { label } from './trilium/store.js';
+export { label, withListItemIds } from './trilium/store.js';
+export { ensureListItemIds, listItemsWithoutIds } from './trilium/html-util.js';
 export type { NoteStore, NoteReader, StoreNote, StoreAttribute } from './trilium/store.js';
 export { htmlToMarkdown, DEFAULT_STATE_SYMBOLS } from './trilium/markdown.js';
 export type { StateSymbols } from './trilium/markdown.js';
