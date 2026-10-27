@@ -27,6 +27,8 @@ interface Occurrence {
     title: string;
     attendees: string[];
     declined: boolean;
+    /** The event names a TZID the feed has no VTIMEZONE for. */
+    unknownZone: boolean;
 }
 
 export async function readCalendar(deps: CalendarDeps, date: string): Promise<{ events: CalendarEvent[]; errors: InputError[] }> {
@@ -51,8 +53,10 @@ export async function readCalendar(deps: CalendarDeps, date: string): Promise<{ 
             continue;
         }
         try {
-            for (const occurrence of occurrencesOn(ICAL, text, dayStart, dayEnd, me)) {
-                events.push(toEvent(occurrence, dayStart, dayEnd, index));
+            const occurrences = occurrencesOn(ICAL, text, dayStart, dayEnd, me);
+            for (const occurrence of occurrences) events.push(toEvent(occurrence, dayStart, dayEnd, index));
+            if (occurrences.some((occurrence) => occurrence.unknownZone)) {
+                errors.push({ source: "calendar", error: `feed_${index}_unknown_tz` });
             }
         } catch {
             errors.push({ source: "calendar", error: `feed_${index}_parse` });
@@ -73,36 +77,57 @@ async function fetchFeed(doFetch: typeof fetch, url: string): Promise<string> {
     try {
         response = await doFetch(url, { signal: AbortSignal.timeout(FEED_TIMEOUT_MS) });
     } catch (e) {
-        throw new Error(e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError") ? "timeout" : "network");
+        throw new Error(isTimeout(e) ? "timeout" : "network");
     }
     if (!response.ok) throw new Error(`http_${response.status}`);
-    return response.text();
+    try {
+        return await response.text();
+    } catch (e) {
+        throw new Error(isTimeout(e) ? "timeout" : "network");
+    }
+}
+
+function isTimeout(e: unknown): boolean {
+    return e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
 }
 
 /** Every occurrence of every event in the feed that overlaps the day. */
 function occurrencesOn(ICAL: Ical, text: string, dayStart: Date, dayEnd: Date, me: Set<string>): Occurrence[] {
     const root = new ICAL.Component(ICAL.parse(text));
-    for (const zone of root.getAllSubcomponents("vtimezone")) ICAL.TimezoneService.register(zone);
+    const defined = new Set<string>();
+    for (const zone of root.getAllSubcomponents("vtimezone")) {
+        ICAL.TimezoneService.register(zone);
+        defined.add(String(zone.getFirstPropertyValue("tzid")));
+    }
 
     const masters = new Map<string, IcalComponent[]>();
     const overrides = new Map<string, IcalComponent[]>();
+    const cancelled = new Map<string, Array<number | undefined>>();
     for (const vevent of root.getAllSubcomponents("vevent")) {
-        if (vevent.getFirstPropertyValue("status") === "CANCELLED") continue;
         const uid = String(vevent.getFirstPropertyValue("uid"));
-        const bucket = vevent.hasProperty("recurrence-id") ? overrides : masters;
+        const isOverride = vevent.hasProperty("recurrence-id");
+        if (vevent.getFirstPropertyValue("status") === "CANCELLED") {
+            // A cancelled instance is not an event, but its slot stays out of the master's expansion.
+            if (isOverride) cancelled.set(uid, [ ...(cancelled.get(uid) ?? []), new ICAL.Event(vevent).recurrenceId?.toUnixTime() ]);
+            continue;
+        }
+        const bucket = isOverride ? overrides : masters;
         bucket.set(uid, [ ...(bucket.get(uid) ?? []), vevent ]);
     }
 
     const found: Occurrence[] = [];
     const add = (event: IcalEvent, start: IcalTime, end: IcalTime) => {
-        const occurrence = describe(event, start, end, me);
+        const occurrence = describe(event, start, end, me, usesUnknownZone(event.component, defined));
         if (occurrence.end > dayStart && occurrence.start < dayEnd) found.push(occurrence);
     };
 
     for (const [ uid, vevents ] of masters) {
         // A moved instance carries the master's UID and a RECURRENCE-ID: the master skips the
         // original slot and the override stands as an event of its own.
-        const moved = new Set((overrides.get(uid) ?? []).map((v) => new ICAL.Event(v).recurrenceId?.toUnixTime()));
+        const moved = new Set([
+            ...(overrides.get(uid) ?? []).map((v) => new ICAL.Event(v).recurrenceId?.toUnixTime()),
+            ...(cancelled.get(uid) ?? [])
+        ]);
         for (const vevent of vevents) {
             const event = new ICAL.Event(vevent);
             if (!event.isRecurring()) {
@@ -127,7 +152,7 @@ function occurrencesOn(ICAL: Ical, text: string, dayStart: Date, dayEnd: Date, m
     return found;
 }
 
-function describe(event: IcalEvent, start: IcalTime, end: IcalTime, me: Set<string>): Occurrence {
+function describe(event: IcalEvent, start: IcalTime, end: IcalTime, me: Set<string>, unknownZone: boolean): Occurrence {
     const attendees = event.attendees.map((attendee) => {
         const address = String(attendee.getFirstValue() ?? "").replace(/^mailto:/i, "");
         const name = parameter(attendee, "cn");
@@ -140,8 +165,17 @@ function describe(event: IcalEvent, start: IcalTime, end: IcalTime, me: Set<stri
         allDay: start.isDate,
         title: event.summary || "(no title)",
         attendees: attendees.map((attendee) => attendee.name).filter(Boolean),
-        declined: mine?.partstat.toUpperCase() === "DECLINED"
+        declined: mine?.partstat.toUpperCase() === "DECLINED",
+        unknownZone
     };
+}
+
+/** Whether the event's start or end names a TZID that is neither UTC nor a VTIMEZONE of its feed. */
+function usesUnknownZone(vevent: IcalComponent, defined: Set<string>): boolean {
+    return [ "dtstart", "dtend" ].some((name) => {
+        const zone = vevent.getFirstProperty(name)?.getParameter("tzid");
+        return typeof zone === "string" && zone !== "UTC" && !defined.has(zone);
+    });
 }
 
 function parameter(property: InstanceType<Ical["Property"]>, name: string): string {

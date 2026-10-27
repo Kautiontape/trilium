@@ -83,6 +83,27 @@ describe("caius_inputs calendar", () => {
         expect(original.filter((line) => line.includes("Architecture Review"))).toEqual([]);
     });
 
+    it("drops a cancelled instance of a recurring meeting, and keeps the others", async () => {
+        // The Team Standup of 27 Oct is cancelled by an override; the 20th is not.
+        expect(summary((await run("2026-10-27")).calendar).some((line) => line.includes("Team Standup"))).toBe(false);
+        expect(summary((await run("2026-10-20")).calendar)).toContain("09:30-09:45 Team Standup");
+    });
+
+    it("reads a zone the feed doesn't define as local time, and says so", async () => {
+        const { calendar, errors } = await run("2026-10-29");
+        expect(summary(calendar)).toEqual([ "14:00-15:00 Zone Check" ]);
+        expect(errors).toEqual([ { source: "calendar", error: "feed_1_unknown_tz" } ]);
+        expect((await run("2026-10-27")).errors).toEqual([]);
+    });
+
+    it("maps a feed body that fails to read to network or timeout", async () => {
+        const failing = (name: string) => () => ({ ok: true, status: 200, text: async () => { throw new DOMException("x", name); } }) as unknown as Response;
+        const network = await run("2026-10-27", ENV, fakeNetwork({ [FEEDS[0]]: failing("NetworkError") }));
+        expect(network.errors).toEqual([ { source: "calendar", error: "feed_0_network" } ]);
+        const slow = await run("2026-10-27", ENV, fakeNetwork({ [FEEDS[0]]: failing("TimeoutError") }));
+        expect(slow.errors).toEqual([ { source: "calendar", error: "feed_0_timeout" } ]);
+    });
+
     it("merges the same meeting across feeds and within one feed", async () => {
         const { calendar } = await run("2026-10-27");
         const copies = calendar.filter((e) => e.title === "Corporate Team Meeting");
