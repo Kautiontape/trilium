@@ -121,15 +121,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         .map((line) => ({ kind: "keep" as const, line: line.text, until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
         .filter((line) => line.keys.length)
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
-    // A line in force today from a note the next workday no longer reads lapses unseen, so it is
-    // offered to carry into the next workday's week note. Last week's note counts as unread: on a
-    // Monday it is read for that day only. A line whose text that day already reads is not offered.
     const targetWeek = isoWeekKey(utcDay(targetDay));
-    const reads = new Set(contextNotes(targetDay).filter((n) => !n.oneDay).map((n) => `${n.period}:${n.key}`));
-    const readThen = new Set(read.context.filter((line) => reads.has(`${line.period}:${line.key}`)).map((line) => sameText(line.text)));
-    const carry = today.context
-        .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= targetDay) && !readThen.has(sameText(line.text)))
-        .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
+    const carry = carryLines(today.context, targetDay, read.context);
     const noticed = [ ...keep, ...carry ];
     const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
     const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
@@ -175,7 +168,8 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         const facts = await deps.locked("caius_planday", async () => {
             const day = await dayFacts(deps.store, date, deps.now);
             const brief = day.plan.noteId ? await findBrief(deps.store, day.plan.noteId, date) : null;
-            return { ...day, plannedAt: brief ? label(brief, PLANNED_AT_LABEL) ?? null : null };
+            const lastContext = await gatherContext(deps.store, dayKey(lastWorkday(localDay(date))));
+            return { ...day, plannedAt: brief ? label(brief, PLANNED_AT_LABEL) ?? null : null, lastContext: lastContext.context };
         });
         const since = facts.plannedAt ? localMoment(facts.plannedAt) : undefined;
         const candidates = dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude, since }).map(present);
@@ -188,14 +182,19 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         const nextDay = dayKey(nextWorkday(localDay(date)));
         const heavy = read.inputs.capacity.bookedRatio > HEAVY_RATIO && last?.listItemId;
         const forwardSuggestion = heavy && last ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: nextDay } : null;
+        // Run every morning, whatever the catch-up answer was, so a missed wind-down doesn't let a line lapse.
+        // The day being planned is in the week its lines go to, so the question never says "next week".
+        const carry = carryLines(facts.lastContext, date, read.context);
         const questions = [
             ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
             ...(forwardSuggestion ? [ t("caius.daily.heavy", {
                 percent: Math.round(read.inputs.capacity.bookedRatio * 100), task: forwardSuggestion.text, day: weekdayName(nextDay)
-            }) ] : [])
+            }) ] : []),
+            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
         ];
         return reply(read.standing, {
             plannedAt: facts.plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
+            targetWeek: isoWeekKey(utcDay(date)), carry,
             context: read.context, forwardSuggestion, errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
     }
@@ -227,6 +226,20 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         },
         errors: read.inputs.errors
     }, null, null);
+}
+
+/**
+ * The lines in force on an earlier day (`inForce`) that `day` won't read, to offer to carry into
+ * `day`'s week note: from a note `contextNotes(day)` leaves out, with no `until` or one not before
+ * `day`, and not already read on `day` from a note it reads (`dayContext`, its Context in force).
+ * Last week's note counts as unread: on a Monday it is read for that day only.
+ */
+function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEntry[]) {
+    const reads = new Set(contextNotes(day).filter((n) => !n.oneDay).map((n) => `${n.period}:${n.key}`));
+    const readThen = new Set(dayContext.filter((line) => reads.has(`${line.period}:${line.key}`)).map((line) => sameText(line.text)));
+    return inForce
+        .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= day) && !readThen.has(sameText(line.text)))
+        .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
 }
 
 /** Lines named in the carry question before the rest are counted; the step's data lists them all. */

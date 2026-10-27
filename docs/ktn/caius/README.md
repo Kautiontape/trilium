@@ -135,6 +135,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **Candidates:** as in Wind down, but only what is new since the day's brief was last planned (`#caiusPlannedAt`).
    - **Meetings:** the Meetings block to write from the calendar, beside the current one.
    - **Questions:** one for each overlap. On a day over 60% booked, `forwardSuggestion` names the last task of the main list, with "The day is 69% booked. Move '…' to Thursday?".
+   - **Carry:** the wind-down's carry check, run every morning whatever the catch-up answer was: lines in force on the last workday that today won't read, unless today already reads the same text, are in `data.carry` with "Keep '…' going?", for writing to this week's note (`data.targetWeek`).
 3. **`brief`.**
    - **The day:** its span, from the standing note's Rhythm: standup (default 10:00) to bedtime (default 23:00), with work ending at 18:00 by default. A bedtime or end of work written without am or pm that would fall before standup, such as "Bedtime: 11:30", is read as the evening.
    - **The drawing:** the main list laid out in order in the gaps between meetings, 30 minutes for a task without an estimate, and the first task as the focus block.

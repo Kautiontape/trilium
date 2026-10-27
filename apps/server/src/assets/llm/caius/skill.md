@@ -109,6 +109,7 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
    - Add `data.candidates` to the day's Suggested as in Wind down. They are only what is new since the last brief, so a second plan adds only the new ones.
    - When `data.meetings.changed`, write `data.meetings.lines` with `caius_meetings`. Lines that are null mean the calendar could not be read: say so and leave the block as it is.
    - An overlap's answer goes to the day's Context. When `data.forwardSuggestion` is set and Shawn says yes, forward that task to its `to` day.
+   - `data.carry` holds Context lines from the last workday that today won't read, so they would lapse. The question names them once; on yes, write each to the week `data.targetWeek` with `caius_context_add`, keeping its `until`. This comes every morning, whatever the catch-up answer was.
 3. **`brief`.** Write the brief with `caius_brief_write`, filling in `data.shape`. It should take about 60 seconds to read:
    - `headline`: 14 words or fewer, naming the work. When the day is over 60% booked, say so.
    - `acts`: three, one sentence each, grouped by what fits around the meetings rather than listing them. The third is the evening. Their times come from `data.day` and `data.header`.
