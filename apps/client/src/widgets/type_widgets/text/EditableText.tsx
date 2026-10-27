@@ -20,13 +20,15 @@ import utils, { isMobile } from "../../../services/utils";
 import type { IconPickerOpts } from "../../dialogs/icon_picker";
 import { useEditorSpacedUpdate, useLegacyImperativeHandlers, useNoteLabel, useSearchTermsConsumer, useTriliumEvent, useTriliumOption, useTriliumOptionBool } from "../../react/hooks";
 import IconPicker from "../../react/IconPicker";
-import { setEditorNoteId } from "../../react/NoteStore";
+import { getEditorNoteId, setEditorNoteId } from "../../react/NoteStore";
 import { TypeWidgetProps } from "../type_widget";
 import CKEditorWithWatchdog, { CKEditorApi, NotificationEventData, NotificationEventInfo } from "./CKEditorWithWatchdog";
 import getTemplates, { updateTemplateCache } from "./snippets.js";
 import linkEmbedService from "../../../services/link_embed";
 import { usesClassicToolbar } from "./toolbar";
-import { loadIncludedNote, refreshIncludedNote, setupImageOpening } from "./utils";
+import {
+    loadIncludedNote, refreshIncludedNote, setDataKeepingSelection, setupImageOpening
+} from "./utils";
 
 /**
  * The editor can operate into two distinct modes:
@@ -76,10 +78,15 @@ export default function EditableText({ note, parentComponent, ntxId, noteContext
             contentRef.current = newContent;
             contentNoteIdRef.current = note?.noteId;
             const editor = watchdogRef.current?.editor;
-            if (editor && note) {
-                setEditorNoteId(editor, note.noteId);
+            if (editor && note && getEditorNoteId(editor) === note.noteId) {
+                // Reloading the open note keeps the caret; a note switch starts at the top.
+                setDataKeepingSelection(editor, newContent);
+            } else {
+                if (editor && note) {
+                    setEditorNoteId(editor, note.noteId);
+                }
+                editor?.setData(newContent);
             }
-            editor?.setData(newContent);
 
             // Jump to the first search match when navigated from search results.
             consumeSearchTerms(noteContext, ntxId);

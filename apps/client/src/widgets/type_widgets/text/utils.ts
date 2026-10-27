@@ -1,3 +1,5 @@
+import type { CKTextEditor, ModelElement } from "@triliumnext/ckeditor5";
+
 import appContext from "../../../components/app_context";
 import content_renderer from "../../../services/content_renderer";
 import froca from "../../../services/froca";
@@ -70,6 +72,63 @@ export function refreshIncludedNote(container: HTMLDivElement, noteId: string) {
     for (const includedNote of includedNotes) {
         loadIncludedNote(noteId, $(includedNote as HTMLElement));
     }
+}
+
+/**
+ * Replaces the content of the editor and puts the selection back at the same model paths, clamped
+ * to the new document. `editor.setData()` alone moves the caret to the start of the note. The
+ * restored selection is not an undo step and does not fire `change:data`, so it triggers no save.
+ */
+export function setDataKeepingSelection(
+    editor: Pick<CKTextEditor, "model" | "setData">,
+    data: string
+) {
+    const { model } = editor;
+    const { anchor, focus } = model.document.selection;
+    const anchorPath = anchor?.path;
+    const focusPath = focus?.path;
+
+    editor.setData(data);
+
+    const root = model.document.getRoot();
+    if (!anchorPath || !focusPath || !root) return;
+
+    try {
+        const newAnchor = findNearestSelectablePosition(model, root, anchorPath);
+        const newFocus = findNearestSelectablePosition(model, root, focusPath);
+        if (!newAnchor || !newFocus) return;
+
+        model.enqueueChange({ isUndoable: false }, (writer) => {
+            writer.setSelection(newAnchor);
+            writer.setSelectionFocus(newFocus);
+        });
+    } catch (e) {
+        // The selection `setData()` left at the start of the document stays in place.
+        console.warn("Unable to restore the selection after reloading the note content", e);
+    }
+}
+
+/** Resolves `path` in `root`, clamping each offset to what the new document has. */
+function findNearestSelectablePosition(
+    model: CKTextEditor["model"],
+    root: ModelElement,
+    path: readonly number[]
+) {
+    let parent = root;
+    let offset = 0;
+
+    for (const [ depth, pathOffset ] of path.entries()) {
+        offset = Math.min(Math.max(pathOffset, 0), parent.maxOffset);
+        if (depth === path.length - 1) break;
+
+        const child = parent.getChild(parent.offsetToIndex(offset));
+        if (!child?.is("element") || child.startOffset !== offset) break;
+
+        parent = child;
+    }
+
+    const position = model.createPositionAt(parent, offset);
+    return model.schema.getNearestSelectionRange(position)?.start ?? null;
 }
 
 export function setupImageOpening(container: HTMLDivElement, singleClickOpens: boolean) {

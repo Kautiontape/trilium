@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { _getModelData, _setModelData, ClassicEditor, Essentials, Paragraph } from "ckeditor5";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type FNote from "../../../entities/fnote";
 
@@ -15,7 +16,7 @@ vi.mock("../../../services/content_renderer", () => ({
 import content_renderer from "../../../services/content_renderer";
 import froca from "../../../services/froca";
 import link from "../../../services/link";
-import { loadIncludedNote } from "./utils";
+import { loadIncludedNote, setDataKeepingSelection } from "./utils";
 
 const note = { noteId: "noteY" } as unknown as FNote;
 
@@ -69,5 +70,78 @@ describe("loadIncludedNote", () => {
         await loadIncludedNote("noteY", $el, "small");
 
         expect(content_renderer.disposeInteractiveContent).toHaveBeenCalledWith($el);
+    });
+});
+
+describe("setDataKeepingSelection", () => {
+    let editor: ClassicEditor;
+
+    beforeAll(async () => {
+        const el = document.createElement("div");
+        document.body.appendChild(el);
+        editor = await ClassicEditor.create(el, {
+            plugins: [ Essentials, Paragraph ],
+            licenseKey: "GPL"
+        });
+    });
+
+    afterAll(async () => {
+        await editor.destroy();
+    });
+
+    function reload(data: string) {
+        setDataKeepingSelection(editor, data);
+        return _getModelData(editor.model);
+    }
+
+    it("keeps a collapsed caret where it was, without an undo step or a data change", () => {
+        _setModelData(editor.model, "<paragraph>first</paragraph><paragraph>sec[]ond</paragraph>");
+        let dataChanges = 0;
+        const countChange = () => dataChanges++;
+        editor.model.document.on("change:data", countChange);
+
+        const result = reload("<p>first, edited on the server</p><p>second</p>");
+        editor.model.document.off("change:data", countChange);
+
+        expect(result).toBe(
+            "<paragraph>first, edited on the server</paragraph><paragraph>sec[]ond</paragraph>"
+        );
+        // The one data change is setData() itself.
+        expect(dataChanges).toBe(1);
+        expect(editor.commands.get("undo")?.isEnabled).toBe(false);
+    });
+
+    it("keeps a backward selection backward", () => {
+        _setModelData(editor.model, "<paragraph>one</paragraph><paragraph>two three</paragraph>");
+        editor.model.change((writer) => {
+            const root = editor.model.document.getRoot();
+            if (!root) throw new Error("No root");
+            writer.setSelection(writer.createRange(
+                writer.createPositionFromPath(root, [ 0, 1 ]),
+                writer.createPositionFromPath(root, [ 1, 3 ])
+            ), { backward: true });
+        });
+
+        expect(reload("<p>one</p><p>two three</p>"))
+            .toBe("<paragraph>o[ne</paragraph><paragraph>two] three</paragraph>");
+        expect(editor.model.document.selection.isBackward).toBe(true);
+    });
+
+    it("clamps a selection the new document is too short for, instead of throwing", () => {
+        _setModelData(
+            editor.model,
+            "<paragraph>a</paragraph><paragraph>b</paragraph><paragraph>long [text] end</paragraph>"
+        );
+
+        expect(reload("<p>a</p><p>bc</p>"))
+            .toBe("<paragraph>a</paragraph><paragraph>bc[]</paragraph>");
+
+        _setModelData(
+            editor.model,
+            "<paragraph>a</paragraph><paragraph>a much longer line[]</paragraph>"
+        );
+
+        expect(reload("<p>a</p><p>short</p>"))
+            .toBe("<paragraph>a</paragraph><paragraph>short[]</paragraph>");
     });
 });
