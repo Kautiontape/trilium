@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { htmlToMarkdownWithIds } from './markdown.js';
 import { headingsByLine, neutralizeSuggested, normName, sectionKind } from './sections.js';
-import { readPlan } from './plan-read.js';
+import { isPeriodKey, readPlan } from './plan-read.js';
 import { openTasks, suggestedTasks } from './open.js';
 import { scanDocs } from '../index/index.js';
 import { TRILIUM_CONFIG } from './config.js';
@@ -9,6 +9,26 @@ import { buildDoc } from './journal.js';
 import { critical, fakeTrilium, li, periodNote, STATES, ul } from './helpers.js';
 
 const now = new Date(2026, 9, 26);
+
+describe('isPeriodKey', () => {
+  it('accepts only days, ISO weeks and months that exist', () => {
+    const valid = (kind: 'day' | 'week' | 'month', keys: string[]) => keys.filter((k) => isPeriodKey(kind, k));
+    expect(valid('day', ['2026-02-28', '2028-02-29', '2026-12-31', '2026-02-29', '2026-02-30', '2026-04-31', '2026-13-01', '2026-00-10', '2026-01-00', '2026-1-01'])).toEqual([
+      '2026-02-28',
+      '2028-02-29',
+      '2026-12-31',
+    ]);
+    // 2020 and 2026 start on a Wednesday in a leap year and on a Thursday: 53 weeks. 2025 has 52.
+    expect(valid('week', ['2026-W01', '2026-W53', '2020-W53', '2025-W52', '2025-W53', '2026-W54', '2026-W00', '2026-W1'])).toEqual([
+      '2026-W01',
+      '2026-W53',
+      '2020-W53',
+      '2025-W52',
+    ]);
+    expect(valid('month', ['2026-01', '2026-12', '2026-13', '2026-00', '2026-1'])).toEqual(['2026-01', '2026-12']);
+    expect(isPeriodKey('day', '2026-W05')).toBe(false);
+  });
+});
 
 describe('section names', () => {
   it('match ignoring case, emoji and spacing', () => {

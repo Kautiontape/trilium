@@ -283,6 +283,16 @@ describe('forwardTasks to and from weeks and months', () => {
     expect(rs.map((r) => (r.status === 'skipped' ? r.reason : r.status))).toEqual(['bad_request', 'bad_request']);
   });
 
+  it("rejects a day, week or month that doesn't exist, and creates nothing", async () => {
+    const f = seed();
+    const tos = ['2026-02-30', '2025-W53', '2026-13', '2026-00', '2026-W00'];
+    const rs = await forwardTasks(f.api, tos.map((to) => ({ noteId: 'mon', listItemId: 'eone', to })), { states: STATES });
+    expect(rs.map((r) => (r.status === 'skipped' ? r.reason : r.status))).toEqual(tos.map(() => 'bad_request'));
+    expect(f.log).toEqual([]);
+    // 2026 has 53 ISO weeks.
+    expect((await forwardTasks(f.api, [{ noteId: 'mon', listItemId: 'eone', to: '2026-W53' }], { states: STATES }))[0]).toMatchObject({ status: 'moved' });
+  });
+
   it('replaces the untouched template placeholder in a freshly created period note', async () => {
     const f = seed();
     await go(f, 'mon', 'eone', '2027-W10');

@@ -165,6 +165,14 @@ describe('addTasks', () => {
     const out = await addTasks(f.api, bad, base);
     expect(out.every((o) => o.status === 'skipped' && o.reason === 'bad_request')).toBe(true);
   });
+
+  it("rejects a day, week or month that doesn't exist, and creates nothing", async () => {
+    const f = fakeTrilium(seed(''));
+    const bad = [{ date: '2026-02-30' }, { week: '2025-W53' }, { month: '2026-13' }].map((when) => ({ ...when, section: 'W', text: 'x' }));
+    const out = await addTasks(f.api, bad, base);
+    expect(out.map((o) => (o.status === 'skipped' ? o.reason : o.status))).toEqual(['bad_request', 'bad_request', 'bad_request']);
+    expect(puts(f.log)).toEqual([]);
+  });
 });
 
 describe('acceptTasks', () => {

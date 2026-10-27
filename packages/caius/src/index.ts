@@ -18,7 +18,7 @@ export { forwardTasks } from './trilium/forward.js';
 export type { ForwardRequest, ForwardResult, ForwardOptions, NoteChange, SkipReason } from './trilium/forward.js';
 export { normName, sectionKind, isSuggestedName, headingsByLine, neutralizeSuggested } from './trilium/sections.js';
 export type { SectionKind } from './trilium/sections.js';
-export { readPlan, buildPlanView, findPeriodNote, dismissedKeys, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './trilium/plan-read.js';
+export { readPlan, buildPlanView, findPeriodNote, dismissedKeys, isPeriodKey, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './trilium/plan-read.js';
 export type { PlanView, PlanTask, PlanSection, Capacity, PeriodKind } from './trilium/plan-read.js';
 export { buildDoc } from './trilium/journal.js';
 export { addTasks, acceptTasks, dismissTasks, setStates } from './trilium/plan.js';

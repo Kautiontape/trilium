@@ -40,6 +40,9 @@ describe("becca NoteStore", () => {
         await expect(store.calendarDay("nope")).rejects.toThrow("not valid");
         await expect(store.calendarWeek("nope")).rejects.toThrow("not valid");
         await expect(store.calendarMonth("nope")).rejects.toThrow("not valid");
+        await expect(inRequest(() => store.calendarDay("2026-02-30"))).rejects.toThrow("not valid");
+        await expect(inRequest(() => store.calendarWeek("2025-W53"))).rejects.toThrow("not valid");
+        await expect(inRequest(() => store.calendarMonth("2026-13"))).rejects.toThrow("not valid");
     });
 
     it("writes content as is and reads it back", async () => {

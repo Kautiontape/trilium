@@ -1,4 +1,4 @@
-import type { NoteStore, StoreAttribute, StoreNote } from "@triliumnext/caius";
+import { isPeriodKey, type NoteStore, type StoreAttribute, type StoreNote } from "@triliumnext/caius";
 import { attributes as attributeService, type BNote, becca, date_notes as dateNotesService, note_service as noteService, search as searchService, SearchContext } from "@triliumnext/core";
 
 import sql from "../sql.js";
@@ -67,14 +67,14 @@ export function createBeccaStore(): NoteStore {
         },
 
         async calendarDay(date) {
-            if (!isValidDate(date)) {
+            if (!isPeriodKey("day", date)) {
                 throw new Error(`Date "${date}" is not valid.`);
             }
             return mapNote(sql.transactional(() => dateNotesService.getDayNote(date)));
         },
 
         async calendarWeek(week) {
-            if (!/[0-9]{4}-W[0-9]{2}/.test(week)) {
+            if (!isPeriodKey("week", week)) {
                 throw new Error(`Week "${week}" is not valid.`);
             }
 
@@ -86,7 +86,7 @@ export function createBeccaStore(): NoteStore {
         },
 
         async calendarMonth(month) {
-            if (!/[0-9]{4}-[0-9]{2}/.test(month)) {
+            if (!isPeriodKey("month", month)) {
                 throw new Error(`Month "${month}" is not valid.`);
             }
             return mapNote(sql.transactional(() => dateNotesService.getMonthNote(month)));
@@ -133,10 +133,6 @@ function getNote(noteId: string): BNote {
 function readContent(note: BNote): string {
     const content = note.getContent();
     return typeof content === "string" ? content : Buffer.from(content).toString("utf8");
-}
-
-function isValidDate(date: string): boolean {
-    return /[0-9]{4}-[0-9]{2}-[0-9]{2}/.test(date) && !!Date.parse(date);
 }
 
 function mapNote(note: BNote): StoreNote {

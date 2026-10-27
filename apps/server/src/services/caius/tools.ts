@@ -11,6 +11,7 @@ import {
     daysLate,
     dismissTasks,
     forwardTasks,
+    isPeriodKey,
     loadJournal,
     loadStateSymbols,
     openTasks,
@@ -32,9 +33,9 @@ import { createBeccaStore, withCaiusLock } from "./store.js";
 const LANES = ["overdue", "today", "week", "orbit", "planning_ahead", "someday", "suggested"] as const;
 const DEFAULT_OPEN_LIMIT = 50;
 
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const WEEK = /^\d{4}-W\d{2}$/;
-const MONTH = /^\d{4}-\d{2}$/;
+/** A string that names a day, ISO week or month that exists, such as `2026-10-27`, `2026-W44` or `2026-10`. */
+const periodKey = (kind: "day" | "week" | "month", shape: string) =>
+    z.string().refine((key) => isPeriodKey(kind, key), `Must be a ${shape} that exists`);
 
 const taskRef = {
     noteId: z.string().describe("The note the task is in, as returned by caius_open or caius_plan"),
@@ -45,9 +46,9 @@ const dryRun = z.boolean().optional().describe("Report what would change without
 const html = z.boolean().optional().describe("On a dry run, return each note's full before and after HTML instead of a summary of the change");
 
 const addItem = z.object({
-    date: z.string().regex(DAY).optional().describe("Day note, YYYY-MM-DD"),
-    week: z.string().regex(WEEK).optional().describe("Week note, YYYY-Www"),
-    month: z.string().regex(MONTH).optional().describe("Month note, YYYY-MM"),
+    date: periodKey("day", "YYYY-MM-DD").optional().describe("Day note, YYYY-MM-DD"),
+    week: periodKey("week", "YYYY-Www").optional().describe("Week note, YYYY-Www"),
+    month: periodKey("month", "YYYY-MM").optional().describe("Month note, YYYY-MM"),
     section: z.string().optional().describe("Heading to add the task under"),
     critical: z.boolean().optional().describe("Add the task to the Important block"),
     suggested: z.boolean().optional().describe("Add the task to the Suggested section"),
@@ -82,7 +83,10 @@ const stateItem = z.object({
 
 const forwardItem = z.object({
     ...taskRef,
-    to: z.string().refine((to) => DAY.test(to) || WEEK.test(to) || MONTH.test(to), "Forwarding takes a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
+    to: z.string().refine(
+        (to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to),
+        "Forwarding takes a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM that exists"
+    )
         .describe("The note to forward the task to: a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
 });
 
@@ -120,10 +124,6 @@ function currentKey(period: "day" | "week" | "month", now: Date): string {
     return `${thursday.getUTCFullYear()}-W${pad(week)}`;
 }
 
-function keyMatches(period: "day" | "week" | "month", key: string): boolean {
-    return (period === "day" ? DAY : period === "week" ? WEEK : MONTH).test(key);
-}
-
 /** An open task as the library reports it, plus the lane it sits in and, when overdue, how late it is. */
 type LaneTask = OpenTask & { lane: string | null; daysLate?: number };
 
@@ -144,8 +144,8 @@ export function createCaiusTools(store = createBeccaStore()) {
             execute: async ({ period, date }) => {
                 const now = caiusNow();
                 const key = date ?? currentKey(period, now);
-                if (!keyMatches(period, key)) {
-                    return { error: `"${key}" is not a valid ${period} key` };
+                if (!isPeriodKey(period, key)) {
+                    return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
                 }
                 return readPlan(store, period, key, now);
             }

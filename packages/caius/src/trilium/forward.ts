@@ -12,7 +12,7 @@
 
 import { label, type NoteReader, type NoteStore, type StoreNote } from './store.js';
 import { loadStateSymbols } from './journal.js';
-import { PERIODS, periodQuery, type PeriodKind } from './plan-read.js';
+import { isPeriodKey, PERIODS, periodQuery, type PeriodKind } from './plan-read.js';
 import { periodLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
 import type { StateSymbols } from './markdown.js';
 
@@ -165,18 +165,9 @@ async function forwardOne(
   return { ...req, status: 'moved', detail: alreadyCopied ? 'target already held the copy' : undefined };
 }
 
-/** The period a `to` value names, or null when it isn't a real day, ISO week or month. */
+/** The period a `to` value names, or null when it isn't a day, ISO week or month that exists. */
 function periodKind(to: string | undefined): PeriodKind | null {
-  for (const kind of ['day', 'week', 'month'] as const) {
-    if (!PERIODS[kind].pattern.test(to ?? '')) continue;
-    const [, month, rest] = /^\d{4}-(?:W)?(\d{2})(?:-(\d{2}))?$/.exec(to!) ?? [];
-    const n = Number(month);
-    if (kind === 'week') return n >= 1 && n <= 53 ? kind : null;
-    if (n < 1 || n > 12) return null;
-    if (kind === 'day' && (Number(rest) < 1 || Number(rest) > 31)) return null;
-    return kind;
-  }
-  return null;
+  return (['day', 'week', 'month'] as const).find((kind) => isPeriodKey(kind, to ?? '')) ?? null;
 }
 
 /** The day, week or month a note stands for, from its label. */

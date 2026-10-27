@@ -24,7 +24,7 @@ import {
   type StateAction,
   type Target,
 } from './plan-html.js';
-import { DISMISSED_LABEL, PERIODS, dismissedKeys, findPeriodNote, type PeriodKind } from './plan-read.js';
+import { DISMISSED_LABEL, PERIODS, dismissedKeys, findPeriodNote, isPeriodKey, type PeriodKind } from './plan-read.js';
 import type { StateSymbols } from './markdown.js';
 
 export interface AddRequest {
@@ -131,7 +131,7 @@ function periodOf(req: AddRequest): { period: PeriodKind; key: string } | string
   if (given.length !== 1) return 'give exactly one of date, week, month';
   const period = given[0]!;
   const key = req[PERIOD_FIELDS[period]]!;
-  return PERIODS[period].pattern.test(key) ? { period, key } : `${PERIOD_FIELDS[period]} must be ${PERIODS[period].shape}`;
+  return isPeriodKey(period, key) ? { period, key } : `${PERIOD_FIELDS[period]} must be a ${PERIODS[period].shape} that exists`;
 }
 
 function targetOf(req: AddRequest): Target | string {

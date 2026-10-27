@@ -16,6 +16,33 @@ export const PERIODS = {
   month: { label: 'monthNote', folder: 'Monthly', pattern: /^\d{4}-\d{2}$/, shape: 'YYYY-MM' },
 } as const;
 
+/**
+ * Whether `key` names a period that exists: a calendar day, a month 01–12, or an ISO week the
+ * year has (`2026-W53` exists, `2025-W53` doesn't). The key is parsed and formatted back, and
+ * must come out the same.
+ */
+export function isPeriodKey(kind: PeriodKind, key: string): boolean {
+  if (!PERIODS[kind].pattern.test(key)) return false;
+  const year = Number(key.slice(0, 4));
+  if (kind === 'week') {
+    const jan4 = Date.UTC(year, 0, 4);
+    const firstMonday = jan4 - ((new Date(jan4).getUTCDay() + 6) % 7) * DAY_MS;
+    return isoWeekKey(new Date(firstMonday + (Number(key.slice(6)) - 1) * 7 * DAY_MS)) === key;
+  }
+  const date = new Date(Date.UTC(year, Number(key.slice(5, 7)) - 1, kind === 'day' ? Number(key.slice(8)) : 1));
+  return date.toISOString().slice(0, key.length) === key;
+}
+
+const DAY_MS = 86_400_000;
+
+/** `YYYY-Www` for a UTC date: the year and number of its week's Thursday. */
+function isoWeekKey(date: Date): string {
+  const thursday = new Date(date.getTime() + (3 - ((date.getUTCDay() + 6) % 7)) * DAY_MS);
+  const year = thursday.getUTCFullYear();
+  const week = Math.ceil(((thursday.getTime() - Date.UTC(year, 0, 1)) / DAY_MS + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
 export const DISMISSED_LABEL = 'caiusDismissed';
 /** Minutes assumed for a live task with no `~est` token. */
 export const DEFAULT_ESTIMATE = 30;
