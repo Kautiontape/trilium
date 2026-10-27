@@ -243,3 +243,15 @@ describe("caius_brief_write", () => {
         expect(schema?.safeParse({ ...brief, latitude: 1 }).success).toBe(false);
     });
 });
+
+describe("caius_skip_catchup", () => {
+    it("labels the day note once, creating it if missing", async () => {
+        const first = await call("caius_skip_catchup", { date: "2026-11-16" });
+        expect(first).toMatchObject({ date: "2026-11-16", status: "updated", created: true });
+        const note = becca.notes[first.noteId];
+        expect(note?.getLabelValue("dateNote")).toBe("2026-11-16");
+
+        expect(await call("caius_skip_catchup", { date: "2026-11-16" })).toMatchObject({ noteId: first.noteId, status: "unchanged", created: false });
+        expect(note?.getLabels("caiusSkipCatchup").map((l) => l.value)).toEqual([ "2026-11-16" ]);
+    });
+});

@@ -128,6 +128,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.briefWrite, service.briefWrite)
         },
 
+        caius_skip_catchup: {
+            description: "Skip Plan my day's catch-up for a day: labels that day's note #caiusSkipCatchup=<date>, so the last workday's open tasks are left where they are and the catchup step no longer asks. Creates the day note if missing.",
+            inputSchema: toolInputs.skipCatchup,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.skipCatchup, service.skipCatchup)
+        },
+
         caius_header: {
             description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,

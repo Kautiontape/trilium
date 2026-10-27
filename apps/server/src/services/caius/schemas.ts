@@ -168,12 +168,17 @@ const contextAdd = z.object({
     dryRun
 }).refine((input) => (input.date === undefined) !== (input.week === undefined), "Give exactly one of date or week");
 
+const skipCatchup = z.object({
+    date: periodKey("day").describe("The day being planned, YYYY-MM-DD, whose catch-up is skipped")
+});
+
 export const toolInputs = {
     ...reads,
     inputs,
     meetings,
     contextAdd,
     briefWrite,
+    skipCatchup,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -213,6 +218,7 @@ export type AssignIdsInput = z.infer<typeof reads.assignIds>;
 export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
+export type SkipCatchupInput = z.infer<typeof skipCatchup>;
 export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;

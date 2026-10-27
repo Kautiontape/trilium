@@ -20,6 +20,7 @@ import {
     diffSummary,
     dismissTasks,
     ensureListItemIds,
+    findPeriodNote,
     forwardTasks,
     gatherContext,
     isPeriodKey,
@@ -62,11 +63,12 @@ import {
     type MeetingsInput,
     type OpenInput,
     type PlanInput,
-    type SetStateInput
+    type SetStateInput,
+    type SkipCatchupInput
 } from "./schemas.js";
-import { writeBrief } from "./brief.js";
+import { SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
 import { type CaiusInputs, readInputs } from "./inputs/index.js";
-import { createBeccaStore, putAttachment, withCaiusLock } from "./store.js";
+import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 
 export { routeInputs } from "./schemas.js";
@@ -243,6 +245,18 @@ export function createCaiusService(
         contextAdd: ({ dryRun, ...req }: ContextAddInput) => withCaiusLock("caius_context_add", async () => {
             const result = await addContext(store, req, { dryRun, now: caiusNow() });
             return withBlobIds([ withDiff(result) ]);
+        }),
+
+        /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
+        skipCatchup: ({ date }: SkipCatchupInput) => withCaiusLock("caius_skip_catchup", async () => {
+            const existing = await findPeriodNote(store, "day", date);
+            const note = existing ?? await store.calendarDay(date);
+            if (note.isProtected) {
+                return { date, error: "bad_request", detail: `The day note for ${date} is protected` };
+            }
+            const labelled = note.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
+            if (!labelled) setLabel(note.noteId, SKIP_CATCHUP_LABEL, date);
+            return { date, noteId: note.noteId, status: labelled ? "unchanged" : "updated", created: !existing };
         }),
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {

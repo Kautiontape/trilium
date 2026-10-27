@@ -25,6 +25,8 @@ export const HEADER_TITLE = "Header";
 const CSS_CLASS = "briefdemo";
 const BRIEF_LABEL = "morningBrief";
 export const PLANNED_AT_LABEL = "caiusPlannedAt";
+/** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */
+export const SKIP_CATCHUP_LABEL = "caiusSkipCatchup";
 /** Children of a brief that the old push script labels; they are pages of a brief, never the brief. */
 const PAGE_LABELS = [ "morningBriefPage", "morningBriefRevision" ];
 
