@@ -98,7 +98,7 @@ describe("PlanTab", () => {
         expect(api.plan).toHaveBeenCalledWith("day", "2026-10-27");
         expect(api.open.mock.calls.map(([ lane ]) => lane)).toEqual([ undefined ]);
         expect(text(tab, ".plan-period-key")).toBe("2026-10-27");
-        expect(text(tab, ".plan-capacity-summary")).toBe("75 min planned of 180–240 min");
+        expect(text(tab, ".plan-capacity-summary")).toBe("1 h 15 m planned of 3–4 h");
         expect(tab.querySelector("meter")?.getAttribute("value")).toBe("75");
         expect(text(tab, ".plan-capacity-unestimated")).toBe("1 unestimated, counted at 30 min");
 
@@ -358,7 +358,7 @@ describe("PlanTab", () => {
 
         expect(api.plan).toHaveBeenCalledWith("month", "2026-12");
         expect(text(tab, "#plan-suggested")).toContain("Nothing suggested.");
-        expect(text(tab, ".plan-capacity-summary")).toBe("75 min planned");
+        expect(text(tab, ".plan-capacity-summary")).toBe("1 h 15 m planned");
         expect(tab.querySelector("meter")).toBeNull();
         expect(tab.querySelector("#plan-close")).toBeNull();
     });

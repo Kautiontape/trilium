@@ -1,5 +1,6 @@
 import "./PlanCapacity.css";
 
+import { formatMinutes, formatMinutesRange } from "@triliumnext/caius/src/core/duration";
 import clsx from "clsx";
 import { useState } from "preact/hooks";
 
@@ -42,13 +43,14 @@ export default function PlanCapacity({ plan, onOpen }: {
                         />
                         <div className="plan-capacity-summary">
                             {t("caius.plan.capacity_of_target", {
-                                total: capacity.totalMinutes, min: target.min, max: target.max
+                                total: formatMinutes(capacity.totalMinutes),
+                                range: formatMinutesRange(target.min, target.max)
                             })}
                         </div>
                     </>
                 ) : (
                     <div className="plan-capacity-summary">
-                        {t("caius.plan.capacity_total", { total: capacity.totalMinutes })}
+                        {t("caius.plan.capacity_total", { total: formatMinutes(capacity.totalMinutes) })}
                     </div>
                 )}
                 {capacity.unestimatedCount > 0 && (
