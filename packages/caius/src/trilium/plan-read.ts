@@ -169,7 +169,8 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
 
   // A live task with live sub-items counts through its sub-items, not twice.
   const parents = new Set(main.filter((t) => t.live && t.parent !== null).map((t) => t.parent));
-  const counted = main.filter((t) => t.live && !parents.has(t.text));
+  // An empty to-do is a blank checkbox, not a task.
+  const counted = main.filter((t) => t.live && t.text.trim() !== '' && !parents.has(t.text));
   const estimated = counted.filter((t) => t.estMinutes !== null);
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;
