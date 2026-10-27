@@ -1,0 +1,26 @@
+.caius-nudge-bar {
+    --link-color: currentColor;
+
+    margin: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--main-border-color);
+    border-radius: 6px;
+
+    .caius-nudge-bar-content {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .caius-nudge-text {
+        flex: 1;
+        min-width: 10em;
+    }
+
+    .caius-nudge-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+}

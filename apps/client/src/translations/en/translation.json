@@ -4524,6 +4524,20 @@
     },
     "chat_off": "Caius plans in the AI chat, which is off. Turn on AI features in Options to use it.",
     "plan_my_day": "Plan my day",
-    "wind_down": "Wind down"
+    "wind_down": "Wind down",
+    "nudge": {
+      "catchup_one": "{{- weekday}} has {{count}} open task.",
+      "catchup_other": "{{- weekday}} has {{count}} open tasks.",
+      "move_all": "Move all to today",
+      "review": "Review",
+      "skip": "Skip",
+      "unplanned": "No plan yet.",
+      "planned": "Planned {{time}}.",
+      "refresh": "Refresh",
+      "hide": "Hide for today",
+      "moved_one": "Moved {{count}} task to today.",
+      "moved_other": "Moved {{count}} tasks to today.",
+      "planned_untimed": "Planned."
+    }
   }
 }
