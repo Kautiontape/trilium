@@ -84,17 +84,25 @@ export function periodLabel(key: string, inYear?: number): string {
   return dayLabel(key);
 }
 
-/** Note ids the item's trailing "scheduled …" reference links point at. */
+/**
+ * Note ids the internal links after the item's last "scheduled" point at. Reads the plain links
+ * written now, the reference links written before, and both as CKEditor saves them.
+ */
 function scheduledTo(li: HTMLElement): string[] {
-  const span = descriptionOf(li);
-  if (!span) return [];
-  return span
-    .querySelectorAll('em a.reference-link')
+  const inner = descriptionOf(li)?.innerHTML ?? '';
+  const at = inner.lastIndexOf('scheduled');
+  if (at < 0) return [];
+  return parse(inner.slice(at))
+    .querySelectorAll('a')
     .map((a) => /^#root\/([^/?#]+)$/.exec(a.getAttribute('href') ?? '')?.[1])
     .filter((x): x is string => !!x);
 }
 
-const refLink = (noteId: string, label: string) => `<a class="reference-link" href="#root/${noteId}">${label}</a>`;
+/**
+ * A plain internal link. CKEditor keeps its text and any italic around it, where a `reference-link`
+ * becomes an inline widget that it saves with the target note's title instead.
+ */
+const noteLink = (noteId: string, label: string) => `<a href="#root/${noteId}">${label}</a>`;
 
 /** Check the lookup shared by both transforms; returns the item or why it can't move. */
 function lookup(
@@ -147,7 +155,7 @@ export function markRescheduled(html: string, id: string, opts: MarkOptions): Ma
     edits.push({
       start: spanEnd(html, span),
       end: spanEnd(html, span),
-      text: ` <em>scheduled ${refLink(opts.targetNoteId, opts.targetLabel)}</em>`,
+      text: ` <em>scheduled ${noteLink(opts.targetNoteId, opts.targetLabel)}</em>`,
     });
   }
   return { ok: true, html: apply(html, edits) };
@@ -187,7 +195,7 @@ function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): stri
   if (span) {
     // Before the trailing tokens (~30m, !, *date), so the parser still reads them.
     const at = spanEnd(snippet, span) - span.innerHTML.length + tokenZoneStartInHtml(span.innerHTML);
-    edits.push({ start: at, end: at, text: ` ${refLink(opts.sourceNoteId, `from ${opts.sourceLabel}`)}` });
+    edits.push({ start: at, end: at, text: ` ${noteLink(opts.sourceNoteId, `from ${opts.sourceLabel}`)}` });
   }
   return apply(snippet, edits);
 }
@@ -212,7 +220,9 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
   const sourceSpan = source && descriptionOf(source);
   if (!sourceSpan) return false;
   const body = sourceSpan.innerHTML;
-  const link = new RegExp(` <a class="reference-link" href="#root/${sourceNoteId}">[^<]*</a>`);
+  // A space or &nbsp;, then a link to the source note with any text: the copy's back link as
+  // written, or as CKEditor saved it.
+  const link = new RegExp(`(?:\\s|&nbsp;)<a [^>]*href="#root/${sourceNoteId}"[^>]*>[^<]*</a>`);
   return parse(targetHtml, { comment: true })
     .querySelectorAll('li')
     .some((li) => {
