@@ -151,15 +151,19 @@ describe("PlanTab", () => {
     it("reads every Pull in lane with one open call, at most 20 tasks a lane", async () => {
         api.plan.mockResolvedValue(dayPlan());
         const many = Array.from({ length: 25 }, (_, index) => openTask({
-            noteId: "yesterday", period: "2026-10-25", listItemId: `o${index}`, text: `Old ${index}`,
+            noteId: "yesterday", period: "2026-10-25", listItemId: `o${index}`,
+            text: `Old ${index}`,
             lane: "overdue"
         }));
-        api.open.mockResolvedValue({ total: many.length + 1, tasks: [ ...many, ...LANES.week ?? [] ] });
+        api.open.mockResolvedValue({
+            total: many.length + 1, tasks: [ ...many, ...LANES.week ?? [] ]
+        });
         const tab = await mount();
 
         expect(api.open).toHaveBeenCalledTimes(1);
         expect(api.open.mock.calls[0]?.[0]).toBeUndefined();
-        expect(tab.querySelectorAll("[data-lane=overdue] li:not(.plan-lane-more)")).toHaveLength(20);
+        const rows = tab.querySelectorAll("[data-lane=overdue] li:not(.plan-lane-more)");
+        expect(rows).toHaveLength(20);
         expect(text(tab, "[data-lane=overdue] .plan-lane-more")).toBe("and 5 more");
         expect(texts(tab, "[data-lane=week] li .plan-task-text")).toEqual([ "Week task" ]);
     });

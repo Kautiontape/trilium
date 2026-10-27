@@ -76,14 +76,16 @@ describe("plan tasks", () => {
         task({ listItemId: "a", text: "Parent" }),
         task({ listItemId: "a1", text: "Sub one", parent: "Parent", parentListItemId: "a" }),
         task({
-            listItemId: "a2", text: "Sub two", parent: "Parent", parentListItemId: "a", estMinutes: 15
+            listItemId: "a2", text: "Sub two", parent: "Parent", parentListItemId: "a",
+            estMinutes: 15
         }),
         task({ listItemId: "b", text: "Estimated", estMinutes: 45 }),
         task({ listItemId: "c", text: "Doing", state: "in_progress" }),
         task({ listItemId: "d", text: "Done", state: "done" }),
         task({ listItemId: "e", text: "Done parent", state: "done" }),
         task({
-            listItemId: "e1", text: "Orphan", parent: "Done parent", parentListItemId: "e", estMinutes: 10
+            listItemId: "e1", text: "Orphan", parent: "Done parent", parentListItemId: "e",
+            estMinutes: 10
         })
     ], [ task({ listItemId: "k", text: "Critical", critical: true }) ]);
 
@@ -98,7 +100,9 @@ describe("plan tasks", () => {
             task({ listItemId: "m1", text: "Email" }),
             task({ listItemId: "m2", text: "Email" }),
             task({ listItemId: "m3", text: "Email", state: "done" }),
-            task({ listItemId: "m3a", text: "Reply to Ann", parent: "Email", parentListItemId: "m3" }),
+            task({
+                listItemId: "m3a", text: "Reply to Ann", parent: "Email", parentListItemId: "m3"
+            }),
             task({ listItemId: "m1a", text: "Reply to Bo", parent: "Email", parentListItemId: "m1" })
         ]);
         expect(closeCandidates(emails).map((t) => t.listItemId)).toEqual([ "m1", "m2", "m3a" ]);
