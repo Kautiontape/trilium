@@ -82,6 +82,8 @@ describe("caius tools", () => {
         expect(byText.get("Week thing")).toMatchObject({ lane: "week" });
         expect(byText.get("Maybe thing")).toMatchObject({ lane: "suggested", listItemId: "s1" });
         expect(byText.get("Today thing")).not.toHaveProperty("daysLate");
+        expect(byText.get("Maybe thing")).toMatchObject({ horizon: null, state: "open", rank: expect.any(Number), path: expect.any(String), sectionKind: expect.any(String) });
+        expect(byText.get("Today thing")).toMatchObject({ horizon: "today", line: expect.any(Number), parent: null });
 
         const overdue = await call("caius_open", { lane: "overdue" });
         expect(overdue.tasks.map((t: any) => t.text)).toEqual(["Overdue thing"]);
@@ -104,6 +106,13 @@ describe("caius tools", () => {
         const item = { date: TODAY, section: "Work", text: "Added by the model" };
         const dry = await call("caius_add", { items: [item], dryRun: true });
         expect(dry.results[0]).toMatchObject({ status: "added", dryRun: true });
+        for (const change of dry.results[0].changes) {
+            expect(change).not.toHaveProperty("before");
+            expect(change).toHaveProperty("added");
+        }
+        const full = await call("caius_add", { items: [item], dryRun: true, html: true });
+        expect(full.results[0].changes[0]).toHaveProperty("before");
+        expect(full.results[0].changes[0]).toHaveProperty("after");
         expect((await call("caius_open", {})).tasks.map((t: any) => t.text)).not.toContain("Added by the model");
 
         const real = await call("caius_add", { items: [item] });

@@ -15,6 +15,7 @@ import {
     loadStateSymbols,
     openTasks,
     type OpenTask,
+    presentResult,
     readPlan,
     scanDocs,
     setStates,
@@ -41,6 +42,7 @@ const taskRef = {
 };
 
 const dryRun = z.boolean().optional().describe("Report what would change without writing anything");
+const html = z.boolean().optional().describe("On a dry run, return each note's full before and after HTML instead of a summary of the change");
 
 const addItem = z.object({
     date: z.string().regex(DAY).optional().describe("Day note, YYYY-MM-DD"),
@@ -122,31 +124,12 @@ function keyMatches(period: "day" | "week" | "month", key: string): boolean {
     return (period === "day" ? DAY : period === "week" ? WEEK : MONTH).test(key);
 }
 
-interface LaneTask {
-    noteId: string;
-    listItemId: string | null;
-    lane: string;
-    text: string;
-    period: string;
-    section: string | null;
-    critical: boolean;
-    state: string;
-    daysLate?: number;
-}
+/** An open task as the library reports it, plus the lane it sits in and, when overdue, how late it is. */
+type LaneTask = OpenTask & { lane: string | null; daysLate?: number };
 
-function toLaneTask(task: OpenTask, lane: string, now: Date): LaneTask {
+function toLaneTask(task: OpenTask, lane: string | null, now: Date): LaneTask {
     const lateBy = lane === "overdue" ? daysLate(task.period, now) : null;
-    return {
-        noteId: task.noteId,
-        listItemId: task.listItemId,
-        lane,
-        text: task.text,
-        period: task.period,
-        section: task.section,
-        critical: task.critical,
-        state: task.state,
-        ...(lateBy === null ? {} : { daysLate: lateBy })
-    };
+    return { ...task, lane, ...(lateBy === null ? {} : { daysLate: lateBy }) };
 }
 
 export function createCaiusTools(store = createBeccaStore()) {
@@ -180,7 +163,7 @@ export function createCaiusTools(store = createBeccaStore()) {
                 const { docs } = await loadJournal(store);
                 const result = scanDocs(docs, TRILIUM_CONFIG, now);
                 const tasks = [
-                    ...openTasks(docs, result).map((t) => toLaneTask(t, t.horizon ?? "someday", now)),
+                    ...openTasks(docs, result).map((t) => toLaneTask(t, t.horizon, now)),
                     ...suggestedTasks(docs, now).map((t) => toLaneTask(t, "suggested", now))
                 ].filter((t) => !lane || t.lane === lane);
                 return { total: tasks.length, tasks: tasks.slice(0, limit) };
@@ -225,38 +208,38 @@ export function createCaiusTools(store = createBeccaStore()) {
 
         caius_add: {
             description: "Add tasks to a day, week or month note, in a section, the Important block or the Suggested section. Takes a list of items.",
-            inputSchema: z.object({ items: z.array(addItem).min(1), dryRun }),
+            inputSchema: z.object({ items: z.array(addItem).min(1), dryRun, html }),
             async: true,
             mutates: true,
-            execute: async ({ items, dryRun }) => ({ results: await addTasks(store, items, { dryRun, now: caiusNow() }) })
+            execute: async ({ items, dryRun, html }) => ({ results: (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html)) })
         },
 
         caius_accept: {
             description: "Accept suggested tasks: move them from a Suggested section into a section or the Important block. Takes a list of items.",
-            inputSchema: z.object({ items: z.array(acceptItem).min(1), dryRun }),
+            inputSchema: z.object({ items: z.array(acceptItem).min(1), dryRun, html }),
             async: true,
             mutates: true,
-            execute: async ({ items, dryRun }) => ({ results: await acceptTasks(store, items, { dryRun }) })
+            execute: async ({ items, dryRun, html }) => ({ results: (await acceptTasks(store, items, { dryRun })).map((r) => presentResult(r, html)) })
         },
 
         caius_dismiss: {
             description: "Dismiss suggested tasks so they are not suggested again. Takes a list of items.",
-            inputSchema: z.object({ items: z.array(dismissItem).min(1), dryRun }),
+            inputSchema: z.object({ items: z.array(dismissItem).min(1), dryRun, html }),
             async: true,
             mutates: true,
-            execute: async ({ items, dryRun }) => ({ results: await dismissTasks(store, items, { dryRun }) })
+            execute: async ({ items, dryRun, html }) => ({ results: (await dismissTasks(store, items, { dryRun })).map((r) => presentResult(r, html)) })
         },
 
         caius_set_state: {
             description: "Mark tasks done, doing or cancelled. A cancelled task needs a reason. Takes a list of items.",
-            inputSchema: z.object({ items: z.array(stateItem).min(1), dryRun }),
+            inputSchema: z.object({ items: z.array(stateItem).min(1), dryRun, html }),
             async: true,
             mutates: true,
-            execute: async ({ items, dryRun }) => {
+            execute: async ({ items, dryRun, html }) => {
                 const states = await loadStateSymbols(store);
                 const results: object[] = [];
                 for (const { state, ...item } of items) {
-                    results.push(...await setStates(store, STATE_ACTION[state as keyof typeof STATE_ACTION], [item], { dryRun, states }));
+                    results.push(...(await setStates(store, STATE_ACTION[state as keyof typeof STATE_ACTION], [item], { dryRun, states })).map((r) => presentResult(r, html)));
                 }
                 return { results };
             }
@@ -264,10 +247,10 @@ export function createCaiusTools(store = createBeccaStore()) {
 
         caius_forward: {
             description: "Forward tasks to a later day: marks each as rescheduled and copies it to the day note. Takes a list of items; days only.",
-            inputSchema: z.object({ items: z.array(forwardItem).min(1), dryRun }),
+            inputSchema: z.object({ items: z.array(forwardItem).min(1), dryRun, html }),
             async: true,
             mutates: true,
-            execute: async ({ items, dryRun }) => ({ results: await forwardTasks(store, items, { dryRun }) })
+            execute: async ({ items, dryRun, html }) => ({ results: (await forwardTasks(store, items, { dryRun })).map((r) => presentResult(r, html)) })
         }
     });
 }

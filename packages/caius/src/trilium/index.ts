@@ -7,6 +7,7 @@ export { loadJournal, loadStateSymbols } from './journal.js';
 export type { TriliumDoc, JournalLoad } from './journal.js';
 export { TRILIUM_CONFIG } from './config.js';
 export { openTasks, suggestedTasks, daysLate } from './open.js';
+export { diffSummary, presentResult } from './present.js';
 export type { OpenTask } from './open.js';
 export { htmlToMarkdownWithIds } from './markdown.js';
 export type { MarkdownWithIds } from './markdown.js';
