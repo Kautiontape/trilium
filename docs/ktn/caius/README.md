@@ -53,7 +53,7 @@ When the viewed period is a day, two buttons sit under the period bar: **Plan my
 
 ## The nudge bar
 
-Today's day note (today by the Caius clock) shows a slim bar under its journal navigation, in the new layout. It holds one state at a time:
+Today's day note (today by the Caius clock) shows a slim bar under its journal navigation, on desktop in the new layout. It holds one state at a time:
 
 | State | When | Bar | Actions |
 |---|---|---|---|

@@ -10,6 +10,7 @@ import {
 import froca from "../../services/froca";
 import { t } from "../../services/i18n";
 import type LoadResults from "../../services/load_results";
+import { isDesktop } from "../../services/utils";
 import { useCaiusEnabled } from "../sidebar/plan/PlanTab";
 import ActionButton from "../react/ActionButton";
 import Button from "../react/Button";
@@ -22,14 +23,16 @@ export const NUDGE_REFRESH_DELAY_MS = 300;
 /**
  * The slim bar at the top of today's day note (today by the Caius clock) that offers the next step of
  * the day: the last workday's catch-up, Plan my day, or Refresh once the day is planned. It shows on
- * no other note, on no protected note and while Caius is off, and hides for the day when dismissed.
+ * no other note, on no protected note, not on mobile and not while Caius is off, and hides for the
+ * day when dismissed.
  */
 export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined }) {
     const enabled = useCaiusEnabled();
     const [ dateNote ] = useNoteLabel(note, "dateNote");
     const isProtected = useNoteProperty(note, "isProtected");
     // The Caius clock is known once the status has answered, which is what `enabled` waits for.
-    const date = note && enabled && !isProtected && dateNote === dayKey(caiusNow()) ? dateNote : null;
+    // The mobile layout has no sidebar chat, which most of the actions open.
+    const date = note && enabled && !isProtected && isDesktop() && dateNote === dayKey(caiusNow()) ? dateNote : null;
     const { nudge, refresh } = useNudge(date, note?.noteId);
     const [ busy, setBusy ] = useState(false);
     const [ , setDismissals ] = useState(0);

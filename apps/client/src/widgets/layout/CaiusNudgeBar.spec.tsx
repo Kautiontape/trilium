@@ -15,7 +15,12 @@ const h = vi.hoisted(() => ({
     apply: vi.fn(async () => [ { status: "moved" } ]),
     caiusWrite: vi.fn(),
     startCaiusConversation: vi.fn(async () => {}),
-    enabled: true
+    enabled: true,
+    desktop: true
+}));
+vi.mock("../../services/utils", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../../services/utils")>()),
+    isDesktop: () => h.desktop
 }));
 vi.mock("../../services/caius", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../../services/caius")>()),
@@ -60,6 +65,7 @@ describe("CaiusNudgeBar", () => {
         vi.setSystemTime(new Date(2026, 10, 4, 9, 0));
         vi.clearAllMocks();
         h.enabled = true;
+        h.desktop = true;
         localStorage.clear();
         h.caiusWrite.mockImplementation(
             (_noteId: string, call: (blobId: string) => Promise<unknown>) => call("blob-1"));
@@ -144,7 +150,7 @@ describe("CaiusNudgeBar", () => {
         expect(text(await mount(tomorrow))).toBe("Wednesday has 3 open tasks.");
     });
 
-    it("shows nothing on a note that is not today's, on a protected one, or while Caius is off", async () => {
+    it("shows nothing on a note that is not today's, on a protected one, on mobile, or while Caius is off", async () => {
         h.nudge.mockResolvedValue(CATCHUP);
         const other = buildNote({ id: "other", title: "Other" });
         const past = buildNote({ id: "past", title: "2", "#dateNote": "2026-11-02" });
@@ -158,6 +164,11 @@ describe("CaiusNudgeBar", () => {
         today.isProtected = true;
         expect((await mount(today)).querySelector(".caius-nudge-bar")).toBeNull();
         today.isProtected = false;
+
+        // The mobile layout has no sidebar chat for the bar's actions to open.
+        h.desktop = false;
+        expect((await mount(today)).querySelector(".caius-nudge-bar")).toBeNull();
+        h.desktop = true;
 
         h.nudge.mockClear();
         h.enabled = false;
