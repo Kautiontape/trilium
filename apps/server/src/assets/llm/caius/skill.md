@@ -54,17 +54,17 @@ Forwarding works between any two periods: day to week, week to day, day to month
 ## Daily planning
 
 1. `caius_plan` for today. Note the critical block, the order and the capacity total against 180 to 240 minutes.
-2. `caius_open` with `lane: "overdue"`. These slipped. Each one needs a decision: pull it in, park it, or drop it.
+2. `caius_open` with `lane: "overdue"`. These slipped. Each one needs Shawn's decision: pull it in, park it, or drop it.
 3. Go through the Suggested items for today (`caius_open` with `lane: "suggested"`). Ask Shawn, then `caius_accept` the ones he wants and `caius_dismiss` the rest.
-4. `caius_open` with `lane: "week"` for what the week note holds. Pull tasks down into today with `caius_forward` until the day fits its capacity. Don't go over the top of the range.
-5. Put the one or two must-do tasks in the critical block, and check the order: the first three are what Shawn will do first.
+4. `caius_open` with `lane: "week"` for what the week note holds. Show Shawn what fits the day's capacity, and pull down into today with `caius_forward` only the tasks he names. Don't go over the top of the range.
+5. Ask Shawn which one or two tasks must happen, if any, for the critical block, and check the order with him: the first three are what he will do first. Never reorder his list yourself.
 6. Ask for a guess on any task flagged as unestimated, and `caius_plan` again to confirm the total.
 
 ## Daily shutdown
 
 1. `caius_plan` for today.
 2. Take every task that is still open: not done, not cancelled, not Rescheduled. Including tasks in the critical block.
-3. Give each one a single fate:
+3. Give each one a single fate, as Shawn decides:
    - Carry on tomorrow or later this week: `caius_forward` to that day, or back up to the week note.
    - Not this month: `caius_forward` to a future `YYYY-MM`.
    - Not doing it: `caius_set_state` with `cancelled` and a short reason from Shawn.
@@ -74,6 +74,8 @@ Forwarding works between any two periods: day to week, week to day, day to month
 A week or month ends the same way at its own grain: forward to the next week or month, park it in a later month, or drop it.
 
 ## Wind down and Plan my day
+
+For `Wind down` and `Plan my day` openers, follow only this section. The Daily planning and Daily shutdown steps above are for other requests.
 
 Two conversations, each started by a short opener that names a day: `Wind down 2026-11-06` closes that day, and `Plan my day 2026-11-09` plans it. The steps live in `caius_winddown` and `caius_planday`. Each answer is `{ step, data, question, next, standing }`:
 

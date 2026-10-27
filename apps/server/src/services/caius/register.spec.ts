@@ -51,6 +51,9 @@ it("offers the caius skill only while it is registered, and names every tool the
         expect(sheet, `the sheet should mention ${name}`).toContain(`\`${name}\``);
     }
     expect(sheet.split("\n").length).toBeGreaterThanOrEqual(80);
+    // The openers follow only their own section, and no step lets the agent choose the main list.
+    expect(sheet).toContain("For `Wind down` and `Plan my day` openers, follow only this section.");
+    expect(sheet).not.toContain("until the day fits its capacity");
 
     unregister();
     expect(readSkill("caius")).toBeNull();
