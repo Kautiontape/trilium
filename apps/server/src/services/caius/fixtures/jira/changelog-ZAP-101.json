@@ -1,0 +1,35 @@
+{
+  "total": 3,
+  "values": [
+    {
+      "created": "2026-10-14T09:00:00.000-0400",
+      "items": [
+        {
+          "field": "status",
+          "fromString": "To Do",
+          "toString": "In Progress"
+        }
+      ]
+    },
+    {
+      "created": "2026-10-17T13:00:00.000-0400",
+      "items": [
+        {
+          "field": "assignee",
+          "fromString": null,
+          "toString": "Sam Example"
+        }
+      ]
+    },
+    {
+      "created": "2026-10-21T10:30:00.000-0400",
+      "items": [
+        {
+          "field": "status",
+          "fromString": "Code Review",
+          "toString": "Dev Verify"
+        }
+      ]
+    }
+  ]
+}
