@@ -19,6 +19,8 @@ Trilium internal links (that mirror a note's title and display its icon) are emb
 
 Both inline and display equations are supported, using the `$` and `$$` syntaxes.
 
+A single `$` starts inline math only when a non-space character follows it, and the closing `$` must follow a non-space character and must not be followed by a digit, so prices like $5 and $10 stay text.
+
 ## Admonitions
 
 The Markdown syntax for admonitions as supported by Trilium is the one that GitHub uses, which is as follows:
