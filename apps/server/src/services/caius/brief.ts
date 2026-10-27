@@ -41,7 +41,7 @@ export interface BriefDeps {
 }
 
 /** One note's write: `updated`, `unchanged`, or `edited` when it changed between the read and the write. */
-interface NoteWrite {
+export interface NoteWrite {
     noteId: string;
     role: "header" | "brief" | "day";
     status: "updated" | "unchanged" | "skipped";
