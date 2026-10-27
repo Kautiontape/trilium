@@ -228,11 +228,14 @@ function localMoment(stamp: string): Date | undefined {
 
 /**
  * The live tasks the wind-down of `date` closes: those in its day note, the overdue ones and those
- * in its ISO week note, each with its proposed fate. A sub-item goes with its listed parent.
+ * in its ISO week note, each with its proposed fate: the target day for the first two, and for a
+ * week task its week, or the target day's week when the week ends first. A sub-item goes with its
+ * listed parent.
  */
 async function stillOpen(store: NoteStore, date: string, targetDay: string) {
     const docs = (await loadJournal(store)).docs;
     const week = isoWeekKey(utcDay(date));
+    const targetWeek = isoWeekKey(utcDay(targetDay));
     const tasks = openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, noon(date)));
     const group = (task: (typeof tasks)[number]) => task.period === date ? "today" : task.horizon === "overdue" ? "overdue" : task.period === week ? "week" : null;
     const listed = tasks.filter((task) => group(task) !== null);
@@ -242,7 +245,7 @@ async function stillOpen(store: NoteStore, date: string, targetDay: string) {
         .map((task) => ({
             group: group(task), noteId: task.noteId, listItemId: task.listItemId, text: task.text, period: task.period,
             section: task.section, critical: task.critical,
-            fate: group(task) === "week" ? { stay: week } : { forward: targetDay }
+            fate: group(task) !== "week" ? { forward: targetDay } : week === targetWeek ? { stay: week } : { forward: targetWeek }
         }));
 }
 

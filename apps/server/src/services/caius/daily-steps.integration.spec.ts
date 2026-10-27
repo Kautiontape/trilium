@@ -124,7 +124,7 @@ afterAll(() => {
 });
 
 describe("caius_winddown", () => {
-    it("open: lists today's leftovers, what slipped and the week's items for Friday, each with a fate on Monday", async () => {
+    it("open: lists today's leftovers, what slipped and the week's items for Friday, with fates on Monday and in next week's note", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "open" });
         expect(answer).toMatchObject({ step: "open", date: FRIDAY, targetDay: MONDAY, next: "next" });
         expect(answer.question).toBe("These are still open: today's leftovers and what's slipped. Which are actually done? Everything else goes to Monday unless you say otherwise.");
@@ -133,12 +133,17 @@ describe("caius_winddown", () => {
             [ "today", "f1", { forward: MONDAY } ],
             [ "today", "f3", { forward: MONDAY } ],
             [ "overdue", "o1", { forward: MONDAY } ],
-            [ "week", "w1", { stay: "2026-W45" } ]
+            [ "week", "w1", { forward: "2026-W46" } ]
         ]));
         // The sub-item goes with its parent, and done tasks are left out.
         expect(answer.data.items.map((item: any) => item.listItemId)).not.toContain("f4");
         expect(answer.data.items.map((item: any) => item.listItemId)).not.toContain("f2");
         expect(answer.standing).toContain("Open time is work time.");
+    });
+
+    it("open: keeps the week's items in the week when the next workday is in the same week", async () => {
+        const answer = await call("caius_winddown", { date: MONDAY, step: "open" });
+        expect(answer.data.items.find((item: any) => item.listItemId === "nw1")).toMatchObject({ group: "week", fate: { stay: "2026-W46" } });
     });
 
     it("next: offers candidates for Monday, leaving out done, live, suggested and dismissed ones, and asks about the overlap and the empty evening", async () => {
