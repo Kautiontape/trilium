@@ -74,7 +74,7 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
             const now = caiusNow();
-            const { docs } = await loadJournal(store);
+            const docs = await journalDocs(store);
             const result = scanDocs(docs, TRILIUM_CONFIG, now);
             const tasks = [
                 ...openTasks(docs, result).map((t) => toLaneTask(t, t.horizon, now)),
@@ -85,7 +85,7 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
 
         explain: ({ noteId, listItemId }: ExplainInput) => withCaiusLock("caius_explain", async () => {
             const now = caiusNow();
-            const { docs } = await loadJournal(store);
+            const docs = await journalDocs(store);
             const doc = docs.find((d) => d.noteId === noteId);
             const line = doc && [...doc.itemIds].find(([, id]) => id === listItemId)?.[0];
             if (!doc || line === undefined) {
@@ -144,7 +144,7 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
         })),
 
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
-            const { docs } = await loadJournal(store);
+            const docs = await journalDocs(store);
             const results: AssignIdsResult[] = [];
             for (const doc of docs) {
                 const result = await assignIdsInNote(store, doc.noteId, doc.path, { dryRun, html });
@@ -243,6 +243,17 @@ const MONTHS = [
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december"
 ];
+
+/**
+ * The Journal's notes, or none when no note carries `#calendarRoot`: a document that doesn't use
+ * the Journal has no tasks, rather than an error on every read.
+ */
+async function journalDocs(store: NoteStore) {
+    if (!(await store.search("#calendarRoot")).length) {
+        return [];
+    }
+    return (await loadJournal(store)).docs;
+}
 
 /** One note's part in `assignIds`. */
 interface AssignIdsResult {
