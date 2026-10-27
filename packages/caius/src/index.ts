@@ -38,4 +38,6 @@ export { parseContext, periodSpan } from './trilium/until.js';
 export type { MeetingsResult } from './trilium/daynote.js';
 export type { ContextLine } from './trilium/until.js';
 export { renderDayTerrain, weatherIcon } from './draw/terrain.js';
+export { meetingLines, overlapPairs } from './daily/meetings.js';
+export type { MeetingEvent } from './daily/meetings.js';
 export type { TerrainInput, TerrainEvent, TerrainWork, WeatherIcon } from './draw/terrain.js';

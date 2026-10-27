@@ -25,6 +25,7 @@ import {
     listItemsWithoutIds,
     loadJournal,
     loadStateSymbols,
+    meetingLines,
     type NoteStore,
     openTasks,
     type OpenTask,
@@ -53,10 +54,13 @@ import {
     type ExplainInput,
     type ForwardInput,
     type HeaderInput,
+    type InputsInput,
+    type MeetingsInput,
     type OpenInput,
     type PlanInput,
     type SetStateInput
 } from "./schemas.js";
+import { type CaiusInputs, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 
@@ -64,14 +68,46 @@ export { routeInputs } from "./schemas.js";
 
 const TERRAIN_TITLE = "terrain.svg";
 
+/** How long a `caius_inputs` answer is reused for the same day and Context. */
+export const INPUTS_TTL_MS = 15 * 60_000;
+
+export type InputsReader = (input: InputsInput) => Promise<CaiusInputs>;
+
 const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
     done: "done",
     doing: "start",
     cancelled: "drop"
 };
 
-export function createCaiusService(baseStore: NoteStore = createBeccaStore(), weatherOf: (latitude: number, longitude: number) => Promise<DayWeather | undefined> = fetchDayWeather) {
+export function createCaiusService(
+    baseStore: NoteStore = createBeccaStore(),
+    weatherOf: (latitude: number, longitude: number) => Promise<DayWeather | undefined> = fetchDayWeather,
+    inputsOf: InputsReader = (input) => readInputs(input),
+    clockMs: () => number = Date.now
+) {
     const store = withListItemIds(baseStore);
+    const inputsCache = new Map<string, { at: number; inputs: CaiusInputs }>();
+
+    /**
+     * `caius_inputs` for a day, with the Context in force passed along. An answer for the same
+     * input is reused for `INPUTS_TTL_MS`, timed on the real clock since `CAIUS_NOW` stands still;
+     * `refresh` fetches again. The Context is read under the lock, the sources outside it.
+     */
+    async function dayInputs(date: string, refresh = false): Promise<CaiusInputs> {
+        const { context } = await withCaiusLock("caius_day_context", () => gatherContext(store, date));
+        const input: InputsInput = { date, context: context.map((line) => line.text) };
+        const key = JSON.stringify(input);
+        const hit = inputsCache.get(key);
+        if (!refresh && hit && clockMs() - hit.at < INPUTS_TTL_MS) {
+            return hit.inputs;
+        }
+        const inputs = await inputsOf(input);
+        for (const [ old, entry ] of inputsCache) {
+            if (clockMs() - entry.at >= INPUTS_TTL_MS) inputsCache.delete(old);
+        }
+        inputsCache.set(key, { at: clockMs(), inputs });
+        return inputs;
+    }
 
     return {
         plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
@@ -176,6 +212,31 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore(), we
             const result = await setMeetings(store, { date, lines }, { dryRun });
             return withBlobIds([ result ]);
         }),
+
+        /**
+         * Writes the Meetings block of a day note: `items` when given, else the day's calendar as
+         * clock lines. A calendar that could not be read writes nothing, so a feed that fails never
+         * empties the block.
+         */
+        meetings: async ({ date, items, dryRun }: MeetingsInput) => {
+            let lines = items;
+            if (!lines) {
+                const inputs = await dayInputs(date);
+                const errors = inputs.errors.filter((e) => e.source === "calendar" && !e.error.endsWith("_unknown_tz"));
+                if (errors.length) {
+                    return { date, status: "skipped", reason: "calendar_unavailable", errors };
+                }
+                lines = meetingLines(inputs.calendar);
+            }
+            const written = lines;
+            return withCaiusLock("caius_meetings", async () => {
+                const result = await setMeetings(store, { date, lines: written }, { dryRun });
+                const shown = result.status === "dry-run"
+                    ? (({ before, after, ...rest }) => ({ ...rest, ...diffSummary(before, after) }))(result)
+                    : result;
+                return { date, source: items ? "items" : "calendar", lines: written, ...withBlobIds([ shown ]) };
+            });
+        },
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
             // The forecast can take 3 s, so it is fetched before the lock is taken.

@@ -127,9 +127,16 @@ const inputs = z.object({
     workEnd: inputsClock.optional().describe("End of the work window, HH:MM. Defaults to 18:00.")
 });
 
+const meetings = z.object({
+    date: periodKey("day").describe("The day note to write the Meetings block of, YYYY-MM-DD"),
+    items: z.array(z.string()).optional().describe("The clock lines to write, such as \"10:00 Standup (Sam, Riley)\". Without them, the lines come from the day's calendar."),
+    dryRun
+});
+
 export const toolInputs = {
     ...reads,
     inputs,
+    meetings,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -159,6 +166,7 @@ export const routeInputs = {
 };
 
 export type InputsInput = z.infer<typeof inputs>;
+export type MeetingsInput = z.infer<typeof meetings>;
 export type PlanInput = z.infer<typeof reads.plan>;
 export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;

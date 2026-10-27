@@ -10,11 +10,15 @@ import type { z } from "zod";
 
 import { toolInputs } from "./schemas.js";
 import { readInputs } from "./inputs/index.js";
-import { createCaiusService } from "./service.js";
+import { createCaiusService, type InputsReader } from "./service.js";
 import type { DayWeather } from "./weather.js";
 
-export function createCaiusTools(store?: NoteStore, weatherOf?: (latitude: number, longitude: number) => Promise<DayWeather | undefined>) {
-    const service = createCaiusService(store, weatherOf);
+export function createCaiusTools(
+    store?: NoteStore,
+    weatherOf?: (latitude: number, longitude: number) => Promise<DayWeather | undefined>,
+    inputsOf?: InputsReader
+) {
+    const service = createCaiusService(store, weatherOf, inputsOf);
 
     return defineTools({
         caius_plan: {
@@ -98,6 +102,14 @@ export function createCaiusTools(store?: NoteStore, weatherOf?: (latitude: numbe
             async: true,
             mutates: true,
             execute: parsed(toolInputs.assignIds, service.assignIds)
+        },
+
+        caius_meetings: {
+            description: "Write the Meetings block of a day note: plain clock lines such as \"10:00 Standup (Sam, Riley)\", never tasks. Without items, the lines come from the day's calendar: declined and all-day events left out, up to four first names, and (overlaps) on meetings that overlap. Replaces only that block; creates the day note if missing. Dry run first.",
+            inputSchema: toolInputs.meetings,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.meetings, service.meetings)
         },
 
         caius_header: {
