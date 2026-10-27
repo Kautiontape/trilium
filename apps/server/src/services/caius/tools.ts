@@ -136,6 +136,13 @@ export function createCaiusTools(
             execute: parsed(toolInputs.skipCatchup, service.skipCatchup)
         },
 
+        caius_winddown: {
+            description: "Run one step of the Wind down conversation for the day being closed (date); every step works against the next workday. Steps in order: open (the live tasks of the day, overdue ones and the week's, each with a proposed fate), next (candidates for the next workday's Suggested, its capacity, overlaps and evening), context (the Context in force and anything noticed). Returns { step, data, question, next, standing }: ask question verbatim (skip the step when it is null), then call the step named by next. Reads only; make the writes with the other caius_* tools, dry run first.",
+            inputSchema: toolInputs.winddown,
+            async: true,
+            execute: parsed(toolInputs.winddown, service.winddown)
+        },
+
         caius_header: {
             description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,

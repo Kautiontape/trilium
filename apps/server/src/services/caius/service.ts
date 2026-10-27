@@ -28,6 +28,7 @@ import {
     loadJournal,
     loadStateSymbols,
     meetingLines,
+    readRhythm,
     type NoteStore,
     openTasks,
     type OpenTask,
@@ -42,7 +43,7 @@ import {
     TRILIUM_CONFIG,
     withListItemIds
 } from "@triliumnext/caius";
-import { becca, date_utils as dateUtils, markdownImportService } from "@triliumnext/core";
+import { becca, date_utils as dateUtils, markdownExportService, markdownImportService } from "@triliumnext/core";
 import { t } from "i18next";
 
 import {
@@ -64,9 +65,11 @@ import {
     type OpenInput,
     type PlanInput,
     type SetStateInput,
-    type SkipCatchupInput
+    type SkipCatchupInput,
+    type WindDownInput
 } from "./schemas.js";
 import { SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
+import { type DayRead, type Standing, type StepDeps, windDown } from "./daily.js";
 import { type CaiusInputs, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -79,6 +82,9 @@ const TERRAIN_TITLE = "terrain.svg";
 export const INPUTS_TTL_MS = 15 * 60_000;
 
 export type InputsReader = (input: InputsInput) => Promise<CaiusInputs>;
+
+/** The label of the standing note, "How I work". */
+const STANDING_LABEL = "assistantContext";
 
 const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
     done: "done",
@@ -95,26 +101,45 @@ export function createCaiusService(
     const store = withListItemIds(baseStore);
     const inputsCache = new Map<string, { at: number; inputs: CaiusInputs }>();
 
+    /** The standing note (`#assistantContext`) as markdown. The caller holds the lock. */
+    async function readStanding(): Promise<Standing> {
+        const [ note ] = (await store.search(`#${STANDING_LABEL}`)).filter((n) => n.attributes.some((a) => a.type === "label" && a.name === STANDING_LABEL));
+        if (!note) {
+            return { markdown: null, missing: t("caius.daily.standing_missing") };
+        }
+        if (note.type !== "text" || note.isProtected) {
+            return { markdown: null, missing: t("caius.daily.standing_unreadable") };
+        }
+        return { markdown: markdownExportService.toMarkdown(await store.content(note.noteId)) };
+    }
+
     /**
-     * `caius_inputs` for a day, with the Context in force passed along. An answer for the same
-     * input is reused for `INPUTS_TTL_MS`, timed on the real clock since `CAIUS_NOW` stands still;
-     * `refresh` fetches again. The Context is read under the lock, the sources outside it.
+     * `caius_inputs` for a day, with the Context in force passed along and the work window from the
+     * standing note's Rhythm. An answer for the same input is reused for `INPUTS_TTL_MS`, timed on
+     * the real clock since `CAIUS_NOW` stands still; `refresh` fetches again. The notes are read
+     * under the lock, the sources outside it.
      */
-    async function dayInputs(date: string, refresh = false): Promise<CaiusInputs> {
-        const { context } = await withCaiusLock("caius_day_context", () => gatherContext(store, date));
-        const input: InputsInput = { date, context: context.map((line) => line.text) };
+    async function dayRead(date: string, refresh = false): Promise<DayRead> {
+        const { context, standing } = await withCaiusLock("caius_day_read", async () => ({
+            context: (await gatherContext(store, date)).context,
+            standing: await readStanding()
+        }));
+        const rhythm = readRhythm(standing.markdown);
+        const input: InputsInput = { date, context: context.map((line) => line.text), workStart: rhythm.start, workEnd: rhythm.workEnd };
         const key = JSON.stringify(input);
         const hit = inputsCache.get(key);
         if (!refresh && hit && clockMs() - hit.at < INPUTS_TTL_MS) {
-            return hit.inputs;
+            return { inputs: hit.inputs, context, standing, rhythm };
         }
         const inputs = await inputsOf(input);
         for (const [ old, entry ] of inputsCache) {
             if (clockMs() - entry.at >= INPUTS_TTL_MS) inputsCache.delete(old);
         }
         inputsCache.set(key, { at: clockMs(), inputs });
-        return inputs;
+        return { inputs, context, standing, rhythm };
     }
+
+    const stepDeps = (): StepDeps => ({ store, now: caiusNow(), locked: withCaiusLock, dayRead, standing: readStanding });
 
     return {
         plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
@@ -228,7 +253,7 @@ export function createCaiusService(
         meetings: async ({ date, items, dryRun }: MeetingsInput) => {
             let lines = items;
             if (!lines) {
-                const inputs = await dayInputs(date);
+                const { inputs } = await dayRead(date);
                 const errors = inputs.errors.filter((e) => e.source === "calendar" && !e.error.endsWith("_unknown_tz"));
                 if (errors.length) {
                     return { date, status: "skipped", reason: "calendar_unavailable", errors };
@@ -258,6 +283,8 @@ export function createCaiusService(
             if (!labelled) setLabel(note.noteId, SKIP_CATCHUP_LABEL, date);
             return { date, noteId: note.noteId, status: labelled ? "unchanged" : "updated", created: !existing };
         }),
+
+        winddown: (input: WindDownInput) => windDown(stepDeps(), input),
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
             // The forecast can take 3 s, so it is fetched before the lock is taken.

@@ -172,6 +172,14 @@ const skipCatchup = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD, whose catch-up is skipped")
 });
 
+const refresh = z.boolean().optional().describe("Fetch Jira and the calendar again instead of reusing what was read for that day in the last 15 minutes");
+
+const winddown = z.object({
+    date: periodKey("day").describe("The day being closed, YYYY-MM-DD. The steps work against the next workday after it."),
+    step: z.enum([ "open", "next", "context" ]).describe("open, then next, then context"),
+    refresh
+});
+
 export const toolInputs = {
     ...reads,
     inputs,
@@ -179,6 +187,7 @@ export const toolInputs = {
     contextAdd,
     briefWrite,
     skipCatchup,
+    winddown,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -219,6 +228,7 @@ export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
 export type SkipCatchupInput = z.infer<typeof skipCatchup>;
+export type WindDownInput = z.infer<typeof winddown>;
 export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;

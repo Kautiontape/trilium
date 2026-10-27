@@ -593,6 +593,24 @@
       "picks_title": "Get done today",
       "pick": "{{- text}}: because {{- because}} (~{{estimate}})",
       "image_alt": "The day: meetings on a line, planned work as bars under it"
+    },
+    "daily": {
+      "standing_missing": "No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.",
+      "standing_unreadable": "The standing note is protected or not a text note, so the rhythm and the brief rules are the defaults.",
+      "get_done": "Get {{- subject}} done",
+      "because_handoff_one": "sitting in {{- status}} for {{count}} day",
+      "because_handoff_other": "sitting in {{- status}} for {{count}} days",
+      "because_handoff_unknown": "sitting in {{- status}}",
+      "because_ask": "{{- author}} asked on {{- weekday}}",
+      "because_week": "on the week's list",
+      "open": "These are still open: today's leftovers and what's slipped. Which are actually done? Everything else goes to {{- day}} unless you say otherwise.",
+      "nothing_open": "Nothing is open: the day's list is closed and nothing has slipped.",
+      "over": "{{- day}} is over by about {{hours}} h. Which of these can wait?",
+      "overlap": "{{- first}} overlaps {{- second}} at {{time}}. Which one do you take?",
+      "evening": "Anything for the evening?",
+      "fits": "{{- day}} holds {{- planned}} of work against {{- open}} open. Fits.",
+      "keep": "Keep '{{- line}}'?",
+      "context": "Anything to know for {{- day}}?"
     }
   }
 }
