@@ -102,7 +102,7 @@ Caius registers eighteen tools on Trilium's `/mcp` endpoint (which needs an ETAP
 | `caius_open` | Lists open tasks across the Journal by lane, with `noteId`, `listItemId` and days late. |
 | `caius_explain` | Says why a task is in its lane. |
 | `caius_context` | Reads the Context in force for a day (`{ date }`): that day's note, the last three workday notes, the current week note and, on a Monday, last week's. Expired lines are dropped; the same text in two notes is returned once, from the newer. |
-| `caius_inputs` | Reads the day's outside inputs live: Jira hand-offs, asks and done checks, the calendar's events, and the capacity the meetings leave. Read-only; see below. |
+| `caius_inputs` | Reads the day's outside inputs: Jira hand-offs, asks and done checks, the calendar's events, and the capacity the meetings leave. Read-only; see below. |
 | `caius_add` | Adds a task to a period under a heading, in the Important block, or under Suggested. |
 | `caius_accept` | Moves a Suggested item up under a heading or into the Important block. |
 | `caius_dismiss` | Removes a Suggested item and remembers it was dismissed. |
@@ -170,7 +170,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **The rules:** the standing note's Brief rules section, word for word.
    - **The brief:** the input `caius_brief_write` takes, to fill in.
 
-`caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. An answer in which a source failed is not reused; one with only warnings (`*_partial`, `*_truncated`, `*_unknown_tz`) is. `refresh: true` on a step or on `caius_meetings` fetches again. The work window passed to it is the Rhythm's standup and end of work.
+`caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. An answer in which a source failed is not reused; one with only warnings (`*_partial`, `*_truncated`, `*_unknown_tz`) is. `caius_inputs` itself goes through the same cache. `refresh: true` on `caius_inputs`, on a step or on `caius_meetings` fetches again. The work window passed to it is the Rhythm's standup and end of work.
 
 ### The write tools
 

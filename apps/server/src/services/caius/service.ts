@@ -62,6 +62,7 @@ import {
     type HeaderDay,
     type HeaderInput,
     type InputsInput,
+    type InputsToolInput,
     type MeetingsInput,
     type NudgeInput,
     type OpenInput,
@@ -117,22 +118,15 @@ export function createCaiusService(
     }
 
     /**
-     * `caius_inputs` for a day, with the Context in force passed along and the work window from the
-     * standing note's Rhythm. An answer for the same input is reused for `INPUTS_TTL_MS`, timed on
-     * the real clock since `CAIUS_NOW` stands still, unless a source failed; `refresh` fetches again. The notes are read
-     * under the lock, the sources outside it.
+     * `caius_inputs` through `inputsOf`. An answer for the same input is reused for `INPUTS_TTL_MS`,
+     * timed on the real clock since `CAIUS_NOW` stands still, unless a source failed; `refresh`
+     * fetches again.
      */
-    async function dayRead(date: string, refresh = false): Promise<DayRead> {
-        const { context, standing } = await withCaiusLock("caius_day_read", async () => ({
-            context: (await gatherContext(store, date)).context,
-            standing: await readStanding()
-        }));
-        const rhythm = readRhythm(standing.markdown);
-        const input: InputsInput = { date, context: context.map((line) => line.text), workStart: rhythm.start, workEnd: rhythm.workEnd };
+    async function cachedInputs(input: InputsInput, refresh = false): Promise<CaiusInputs> {
         const key = JSON.stringify(input);
         const hit = inputsCache.get(key);
         if (!refresh && hit && clockMs() - hit.at < INPUTS_TTL_MS) {
-            return { inputs: hit.inputs, context, standing, rhythm };
+            return hit.inputs;
         }
         const inputs = await inputsOf(input);
         for (const [ old, entry ] of inputsCache) {
@@ -145,7 +139,21 @@ export function createCaiusService(
         } else {
             inputsCache.delete(key);
         }
-        return { inputs, context, standing, rhythm };
+        return inputs;
+    }
+
+    /**
+     * `caius_inputs` for a day, cached, with the Context in force passed along and the work window
+     * from the standing note's Rhythm. The notes are read under the lock, the sources outside it.
+     */
+    async function dayRead(date: string, refresh = false): Promise<DayRead> {
+        const { context, standing } = await withCaiusLock("caius_day_read", async () => ({
+            context: (await gatherContext(store, date)).context,
+            standing: await readStanding()
+        }));
+        const rhythm = readRhythm(standing.markdown);
+        const input: InputsInput = { date, context: context.map((line) => line.text), workStart: rhythm.start, workEnd: rhythm.workEnd };
+        return { inputs: await cachedInputs(input, refresh), context, standing, rhythm };
     }
 
     const stepDeps = (): StepDeps => ({ store, now: caiusNow(), locked: withCaiusLock, dayRead, standing: readStanding });
@@ -211,6 +219,9 @@ export function createCaiusService(
         }),
 
         context: ({ date }: ContextInput) => withCaiusLock("caius_context", () => gatherContext(store, date)),
+
+        /** `caius_inputs`, cached like the steps' reads; it reads no notes, so it takes no lock. */
+        inputs: ({ refresh, ...input }: InputsToolInput) => cachedInputs(input, refresh),
 
         add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => withBlobIds(
             (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html))

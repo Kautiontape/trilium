@@ -189,7 +189,9 @@ const planday = z.object({
 
 export const toolInputs = {
     ...reads,
-    inputs,
+    inputs: inputs.extend({
+        refresh: z.boolean().optional().describe("Fetch Jira and the calendar again instead of reusing what was read for the same input in the last 15 minutes")
+    }),
     meetings,
     contextAdd,
     briefWrite,
@@ -232,6 +234,7 @@ export const routeInputs = {
 };
 
 export type InputsInput = z.infer<typeof inputs>;
+export type InputsToolInput = z.infer<typeof toolInputs.inputs>;
 export type MeetingsInput = z.infer<typeof meetings>;
 export type ContextAddInput = z.infer<typeof contextAdd>;
 export type PlanInput = z.infer<typeof reads.plan>;

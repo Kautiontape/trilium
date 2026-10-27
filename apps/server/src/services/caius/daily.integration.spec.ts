@@ -125,6 +125,18 @@ describe("the inputs cache", () => {
         await call("caius_meetings", { date: "2026-11-18", dryRun: true, refresh: true });
         expect(callsFor("2026-11-18")).toBe(2);
     });
+
+    it("serves caius_inputs from the injected reader through the same cache", async () => {
+        const input = { date: "2026-11-19", context: [ "ZAP-1 is open" ] };
+        const first = await call("caius_inputs", input);
+        expect(first).toMatchObject({ date: "2026-11-19", errors: [] });
+        expect(inputsCalls.at(-1)).toEqual(input);
+        await call("caius_inputs", input);
+        expect(callsFor("2026-11-19")).toBe(1);
+        await call("caius_inputs", { ...input, refresh: true });
+        expect(callsFor("2026-11-19")).toBe(2);
+        expect(inputsCalls.at(-1)).toEqual(input);
+    });
 });
 
 describe("caius_context_add", () => {
