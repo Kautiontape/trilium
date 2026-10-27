@@ -143,6 +143,13 @@ export function createCaiusTools(
             execute: parsed(toolInputs.winddown, service.winddown)
         },
 
+        caius_planday: {
+            description: "Run one step of the Plan my day conversation for date. Steps in order: catchup (the last workday's open tasks, unless caius_skip_catchup was used for date), inputs (candidates new since the last brief, the Meetings block to write, overlaps, and on a day over 60% booked a task to move to the next workday), brief (the day's span from the standing note's Rhythm, the work blocks for the drawing, the standing note's Brief rules and the input caius_brief_write takes). Returns { step, data, question, next, standing }: ask question verbatim (skip the step when it is null), then call the step named by next. Reads only.",
+            inputSchema: toolInputs.planday,
+            async: true,
+            execute: parsed(toolInputs.planday, service.planday)
+        },
+
         caius_header: {
             description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,

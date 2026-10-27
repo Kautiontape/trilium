@@ -9,12 +9,18 @@ import {
     type Candidate,
     type ContextEntry,
     dayCandidates,
+    DEFAULT_ESTIMATE,
+    findPeriodNote,
     formatHours,
     gatherContext,
     isoWeekKey,
     keysOf,
+    label,
+    lastWorkday,
+    layoutWork,
     liveKeys,
     loadJournal,
+    meetingLines,
     nextWorkday,
     normName,
     type NoteStore,
@@ -23,15 +29,16 @@ import {
     type PlanTask,
     type PlanView,
     readPlan,
-    readRhythm,
     type Rhythm,
     scanDocs,
+    sectionOf,
     TRILIUM_CONFIG
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import type { CaiusInputs } from "./inputs/types.js";
+import { PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, findBrief } from "./brief.js";
 import { overriddenKeys } from "./inputs/jira.js";
+import type { CaiusInputs } from "./inputs/types.js";
 
 /** The standing note as markdown, or null with the one-line reason. */
 export interface Standing {
@@ -113,6 +120,110 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         })));
     const question = noticed.length ? [ ...noticed.map((n) => n.question), t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
     return reply(read.standing, { context: read.context, noticed }, question, null);
+}
+
+export type PlanDayStep = "catchup" | "inputs" | "brief";
+
+/** Share of the work window booked by meetings above which Plan my day offers to move a task. */
+const HEAVY_RATIO = 0.6;
+/** Longest work-bar label before it is cut. */
+const LABEL_LENGTH = 24;
+
+export async function planDay(deps: StepDeps, { date, step, refresh }: { date: string; step: PlanDayStep; refresh?: boolean }) {
+    const reply = (standing: Standing, data: object, question: string | null, next: PlanDayStep | null) => ({
+        step, date, data, question, next,
+        standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
+    });
+
+    if (step === "catchup") {
+        const last = dayKey(lastWorkday(localDay(date)));
+        const { standing, skipped, tasks } = await deps.locked("caius_planday", async () => {
+            const note = await findPeriodNote(deps.store, "day", date);
+            const skipped = !!note?.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
+            return {
+                standing: await deps.standing(),
+                skipped,
+                tasks: skipped ? [] : mainTasks(await readPlan(deps.store, "day", last, deps.now))
+                    .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical }))
+            };
+        });
+        const question = tasks.length
+            ? t("caius.daily.catchup", { weekday: weekdayName(last), count: tasks.length })
+            : null;
+        return reply(standing, { lastWorkday: last, moveTo: date, skipped, tasks }, question, "inputs");
+    }
+
+    const read = await deps.dayRead(date, refresh);
+    const calendarFailed = read.inputs.errors.some((e) => e.source === "calendar" && !e.error.endsWith("_unknown_tz"));
+
+    if (step === "inputs") {
+        const facts = await deps.locked("caius_planday", async () => {
+            const day = await dayFacts(deps.store, date, deps.now);
+            const brief = day.plan.noteId ? await findBrief(deps.store, day.plan.noteId, date) : null;
+            return { ...day, plannedAt: brief ? label(brief, PLANNED_AT_LABEL) ?? null : null };
+        });
+        const since = facts.plannedAt ? localMoment(facts.plannedAt) : undefined;
+        const candidates = dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude, since }).map(present);
+        const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
+        const meetings = lines
+            ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
+            : { lines: null, current: facts.plan.meetings, changed: false };
+        const overlaps = overlapPairs(read.inputs.calendar);
+        const last = mainTasks(facts.plan).filter((task) => !task.critical).at(-1);
+        const nextDay = dayKey(nextWorkday(localDay(date)));
+        const heavy = read.inputs.capacity.bookedRatio > HEAVY_RATIO && last?.listItemId;
+        const forwardSuggestion = heavy && last ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: nextDay } : null;
+        const questions = [
+            ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
+            ...(forwardSuggestion ? [ t("caius.daily.heavy", {
+                percent: Math.round(read.inputs.capacity.bookedRatio * 100), task: forwardSuggestion.text, day: weekdayName(nextDay)
+            }) ] : [])
+        ];
+        return reply(read.standing, {
+            plannedAt: facts.plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
+            context: read.context, forwardSuggestion, errors: read.inputs.errors
+        }, questions.length ? questions.join(" ") : null, "brief");
+    }
+
+    const plan = await deps.locked("caius_planday", () => readPlan(deps.store, "day", date, deps.now));
+    const { start, end, workEnd, from } = read.rhythm;
+    const events = calendarFailed ? [] : read.inputs.calendar
+        .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
+        .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
+    const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
+    const { work, unplaced } = layoutWork({ start, end, workEnd }, events, mainTasks(plan).map((task) => ({
+        label: workLabel(task.text), minutes: task.estMinutes ?? DEFAULT_ESTIMATE, evening: eveningSections.has(task.section)
+    })));
+    const header = { start, end, workEnd, events, work };
+    const coordinates = read.rhythm.latitude === undefined ? {} : { latitude: read.rhythm.latitude, longitude: read.rhythm.longitude };
+    return reply(read.standing, {
+        day: { start, end, workEnd, from },
+        header,
+        unplaced,
+        briefRules: sectionOf(read.standing.markdown, "Brief rules"),
+        shape: {
+            date, headline: "",
+            acts: [ { range: "", text: "" }, { range: "", text: "" }, { range: "", text: "" } ],
+            picks: [],
+            sections: [ { title: t("caius.daily.follow_up"), markdown: "" }, { title: t("caius.daily.heads_up"), markdown: "" } ],
+            header,
+            ...coordinates
+        },
+        errors: read.inputs.errors
+    }, null, null);
+}
+
+/** A work bar's label: the task's first Jira key, else its text cut to `LABEL_LENGTH`. */
+function workLabel(text: string): string {
+    const key = keysOf(text).find((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k));
+    const plain = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
+    return key ?? (plain.length > LABEL_LENGTH ? `${plain.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : plain);
+}
+
+/** `YYYY-MM-DDTHH:mm:ss` as local time. */
+function localMoment(stamp: string): Date | undefined {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(stamp);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] ?? 0)) : undefined;
 }
 
 /**

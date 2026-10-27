@@ -112,7 +112,7 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
 }
 
 /** The day's brief: a child of the day note labelled `#morningBrief=<date>` that is not one of its pages. */
-async function findBrief(store: NoteStore, dayNoteId: string, date: string): Promise<StoreNote | null> {
+export async function findBrief(store: NoteStore, dayNoteId: string, date: string): Promise<StoreNote | null> {
     const found = await store.search(`#${BRIEF_LABEL}="${date}"`);
     return found.find((note) => note.parentNoteIds.includes(dayNoteId)
         && label(note, BRIEF_LABEL) === date

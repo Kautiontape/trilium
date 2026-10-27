@@ -63,13 +63,14 @@ import {
     type InputsInput,
     type MeetingsInput,
     type OpenInput,
+    type PlanDayInput,
     type PlanInput,
     type SetStateInput,
     type SkipCatchupInput,
     type WindDownInput
 } from "./schemas.js";
 import { SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
-import { type DayRead, type Standing, type StepDeps, windDown } from "./daily.js";
+import { type DayRead, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
 import { type CaiusInputs, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -285,6 +286,8 @@ export function createCaiusService(
         }),
 
         winddown: (input: WindDownInput) => windDown(stepDeps(), input),
+
+        planday: (input: PlanDayInput) => planDay(stepDeps(), input),
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
             // The forecast can take 3 s, so it is fetched before the lock is taken.

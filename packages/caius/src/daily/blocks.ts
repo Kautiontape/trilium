@@ -1,0 +1,75 @@
+// The work bars of the day's drawing: the main list laid out in order in the gaps between meetings.
+
+import { parseClock } from '../inputs/capacity.js';
+
+export interface WorkTask {
+  label: string;
+  minutes: number;
+  /** An evening task (under Evening or Recharge): it starts no earlier than the end of work. */
+  evening?: boolean;
+}
+
+export interface WorkBlock {
+  start: string;
+  end: string;
+  label: string;
+  focus?: true;
+}
+
+/**
+ * Lays `tasks` out in order from `start`, each in the earliest free time after the one before it,
+ * split across a meeting when it has to be, never past `end`. Evening tasks start no earlier than
+ * `workEnd`. The first block of the first work task is the focus block (of the first task when all
+ * are evening tasks). `unplaced` holds the minutes of each task that did not fit before `end`.
+ */
+export function layoutWork(
+  day: { start: string; end: string; workEnd: string },
+  meetings: { start: string; end: string }[],
+  tasks: WorkTask[],
+): { work: WorkBlock[]; unplaced: { label: string; minutes: number }[] } {
+  const start = parseClock(day.start) ?? 0;
+  const end = parseClock(day.end) ?? 24 * 60;
+  const workEnd = parseClock(day.workEnd) ?? end;
+  const busy: [number, number][] = meetings
+    .map((m): [number, number] => [parseClock(m.start) ?? 0, parseClock(m.end) ?? 0])
+    .filter(([from, to]) => to > from);
+  const work: (WorkBlock & { task: number })[] = [];
+  const unplaced: { label: string; minutes: number }[] = [];
+  let workCursor = start;
+  let eveningCursor = Math.max(start, workEnd);
+
+  for (const [index, task] of tasks.entries()) {
+    let left = Math.max(0, Math.round(task.minutes));
+    let at = task.evening ? Math.max(eveningCursor, workCursor) : workCursor;
+    while (left > 0 && at < end) {
+      const blocking = busy.filter(([from, to]) => to > at && from <= at);
+      if (blocking.length) {
+        at = Math.max(...blocking.map(([, to]) => to));
+        continue;
+      }
+      const nextBusy = Math.min(end, ...busy.filter(([from]) => from > at).map(([from]) => from));
+      const until = Math.min(nextBusy, at + left);
+      work.push({ start: hhmm(at), end: hhmm(until), label: task.label, task: index });
+      busy.push([at, until]);
+      left -= until - at;
+      at = until;
+    }
+    if (left > 0) unplaced.push({ label: task.label, minutes: left });
+    if (task.evening) eveningCursor = at;
+    else {
+      workCursor = at;
+      eveningCursor = Math.max(eveningCursor, at);
+    }
+  }
+
+  const firstWork = tasks.findIndex((task) => !task.evening);
+  const focus = work.findIndex((block) => block.task === Math.max(0, firstWork));
+  return {
+    work: work.map(({ task: _task, ...block }, i) => (i === focus ? { ...block, focus: true as const } : block)),
+    unplaced,
+  };
+}
+
+function hhmm(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}

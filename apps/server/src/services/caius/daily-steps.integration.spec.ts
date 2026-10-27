@@ -214,3 +214,76 @@ describe("caius_winddown", () => {
         expect(answer.standingMissing).toBe("No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.");
     });
 });
+
+describe("caius_planday", () => {
+    it("catchup: offers to move a missed night's open tasks, and stops asking once skipped", async () => {
+        const answer = await call("caius_planday", { date: MONDAY, step: "catchup" });
+        expect(answer).toMatchObject({ step: "catchup", date: MONDAY, next: "inputs" });
+        expect(answer.question).toBe("Friday has 2 open tasks. Move all to today, review them, or skip?");
+        expect(answer.data).toMatchObject({ lastWorkday: FRIDAY, moveTo: MONDAY, skipped: false });
+        expect(answer.data.tasks.map((task: any) => task.listItemId)).toEqual([ "f1", "f3" ]);
+
+        expect(await call("caius_skip_catchup", { date: MONDAY })).toMatchObject({ status: "updated" });
+        const skipped = await call("caius_planday", { date: MONDAY, step: "catchup" });
+        expect(skipped.question).toBeNull();
+        expect(skipped.data).toMatchObject({ skipped: true, tasks: [] });
+    });
+
+    it("catchup: has nothing to ask when the last workday is closed", async () => {
+        const answer = await call("caius_planday", { date: FRIDAY, step: "catchup" });
+        expect(answer.data).toMatchObject({ lastWorkday: THURSDAY, skipped: false });
+        expect(answer.data.tasks.map((task: any) => task.listItemId)).toEqual([ "o1", "o2" ]);
+
+        const closed = await call("caius_planday", { date: THURSDAY, step: "catchup" });
+        expect(closed.question).toBeNull();
+        expect(closed.data.tasks).toEqual([]);
+    });
+
+    it("inputs: gives the candidates, the Meetings block to write and the overlap question", async () => {
+        const answer = await call("caius_planday", { date: MONDAY, step: "inputs" });
+        expect(answer).toMatchObject({ step: "inputs", next: "brief" });
+        expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-102", "ZAP-2600", "2026-W46" ]);
+        expect(answer.data.meetings).toEqual({
+            lines: [ "10:00 Standup", "12:00 Release call (overlaps)", "12:30 Review (overlaps)" ], current: [], changed: true
+        });
+        expect(answer.data.forwardSuggestion).toBeNull();
+        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take?");
+    });
+
+    it("inputs: on a day over 60% booked, offers to move the last task of the list to the next workday", async () => {
+        calendars[WEDNESDAY] = [ event("10:00", "15:30", "Offsite") ];
+        const answer = await call("caius_planday", { date: WEDNESDAY, step: "inputs", refresh: true });
+        expect(answer.data.forwardSuggestion).toMatchObject({ noteId: notes.wednesday, listItemId: "we2", text: "Read", to: "2026-11-12" });
+        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday?");
+    });
+
+    it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
+        const answer = await call("caius_planday", { date: MONDAY, step: "brief" });
+        expect(answer).toMatchObject({ step: "brief", question: null, next: null });
+        expect(answer.data.day).toEqual({ start: "10:00", end: "23:00", workEnd: "18:00", from: { start: "rhythm", end: "rhythm", workEnd: "default" } });
+        expect(answer.data.header).toEqual({
+            start: "10:00", end: "23:00", workEnd: "18:00",
+            events: [
+                { start: "10:00", end: "10:15", title: "Standup" },
+                { start: "12:00", end: "13:00", title: "Release call", overlap: true },
+                { start: "12:30", end: "13:00", title: "Review", overlap: true }
+            ],
+            work: [ { start: "10:15", end: "11:15", label: "Monday thing", focus: true } ]
+        });
+        expect(answer.data.briefRules).toContain("Open time is work time.");
+        expect(answer.data.briefRules).not.toContain("Rhythm");
+        expect(answer.data.shape).toMatchObject({ date: MONDAY, header: answer.data.header, acts: [ expect.any(Object), expect.any(Object), expect.any(Object) ] });
+        const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
+        expect(schema?.safeParse({ ...answer.data.shape, headline: "Ship it" }).success).toBe(true);
+    });
+
+    it("inputs: after a brief, offers only what is new since it was planned", async () => {
+        const shape = (await call("caius_planday", { date: MONDAY, step: "brief" })).data.shape;
+        expect((await call("caius_brief_write", { ...shape, headline: "Monday" })).plannedAt).toBe(`${FRIDAY}T17:30:00`);
+
+        jiraByDate[MONDAY]?.asks.push({ ticket: ticket("ZAP-106"), author: "Sam Example", created: "2026-11-08T12:00:00Z", excerpt: "One more?" });
+        const answer = await call("caius_planday", { date: MONDAY, step: "inputs", refresh: true });
+        expect(answer.data.plannedAt).toBe(`${FRIDAY}T17:30:00`);
+        expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-106" ]);
+    });
+});

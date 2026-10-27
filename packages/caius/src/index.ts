@@ -42,6 +42,8 @@ export { meetingLines, overlapPairs } from './daily/meetings.js';
 export type { MeetingEvent } from './daily/meetings.js';
 export { formatEstimate, formatHours } from './daily/format.js';
 export { readRhythm, sectionOf } from './daily/standing.js';
+export { layoutWork } from './daily/blocks.js';
+export type { WorkBlock, WorkTask } from './daily/blocks.js';
 export type { Rhythm } from './daily/standing.js';
 export { dayCandidates, keysOf, liveKeys } from './daily/candidates.js';
 export type { Candidate, CandidateReason, JiraLike, TicketLike, WeekTaskLike } from './daily/candidates.js';

@@ -180,6 +180,12 @@ const winddown = z.object({
     refresh
 });
 
+const planday = z.object({
+    date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
+    step: z.enum([ "catchup", "inputs", "brief" ]).describe("catchup, then inputs, then brief"),
+    refresh
+});
+
 export const toolInputs = {
     ...reads,
     inputs,
@@ -188,6 +194,7 @@ export const toolInputs = {
     briefWrite,
     skipCatchup,
     winddown,
+    planday,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -229,6 +236,7 @@ export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
 export type SkipCatchupInput = z.infer<typeof skipCatchup>;
 export type WindDownInput = z.infer<typeof winddown>;
+export type PlanDayInput = z.infer<typeof planday>;
 export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;
