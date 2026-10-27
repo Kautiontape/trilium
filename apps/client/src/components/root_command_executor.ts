@@ -1,3 +1,4 @@
+import { runTaskCommand } from "../menus/task_actions.js";
 import dateNoteService from "../services/date_notes.js";
 import froca from "../services/froca.js";
 import openService from "../services/open.js";
@@ -10,6 +11,22 @@ import appContext, { type CommandListenerData } from "./app_context.js";
 import Component from "./component.js";
 
 export default class RootCommandExecutor extends Component {
+    caiusTaskDoingCommand({ ntxId }: CommandListenerData<"caiusTaskDoing">) {
+        return runTaskCommand("doing", ntxId);
+    }
+
+    caiusTaskDoneCommand({ ntxId }: CommandListenerData<"caiusTaskDone">) {
+        return runTaskCommand("done", ntxId);
+    }
+
+    caiusForwardTomorrowCommand({ ntxId }: CommandListenerData<"caiusForwardTomorrow">) {
+        return runTaskCommand("forwardTomorrow", ntxId);
+    }
+
+    caiusTaskDropCommand({ ntxId }: CommandListenerData<"caiusTaskDrop">) {
+        return runTaskCommand("drop", ntxId);
+    }
+
     editReadOnlyNoteCommand() {
         const noteContext = appContext.tabManager.getActiveContext();
         if (noteContext?.viewScope) {

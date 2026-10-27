@@ -622,6 +622,38 @@ function getDefaultKeyboardActions() {
             scope: "text-detail"
         },
         {
+            friendlyName: t("keyboard_action_names.caius-task-doing"),
+            actionName: "caiusTaskDoing",
+            iconClass: "bx bx-loader",
+            defaultShortcuts: [],
+            description: t("keyboard_actions.caius-task-doing"),
+            scope: "text-detail"
+        },
+        {
+            friendlyName: t("keyboard_action_names.caius-task-done"),
+            actionName: "caiusTaskDone",
+            iconClass: "bx bx-check",
+            defaultShortcuts: [],
+            description: t("keyboard_actions.caius-task-done"),
+            scope: "text-detail"
+        },
+        {
+            friendlyName: t("keyboard_action_names.caius-forward-tomorrow"),
+            actionName: "caiusForwardTomorrow",
+            iconClass: "bx bx-right-arrow-alt",
+            defaultShortcuts: [],
+            description: t("keyboard_actions.caius-forward-tomorrow"),
+            scope: "text-detail"
+        },
+        {
+            friendlyName: t("keyboard_action_names.caius-task-drop"),
+            actionName: "caiusTaskDrop",
+            iconClass: "bx bx-block",
+            defaultShortcuts: [],
+            description: t("keyboard_actions.caius-task-drop"),
+            scope: "text-detail"
+        },
+        {
             friendlyName: t("keyboard_action_names.edit-read-only-note"),
             actionName: "editReadOnlyNote",
             iconClass: "bx bx-edit-alt",

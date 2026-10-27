@@ -96,7 +96,9 @@ async function createNote(parentNotePath: string | undefined, options: CreateNot
 
     if (options.saveSelection) {
         // we remove the selection only after it was saved to server to make sure we don't lose anything
-        options.textEditor?.removeSelection();
+        options.textEditor?.removeSelection().catch(() => {
+            // `SpacedUpdate` has already logged the failed save and retries it.
+        });
     }
 
     for (const cloneParentNoteId of options.cloneToNoteIds ?? []) {

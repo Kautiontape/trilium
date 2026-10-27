@@ -378,6 +378,10 @@ export type CommandMappings = {
     pasteMarkdownIntoText: CommandData;
     cutIntoNote: CommandData;
     addIncludeNoteToText: CommandData;
+    caiusTaskDoing: CommandData;
+    caiusTaskDone: CommandData;
+    caiusForwardTomorrow: CommandData;
+    caiusTaskDrop: CommandData;
     editReadOnlyNote: CommandData;
     toggleRibbonTabClassicEditor: CommandData;
     toggleRibbonTabBasicProperties: CommandData;
