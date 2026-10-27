@@ -4458,7 +4458,7 @@
     "disabled": "Caius is off, so task actions are unavailable.",
     "no_task_at_caret": "Put the caret in a task in a Journal note first.",
     "request_failed": "Caius could not do that: {{- message}}",
-    "no_answer": "Caius didn't answer; nothing was changed in the editor.",
+    "no_answer": "Caius didn't answer in time. The change may still arrive; wait a moment before typing in this note.",
     "reload_before_typing": "Caius changed the note, but the editor did not load the change. Reload the note before typing in it.",
     "skip": {
       "stale": "The note changed while Caius was writing to it. Try again.",
