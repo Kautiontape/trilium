@@ -3,7 +3,9 @@ import { critical, fakeTrilium, li, periodNote, ul } from './helpers.js';
 import { forwardTasks } from './forward.js';
 import { placeForwarded } from './plan-html.js';
 import { acceptTasks, addTasks } from './plan.js';
+import { replaceMeetings } from './daynote.js';
 import { readPlan } from './plan-read.js';
+import { setTaskState } from './plan-html.js';
 
 // Notes in the day-note shape: include-note, Meetings, Context, the Important block, Tasks, Suggested.
 const NOW = new Date(2026, 10, 6, 9, 0);
@@ -69,5 +71,39 @@ describe('placing a task under a heading nested in a prose section', () => {
     const added = await addTasks(fake.api, [{ date: '2026-11-06', suggested: true, text: 'Book the venue ~1h' }], { now: NOW });
     expect(added).toMatchObject([{ status: 'skipped', reason: 'prose_section' }]);
     expect(fake.html.d).toBe(underContext);
+  });
+});
+
+describe('Meetings and Context in either order or level', () => {
+  const read = async (html: string) => readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), html] }).api, 'day', '2026-11-06', NOW);
+  const TAIL = critical(li('ec', 'Crit ~1h')) + `<h2>Tasks</h2>${ul(li('e1', 'A ~30m'))}`;
+
+  it('ends Meetings at a lower Context heading, and replaceMeetings keeps the Context', async () => {
+    const html = `<h2>Meetings</h2>${bullets('old')}<h3>Context</h3>${bullets('keep')}` + TAIL;
+    expect(replaceMeetings(html, ['new'])).toBe(`<h2>Meetings</h2><ul><li>new</li></ul><h3>Context</h3>${bullets('keep')}` + TAIL);
+    const plan = await read(html);
+    expect([plan.meetings, plan.context]).toEqual([['old'], [{ text: 'keep' }]]);
+  });
+
+  it('reads both orders, with the other section nested or not', async () => {
+    for (const html of [
+      `<h3>Context</h3>${bullets('keep')}<h2>Meetings</h2>${bullets('old')}` + TAIL,
+      `<h2>Context</h2>${bullets('keep')}<h3>Meetings</h3>${bullets('old')}` + TAIL,
+    ]) {
+      const plan = await read(html);
+      expect([plan.meetings, plan.context]).toEqual([['old'], [{ text: 'keep' }]]);
+      expect(plan.capacity.estimatedCount).toBe(2);
+    }
+    const nested = `<h2>Context</h2>${bullets('keep')}<h3>Meetings</h3>${bullets('old')}` + TAIL;
+    expect(replaceMeetings(nested, ['new'])).toBe(`<h2>Context</h2>${bullets('keep')}<h3>Meetings</h3><ul><li>new</li></ul>` + TAIL);
+  });
+
+  it('ignores an empty heading inside either section, in the note and in the markdown alike', async () => {
+    const html = `<h3>Context</h3>${bullets('keep')}<h3>&nbsp;</h3>${ul(li('ez', 'Hidden task ~1h'))}<h2>Tasks</h2>${ul(li('e1', 'A ~30m'))}`;
+    const plan = await read(html);
+    expect(texts(plan.sections.flatMap((s) => s.tasks))).toEqual(['A']);
+    expect(plan.context.map((c) => c.text)).toEqual(['keep', 'Hidden task ~1h']);
+    expect(setTaskState(html, 'ez', 'done', { states: new Map() })).toMatchObject({ ok: false, reason: 'not_live' });
+    expect(replaceMeetings(`<h3>Meetings</h3>${bullets('a')}<h3>&nbsp;</h3>${bullets('b')}<h2>T</h2>`, ['n'])).toBe('<h3>Meetings</h3><ul><li>n</li></ul><h2>T</h2>');
   });
 });

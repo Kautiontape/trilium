@@ -38,12 +38,13 @@ export class ProseTracker {
   private stack: { level: number; kind: ProseKind | null }[] = [];
 
   enter(name: string | null, level: number): void {
+    if (normName(name ?? '') === '') return;
     while (this.stack.length && this.stack[this.stack.length - 1]!.level >= level) this.stack.pop();
     this.stack.push({ level, kind: proseKind(name) });
   }
 
   get kind(): ProseKind | null {
-    return this.stack.find((h) => h.kind)?.kind ?? null;
+    return this.stack.findLast((h) => h.kind)?.kind ?? null;
   }
 }
 
@@ -66,7 +67,7 @@ export function proseKinds(markdown: string): (ProseKind | null)[] {
     const m = HEADING.exec(line);
     if (m) {
       tracker.enter(m[2] || null, m[1]!.length);
-      return null;
+      return normName(m[2] ?? '') === '' ? tracker.kind : null;
     }
     return tracker.kind;
   });

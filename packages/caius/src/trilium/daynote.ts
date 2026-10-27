@@ -4,13 +4,13 @@ import { parse, type HTMLElement } from 'node-html-parser';
 import { apply, elements, isCriticalAside, isHeading, type Edit } from './html-util.js';
 import { escapeHtml } from './plan-html.js';
 import { findPeriodNote, isPeriodKey } from './plan-read.js';
-import { proseKind } from './sections.js';
+import { normName, proseKind } from './sections.js';
 import type { NoteStore } from './store.js';
 
 /**
  * The block under `### Meetings` in a note's HTML, replaced with a plain bullet list of `lines`
- * (text escaped). The block runs to the next heading of the same or a higher level, or to the
- * Important block; everything past it is untouched. With no Meetings heading, one is added at the
+ * (text escaped). The block runs to the next heading of the same or a higher level, a Context heading of any
+ * level, or the Important block; everything past it is untouched. With no Meetings heading, one is added at the
  * top, below a leading include-note section if there is one.
  */
 export function replaceMeetings(html: string, lines: string[]): string {
@@ -22,7 +22,9 @@ export function replaceMeetings(html: string, lines: string[]): string {
 
   if (heading >= 0) {
     const level = Number(top[heading]!.tagName[1]);
-    const end = top.findIndex((el, i) => i > heading && ((isHeading(el) && Number(el.tagName[1]) <= level) || isCriticalAside(el)));
+    const ends = (el: HTMLElement) => isCriticalAside(el)
+      || (isHeading(el) && normName(el.text) !== '' && (Number(el.tagName[1]) <= level || proseKind(el.text) === 'context'));
+    const end = top.findIndex((el, i) => i > heading && ends(el));
     const start = top[heading]!.range[1];
     edits.push({ start, end: end < 0 ? html.length : top[end]!.range[0], text: list });
   } else {
