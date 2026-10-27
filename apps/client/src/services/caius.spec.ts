@@ -498,6 +498,26 @@ describe("flushEditors", () => {
         expect(save.mock.calls).toEqual([ [ "saveNoteDetailNow" ] ]);
     });
 
+    it("forces every editor whose ids are unsaved, even after another one saved", async () => {
+        // Two tabs on one note: each editor invents its own ids for the same id-less items.
+        const editors = [ openEditor("n1"), openEditor("n1") ];
+        const stored = "<ul><li>No id yet</li></ul>";
+        noteSavedDataStore.set("n1", stored);
+        h.getBlob.mockResolvedValue({ content: stored });
+        for (const [ index, editor ] of editors.entries()) {
+            editor.html = `<ul><li data-list-item-id="einvented${index}">No id yet</li></ul>`;
+        }
+        // A save records what it sent, as `useEditorSpacedUpdate` does.
+        let saving = 0;
+        const save = vi.fn(async () => noteSavedDataStore.set("n1", editors[saving++].html));
+        h.getComponentByEl.mockReturnValue({ triggerCommand: save });
+
+        await flushEditors(editors as unknown as CKTextEditor[]);
+        expect(save.mock.calls).toEqual([
+            [ "saveNoteDetailNow", { force: true } ], [ "saveNoteDetailNow", { force: true } ]
+        ]);
+    });
+
     it("doesn't force a save over an outside write the editor hasn't loaded yet", async () => {
         const editor = openEditor("n1");
         const save = stubSaves("n1");

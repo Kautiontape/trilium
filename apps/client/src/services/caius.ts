@@ -498,10 +498,12 @@ export function findOpenEditors(noteId: string): CKTextEditor[] {
  * `froca.notes[noteId].blobId` is the saved content's.
  */
 export async function flushEditors(editors: CKTextEditor[]) {
-    for (const editor of editors) {
+    // Decided before any save, since a save changes the version the next editor is compared with.
+    const unsaved = await Promise.all(editors.map(holdsUnsavedListItemIds));
+    for (const [ index, editor ] of editors.entries()) {
         const domRoot = editor.editing.view.getDomRoot();
         const component = domRoot ? appContext.getComponentByEl(domRoot) : null;
-        if (await holdsUnsavedListItemIds(editor)) {
+        if (unsaved[index]) {
             await component?.triggerCommand("saveNoteDetailNow", { force: true });
         } else {
             await component?.triggerCommand("saveNoteDetailNow");
