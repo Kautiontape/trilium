@@ -4522,6 +4522,8 @@
       "result": "{{- text}}: {{- message}}",
       "not_applied": "Not applied: the batch stopped before this task."
     },
-    "chat_off": "Caius plans in the AI chat, which is off. Turn on AI features in Options to use it."
+    "chat_off": "Caius plans in the AI chat, which is off. Turn on AI features in Options to use it.",
+    "plan_my_day": "Plan my day",
+    "wind_down": "Wind down"
   }
 }

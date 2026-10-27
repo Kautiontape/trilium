@@ -26,11 +26,13 @@ const api = vi.hoisted(() => ({
     explain: vi.fn()
 }));
 const caiusWrite = vi.hoisted(() => vi.fn());
+const startCaiusConversation = vi.hoisted(() => vi.fn());
 const caiusEnabled = vi.hoisted(() => ({ value: true }));
 vi.mock("../../../services/caius", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../../../services/caius")>()),
     caiusApi: api,
     caiusWrite,
+    startCaiusConversation,
     isCaiusEnabled: async () => caiusEnabled.value,
     wasCaiusEnabled: () => false,
     findOpenEditors: () => [],
@@ -337,6 +339,22 @@ describe("PlanTab", () => {
         expect(tab.querySelector("#plan-close")).toBeNull();
         await press(button(tab, "Today"));
         expect(api.plan).toHaveBeenLastCalledWith("day", "2026-10-27");
+    });
+
+    it("starts Plan my day or Wind down for the viewed day as a new conversation, and offers neither for a week", async () => {
+        api.plan.mockImplementation(
+            async (period: string, key: string) => ({ ...dayPlan(), period, key }));
+        const tab = await mount();
+
+        await press(button(tab, "Plan my day"));
+        expect(startCaiusConversation).toHaveBeenLastCalledWith("Plan my day 2026-10-27");
+        await press(tab.querySelector(".plan-period-step .bx-chevron-left"));
+        await press(button(tab, "Wind down"));
+        expect(startCaiusConversation).toHaveBeenLastCalledWith("Wind down 2026-10-26");
+        expect(startCaiusConversation).toHaveBeenCalledTimes(2);
+
+        await press(button(tab, "Week"));
+        expect(tab.querySelector(".plan-day-actions")).toBeNull();
     });
 
     it("says why the plan could not be read, and reads it again on Retry", async () => {

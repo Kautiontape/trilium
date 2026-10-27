@@ -81,7 +81,9 @@
     "caius-task-doing": "Marks the Journal task at the caret as Doing, through Caius",
     "caius-task-done": "Marks the Journal task at the caret as done, through Caius",
     "caius-forward-tomorrow": "Forwards the Journal task at the caret to tomorrow's day note, through Caius",
-    "caius-task-drop": "Asks for a reason, then drops the Journal task at the caret, through Caius"
+    "caius-task-drop": "Asks for a reason, then drops the Journal task at the caret, through Caius",
+    "caius-plan-day": "Opens a new chat that plans today, through Caius",
+    "caius-wind-down": "Opens a new chat that winds down today, through Caius"
   },
   "keyboard_action_names": {
     "back-in-note-history": "Back in Note History",
@@ -196,7 +198,9 @@
     "caius-task-doing": "Mark Task as Doing",
     "caius-task-done": "Mark Task as Done",
     "caius-forward-tomorrow": "Forward Task to Tomorrow",
-    "caius-task-drop": "Drop Task"
+    "caius-task-drop": "Drop Task",
+    "caius-plan-day": "Caius: Plan my day",
+    "caius-wind-down": "Caius: Wind down"
   },
   "login": {
     "title": "Login",

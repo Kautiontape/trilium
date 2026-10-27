@@ -4,8 +4,9 @@ import { DEFAULT_TASK_STATES, type TaskStateDef } from "@triliumnext/commons";
 import appContext, { type CommandNames } from "../components/app_context.js";
 import type FNote from "../entities/fnote.js";
 import {
-    caiusApi, caiusNow, type CaiusTaskState, caiusWrite, describeSkip, type EditableElement, findOpenEditors,
-    flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, wasCaiusEnabled
+    caiusApi, type CaiusConversation, caiusNow, caiusOpener, type CaiusTaskState, caiusWrite, describeSkip,
+    type EditableElement, findOpenEditors, flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds,
+    startCaiusConversation, wasCaiusEnabled
 } from "../services/caius.js";
 import dialog from "../services/dialog.js";
 import froca from "../services/froca.js";
@@ -165,6 +166,16 @@ export function isOverJournalTask(element: Element | null) {
     }
 
     return true;
+}
+
+/** Starts Plan my day or Wind down for today by the Caius clock, for the two day commands. */
+export async function runDayCommand(kind: CaiusConversation) {
+    if (!(await isCaiusEnabled())) {
+        toast.showMessage(t("caius.disabled"), 3000, "bx bx-info-circle");
+        return;
+    }
+
+    await startCaiusConversation(caiusOpener(kind, dayKey(caiusNow())));
 }
 
 /** Runs `command` on the todo item at the caret in the note context `ntxId`, or the active one. */

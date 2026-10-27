@@ -654,6 +654,22 @@ function getDefaultKeyboardActions() {
             scope: "text-detail"
         },
         {
+            friendlyName: t("keyboard_action_names.caius-plan-day"),
+            actionName: "caiusPlanDay",
+            iconClass: "bx bx-sun",
+            defaultShortcuts: [],
+            description: t("keyboard_actions.caius-plan-day"),
+            scope: "window"
+        },
+        {
+            friendlyName: t("keyboard_action_names.caius-wind-down"),
+            actionName: "caiusWindDown",
+            iconClass: "bx bx-moon",
+            defaultShortcuts: [],
+            description: t("keyboard_actions.caius-wind-down"),
+            scope: "window"
+        },
+        {
             friendlyName: t("keyboard_action_names.edit-read-only-note"),
             actionName: "editReadOnlyNote",
             iconClass: "bx bx-edit-alt",

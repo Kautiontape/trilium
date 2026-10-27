@@ -1,4 +1,4 @@
-import { runTaskCommand } from "../menus/task_actions.js";
+import { runDayCommand, runTaskCommand } from "../menus/task_actions.js";
 import dateNoteService from "../services/date_notes.js";
 import froca from "../services/froca.js";
 import openService from "../services/open.js";
@@ -25,6 +25,14 @@ export default class RootCommandExecutor extends Component {
 
     caiusTaskDropCommand({ ntxId }: CommandListenerData<"caiusTaskDrop">) {
         return runTaskCommand("drop", ntxId);
+    }
+
+    caiusPlanDayCommand() {
+        return runDayCommand("plan");
+    }
+
+    caiusWindDownCommand() {
+        return runDayCommand("winddown");
     }
 
     editReadOnlyNoteCommand() {

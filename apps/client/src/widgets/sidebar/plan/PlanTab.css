@@ -16,6 +16,15 @@
         gap: 2px;
     }
 
+    .plan-day-actions {
+        display: flex;
+        gap: 4px;
+
+        > * {
+            flex: 1;
+        }
+    }
+
     .plan-period-key {
         flex: 1;
         text-align: center;

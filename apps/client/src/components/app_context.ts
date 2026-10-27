@@ -382,6 +382,8 @@ export type CommandMappings = {
     caiusTaskDone: CommandData;
     caiusForwardTomorrow: CommandData;
     caiusTaskDrop: CommandData;
+    caiusPlanDay: CommandData;
+    caiusWindDown: CommandData;
     editReadOnlyNote: CommandData;
     toggleRibbonTabClassicEditor: CommandData;
     toggleRibbonTabBasicProperties: CommandData;

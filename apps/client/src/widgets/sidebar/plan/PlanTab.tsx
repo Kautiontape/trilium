@@ -8,8 +8,8 @@ import appContext from "../../../components/app_context";
 import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
-    caiusApi, caiusNow, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
-    isCaiusEnabled, RELOAD_TIMEOUT_MS, wasCaiusEnabled
+    caiusApi, caiusNow, type CaiusLane, type CaiusOpenTask, caiusOpener, type CaiusPeriodKind, type CaiusPlan,
+    isCaiusEnabled, RELOAD_TIMEOUT_MS, startCaiusConversation, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
 import { t } from "../../../services/i18n";
@@ -183,6 +183,22 @@ function PlanPeriodBar({ period, onChange }: {
                     />
                 )}
             </div>
+            {period.kind === "day" && (
+                <div className="plan-day-actions">
+                    <Button
+                        size="small"
+                        icon="bx bx-sun"
+                        text={t("caius.plan_my_day")}
+                        onClick={() => void startCaiusConversation(caiusOpener("plan", key))}
+                    />
+                    <Button
+                        size="small"
+                        icon="bx bx-moon"
+                        text={t("caius.wind_down")}
+                        onClick={() => void startCaiusConversation(caiusOpener("winddown", key))}
+                    />
+                </div>
+            )}
         </div>
     );
 }
