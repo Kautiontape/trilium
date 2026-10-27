@@ -37,7 +37,8 @@ export default function PlanPullIn({ plan, lanes, onOpen, onChanged }: {
             (expectedBlobId) => caiusApi.forward([
                 { noteId, listItemId, to: plan.key, expectedBlobId }
             ]),
-            t("caius.forwarded", { to: plan.key })
+            t("caius.forwarded", { to: plan.key }),
+            { alsoLock: plan.noteId ? [ plan.noteId ] : [] }
         );
         const outcome = describeOutcome(results?.[0], flushed);
         setOutcomes((previous) => ({ ...previous, [listItemId]: outcome ?? "" }));

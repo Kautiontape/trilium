@@ -25,7 +25,8 @@ vi.mock("../../../services/caius", async (importOriginal) => ({
     caiusWrite,
     isCaiusEnabled: async () => caiusEnabled.value,
     wasCaiusEnabled: () => false,
-    findOpenEditors: () => []
+    findOpenEditors: () => [],
+    openPeriodNoteIds: (key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])
 }));
 
 const activeNote = vi.hoisted(() => ({ current: null as FNote | null }));
@@ -141,8 +142,9 @@ describe("PlanTab", () => {
         const tab = await mount();
 
         await press(button(tab, "→ 2026-10-27", tab.querySelector("[data-lane=overdue]")));
+        // The viewed note is the target, so its editors are locked too.
         expect(caiusWrite).toHaveBeenLastCalledWith(
-            "yesterday", expect.any(Function), "Forwarded to 2026-10-27.");
+            "yesterday", expect.any(Function), "Forwarded to 2026-10-27.", { alsoLock: [ "today" ] });
         expect(api.forward).toHaveBeenCalledWith([
             { noteId: "yesterday", listItemId: "late", to: "2026-10-27", expectedBlobId: "blob-1" }
         ]);
@@ -170,7 +172,9 @@ describe("PlanTab", () => {
 
         await press(button(tab, "Apply"));
         expect(caiusWrite).toHaveBeenCalledTimes(1);
-        expect(caiusWrite).toHaveBeenCalledWith("today", expect.any(Function), "Closed 2 tasks.");
+        // Tomorrow's note is open, so its editors are locked too.
+        expect(caiusWrite).toHaveBeenCalledWith(
+            "today", expect.any(Function), "Closed 2 tasks.", { alsoLock: [ "tomorrow" ] });
         expect(api.forward).toHaveBeenCalledWith([
             { noteId: "today", listItemId: "t1", to: "2026-10-28", expectedBlobId: "blob-1" }
         ]);

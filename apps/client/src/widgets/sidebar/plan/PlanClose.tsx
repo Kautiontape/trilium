@@ -4,7 +4,7 @@ import { useState } from "preact/hooks";
 
 import {
     caiusApi, type CaiusForwardItem, type CaiusItemResult, type CaiusPlan, type CaiusPlanTask,
-    type CaiusSetStateItem, caiusWrite, describeOutcome, findOpenEditors
+    type CaiusSetStateItem, caiusWrite, describeOutcome, findOpenEditors, openPeriodNoteIds
 } from "../../../services/caius";
 import { t } from "../../../services/i18n";
 import Button from "../../react/Button";
@@ -56,11 +56,13 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
         const calls = groupFates(noteId, fates, new Date());
         const items = [ ...calls.forward, ...calls.drop ];
         const flushed = findOpenEditors(noteId).length > 0;
+        const targets = [ ...new Set(calls.forward.map((item) => item.to)) ].flatMap(openPeriodNoteIds);
         setApplying(true);
         const outcome = await caiusWrite(
             noteId,
             (expectedBlobId) => applyFates(calls, expectedBlobId),
-            t("caius.plan.closed", { count: items.length })
+            t("caius.plan.closed", { count: items.length }),
+            { alsoLock: targets }
         );
         setApplying(false);
         if (outcome) {
