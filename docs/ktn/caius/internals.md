@@ -187,7 +187,7 @@ The lock is never taken twice by one call, since it isn't re-entrant.
 
 **Lanes in the wind-down.** `open` works out lanes from noon of `date`, not from now, so a wind-down run the next morning still treats `date` as today.
 
-**`caius_brief_write`** (`brief.ts`) finds the brief as the push script does: a child of the day note labelled `#morningBrief=<date>` without `#morningBriefPage` or `#morningBriefRevision`. It finds the header as the brief's child titled `Header`. `NoteStore` can neither create a child note nor set a label in place, so two helpers sit beside `putAttachment` in `store.ts`:
+**`caius_brief_write`** (`brief.ts`) finds the brief as the push script does: a child of the day note labelled `#morningBrief=<date>` without `#morningBriefPage` or `#morningBriefRevision`. It reads the day note's children rather than searching, since a search leaves protected notes out. It finds the header as the brief's child titled `Header`. A protected brief or Header, or a protected child of the brief whose title can't be read, gets `{ error: "bad_request" }` before anything is written. `#caiusPlannedAt` is set only after all three content writes went through, so a write that lost its compare-and-swap leaves the previous plan's time, and the answer's `plannedAt` is null. `NoteStore` can neither create a child note nor set a label in place, so two helpers sit beside `putAttachment` in `store.ts`:
 - `createChildNote` creates the note through `noteService.createNewNote`.
 - `setLabel` sets a label through `BNote.setLabel`, so a re-run replaces `#caiusPlannedAt` instead of adding a second one.
 

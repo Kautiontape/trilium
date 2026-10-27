@@ -1,4 +1,4 @@
-import { dayCapacity } from "@triliumnext/caius";
+import { dayCapacity, type NoteStore } from "@triliumnext/caius";
 import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -247,6 +247,33 @@ describe("caius_brief_write", () => {
         expect(String(first?.getChildNotes()[0]?.getContent())).toContain("<h2>Review first</h2>");
         const day = await cls.init(() => store.content(dayId));
         expect(day.match(/class="include-note"/g)).toHaveLength(1);
+    });
+
+    it("sets the planned time only once every write went through, and refuses a protected brief or Header", async () => {
+        const { briefNoteId, headerNoteId } = await call("caius_brief_write", brief);
+        const before = becca.notes[briefNoteId]?.getLabelValue("caiusPlannedAt");
+        const losing: NoteStore = { ...store, putContent: (id, html, expected) => id === briefNoteId ? Promise.resolve(false) : store.putContent(id, html, expected) };
+        const [ , write ] = [ ...createCaiusTools(losing, async () => undefined, stubInputs) ].find(([ n ]) => n === "caius_brief_write") ?? [];
+        vi.stubEnv("CAIUS_NOW", `${FRIDAY}T19:00`);
+        try {
+            const raced = await cls.init(() => write?.execute({ ...brief, headline: "Raced", picks: [] }) as Promise<any>);
+            expect(raced).toMatchObject({ plannedAt: null });
+            expect(raced.writes.find((w: any) => w.role === "brief")).toMatchObject({ status: "skipped", reason: "edited" });
+        } finally {
+            vi.stubEnv("CAIUS_NOW", `${FRIDAY}T17:30`);
+        }
+        expect(becca.notes[briefNoteId]?.getLabelValue("caiusPlannedAt")).toBe(before);
+
+        for (const noteId of [ briefNoteId, headerNoteId ]) {
+            const note = becca.notes[noteId];
+            if (!note) throw new Error("missing note");
+            note.isProtected = true;
+            try {
+                expect(await call("caius_brief_write", brief)).toMatchObject({ error: "bad_request" });
+            } finally {
+                note.isProtected = false;
+            }
+        }
     });
 
     it("answers unchanged for every note on an identical re-run", async () => {

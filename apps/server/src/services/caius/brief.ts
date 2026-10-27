@@ -60,6 +60,11 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
     }
     let brief = day ? await findBrief(store, day.noteId, date) : null;
     let header = brief ? await findHeader(store, brief.noteId) : null;
+    for (const [ name, note ] of [ [ "brief", brief ], [ "Header", header ] ] as const) {
+        if (note?.isProtected) {
+            return { date, error: "bad_request", detail: `The ${name} note of ${date}, or a child of the brief, is protected` };
+        }
+    }
     const picks = input.picks.map((pick) => t("caius.brief.pick", {
         text: pick.text.trim(),
         because: pick.because.trim().replace(/^because\s+/i, ""),
@@ -102,7 +107,6 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
         header = await store.note(createChildNote(brief.noteId, HEADER_TITLE, "<p></p>"));
     }
     setLabel(brief.noteId, BRIEF_LABEL, date);
-    setLabel(brief.noteId, PLANNED_AT_LABEL, deps.plannedAt);
     setLabel(brief.noteId, "cssClass", CSS_CLASS);
     setLabel(header.noteId, "cssClass", CSS_CLASS);
 
@@ -115,20 +119,27 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
         await replace(store, brief.noteId, "brief", () => bodyContent(header.noteId, brief.noteId)),
         await replace(store, day.noteId, "day", (before) => withInclude(before, header.noteId, (id) => id === stale))
     ];
+    // The planned time marks a finished plan, so a write that lost its compare-and-swap leaves the old one.
+    const complete = writes.every((write) => write.status !== "skipped");
+    if (complete) setLabel(brief.noteId, PLANNED_AT_LABEL, deps.plannedAt);
     return {
         date, dayNoteId: day.noteId, briefNoteId: brief.noteId, headerNoteId: header.noteId, attachmentId,
-        plannedAt: deps.plannedAt, created,
+        plannedAt: complete ? deps.plannedAt : null, created,
         includeAdded: writes[2]?.status === "updated",
         writes
     };
 }
 
-/** The day's brief: a child of the day note labelled `#morningBrief=<date>` that is not one of its pages. */
+/**
+ * The day's brief: a child of the day note labelled `#morningBrief=<date>` that is not one of its
+ * pages. Read through the children rather than a search, which leaves protected notes out.
+ */
 export async function findBrief(store: NoteStore, dayNoteId: string, date: string): Promise<StoreNote | null> {
-    const found = await store.search(`#${BRIEF_LABEL}="${date}"`);
-    return found.find((note) => note.parentNoteIds.includes(dayNoteId)
-        && label(note, BRIEF_LABEL) === date
-        && !PAGE_LABELS.some((name) => label(note, name) !== undefined)) ?? null;
+    for (const childId of (await store.note(dayNoteId)).childNoteIds) {
+        const child = await store.note(childId);
+        if (label(child, BRIEF_LABEL) === date && !PAGE_LABELS.some((name) => label(child, name) !== undefined)) return child;
+    }
+    return null;
 }
 
 /** Whether `noteId` is gone, or is the Header of a `#morningBrief=<date>` brief. */
@@ -143,12 +154,10 @@ async function isStaleHeader(store: NoteStore, noteId: string, date: string): Pr
     return false;
 }
 
+/** The brief's child titled `Header`; a protected child, whose title can't be read, answers as a protected header. */
 async function findHeader(store: NoteStore, briefNoteId: string): Promise<StoreNote | null> {
-    for (const childId of (await store.note(briefNoteId)).childNoteIds) {
-        const child = await store.note(childId);
-        if (child.title === HEADER_TITLE) return child;
-    }
-    return null;
+    const children = await Promise.all((await store.note(briefNoteId)).childNoteIds.map((id) => store.note(id)));
+    return children.find((child) => child.title === HEADER_TITLE) ?? children.find((child) => child.isProtected) ?? null;
 }
 
 /** Replaces a note's content with what `build` makes of it, as a compare-and-swap. */
