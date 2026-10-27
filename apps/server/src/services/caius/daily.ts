@@ -223,14 +223,17 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
 
 /**
  * What Plan my day offers to move to `date`: the live top-level tasks of the last workday, or none
- * once the day note carries `#caiusSkipCatchup=<date>`. Answers the day note too, without creating
- * it. The caller holds the lock.
+ * once the day note carries `#caiusSkipCatchup=<date>`, or when the last workday's note is protected
+ * or not a text note, since Caius cannot read it. Answers the day note too, without creating it.
+ * The caller holds the lock.
  */
 export async function catchupOf(store: NoteStore, date: string, now: Date) {
     const last = dayKey(lastWorkday(localDay(date)));
     const note = await findPeriodNote(store, "day", date);
     const skipped = !!note?.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
-    const tasks = skipped ? [] : mainTasks(await readPlan(store, "day", last, now))
+    const lastNote = skipped ? undefined : await findPeriodNote(store, "day", last);
+    const readable = !lastNote || (lastNote.type === "text" && !lastNote.isProtected);
+    const tasks = skipped || !readable ? [] : mainTasks(await readPlan(store, "day", last, now))
         .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical }));
     return { lastWorkday: last, note, skipped, tasks };
 }

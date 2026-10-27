@@ -68,6 +68,22 @@ describe("Caius nudge route", () => {
         });
     });
 
+    it("reads a protected or non-text last workday as having no catch-up", async () => {
+        const thursday = await cls.init(async () => {
+            const note = await store.calendarDay("2033-03-10");
+            await store.putContent(note.noteId, `<h3>Work</h3>${ul(li("h1", "Behind a password"))}`);
+            return note.noteId;
+        });
+        becca.getNoteOrThrow(thursday).isProtected = true;
+        expect((await nudge("2033-03-11").expect(200)).body).toEqual({ date: "2033-03-11", state: "unplanned", lastWorkday: "2033-03-10" });
+
+        becca.getNoteOrThrow(thursday).isProtected = false;
+        becca.getNoteOrThrow(thursday).type = "code";
+        expect((await nudge("2033-03-11").expect(200)).body).toMatchObject({ state: "unplanned" });
+        becca.getNoteOrThrow(thursday).type = "text";
+        expect((await nudge("2033-03-11").expect(200)).body).toMatchObject({ state: "catchup" });
+    });
+
     it("reads a day without a note as unplanned, without creating it, and refuses a bad date", async () => {
         const before = Object.keys(becca.notes).length;
         expect((await nudge(WEDNESDAY).expect(200)).body).toMatchObject({ state: "catchup", lastWorkday: TUESDAY });
