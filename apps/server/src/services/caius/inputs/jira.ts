@@ -258,6 +258,7 @@ function jiraApi(config: Config, doFetch: typeof fetch, wait: (ms: number) => Pr
             for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
             let response = await request(url);
             if (RETRY_STATUSES.includes(response.status)) {
+                await response.body?.cancel();
                 const seconds = Number(response.headers.get("Retry-After"));
                 await wait(Math.min(MAX_RETRY_WAIT_MS, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 1000));
                 response = await request(url);

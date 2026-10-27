@@ -117,7 +117,7 @@ function occurrencesOn(ICAL: Ical, text: string, dayStart: Date, dayEnd: Date, m
 
     const found: Occurrence[] = [];
     const add = (event: IcalEvent, start: IcalTime, end: IcalTime) => {
-        const occurrence = describe(event, start, end, me, usesUnknownZone(event.component, defined));
+        const occurrence = describe(event, start, end, me, usesUnknownZone(ICAL, event.component, defined));
         if (occurrence.end > dayStart && occurrence.start < dayEnd) found.push(occurrence);
     };
 
@@ -170,11 +170,11 @@ function describe(event: IcalEvent, start: IcalTime, end: IcalTime, me: Set<stri
     };
 }
 
-/** Whether the event's start or end names a TZID that is neither UTC nor a VTIMEZONE of its feed. */
-function usesUnknownZone(vevent: IcalComponent, defined: Set<string>): boolean {
+/** Whether the event's start or end names a TZID that is neither UTC, a VTIMEZONE of its feed nor a zone `ical.js` already knows. */
+function usesUnknownZone(ICAL: Ical, vevent: IcalComponent, defined: Set<string>): boolean {
     return [ "dtstart", "dtend" ].some((name) => {
         const zone = vevent.getFirstProperty(name)?.getParameter("tzid");
-        return typeof zone === "string" && zone !== "UTC" && !defined.has(zone);
+        return typeof zone === "string" && zone !== "UTC" && !defined.has(zone) && !ICAL.TimezoneService.has(zone);
     });
 }
 

@@ -96,6 +96,13 @@ describe("caius_inputs calendar", () => {
         expect((await run("2026-10-27")).errors).toEqual([]);
     });
 
+    it("trusts a zone another feed has already defined", async () => {
+        // The personal feed has no VTIMEZONE for America/New_York; the work feed does.
+        const { calendar, errors } = await run("2026-10-30");
+        expect(summary(calendar)).toEqual([ "14:00-15:00 Known Zone Check" ]);
+        expect(errors).toEqual([]);
+    });
+
     it("maps a feed body that fails to read to network or timeout", async () => {
         const failing = (name: string) => () => ({ ok: true, status: 200, text: async () => { throw new DOMException("x", name); } }) as unknown as Response;
         const network = await run("2026-10-27", ENV, fakeNetwork({ [FEEDS[0]]: failing("NetworkError") }));
