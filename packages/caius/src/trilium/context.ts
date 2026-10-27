@@ -44,16 +44,20 @@ export async function gatherContext(api: NoteReader, date: string): Promise<{ da
   ].sort((a, b) => (a.dated === b.dated ? Number(a.period === 'day') - Number(b.period === 'day') : a.dated < b.dated ? -1 : 1));
 
   // Oldest first, so that a later note's line replaces an earlier one with the same text.
-  const kept = new Map<string, ContextEntry>();
+  const kept = new Map<string, { entry: ContextEntry; expired: boolean }>();
   for (const { period, key, dated } of sources) {
     const note = await findPeriodNote(api, period as PeriodKind, key);
     if (!note || note.type !== 'text' || note.isProtected) continue;
     const doc = buildDoc(note, periodPath(period, key), await api.content(note.noteId), states);
-    for (const line of parseContext(doc.contextLines, dated, date).context) {
-      const id = sameText(line.text);
-      kept.delete(id);
-      kept.set(id, { ...line, period, key, noteId: note.noteId });
+    // Expired lines take part, so that a newer note ending a line hides the older open-ended copy.
+    const { context, expiredContext } = parseContext(doc.contextLines, dated, date);
+    for (const [expired, lines] of [[false, context], [true, expiredContext]] as const) {
+      for (const line of lines) {
+        const id = sameText(line.text);
+        kept.delete(id);
+        kept.set(id, { entry: { ...line, period, key, noteId: note.noteId }, expired });
+      }
     }
   }
-  return { date, context: [...kept.values()].reverse() };
+  return { date, context: [...kept.values()].reverse().filter((k) => !k.expired).map((k) => k.entry) };
 }

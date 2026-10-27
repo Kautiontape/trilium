@@ -57,6 +57,18 @@ describe('gatherContext', () => {
     ]);
   });
 
+  it('lets a newer expired line hide the older open-ended one', async () => {
+    const fake = fakeTrilium({
+      a: day('2026-11-04', 'Jaco out'),
+      b: day('2026-11-05', 'Jaco out (until 5 Nov)'),
+      c: day('2026-11-06', 'Other'),
+    });
+    expect(ids(await gatherContext(fake.api, '2026-11-09'))).toEqual(['Other']);
+    // Still in force a day earlier: the newer line wins and carries its date.
+    const early = await gatherContext(fake.api, '2026-11-05');
+    expect(early.context.find((c) => c.text === 'Jaco out')).toMatchObject({ key: '2026-11-05', until: '2026-11-05' });
+  });
+
   it('reads missing, protected and non-text notes as nothing, and never creates a note', async () => {
     const locked = day('2026-11-06', 'Secret');
     locked[0] = { ...locked[0], isProtected: true };
