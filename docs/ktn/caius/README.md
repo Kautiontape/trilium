@@ -112,7 +112,7 @@ Two conversations in the sidebar chat, run by the AI assistant with the Caius to
 Each step is one call, `caius_winddown` or `caius_planday` with `{ date, step }`, and answers:
 
 - `data`: the facts for that step.
-- `question`: the exact text to ask, or `null` when there is nothing to ask, so the step is skipped.
+- `question`: the exact text to ask, or `null` when there is nothing to ask; the step's writes are still made, dry run first.
 - `next`: the step to call after it, or `null` at the end.
 - `standing`: the note labelled `#assistantContext` (the standing note, "How I work") as markdown, or `null` with `standingMissing`, a one-line reason.
 

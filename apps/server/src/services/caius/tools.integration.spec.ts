@@ -64,6 +64,14 @@ describe("caius tools", () => {
         }
     });
 
+    it("tells the agent that a null question still leaves the step's writes to do", () => {
+        for (const name of [ "caius_winddown", "caius_planday" ]) {
+            const description = toolNamed(name).description;
+            expect(description).toContain("a null question means nothing to ask; still do the step's writes (dry run first)");
+            expect(description).not.toContain("skip the step");
+        }
+    });
+
     it("caius_plan reads a day, and defaults to the current period", async () => {
         const view = await call("caius_plan", { period: "day", date: TODAY });
         expect(view.noteId).toBe(noteIds.today);

@@ -137,14 +137,14 @@ export function createCaiusTools(
         },
 
         caius_winddown: {
-            description: "Run one step of the Wind down conversation for the day being closed (date); every step works against the next workday. Steps in order: open (the live tasks of the day, overdue ones and the week's, each with a proposed fate), next (candidates for the next workday's Suggested, its capacity, overlaps and evening), context (the Context in force and anything noticed). Returns { step, data, question, next, standing }: ask question verbatim (skip the step when it is null), then call the step named by next. Reads only; make the writes with the other caius_* tools, dry run first.",
+            description: "Run one step of the Wind down conversation for the day being closed (date); every step works against the next workday. Steps in order: open (the live tasks of the day, overdue ones and the week's, each with a proposed fate), next (candidates for the next workday's Suggested, its capacity, overlaps and evening), context (the Context in force and anything noticed). Returns { step, data, question, next, standing }: ask question verbatim; a null question means nothing to ask; still do the step's writes (dry run first). Then call the step named by next. Reads only; make the writes with the other caius_* tools, dry run first.",
             inputSchema: toolInputs.winddown,
             async: true,
             execute: parsed(toolInputs.winddown, service.winddown)
         },
 
         caius_planday: {
-            description: "Run one step of the Plan my day conversation for date. Steps in order: catchup (the last workday's open tasks, unless caius_skip_catchup was used for date), inputs (candidates new since the last brief, the Meetings block to write, overlaps, and on a day over 60% booked a task to move to the next workday), brief (the day's span from the standing note's Rhythm, the work blocks for the drawing, the standing note's Brief rules and the input caius_brief_write takes). Returns { step, data, question, next, standing }: ask question verbatim (skip the step when it is null), then call the step named by next. Reads only.",
+            description: "Run one step of the Plan my day conversation for date. Steps in order: catchup (the last workday's open tasks, unless caius_skip_catchup was used for date), inputs (candidates new since the last brief, the Meetings block to write, overlaps, and on a day over 60% booked a task to move to the next workday), brief (the day's span from the standing note's Rhythm, the work blocks for the drawing, the standing note's Brief rules and the input caius_brief_write takes). Returns { step, data, question, next, standing }: ask question verbatim; a null question means nothing to ask; still do the step's writes (dry run first). Then call the step named by next. Reads only.",
             inputSchema: toolInputs.planday,
             async: true,
             execute: parsed(toolInputs.planday, service.planday)

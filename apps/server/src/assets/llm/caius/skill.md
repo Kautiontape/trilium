@@ -81,7 +81,7 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
 
 - **The standing note first.** `standing` is Shawn's "How I work" note as markdown. Read it before anything else and follow its Brief rules. When it is null, say `standingMissing` in one line and carry on with the defaults.
 - **The steps in order.** Call the first step, then the one `next` names, until `next` is null.
-- **The questions.** Ask each `question` word for word. A step whose `question` is null has nothing to ask: go on to the next one. Say `data.summary` when there is one.
+- **The questions.** Ask each `question` word for word. A null `question` means nothing to ask; still do the step's writes (dry run first), such as putting the candidates in Suggested, then go on to the next step. Say `data.summary` when there is one.
 - **The writes.** Every write is a dry run first, shown to Shawn in two lines, then applied on his yes (`caius_skip_catchup` has none: his "skip" is the yes). Only `caius_accept`, or a `caius_forward` of a task Shawn names, puts anything into his main list. Everything else he wants goes to Suggested with `caius_add` (`suggested: true`) and stays there.
 - **Never** ask Shawn to do something a tool can do, and never state a fact that is not in the tools' data.
 

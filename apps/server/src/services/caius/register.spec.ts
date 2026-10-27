@@ -54,6 +54,7 @@ it("offers the caius skill only while it is registered, and names every tool the
     // The openers follow only their own section, and no step lets the agent choose the main list.
     expect(sheet).toContain("For `Wind down` and `Plan my day` openers, follow only this section.");
     expect(sheet).not.toContain("until the day fits its capacity");
+    expect(sheet).toContain("A null `question` means nothing to ask; still do the step's writes (dry run first)");
 
     unregister();
     expect(readSkill("caius")).toBeNull();
