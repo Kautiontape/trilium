@@ -1,4 +1,4 @@
-import type { ComponentChildren } from "preact";
+import { type ComponentChildren, render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -42,7 +42,7 @@ vi.mock("../react/hooks.js", async (importOriginal) => ({
     useNoteLabelBoolean: () => [ false ]
 }));
 
-import SidebarChat, { openNewChat, PENDING_OPENER_TTL_MS, STOP_TIMEOUT_MS } from "./SidebarChat";
+import SidebarChat, { openNewChat, PENDING_OPENER_TTL_MS, START_TIMEOUT_MS, STOP_TIMEOUT_MS } from "./SidebarChat";
 
 const OLD_CHAT = {
     version: 1,
@@ -198,6 +198,47 @@ describe("openNewChat", () => {
         expect(savedTo("new").join()).not.toContain("An older question");
     });
 
+    it("says to pick a model, keeping the new chat, when no model resolves, and takes the next start", async () => {
+        options.load({ llmProviders: "[]" } as Parameters<typeof options.load>[0]);
+        await mount();
+        openNewChat("Plan my day 2026-11-04");
+        await flush();
+
+        expect(h.createLlmChat).toHaveBeenCalledTimes(1);
+        expect(h.streamChatCompletion).not.toHaveBeenCalled();
+        expect(h.showMessage).toHaveBeenCalledWith("sidebar_chat.opener_no_model", expect.any(Number), expect.any(String));
+        expect(h.chat?.chatNoteId).toBe("new");
+
+        openNewChat("Plan my day 2026-11-04");
+        await flush();
+        expect(h.createLlmChat).toHaveBeenCalledTimes(2);
+    });
+
+    it("takes a new start 10 s after one that never finished, and leaves no timer behind on unmount", async () => {
+        const container = await mount();
+        vi.useFakeTimers({ toFake: [ "setTimeout", "clearTimeout" ] });
+        h.createLlmChat.mockReturnValueOnce(new Promise(() => {}));
+        openNewChat("First");
+        await flush();
+        openNewChat("Second");
+        await flush();
+        expect(h.createLlmChat).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            vi.advanceTimersByTime(START_TIMEOUT_MS);
+        });
+        openNewChat("Second");
+        await flush();
+        expect(h.createLlmChat).toHaveBeenCalledTimes(2);
+
+        h.createLlmChat.mockReturnValueOnce(new Promise(() => {}));
+        openNewChat("Third");
+        await flush();
+        const pending = vi.getTimerCount();
+        act(() => render(null, container));
+        expect(vi.getTimerCount()).toBe(pending - 1);
+    });
+
     it("starts one chat for two quick calls", async () => {
         await mount();
         openNewChat("Plan my day 2026-11-04");
@@ -227,10 +268,13 @@ describe("openNewChat", () => {
 });
 
 async function mount() {
+    let container: HTMLElement | undefined;
     act(() => {
-        renderInto(<SidebarChat />);
+        container = renderInto(<SidebarChat />);
     });
     await flush();
+    if (!container) throw new Error("SidebarChat did not render");
+    return container;
 }
 
 function sent(call: number) {

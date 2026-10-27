@@ -8,6 +8,7 @@ import appContext from "../../components/app_context.js";
 import dateNoteService, { type RecentLlmChat } from "../../services/date_notes.js";
 import dialog from "../../services/dialog.js";
 import { t } from "../../services/i18n.js";
+import { resolveSelectedModel } from "../../services/llm_providers.js";
 import server from "../../services/server.js";
 import toast from "../../services/toast.js";
 import { randomString } from "../../services/utils.js";
@@ -104,7 +105,15 @@ export default function SidebarChat() {
     const [opener, setOpener] = useState<string | null>(null);
     const openerStartedRef = useRef(false);
     // A start in flight, from openNewChat until its opener is sent; a second call meanwhile is ignored.
+    // `endStart` ends it, and so does a timer after START_TIMEOUT_MS, so a start that never finishes
+    // can't block the next one.
     const startingRef = useRef(false);
+    const startTimerRef = useRef<ReturnType<typeof setTimeout>>();
+    const endStart = useCallback(() => {
+        startingRef.current = false;
+        clearTimeout(startTimerRef.current);
+        startTimerRef.current = undefined;
+    }, []);
     const mountOpenerRef = useRef<string | null>(null);
 
     // Load the most recent chat on mount (runs once), unless an opener is waiting to start a new one.
@@ -214,6 +223,7 @@ export default function SidebarChat() {
     const startWithOpener = useCallback(async (text: string) => {
         if (startingRef.current) return;
         startingRef.current = true;
+        startTimerRef.current = setTimeout(endStart, START_TIMEOUT_MS);
 
         try {
             // A reply still streaming would land in the new chat, and the opener could not be sent.
@@ -221,7 +231,7 @@ export default function SidebarChat() {
                 chatRef.current.stopStreaming();
                 if (!(await untilIdle(idleWaitersRef.current))) {
                     toast.showMessage(t("sidebar_chat.opener_still_replying"), 5000, "bx bx-bot");
-                    startingRef.current = false;
+                    endStart();
                     return;
                 }
             }
@@ -229,7 +239,7 @@ export default function SidebarChat() {
 
             const note = await dateNoteService.createLlmChat();
             if (!note) {
-                startingRef.current = false;
+                endStart();
                 return;
             }
             const current = chatRef.current;
@@ -243,10 +253,10 @@ export default function SidebarChat() {
             }
             setOpener(text);
         } catch (err) {
-            startingRef.current = false;
+            endStart();
             console.error("Failed to create new chat:", err);
         }
-    }, [spacedUpdate]);
+    }, [spacedUpdate, endStart]);
     const startWithOpenerRef = useRef(startWithOpener);
     startWithOpenerRef.current = startWithOpener;
 
@@ -258,20 +268,26 @@ export default function SidebarChat() {
         }
         return () => {
             takeOpener = null;
+            endStart();
         };
-    }, []);
+    }, [endStart]);
 
     useEffect(() => {
         if (opener === null || !chatNoteId || chat.isStreaming || chat.messages.length > 0 || !chat.enableNoteTools || chat.isCheckingProvider) return;
         setOpener(null);
-        startingRef.current = false;
+        endStart();
+        // `handleSubmit` sends nothing without a model, which would drop the opener without a word.
+        if (!resolveSelectedModel(chat.availableModels, chat.selectedModel, chat.selectedProvider, chat.selectedProviderId)) {
+            toast.showMessage(t("sidebar_chat.opener_no_model"), 5000, "bx bx-bot");
+            return;
+        }
         // `handleSubmit` sends the input; the draft in the input bar is put back once it has read it.
         const draft = chat.getInput();
         chat.setChatNoteId(chatNoteId);
         chat.setInput(opener);
         void chat.handleSubmit(new Event("submit"));
         chat.setInput(draft);
-    }, [opener, chatNoteId, chat]);
+    }, [opener, chatNoteId, chat, endStart]);
 
     const handleSaveChat = useCallback(async () => {
         if (!chatNoteId) return;
@@ -509,6 +525,9 @@ export const PENDING_OPENER_TTL_MS = 10_000;
 
 /** How long a new chat waits for a running reply to stop before giving up. */
 export const STOP_TIMEOUT_MS = 5000;
+
+/** How long a start can stay in flight before the next one is taken anyway. */
+export const START_TIMEOUT_MS = 10_000;
 
 /** An opener sent before the chat mounted, and the mounted chat's handler for one. */
 let pendingOpener: { text: string; at: number } | null = null;

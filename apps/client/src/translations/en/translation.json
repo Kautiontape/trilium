@@ -2673,7 +2673,8 @@
     "delete": "Delete",
     "delete_chat": "Delete chat",
     "delete_confirm": "Delete this chat? This can't be undone.",
-    "opener_still_replying": "The chat is still replying. Try again in a moment."
+    "opener_still_replying": "The chat is still replying. Try again in a moment.",
+    "opener_no_model": "Pick a model in the chat, then press Plan my day again."
   },
   "shared_switch": {
     "shared": "Shared",
