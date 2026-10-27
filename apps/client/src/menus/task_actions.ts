@@ -5,7 +5,7 @@ import appContext, { type CommandNames } from "../components/app_context.js";
 import type FNote from "../entities/fnote.js";
 import {
     caiusApi, type CaiusTaskState, caiusWrite, describeSkip, type EditableElement, findOpenEditors,
-    flushEditors, forgetCaiusStatus, isCaiusEnabled, wasCaiusEnabled
+    flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, wasCaiusEnabled
 } from "../services/caius.js";
 import dialog from "../services/dialog.js";
 import froca from "../services/froca.js";
@@ -400,7 +400,10 @@ async function forwardTask(target: TaskTarget, to: string) {
     await caiusWrite(
         target.noteId,
         (expectedBlobId) => caiusApi.forward([ { ...itemOf(target), to, expectedBlobId } ]),
-        t("caius.forwarded", { to })
+        t("caius.forwarded", { to }),
+        // The client cannot know the target's note id before the call, so it locks any open note
+        // that carries the target's period label.
+        { alsoLock: openPeriodNoteIds(to) }
     );
 }
 

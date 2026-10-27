@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
         explain: vi.fn()
     },
     isCaiusEnabled: vi.fn(async () => true),
+    openPeriodNoteIds: vi.fn((key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])),
     wasCaiusEnabled: vi.fn(() => true),
     prompt: vi.fn(),
     showMessage: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("../services/caius.js", () => ({
     flushEditors: vi.fn(),
     forgetCaiusStatus: vi.fn(),
     isCaiusEnabled: h.isCaiusEnabled,
+    openPeriodNoteIds: h.openPeriodNoteIds,
     wasCaiusEnabled: h.wasCaiusEnabled
 }));
 vi.mock("../services/dialog.js", () => ({ default: { prompt: h.prompt } }));
@@ -141,11 +143,16 @@ describe("buildTaskActionItems", () => {
                 expect(h.api.forward).toHaveBeenLastCalledWith([
                     { noteId: "day", listItemId: "eaaa", to: "2026-10-28", expectedBlobId: "blob1" }
                 ]);
+                // Tomorrow's day note is open, so its editor is locked and saved too.
+                expect(h.caiusWrite).toHaveBeenLastCalledWith(
+                    "day", expect.any(Function), "caius.forwarded", { alsoLock: [ "tomorrow" ] });
 
                 h.prompt.mockResolvedValueOnce(" 2026-W45 ");
                 await click(findItem(buildTaskActionItems(target()), "caius.forward", "caius.forward_pick"));
                 expect(h.prompt).toHaveBeenCalledWith(expect.objectContaining({ defaultValue: "2026-10-28" }));
                 expect(h.api.forward).toHaveBeenLastCalledWith([ expect.objectContaining({ to: "2026-W45" }) ]);
+                expect(h.caiusWrite).toHaveBeenLastCalledWith(
+                    "day", expect.any(Function), "caius.forwarded", { alsoLock: [] });
 
                 h.prompt.mockResolvedValueOnce("next tuesday");
                 await click(findItem(buildTaskActionItems(target()), "caius.forward", "caius.forward_pick"));
