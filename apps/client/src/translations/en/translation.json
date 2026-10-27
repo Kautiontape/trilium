@@ -4419,5 +4419,19 @@
     "label_marker_negated": "Excludes a label. Press Enter to see the list of labels",
     "relation_marker": "Refers to a relation. Press Enter to see the list of relations",
     "relation_marker_negated": "Excludes a relation. Press Enter to see the list of relations"
+  },
+  "caius": {
+    "request_failed": "Caius could not do that: {{- message}}",
+    "skip": {
+      "stale": "The note changed while Caius was writing to it. Try again.",
+      "not_found": "Caius could not find this task.",
+      "not_found_after_save": "Caius could not find this task in the saved note. Save the note and try again.",
+      "already_done": "This task is already done.",
+      "already_doing": "This task is already marked as Doing.",
+      "already_cancelled": "This task is already dropped.",
+      "already_moved": "This task has already been forwarded.",
+      "not_live": "This task is closed.",
+      "other": "Caius skipped this task: {{- reason}}"
+    }
   }
 }
