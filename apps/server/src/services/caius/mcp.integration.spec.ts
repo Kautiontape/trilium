@@ -49,6 +49,8 @@ it("rejects days, weeks and months that don't exist, and creates no calendar not
 
     expect(sql.getValue(`SELECT COUNT(*) FROM attributes WHERE isDeleted = 0 AND name IN ('dateNote', 'weekNote', 'monthNote')
         AND value IN ('2026-02-30', '2025-W53', '2026-13')`)).toBe(0);
+    const addSchema = JSON.stringify((await client.listTools()).tools.find((t) => t.name === "caius_add")?.inputSchema);
+    expect(addSchema).toContain(JSON.stringify("^\\d{4}-\\d{2}-\\d{2}$"));
     // 2026 has 53 ISO weeks.
     for (const when of [{ date: "2026-02-28" }, { week: "2026-W53" }, { month: "2026-12" }]) {
         expect(await isError("caius_add", { items: [{ ...when, section: "Work", text: "Dry" }], dryRun: true }), JSON.stringify(when)).toBeFalsy();

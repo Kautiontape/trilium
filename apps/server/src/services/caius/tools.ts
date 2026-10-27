@@ -16,6 +16,7 @@ import {
     loadStateSymbols,
     openTasks,
     type OpenTask,
+    PERIODS,
     presentResult,
     readPlan,
     scanDocs,
@@ -34,8 +35,8 @@ const LANES = ["overdue", "today", "week", "orbit", "planning_ahead", "someday",
 const DEFAULT_OPEN_LIMIT = 50;
 
 /** A string that names a day, ISO week or month that exists, such as `2026-10-27`, `2026-W44` or `2026-10`. */
-const periodKey = (kind: "day" | "week" | "month", shape: string) =>
-    z.string().refine((key) => isPeriodKey(kind, key), `Must be a ${shape} that exists`);
+const periodKey = (kind: "day" | "week" | "month") =>
+    z.string().regex(PERIODS[kind].pattern).refine((key) => isPeriodKey(kind, key), `Must be a ${PERIODS[kind].shape} that exists`);
 
 const taskRef = {
     noteId: z.string().describe("The note the task is in, as returned by caius_open or caius_plan"),
@@ -46,9 +47,9 @@ const dryRun = z.boolean().optional().describe("Report what would change without
 const html = z.boolean().optional().describe("On a dry run, return each note's full before and after HTML instead of a summary of the change");
 
 const addItem = z.object({
-    date: periodKey("day", "YYYY-MM-DD").optional().describe("Day note, YYYY-MM-DD"),
-    week: periodKey("week", "YYYY-Www").optional().describe("Week note, YYYY-Www"),
-    month: periodKey("month", "YYYY-MM").optional().describe("Month note, YYYY-MM"),
+    date: periodKey("day").optional().describe("Day note, YYYY-MM-DD"),
+    week: periodKey("week").optional().describe("Week note, YYYY-Www"),
+    month: periodKey("month").optional().describe("Month note, YYYY-MM"),
     section: z.string().optional().describe("Heading to add the task under"),
     critical: z.boolean().optional().describe("Add the task to the Important block"),
     suggested: z.boolean().optional().describe("Add the task to the Suggested section"),
