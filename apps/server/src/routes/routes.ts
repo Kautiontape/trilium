@@ -16,6 +16,7 @@ import auth from "../services/auth.js";
 import openID from '../services/open_id.js';
 import { isElectron } from "../services/utils.js";
 import shareRoutes from "../share/routes.js";
+import caiusRoute from "./api/caius.js";
 import clipperRoute from "./api/clipper.js";
 import databaseRoute from "./api/database.js";
 import etapiTokensApiRoutes from "./api/etapi_tokens.js";
@@ -189,6 +190,17 @@ function register(app: express.Application) {
     etapiSpecRoute.register(router);
     etapiBackupRoute.register(router);
     etapiMetricsRoute.register(router);
+
+    // Caius planning, for the task actions and the Plan tab
+    asyncApiRoute(GET, "/api/caius/status", caiusRoute.status);
+    asyncApiRoute(GET, "/api/caius/plan", caiusRoute.plan);
+    asyncApiRoute(GET, "/api/caius/open", caiusRoute.open);
+    asyncApiRoute(GET, "/api/caius/explain", caiusRoute.explain);
+    asyncApiRoute(PST, "/api/caius/add", caiusRoute.add);
+    asyncApiRoute(PST, "/api/caius/accept", caiusRoute.accept);
+    asyncApiRoute(PST, "/api/caius/dismiss", caiusRoute.dismiss);
+    asyncApiRoute(PST, "/api/caius/set-state", caiusRoute.setState);
+    asyncApiRoute(PST, "/api/caius/forward", caiusRoute.forward);
 
     // OCR API
     asyncApiRoute(PST, "/api/ocr/process-note/:noteId", ocrRoute.processNoteOCR);

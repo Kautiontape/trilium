@@ -26,7 +26,8 @@ export interface ForwardRequest {
 /** Weeks and months are only needed when a request targets one. */
 export type ForwardStore = NoteReader & Partial<Pick<NoteStore, 'calendarWeek' | 'calendarMonth'>>;
 
-export type SkipReason = ItemProblem | 'edited' | 'same_day' | 'bad_request' | 'unreadable';
+/** `stale` is reported by a host that checks the note's version before it calls the library. */
+export type SkipReason = ItemProblem | 'edited' | 'same_day' | 'bad_request' | 'unreadable' | 'stale';
 
 export type ForwardResult = ForwardRequest &
   (

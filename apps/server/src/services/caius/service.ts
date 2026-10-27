@@ -4,6 +4,10 @@
  * takes input its caller has validated against `schemas.ts`, and runs under `withCaiusLock`. The
  * entry points never call one another, since the lock is not re-entrant. Each store write commits
  * in its own transaction behind a compare-and-swap, and gives any list item without an id one.
+ *
+ * Items of accept, dismiss, set state and forward can carry the `expectedBlobId` of their note,
+ * which the routes accept and the tools don't: an item whose note has changed since is skipped as
+ * `stale` with the note's current `blobId`, and the library never sees it.
  */
 
 import {
@@ -27,7 +31,7 @@ import {
     TRILIUM_CONFIG,
     withListItemIds
 } from "@triliumnext/caius";
-import { date_utils as dateUtils } from "@triliumnext/core";
+import { becca, date_utils as dateUtils } from "@triliumnext/core";
 
 import {
     type AcceptInput,
@@ -110,24 +114,26 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
         })),
 
         accept: ({ items, dryRun, html }: AcceptInput) => withCaiusLock("caius_accept", async () => ({
-            results: (await acceptTasks(store, items, { dryRun })).map((r) => presentResult(r, html))
+            results: (await unlessStale(items, (fresh) => acceptTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         })),
 
         dismiss: ({ items, dryRun, html }: DismissInput) => withCaiusLock("caius_dismiss", async () => ({
-            results: (await dismissTasks(store, items, { dryRun })).map((r) => presentResult(r, html))
+            results: (await unlessStale(items, (fresh) => dismissTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         })),
 
-        setState: ({ items, dryRun, html }: SetStateInput) => withCaiusLock("caius_set_state", async () => {
-            const states = await loadStateSymbols(store);
-            const results: object[] = [];
-            for (const { state, ...item } of items) {
-                results.push(...(await setStates(store, STATE_ACTION[state], [item], { dryRun, states })).map((r) => presentResult(r, html)));
-            }
-            return { results };
-        }),
+        setState: ({ items, dryRun, html }: SetStateInput) => withCaiusLock("caius_set_state", async () => ({
+            results: (await unlessStale(items, async (fresh) => {
+                const states = await loadStateSymbols(store);
+                const results: object[] = [];
+                for (const { state, ...item } of fresh) {
+                    results.push(...await setStates(store, STATE_ACTION[state], [item], { dryRun, states }));
+                }
+                return results;
+            })).map((r) => presentResult(r, html))
+        })),
 
         forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => ({
-            results: (await forwardTasks(store, items, { dryRun })).map((r) => presentResult(r, html))
+            results: (await unlessStale(items, (fresh) => forwardTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         }))
     };
 }
@@ -163,6 +169,44 @@ function currentKey(period: "day" | "week" | "month", now: Date): string {
     thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
     const week = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
     return `${thursday.getUTCFullYear()}-W${pad(week)}`;
+}
+
+/** An item skipped because its note changed since the client read the `blobId` it sent. */
+type StaleSkip = Record<string, unknown> & { noteId: string; status: "skipped"; reason: "stale"; blobId: string };
+
+/**
+ * Runs `operation` on the items whose `expectedBlobId`, when given, still matches their note's
+ * `blobId`, and skips the rest as stale, keeping the items' order. Every `blobId` is read before
+ * `operation` writes anything, so items of one batch that act on the same note all compare against
+ * the version the client sent. An item whose note does not exist goes on to the library, which
+ * reports it as `not_found`.
+ */
+async function unlessStale<I extends { noteId: string; expectedBlobId?: string }, R>(
+    items: I[],
+    operation: (fresh: Omit<I, "expectedBlobId">[]) => Promise<R[]>
+): Promise<(R | StaleSkip)[]> {
+    const stale = new Map<number, StaleSkip>();
+    const fresh: Omit<I, "expectedBlobId">[] = [];
+    for (const [index, { expectedBlobId, ...item }] of items.entries()) {
+        const blobId = becca.notes[item.noteId]?.blobId;
+        if (expectedBlobId !== undefined && blobId !== undefined && blobId !== expectedBlobId) {
+            stale.set(index, { ...item, status: "skipped", reason: "stale", blobId });
+        } else {
+            fresh.push(item);
+        }
+    }
+
+    const done = fresh.length ? await operation(fresh) : [];
+    const results: (R | StaleSkip)[] = [];
+    let next = 0;
+    for (const index of items.keys()) {
+        const result = stale.get(index) ?? done[next++];
+        if (result === undefined) {
+            throw new Error("The library returned fewer results than it was given items");
+        }
+        results.push(result);
+    }
+    return results;
 }
 
 /** An open task as the library reports it, plus the lane it sits in and, when overdue, how late it is. */

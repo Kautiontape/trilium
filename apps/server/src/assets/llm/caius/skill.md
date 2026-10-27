@@ -68,7 +68,7 @@ A week or month ends the same way at its own grain: forward to the next week or 
 Each write returns one result per item, with a status:
 
 - A success status such as `moved` or `added`: it worked. On a dry run it also says what would change and carries `dryRun: true`.
-- `skipped` with a reason: nothing was written. Common reasons are `not_found`, `not_live` (already done or cancelled), `already_moved`, `same_day` (the target is the same note), `duplicate`, `dismissed` and `edited` (the note changed while the tool ran).
+- `skipped` with a reason: nothing was written. Common reasons are `not_found`, `not_live` (already done or cancelled), `already_moved`, `same_day` (the target is the same note), `duplicate`, `dismissed` and `edited` (the note changed while the tool ran). `stale` (the note changed since the app read it, with the note's current `blobId`) comes only from Trilium's own task actions, never from these tools.
 - `failed` with an error: read it. Don't retry blindly.
 
 A skipped item is often right. Report it to Shawn instead of working around it.
