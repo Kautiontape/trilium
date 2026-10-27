@@ -134,13 +134,18 @@ describe("CaiusNudgeBar", () => {
         h.nudge.mockResolvedValue(CATCHUP);
         // A note of its own, since a dismissal outlives the test.
         const dismissed = buildNote({ id: "wed-dismissed", title: "4", "#dateNote": TODAY });
-        const bar = await mount(dismissed);
+        const parent = new Component();
+        const bar = await mount(dismissed, parent);
         await press(bar.querySelector(".caius-nudge-bar .bx-x"));
 
         expect(bar.querySelector(".caius-nudge-bar")).toBeNull();
         expect(h.skipCatchup).not.toHaveBeenCalled();
         expect(localStorage.getItem(`caius-nudge-dismissed:wed-dismissed:${TODAY}`)).not.toBeNull();
+        // A hidden bar reads nothing: not on a change, not when the note opens again.
+        h.nudge.mockClear();
+        await changed(parent, (results) => results.addNote("tue", "elsewhere"));
         expect((await mount(dismissed)).querySelector(".caius-nudge-bar")).toBeNull();
+        expect(h.nudge).not.toHaveBeenCalled();
         expect((await mount(today)).querySelector(".caius-nudge-bar")).not.toBeNull();
 
         // The next day the note is no longer today's; that day's note shows its bar again.
@@ -176,7 +181,7 @@ describe("CaiusNudgeBar", () => {
         expect(h.nudge).not.toHaveBeenCalled();
     });
 
-    it("reads the state again after a change to today's or the last workday's note, and not for others", async () => {
+    it("reads the state again after a change to the last workday's note, or a skip or brief on today's, and not for others", async () => {
         h.nudge.mockResolvedValue(CATCHUP);
         const parent = new Component();
         await mount(today, parent);
@@ -184,6 +189,10 @@ describe("CaiusNudgeBar", () => {
 
         buildNote({ id: "unrelated", title: "Unrelated" });
         await changed(parent, (results) => results.addNote("unrelated", "elsewhere"));
+        expect(h.nudge).toHaveBeenCalledTimes(1);
+
+        // Typing in today's note changes nothing the bar reads.
+        await changed(parent, (results) => results.addNote("wed", "elsewhere"));
         expect(h.nudge).toHaveBeenCalledTimes(1);
 
         await changed(parent, (results) => results.addNote("tue", "elsewhere"));

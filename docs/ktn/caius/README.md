@@ -66,7 +66,7 @@ Today's day note (today by the Caius clock) shows a slim bar under its journal n
 - **Skip** sets `#caiusSkipCatchup=<today>` on today's note, as `caius_skip_catchup` does, so the bar and Plan my day stop offering the catch-up.
 - **Plan my day** and **Refresh** start `Plan my day <today>`.
 
-The rules are those of Plan my day's `catchup` step and of `caius_brief_write`'s brief lookup, read through `GET /api/caius/nudge?date=YYYY-MM-DD`. The bar reads its state when the note opens, and again after a change to today's or the last workday's note, including a Caius write from the chat.
+The rules are those of Plan my day's `catchup` step and of `caius_brief_write`'s brief lookup, read through `GET /api/caius/nudge?date=YYYY-MM-DD`. The bar reads its state when the note opens, and again after a change to the last workday's note, a skip, or a brief written under today's note, including a Caius write from the chat. Typing in today's note doesn't make it read again, and a hidden bar reads nothing.
 
 The **×** hides the bar on that note for the rest of the day. It doesn't skip the catch-up. The dismissal is kept in this browser's local storage, so another browser or device still shows the bar.
 

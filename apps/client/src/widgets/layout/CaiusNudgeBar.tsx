@@ -33,12 +33,13 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
     // The Caius clock is known once the status has answered, which is what `enabled` waits for.
     // The mobile layout has no sidebar chat, which most of the actions open.
     const date = note && enabled && !isProtected && isDesktop() && dateNote === dayKey(caiusNow()) ? dateNote : null;
-    const { nudge, refresh } = useNudge(date, note?.noteId);
-    const [ busy, setBusy ] = useState(false);
     const [ , setDismissals ] = useState(0);
     const dismissKey = note && date ? `caius-nudge-dismissed:${note.noteId}:${date}` : null;
+    const dismissed = !!dismissKey && isDismissed(dismissKey);
+    const { nudge, refresh } = useNudge(dismissed ? null : date, note?.noteId);
+    const [ busy, setBusy ] = useState(false);
 
-    if (!date || !nudge || nudge.date !== date || !dismissKey || isDismissed(dismissKey)) {
+    if (!date || !nudge || nudge.date !== date || !dismissKey || dismissed) {
         return null;
     }
 
@@ -106,8 +107,8 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
 type MovableTask = { noteId: string; listItemId: string; text: string };
 
 /**
- * Reads the bar's state for `date` (none for `null`): at once, and debounced after a change to the
- * day note, the last workday's note, a note under today's, or a label the state depends on.
+ * Reads the bar's state for `date` (none for `null`): at once, and debounced after a change that
+ * {@link touchesNudge}.
  */
 function useNudge(date: string | null, noteId: string | undefined) {
     const [ nudge, setNudge ] = useState<CaiusNudge | null>(null);
@@ -140,7 +141,7 @@ function useNudge(date: string | null, noteId: string | undefined) {
     useEffect(() => () => clearTimeout(timer.current), []);
 
     useTriliumEvent("entitiesReloaded", useCallback(({ loadResults }) => {
-        if (date && noteId && touchesNudge(loadResults, [ date, ...(nudge ? [ nudge.lastWorkday ] : []) ], noteId)) {
+        if (date && noteId && touchesNudge(loadResults, nudge?.lastWorkday, noteId)) {
             refresh();
         }
     }, [ date, noteId, nudge, refresh ]));
@@ -151,16 +152,20 @@ function useNudge(date: string | null, noteId: string | undefined) {
 /** The labels the nudge state reads: the skip, and the brief's day and planned time. */
 const NUDGE_LABELS = [ "caiusSkipCatchup", "morningBrief", "caiusPlannedAt" ];
 
-/** Whether the changes touch a day note of `days`, a note under one, a child of `dayNoteId` or a nudge label. */
-function touchesNudge(loadResults: LoadResults, days: string[], dayNoteId: string) {
-    const inDays = (noteId: string) => {
+/**
+ * Whether the changes touch what the bar reads: the day note of `lastWorkday` or a note under it, a
+ * new child of today's note `dayNoteId` (a brief), or a skip or brief label. Edits to the text of
+ * today's note change none of it.
+ */
+function touchesNudge(loadResults: LoadResults, lastWorkday: string | undefined, dayNoteId: string) {
+    const inLastWorkday = (noteId: string) => {
         const changed = froca.notes[noteId];
-        return !!changed && [ changed, ...changed.getParentNotes() ]
-            .some((candidate) => days.includes(candidate.getOwnedLabelValue("dateNote") ?? ""));
+        return !!lastWorkday && !!changed && [ changed, ...changed.getParentNotes() ]
+            .some((candidate) => candidate.getOwnedLabelValue("dateNote") === lastWorkday);
     };
 
-    return loadResults.getNoteIds().some(inDays)
-        || loadResults.getAttributeRows().some((row) => NUDGE_LABELS.includes(row.name ?? "") || (!!row.noteId && inDays(row.noteId)))
+    return loadResults.getNoteIds().some(inLastWorkday)
+        || loadResults.getAttributeRows().some((row) => NUDGE_LABELS.includes(row.name ?? "") || (!!row.noteId && inLastWorkday(row.noteId)))
         || loadResults.getBranchRows().some((row) => row.parentNoteId === dayNoteId);
 }
 
