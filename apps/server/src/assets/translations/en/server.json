@@ -615,7 +615,8 @@
       "catchup_other": "{{- weekday}} has {{count}} open tasks. Move all to today, review them, or skip?",
       "heavy": "The day is {{percent}}% booked. Move '{{- task}}' to {{- day}}?",
       "follow_up": "Follow up",
-      "heads_up": "Heads-up"
+      "heads_up": "Heads-up",
+      "carry": "Carry these into next week?"
     }
   }
 }

@@ -26,6 +26,7 @@ import {
     type NoteStore,
     openTasks,
     overlapPairs,
+    periodSpan,
     type PlanTask,
     type PlanView,
     readPlan,
@@ -115,13 +116,23 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
     // A line in force today that lapses before the target day and keeps a ticket open: Jira's own
     // answer is not consulted, since it covers only tickets that are hand-offs or have an ask.
     const today = await deps.locked("caius_winddown", () => gatherContext(deps.store, date));
-    const noticed = today.context
+    const keep = today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)
-        .map((line) => ({ line: line.text, until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
+        .map((line) => ({ kind: "keep" as const, line: line.text, until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
         .filter((line) => line.keys.length)
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
-    const question = noticed.length ? [ ...noticed.map((n) => n.question), t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
-    return reply(read.standing, { context: read.context, noticed }, question, null);
+    // When the next workday is in another week, the closing week's note stops being read: its lines
+    // still in force by the next week's Monday are offered to carry into the next week's note.
+    const closingWeek = isoWeekKey(utcDay(date));
+    const targetWeek = isoWeekKey(utcDay(targetDay));
+    const monday = periodSpan("week", targetWeek).start;
+    const carry = closingWeek === targetWeek ? [] : today.context
+        .filter((line) => line.period === "week" && line.key === closingWeek && (line.until === undefined || line.until >= monday))
+        .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
+    const noticed = [ ...keep, ...carry ];
+    const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ t("caius.daily.carry") ] : []) ];
+    const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
+    return reply(read.standing, { context: read.context, targetWeek, noticed }, question, null);
 }
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";

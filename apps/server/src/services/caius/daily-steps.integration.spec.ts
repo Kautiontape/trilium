@@ -93,7 +93,7 @@ beforeAll(async () => {
             li("f3", "Parent task", { sub: ul(li("f4", "Sub step")) })
         )}`);
         const week = await store.calendarWeek("2026-W45");
-        await store.putContent(week.noteId, `<h3>Work</h3>${ul(li("w1", "Week item ~45m"))}`);
+        await store.putContent(week.noteId, `<h3>Context</h3>${bullets("Release branch is cut", "Sam is out (until Wed 11 Nov)", "Freeze ends (until Fri 6 Nov)")}<h3>Work</h3>${ul(li("w1", "Week item ~45m"))}`);
         notes.week = week.noteId;
         notes.monday = await dayNote(MONDAY, `<h3>Work</h3>${ul(li("m1", "Monday thing ~1h"))}<h3>Suggested</h3>${ul(li("ms1", "Get ZAP-105 Summary ZAP-105 done"))}`);
         await store.addLabel(notes.monday, "caiusDismissed", "ZAP-103");
@@ -201,9 +201,15 @@ describe("caius_winddown", () => {
     it("context: notices an override that lapses before Monday and asks to keep it", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "context" });
         expect(answer).toMatchObject({ step: "context", targetDay: MONDAY, next: null });
-        expect(answer.data.noticed).toEqual([ { line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?" } ]);
+        expect(answer.data.targetWeek).toBe("2026-W46");
+        expect(answer.data.noticed).toEqual([
+            { kind: "keep", line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?" },
+            // The week ends before Monday: the week note's lines still in force then are offered to carry.
+            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
+            { kind: "carry", line: "Release branch is cut" }
+        ]);
         expect(answer.data.context.map((line: any) => line.text)).toContain("ZAP-2600 is open");
-        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Anything to know for Monday?");
+        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry these into next week? Anything to know for Monday?");
 
         const quiet = await call("caius_winddown", { date: TUESDAY, step: "context" });
         expect(quiet.question).toBeNull();
