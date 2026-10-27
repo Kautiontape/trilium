@@ -321,7 +321,7 @@ function isHeading(node: ModelNode): node is ModelElement {
 }
 
 /** Matches the library's `isSuggestedName()`, which ignores case and anything but letters and digits. */
-function isSuggested(heading: string) {
+export function isSuggested(heading: string) {
     return heading.replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase() === "suggested";
 }
 
@@ -343,24 +343,33 @@ export function tomorrowKey(now: Date) {
 
 /** The ISO week after the one `now` is in, as `YYYY-Www`. */
 export function nextWeekKey(now: Date) {
+    return weekKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7));
+}
+
+/** The month after the one `now` is in, as `YYYY-MM`. */
+export function nextMonthKey(now: Date) {
+    return monthKey(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+}
+
+/** The local day of `date`, as `YYYY-MM-DD`. */
+export function dayKey(date: Date) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** The ISO week the local day of `date` is in, as `YYYY-Www`. */
+export function weekKey(date: Date) {
     // The ISO week-numbering year is the year of the week's Thursday.
-    const inNextWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
-    const daysFromMonday = (inNextWeek.getDay() + 6) % 7;
-    const thursday = new Date(
-        inNextWeek.getFullYear(),
-        inNextWeek.getMonth(),
-        inNextWeek.getDate() - daysFromMonday + 3
-    );
+    const daysFromMonday = (date.getDay() + 6) % 7;
+    const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysFromMonday + 3);
     const year = thursday.getFullYear();
     const thursdayUtc = Date.UTC(year, thursday.getMonth(), thursday.getDate());
     const dayOfYear = Math.round((thursdayUtc - Date.UTC(year, 0, 1)) / 86_400_000);
     return `${year}-W${pad(Math.floor(dayOfYear / 7) + 1)}`;
 }
 
-/** The month after the one `now` is in, as `YYYY-MM`. */
-export function nextMonthKey(now: Date) {
-    const firstOfNext = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    return `${firstOfNext.getFullYear()}-${pad(firstOfNext.getMonth() + 1)}`;
+/** The month the local day of `date` is in, as `YYYY-MM`. */
+export function monthKey(date: Date) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
 }
 
 /** Whether `value` is a day (`YYYY-MM-DD`), an ISO week (`YYYY-Www`) or a month (`YYYY-MM`). */
@@ -373,10 +382,6 @@ const FORWARD_KEYS = [
     /^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/,
     /^\d{4}-(0[1-9]|1[0-2])$/
 ];
-
-function dayKey(date: Date) {
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 function pad(value: number) {
     return String(value).padStart(2, "0");
