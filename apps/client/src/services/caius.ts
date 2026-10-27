@@ -50,6 +50,8 @@ export interface CaiusItemResult {
     error?: string;
     noteId?: string;
     blobId?: string;
+    /** A forward: the notes it wrote, without the target when that already held the copy. */
+    writtenNoteIds?: string[];
 }
 
 export type CaiusExplanation =
@@ -209,12 +211,13 @@ async function postItems(action: string, items: object[]): Promise<CaiusItemResu
  * Runs a Caius write on `noteId` without racing the editors that show it, and toasts the outcome.
  *
  * Every open editor of the note, and of the notes in `options.alsoLock`, is made read-only at once.
- * Writes that share a note then take turns: each saves those editors, so that `call` receives the
- * note's `blobId` as the server sees it, and a `stale` skip (a save landed in between) saves again
- * and retries once. After a write that changed something, the editors stay read-only until they
- * have reloaded the note; one that misses the reload for {@link RELOAD_TIMEOUT_MS} has the note
- * fetched again. The save and the request each get {@link ANSWER_TIMEOUT_MS}. With no editor open,
- * `call` runs as is.
+ * Writes that share a note then take turns. When its turn comes, a write locks and saves the
+ * editors that show those notes then, so that `call` receives the note's `blobId` as the server
+ * sees it; a `stale` skip (a save landed in between) saves again and retries once. After a write
+ * that changed something, the editors of `noteId`, and of the `alsoLock` notes a result names in
+ * `writtenNoteIds`, stay read-only until they have reloaded the note; one that misses the reload
+ * for {@link RELOAD_TIMEOUT_MS} has the note fetched again. The save and the request each get
+ * {@link ANSWER_TIMEOUT_MS}. With no editor open, `call` runs as is.
  *
  * @param successMessage the toast for a write the server carried out.
  * @returns the per-item results, or `null` when the request failed or did not answer in time.
@@ -226,14 +229,12 @@ export async function caiusWrite(
     options: CaiusWriteOptions = {}
 ): Promise<CaiusItemResult[] | null> {
     const noteIds = [ ...new Set([ noteId, ...(options.alsoLock ?? []) ]) ];
-    const editors = [ ...new Set(noteIds.flatMap(findOpenEditors)) ];
     const lock = Symbol(CAIUS_WRITE_LOCK);
-    for (const editor of editors) {
-        editor.enableReadOnlyMode(lock);
-    }
+    const locked: CKTextEditor[] = [];
+    lockEditors(noteIds.flatMap(findOpenEditors), lock, locked);
 
     const turn = Promise.all(noteIds.map((id) => writeQueues.get(id)))
-        .then(() => writeInTurn(noteId, editors, call, successMessage));
+        .then(() => writeInTurn(noteId, noteIds, { lock, locked }, call, successMessage));
     const settled = turn.then(() => undefined, () => undefined);
     for (const id of noteIds) {
         writeQueues.set(id, settled);
@@ -247,7 +248,7 @@ export async function caiusWrite(
                 writeQueues.delete(id);
             }
         }
-        unlock(editors, lock);
+        unlock(locked, lock);
     }
 }
 
@@ -264,10 +265,16 @@ const writeQueues = new Map<string, Promise<void>>();
 
 async function writeInTurn(
     noteId: string,
-    editors: CKTextEditor[],
+    noteIds: string[],
+    { lock, locked }: { lock: symbol; locked: CKTextEditor[] },
     call: (expectedBlobId: string | undefined) => Promise<CaiusItemResult[]>,
     successMessage: string
 ): Promise<CaiusItemResult[] | null> {
+    // An editor can have moved to another note, or opened this one, while the write was queued.
+    const editorsByNote = new Map(noteIds.map((id) => [ id, findOpenEditors(id) ]));
+    const editors = [ ...new Set([ ...editorsByNote.values() ].flat()) ];
+    lockEditors(editors, lock, locked);
+
     const attempt = async () => {
         if (!editors.length) {
             return { results: await answerInTime(call(undefined)), reload: NO_RELOAD };
@@ -292,7 +299,10 @@ async function writeInTurn(
         }
 
         if (written.results.some(isChange)) {
-            await settleReload(written.reload);
+            const writtenNoteIds = new Set(written.results.flatMap((r) => r.writtenNoteIds ?? []));
+            const changed = noteIds.filter((id) => id === noteId || writtenNoteIds.has(id));
+            const expected = changed.flatMap((id) => editorsByNote.get(id) ?? []);
+            await settleReload(written.reload, expected);
         } else {
             written.reload.cancel();
         }
@@ -307,6 +317,16 @@ async function writeInTurn(
             toast.showError(t("caius.request_failed", { message: describeError(error) }));
         }
         return null;
+    }
+}
+
+/** Locks the editors of `editors` not yet in `locked`, and records them there. */
+function lockEditors(editors: CKTextEditor[], lock: symbol, locked: CKTextEditor[]) {
+    for (const editor of new Set(editors)) {
+        if (!locked.includes(editor)) {
+            editor.enableReadOnlyMode(lock);
+            locked.push(editor);
+        }
     }
 }
 
@@ -336,19 +356,19 @@ async function answerInTime<T>(promise: Promise<T>): Promise<T> {
 }
 
 /**
- * Waits for the editors to reload the written note. Those that miss it have the note fetched again
- * and get another {@link RELOAD_TIMEOUT_MS}; if that fails too, the user is told to reload the note
- * before typing, since a save of the stale content would undo the write.
+ * Waits for the `expected` editors to reload the written note. Those that miss it have the note
+ * fetched again and get another {@link RELOAD_TIMEOUT_MS}; if that fails too, the user is told to
+ * reload the note before typing, since a save of the stale content would undo the write.
  */
-async function settleReload(reload: PendingReload) {
-    const missed = await reload.promise;
+async function settleReload(reload: PendingReload, expected: CKTextEditor[]) {
+    const missed = await reload.settle(expected);
     if (!missed.length) {
         return;
     }
 
     const retry = waitForReload(missed);
     fetchContentAgain(missed.map(getEditorNoteId).filter((id): id is string => !!id));
-    if ((await retry.promise).length) {
+    if ((await retry.settle(missed)).length) {
         toast.showError(t("caius.reload_before_typing"));
     }
 }
@@ -417,52 +437,67 @@ export async function flushEditors(editors: CKTextEditor[]) {
 }
 
 /**
- * Resolves once each of `editors` has had its data replaced (`EditableText` reloading the note), or
- * after {@link RELOAD_TIMEOUT_MS}, to the editors that were not. Registered before the request,
- * since the reload can arrive over the WebSocket ahead of the response.
+ * Listens for each of `editors` to have its data replaced (`EditableText` reloading the note).
+ * Registered before the request, since the reload can arrive over the WebSocket ahead of the
+ * response; `settle()` then waits for the editors the write turned out to change.
  */
 function waitForReload(editors: CKTextEditor[]): PendingReload {
     const reloaded = new Set<CKTextEditor>();
+    const onReloaded: (() => void)[] = [];
     const cleanups: (() => void)[] = [];
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
     const cancel = () => {
-        clearTimeout(timer);
         for (const cleanup of cleanups) {
             cleanup();
         }
     };
 
-    const reloads = editors.map((editor) => new Promise<void>((resolve) => {
+    for (const editor of editors) {
         const onSet = () => {
             editor.data.off("set", onSet);
             reloaded.add(editor);
-            resolve();
+            for (const notify of onReloaded) {
+                notify();
+            }
         };
         // `set` is decorated, so a listener below `normal` runs after the data is in the model.
         editor.data.on("set", onSet, { priority: "lowest" });
         cleanups.push(() => editor.data.off("set", onSet));
-    }));
-
-    const timeout = new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, RELOAD_TIMEOUT_MS);
-    });
+    }
 
     return {
-        promise: Promise.race([ Promise.all(reloads), timeout ])
-            .then(() => editors.filter((editor) => !reloaded.has(editor)))
-            .finally(cancel),
+        async settle(expected) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                await new Promise<void>((resolve) => {
+                    const check = () => {
+                        if (expected.every((editor) => reloaded.has(editor))) {
+                            resolve();
+                        }
+                    };
+                    onReloaded.push(check);
+                    check();
+                    timer = setTimeout(resolve, RELOAD_TIMEOUT_MS);
+                });
+                return expected.filter((editor) => !reloaded.has(editor));
+            } finally {
+                clearTimeout(timer);
+                cancel();
+            }
+        },
         cancel
     };
 }
 
 interface PendingReload {
-    /** Resolves to the editors that did not reload. */
-    promise: Promise<CKTextEditor[]>;
+    /**
+     * Waits up to {@link RELOAD_TIMEOUT_MS} for `expected` to reload, stops listening, and resolves
+     * to those that did not.
+     */
+    settle(expected: CKTextEditor[]): Promise<CKTextEditor[]>;
     cancel(): void;
 }
 
-const NO_RELOAD: PendingReload = { promise: Promise.resolve([]), cancel: () => {} };
+const NO_RELOAD: PendingReload = { settle: async () => [], cancel: () => {} };
 
 function isStale(result: CaiusItemResult) {
     return result.status === "skipped" && result.reason === "stale";

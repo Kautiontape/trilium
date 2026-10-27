@@ -247,7 +247,7 @@ describe("caiusWrite", () => {
                 source.reload();
                 target.reload();
             }, 0);
-            return moved;
+            return [ { status: "moved", writtenNoteIds: [ "n2", "n1" ] } ];
         }, "done!", { alsoLock: [ "n2" ] });
 
         expect(seen).toEqual([ true ]);
@@ -303,6 +303,65 @@ describe("caiusWrite", () => {
         expect(first.enableReadOnlyMode).toHaveBeenCalled();
         expect(other.enableReadOnlyMode).not.toHaveBeenCalled();
         expect(first.isReadOnly || second.isReadOnly).toBe(false);
+    });
+
+    it("waits only for the editors of the notes the write changed", async () => {
+        vi.useFakeTimers();
+        const source = openEditor("n1");
+        const target = openEditor("n2");
+        stubSaves("n1");
+
+        let settled = false;
+        // A resumed forward: the target already held the copy, so only the source is written.
+        const write = caiusWrite("n1", async () => {
+            setTimeout(() => source.reload(), 0);
+            return [ { status: "moved", writtenNoteIds: [ "n1" ] } ];
+        }, "done!", { alsoLock: [ "n2" ] }).then(() => {
+            settled = true;
+        });
+
+        await vi.advanceTimersByTimeAsync(0);
+        await write;
+        expect(settled).toBe(true);
+        expect(source.isReadOnly || target.isReadOnly).toBe(false);
+        expect(target.listenerCount).toBe(0);
+        expect(h.triggerEvent).not.toHaveBeenCalled();
+        expect(h.showError).not.toHaveBeenCalled();
+    });
+
+    it("saves the editors that show the note when its turn comes, and unlocks exactly those it locked", async () => {
+        const first = openEditor("n1");
+        const saved: Element[] = [];
+        h.getComponentByEl.mockImplementation((domRoot: Element) => ({
+            triggerCommand: vi.fn(async () => {
+                saved.push(domRoot);
+                h.notes.n1 = { blobId: `blob${saved.length}` };
+            })
+        }));
+        let finishFirst = (_results: CaiusItemResult[]) => {};
+        const firstWrite = caiusWrite("n1", () => new Promise((resolve) => {
+            finishFirst = resolve;
+        }), "first");
+        const secondCall = vi.fn(async () => moved);
+        const secondWrite = caiusWrite("n1", secondCall, "second");
+        await vi.waitFor(() => expect(saved).toHaveLength(1));
+
+        // While the first write runs, its editor moves to another note and a new one opens this one.
+        setEditorNoteId(first, "n9");
+        const opened = openEditor("n1");
+        finishFirst(moved);
+        first.reload();
+        await firstWrite;
+
+        await vi.waitFor(() => expect(secondCall).toHaveBeenCalled());
+        expect(saved).toEqual([ first.editing.view.getDomRoot(), opened.editing.view.getDomRoot() ]);
+        expect(opened.isReadOnly).toBe(true);
+        opened.reload();
+        await secondWrite;
+        expect(first.isReadOnly).toBe(false);
+        expect(opened.isReadOnly).toBe(false);
+        expect(opened.enableReadOnlyMode).toHaveBeenCalledTimes(1);
+        expect(opened.disableReadOnlyMode).toHaveBeenCalledTimes(1);
     });
 
     it("runs two overlapping writes on one note in turn, locked until the second has reloaded", async () => {
