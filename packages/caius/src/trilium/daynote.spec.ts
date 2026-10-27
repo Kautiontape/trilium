@@ -261,6 +261,13 @@ describe('addContext keeping a line that lapses', () => {
     expect(fake.html.w).toBe(`<h3>Context</h3><ul><li>ZAP-2590 is open</li></ul>${TASKS}`);
   });
 
+  it('extends the copy in force, the one with the latest until, when the note holds two', async () => {
+    const two = '<h3>Context</h3><ul><li>ZAP-2590 is open (until Mon 2 Nov)</li><li>ZAP-2590 is open (until Wed 4 Nov)</li></ul>';
+    const fake = fakeTrilium({ w: [periodNote('w', 'weekNote', '2026-W45'), two] });
+    expect(await addContext(fake.api, { week: '2026-W45', text: 'ZAP-2590 is open', until: '2026-11-13' }, { now: WED })).toMatchObject({ status: 'updated' });
+    expect(fake.html.w).toBe('<h3>Context</h3><ul><li>ZAP-2590 is open (until Mon 2 Nov)</li><li>ZAP-2590 is open (until Fri 13 Nov)</li></ul>');
+  });
+
   it('writes the line to the note asked for when the copy in force is in another note, even a week note', async () => {
     // keep2.mts B: a Monday wind-down keeps a line in last week's note; that note stops being read after Monday.
     const MON = new Date(2026, 10, 9, 19, 0);

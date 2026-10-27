@@ -219,9 +219,10 @@ async function extendUntil(
   until: string | undefined,
   dryRun?: boolean,
 ): Promise<ContextAddResult> {
-  const line = until ? `${text} (until ${formatUntil(until, periodSpan(where.period, where.key).start)})` : text;
+  const noteDate = periodSpan(where.period, where.key).start;
+  const line = until ? `${text} (until ${formatUntil(until, noteDate)})` : text;
   const before = await api.content(where.noteId);
-  const after = setContextLine(before, text, line);
+  const after = setContextLine(before, text, line, noteDate);
   if (after === null) return { status: 'skipped', reason: 'edited', detail: `${where.key} changed meanwhile; nothing written` };
   if (dryRun) return { status: 'dry-run', writtenNoteId: where.noteId, line, before, after };
   if (!(await api.putContent(where.noteId, after, before))) {
@@ -232,20 +233,27 @@ async function extendUntil(
 
 /**
  * `html` with the Context bullet whose text (without its `(until …)`) is `text` rewritten to `line`,
- * or null when there is no such bullet. The bullet's own markup is kept; only its text changes.
+ * or null when there is no such bullet. `noteDate` resolves a year-less `until`. Of several copies, the one in force longest is rewritten:
+ * no `until`, else the latest. The bullet's own markup is kept; only its text changes.
  */
-export function setContextLine(html: string, text: string, line: string): string | null {
+export function setContextLine(html: string, text: string, line: string, noteDate: string): string | null {
   const top = elements(parse(html, { comment: true }));
   const block = proseBlock(top, html, 'context');
   const same = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
-  const li = block?.inside
+  const copies = (block?.inside ?? [])
     .flatMap((el) => el.querySelectorAll('li'))
-    .find((item) => {
-      const { context, expiredContext } = parseContext([item.text.replace(/\s+/g, ' ').trim()], '2000-01-01');
-      return same((context[0] ?? expiredContext[0])?.text ?? '') === same(text);
-    });
-  if (!li) return null;
-  const start = html.indexOf('>', li.range[0]) + 1;
-  const end = li.range[1] - '</li>'.length;
+    .map((item) => {
+      const { context, expiredContext } = parseContext([item.text.replace(/\s+/g, ' ').trim()], noteDate);
+      return { item, parsed: context[0] ?? expiredContext[0] };
+    })
+    .filter(({ parsed }) => same(parsed?.text ?? '') === same(text));
+  // A copy without an until outlasts any with one.
+  const longest = copies.reduce<(typeof copies)[number] | undefined>(
+    (best, copy) => !best || (best.parsed?.until !== undefined && (copy.parsed?.until === undefined || copy.parsed.until > best.parsed.until)) ? copy : best,
+    undefined,
+  );
+  if (!longest) return null;
+  const start = html.indexOf('>', longest.item.range[0]) + 1;
+  const end = longest.item.range[1] - '</li>'.length;
   return apply(html, [{ start, end, text: escapeHtml(line) }]);
 }
