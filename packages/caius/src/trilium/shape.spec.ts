@@ -3,7 +3,8 @@ import { critical, fakeTrilium, li, periodNote, ul } from './helpers.js';
 import { forwardTasks } from './forward.js';
 import { placeForwarded } from './plan-html.js';
 import { acceptTasks, addTasks } from './plan.js';
-import { replaceMeetings } from './daynote.js';
+import { replaceMeetings, setMeetings } from './daynote.js';
+import { withListItemIds } from './store.js';
 import { readPlan } from './plan-read.js';
 import { setTaskState } from './plan-html.js';
 
@@ -105,5 +106,35 @@ describe('Meetings and Context in either order or level', () => {
     expect(plan.context.map((c) => c.text)).toEqual(['keep', 'Hidden task ~1h']);
     expect(setTaskState(html, 'ez', 'done', { states: new Map() })).toMatchObject({ ok: false, reason: 'not_live' });
     expect(replaceMeetings(`<h3>Meetings</h3>${bullets('a')}<h3>&nbsp;</h3>${bullets('b')}<h2>T</h2>`, ['n'])).toBe('<h3>Meetings</h3><ul><li>n</li></ul><h2>T</h2>');
+  });
+});
+
+describe('setMeetings through the id-adding store', () => {
+  const setup = () => {
+    const fake = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), `<h3>Meetings</h3><h2>Tasks</h2>${ul(li('e1', 'A ~30m'))}`] });
+    return { fake, store: withListItemIds(fake.api, (() => { let n = 0; return () => `e${++n}id`; })()) };
+  };
+
+  it('writes once, then answers unchanged without a second write', async () => {
+    const { fake, store } = setup();
+    expect(await setMeetings(store, { date: '2026-11-06', lines: ['10:00 Standup', '14:00 Review'] })).toMatchObject({ status: 'updated' });
+    const written = fake.html.d;
+    expect(await setMeetings(store, { date: '2026-11-06', lines: ['10:00 Standup', '14:00 Review'] })).toMatchObject({ status: 'unchanged' });
+    expect(fake.html.d).toBe(written);
+    expect(fake.log.filter((l) => l.startsWith('put'))).toHaveLength(1);
+  });
+
+  it('keeps the ids of the lines that stay by position when the text changes', async () => {
+    const { fake, store } = setup();
+    await setMeetings(store, { date: '2026-11-06', lines: ['10:00 Standup', '14:00 Review'] });
+    const ids = [...fake.html.d.matchAll(/<li data-list-item-id="(e\d+id)">(?:10:00|14:00)/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    await setMeetings(store, { date: '2026-11-06', lines: ['10:30 Standup', '14:00 Review', '16:00 Sync'] });
+    expect(fake.html.d).toContain(`<li data-list-item-id="${ids[0]}">10:30 Standup</li><li data-list-item-id="${ids[1]}">14:00 Review</li>`);
+  });
+
+  it('says what a dry run on a missing note is diffed against', async () => {
+    const dry = await setMeetings(fakeTrilium({}).api, { date: '2026-11-09', lines: ['x'] }, { dryRun: true });
+    expect(dry).toMatchObject({ status: 'dry-run', before: '', detail: expect.stringContaining('template') });
   });
 });

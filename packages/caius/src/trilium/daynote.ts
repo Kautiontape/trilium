@@ -11,28 +11,43 @@ import type { NoteStore } from './store.js';
  * The block under `### Meetings` in a note's HTML, replaced with a plain bullet list of `lines`
  * (text escaped). The block runs to the next heading of the same or a higher level, a Context heading of any
  * level, or the Important block; everything past it is untouched. With no Meetings heading, one is added at the
- * top, below a leading include-note section if there is one.
+ * top, below a leading include-note section if there is one. `ids` are the list item ids to give
+ * the bullets, by position.
  */
-export function replaceMeetings(html: string, lines: string[]): string {
+export function replaceMeetings(html: string, lines: string[], ids: (string | undefined)[] = []): string {
   const root = parse(html, { comment: true });
   const top = elements(root);
-  const list = lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : '';
-  const heading = top.findIndex((el) => isHeading(el) && proseKind(el.text) === 'meetings');
+  const item = (line: string, i: number) => `<li${ids[i] ? ` data-list-item-id="${ids[i]}"` : ''}>${escapeHtml(line)}</li>`;
+  const list = lines.length ? `<ul>${lines.map(item).join('')}</ul>` : '';
+  const block = meetingsBlock(top, html);
   const edits: Edit[] = [];
 
-  if (heading >= 0) {
-    const level = Number(top[heading]!.tagName[1]);
-    const ends = (el: HTMLElement) => isCriticalAside(el)
-      || (isHeading(el) && normName(el.text) !== '' && (Number(el.tagName[1]) <= level || proseKind(el.text) === 'context'));
-    const end = top.findIndex((el, i) => i > heading && ends(el));
-    const start = top[heading]!.range[1];
-    edits.push({ start, end: end < 0 ? html.length : top[end]!.range[0], text: list });
+  if (block) {
+    edits.push({ start: block.start, end: block.end, text: list });
   } else {
     const first = top[0];
     const at = first && isIncludeNote(first) ? first.range[1] : 0;
     edits.push({ start: at, end: at, text: `<h3>Meetings</h3>${list}` });
   }
   return apply(html, edits);
+}
+
+/** The span under the Meetings heading, and the text and id of each bullet in it. */
+function meetingsBlock(top: HTMLElement[], html: string): { start: number; end: number; texts: string[]; ids: (string | undefined)[] } | null {
+  const heading = top.findIndex((el) => isHeading(el) && proseKind(el.text) === 'meetings');
+  if (heading < 0) return null;
+  const level = Number(top[heading]!.tagName[1]);
+  const ends = (el: HTMLElement) => isCriticalAside(el)
+    || (isHeading(el) && normName(el.text) !== '' && (Number(el.tagName[1]) <= level || proseKind(el.text) === 'context'));
+  const next = top.findIndex((el, i) => i > heading && ends(el));
+  const inside = top.slice(heading + 1, next < 0 ? undefined : next);
+  const items = inside.flatMap((el) => el.querySelectorAll('li'));
+  return {
+    start: top[heading]!.range[1],
+    end: next < 0 ? html.length : top[next]!.range[0],
+    texts: items.map((li) => li.text.replace(/\s+/g, ' ').trim()),
+    ids: items.map((li) => li.getAttribute('data-list-item-id')),
+  };
 }
 
 function isIncludeNote(el: HTMLElement): boolean {
@@ -42,7 +57,7 @@ function isIncludeNote(el: HTMLElement): boolean {
 export type MeetingsResult =
   | { date: string; status: 'updated'; writtenNoteId: string; detail?: string }
   | { date: string; status: 'unchanged'; writtenNoteId: string }
-  | { date: string; status: 'dry-run'; writtenNoteId: string; before: string; after: string }
+  | { date: string; status: 'dry-run'; writtenNoteId: string; before: string; after: string; detail?: string }
   | { date: string; status: 'skipped'; reason: 'bad_request' | 'unreadable' | 'edited'; detail?: string };
 
 /**
@@ -66,9 +81,15 @@ export async function setMeetings(api: NoteStore, req: { date: string; lines: st
   }
 
   const before = note ? await api.content(note.noteId) : '';
-  const after = replaceMeetings(before, lines);
+  const current = meetingsBlock(elements(parse(before, { comment: true })), before);
+  const same = (text: string, i: number) => text === lines[i]?.replace(/\s+/g, ' ').trim();
+  const unchanged = current && current.texts.length === lines.length && current.texts.every(same);
+  const after = unchanged ? before : replaceMeetings(before, lines, current?.ids);
   const noteId = note?.noteId ?? 'NEW-NOTE';
-  if (opts.dryRun) return { date, status: 'dry-run', writtenNoteId: noteId, before, after };
+  if (opts.dryRun) {
+    const detail = note ? undefined : `${date} has no day note yet; this is a diff against an empty note, and a real run would add the block to the Journal template`;
+    return { date, status: 'dry-run', writtenNoteId: noteId, before, after, ...(detail ? { detail } : {}) };
+  }
   if (after === before) return { date, status: 'unchanged', writtenNoteId: noteId };
   if (!(await api.putContent(noteId, after, before))) {
     return { date, status: 'skipped', reason: 'edited', detail: `${date} changed meanwhile; nothing written` };
