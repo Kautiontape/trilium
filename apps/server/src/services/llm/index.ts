@@ -18,7 +18,7 @@ import { registerDocNoteHtmlReader } from "@triliumnext/core/src/services/llm/to
 import { registerToolRegistryLoader } from "@triliumnext/core/src/services/llm/tools/registration.js";
 
 import { loadSkillSheet } from "../../core_assets.js";
-import { loadCaiusTools, registerCaiusSkill } from "../caius/register.js";
+import { loadCaiusTools } from "../caius/register.js";
 import { getDocNoteHtml } from "./tools/doc_notes.js";
 
 /**
@@ -40,5 +40,4 @@ export function registerServerLlmExtensions() {
     registerSkillReader(loadSkillSheet);
     registerToolRegistryLoader(async () => (await import("./tools/help_tools.js")).helpTools);
     registerToolRegistryLoader(() => loadCaiusTools());
-    registerCaiusSkill();
 }

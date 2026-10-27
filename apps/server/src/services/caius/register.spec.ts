@@ -4,8 +4,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 
-import { createMcpServer } from "../mcp/mcp_server.js";
 import { listSkills, readSkill } from "@triliumnext/core/src/services/llm/skills.js";
+import { defineTools } from "@triliumnext/core/src/services/llm/tools/tool_registry.js";
+
+import { createMcpServer } from "../mcp/mcp_server.js";
 
 import { loadCaiusTools, registerCaiusSkill } from "./register.js";
 
@@ -52,4 +54,16 @@ it("offers the caius skill only while it is registered, and names every tool the
 
     unregister();
     expect(readSkill("caius")).toBeNull();
+});
+
+it("registers the caius skill when the tools load, and not when they fail to", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await loadCaiusTools(() => Promise.reject(new Error("boom")));
+    expect(listSkills().map((s) => s.name)).not.toContain("caius");
+
+    await loadCaiusTools(async () => ({ caiusTools: defineTools({}) }));
+    expect(listSkills().map((s) => s.name)).toContain("caius");
+
+    registerCaiusSkill()();
 });
