@@ -27,3 +27,5 @@ export type { AddRequest, AcceptRequest, ItemRequest, PlanResult, PlanOptions, P
 export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './trilium/keys.js';
 export { placeTask, setTaskState, takeSuggested } from './trilium/plan-html.js';
 export type { StateAction, Target } from './trilium/plan-html.js';
+export { renderDayTerrain, weatherIcon } from './draw/terrain.js';
+export type { TerrainInput, TerrainEvent, TerrainWork, WeatherIcon } from './draw/terrain.js';
