@@ -111,9 +111,15 @@ export default class SpacedUpdate<T = void> {
         this.commit = commit;
     }
 
-    /** Flushes the pending change (if any) and waits until all queued snapshots are persisted. */
-    updateNowIfNecessary(): Promise<void> {
-        return this.drain();
+    /**
+     * Flushes the pending change (if any) and waits until all queued snapshots are persisted.
+     * Drains again while anything is pending, because a call that joins a drain whose loop has
+     * already exited gets that drain's promise, which does not cover a change scheduled since.
+     */
+    async updateNowIfNecessary(): Promise<void> {
+        do {
+            await this.drain();
+        } while (this.hasPendingChanges());
     }
 
     isAllSavedAndTriggerUpdate() {
@@ -251,7 +257,7 @@ export default class SpacedUpdate<T = void> {
             return this.drainPromise;
         }
 
-        if (!this.changed && this.pendingCommits.size === 0 && this.pendingSnapshots.size === 0) {
+        if (!this.hasPendingChanges()) {
             return Promise.resolve();
         }
 
@@ -260,6 +266,10 @@ export default class SpacedUpdate<T = void> {
         });
 
         return this.drainPromise;
+    }
+
+    private hasPendingChanges() {
+        return this.changed || this.pendingCommits.size > 0 || this.pendingSnapshots.size > 0;
     }
 
     private async runDrain(): Promise<void> {

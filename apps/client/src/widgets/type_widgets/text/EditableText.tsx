@@ -253,7 +253,7 @@ export default function EditableText({ note, parentComponent, ntxId, noteContext
         },
         async saveNoteDetailNowCommand() {
             // used by cutToNote in CKEditor build
-            spacedUpdate.updateNowIfNecessary();
+            await spacedUpdate.updateNowIfNecessary();
         }
     });
 
