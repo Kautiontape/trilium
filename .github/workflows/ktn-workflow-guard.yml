@@ -1,0 +1,19 @@
+name: ktn workflow guard
+# Keeps upstream's workflows off on this fork; see Kautiontape/fork-sync, "Workflow guard".
+on:
+  push:
+    branches: [ktn]
+    paths: ['.github/workflows/**']
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run: { type: boolean, default: true }
+
+jobs:
+  guard:
+    permissions:
+      actions: write
+    uses: Kautiontape/fork-sync/.github/workflows/workflow-guard.yml@main
+    with:
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
