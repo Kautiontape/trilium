@@ -1,0 +1,103 @@
+// The live (open or in-progress) tasks of a scanned Journal, each with the
+// Trilium note it sits in, for callers outside Caius (the daily brief) that
+// need "what's still open, and where" without reading the index.
+
+import type { ScanResult } from '../index/index.js';
+import { TRILIUM_CONFIG } from './config.js';
+import type { TriliumDoc } from './journal.js';
+import { headingsByLine, sectionKind, type SectionKind } from './sections.js';
+import { scanDocs } from '../index/index.js';
+
+export interface OpenTask {
+  noteId: string;
+  /** The period the note belongs to: 2026-10-26, 2026-W44 or 2026-10. */
+  period: string;
+  path: string;
+  line: number;
+  /** The `<li data-list-item-id>` to pass to `caius forward`; null if the item has none. */
+  listItemId: string | null;
+  state: 'open' | 'in_progress';
+  horizon: string | null;
+  text: string;
+  /** The parent task's text, when this is a sub-item. */
+  parent: string | null;
+  /** Nearest heading above the task, null before any heading. */
+  section: string | null;
+  sectionKind: SectionKind;
+  /** Inside an Important block (importance tier 3 in the derived markdown only). */
+  critical: boolean;
+  /** Position in the note's priority order among the tasks listed here: critical first, then document order. */
+  rank: number;
+}
+
+export function openTasks(docs: TriliumDoc[], result: ScanResult): OpenTask[] {
+  const noteIdByPath = new Map(docs.map((d) => [d.path, d.noteId]));
+  const idsByPath = new Map(docs.map((d) => [d.path, d.itemIds]));
+  const textByRowid = new Map(result.tasks.map((t) => [t.rowid, t.text]));
+  const docByPath = new Map(docs.map((d) => [d.path, d]));
+  const headingsByPath = new Map(docs.map((d) => [d.path, headingsByLine(d.fullText)]));
+  const tasks = result.tasks
+    .filter((t) => t.live)
+    .map((t): OpenTask => {
+      const section = headingsByPath.get(t.file)?.[t.line] ?? null;
+      return {
+      noteId: noteIdByPath.get(t.file) ?? '',
+      period: t.file.match(/^Journal\/\w+\/([^/]+?)(?:\.md|\/)/)?.[1] ?? '',
+      path: t.file,
+      line: t.line,
+      listItemId: idsByPath.get(t.file)?.get(t.line) ?? null,
+      state: t.state as OpenTask['state'],
+      horizon: t.horizon,
+      text: t.text,
+      parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
+      section,
+      sectionKind: sectionKind(section),
+      critical: docByPath.get(t.file)?.critical.has(t.line) ?? false,
+      rank: 0,
+      };
+    });
+  // Priority order within each note: critical first, then document order.
+  const byNote = new Map<string, OpenTask[]>();
+  for (const t of tasks) byNote.set(t.path, [...(byNote.get(t.path) ?? []), t]);
+  for (const list of byNote.values()) {
+    [...list].sort((a, b) => Number(b.critical) - Number(a.critical) || a.line - b.line).forEach((t, i) => (t.rank = i));
+  }
+  return tasks;
+}
+
+/**
+ * Live tasks under each note's Suggested heading, the `suggested` lane. They are
+ * left out of `openTasks` (and so of every horizon); this reads them separately.
+ */
+export function suggestedTasks(docs: TriliumDoc[], now: Date): OpenTask[] {
+  const withSuggested = docs.filter((d) => d.suggested.size > 0);
+  if (!withSuggested.length) return [];
+  const result = scanDocs(
+    withSuggested.map((d) => ({ path: d.path, text: d.fullText, mtime: d.mtime })),
+    TRILIUM_CONFIG,
+    now,
+  );
+  const byPath = new Map(withSuggested.map((d) => [d.path, d]));
+  const textByRowid = new Map(result.tasks.map((t) => [t.rowid, t.text]));
+  return result.tasks
+    .filter((t) => t.live && byPath.get(t.file)!.suggested.has(t.line))
+    .map((t, i): OpenTask => {
+      const doc = byPath.get(t.file)!;
+      const section = headingsByLine(doc.fullText)[t.line] ?? null;
+      return {
+        noteId: doc.noteId,
+        period: t.file.match(/^Journal\/\w+\/([^/]+?)(?:\.md|\/)/)?.[1] ?? '',
+        path: t.file,
+        line: t.line,
+        listItemId: doc.itemIds.get(t.line) ?? null,
+        state: t.state as OpenTask['state'],
+        horizon: null,
+        text: t.text,
+        parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
+        section,
+        sectionKind: sectionKind(section),
+        critical: false,
+        rank: i,
+      };
+    });
+}
