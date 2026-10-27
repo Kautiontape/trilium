@@ -126,14 +126,16 @@ describe("createMcpServer", () => {
         expect(result).toEqual({ content: [{ type: "text", text: JSON.stringify({ ok: "async-read" }) }] });
     });
 
-    it("runs a mutating async tool in transactionalAsync, not transactional", async () => {
+    it("runs a mutating async tool in no transaction, since it manages its own", async () => {
         await createMcpServer();
         const tool = registered.find((r) => r.name === "async_mutate_tool")!;
 
         const result = await tool.callback({ b: 2 });
 
-        expect(mockSql.transactionalAsync).toHaveBeenCalledTimes(1);
+        expect(asyncMutateExecute).toHaveBeenCalledWith({ b: 2 });
+        expect(mockSql.transactionalAsync).not.toHaveBeenCalled();
         expect(mockSql.transactional).not.toHaveBeenCalled();
+        expect(mockCls.set).toHaveBeenCalledWith("componentId", "mcp");
         expect(result).toEqual({ content: [{ type: "text", text: JSON.stringify({ ok: "async-mutate" }) }] });
     });
 });

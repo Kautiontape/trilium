@@ -18,8 +18,8 @@ import sql from "../sql.js";
 /**
  * Register a tool definition on the MCP server.
  *
- * Write operations are wrapped in CLS + transaction context so that
- * Becca entity tracking works correctly.
+ * Every call runs in a CLS context so that Becca entity tracking works, and a
+ * sync tool's writes run in one transaction.
  */
 function registerTool(server: McpServer, name: string, def: ToolDefinition) {
     server.registerTool(name, {
@@ -32,9 +32,7 @@ function registerTool(server: McpServer, name: string, def: ToolDefinition) {
             return cls.init(async () => {
                 cls.set("componentId", "mcp");
 
-                return toContent(await (def.mutates
-                    ? sql.transactionalAsync(() => def.execute(args))
-                    : def.execute(args)));
+                return toContent(await def.execute(args));
             });
         }
 

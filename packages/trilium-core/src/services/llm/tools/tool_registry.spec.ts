@@ -69,7 +69,7 @@ describe("ToolRegistry", () => {
         expect(transactionalMock).toHaveBeenCalledTimes(1);
     });
 
-    it("toToolSet awaits async tools and wraps only the mutating one in transactionalAsync", async () => {
+    it("toToolSet awaits async tools and wraps neither in a transaction", async () => {
         transactionalMock.mockClear();
         transactionalAsyncMock.mockClear();
         const asyncRegistry = defineTools({
@@ -93,7 +93,7 @@ describe("ToolRegistry", () => {
         expect(transactionalAsyncMock).not.toHaveBeenCalled();
 
         expect(await set.write_async.execute!({}, {} as any)).toEqual({ value: 2 });
-        expect(transactionalAsyncMock).toHaveBeenCalledTimes(1);
+        expect(transactionalAsyncMock).not.toHaveBeenCalled();
         expect(transactionalMock).not.toHaveBeenCalled();
     });
 });

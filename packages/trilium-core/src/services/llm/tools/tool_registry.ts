@@ -44,13 +44,16 @@ interface ReadOnlyToolDefinition {
 }
 
 /**
- * A tool whose `execute` awaits. Consumers await it, and run it in
- * `transactionalAsync` when `mutates` is set. The declaration is explicit so
- * that a sync tool that returns a Promise by accident still fails to compile.
+ * A tool whose `execute` awaits. Consumers await it and wrap it in no
+ * transaction: it manages its own, committing each write in a synchronous
+ * `sql.transactional()`. A transaction held open across an await would take in
+ * whatever another call writes meanwhile. The declaration is explicit so that a
+ * sync tool that returns a Promise by accident still fails to compile.
  */
 interface AsyncToolDefinition {
     description: string;
     inputSchema: z.ZodType;
+    /** Marks this tool as modifying data. Unlike on a sync tool, it adds no transaction. */
     mutates?: boolean;
     async: true;
     execute: (args: any) => Promise<object>;
@@ -72,19 +75,15 @@ export class ToolRegistry implements Iterable<[string, ToolDefinition]> {
 
     /**
      * Convert to an AI SDK ToolSet for use with the LLM chat providers.
-     * Mutating tools are wrapped in a transaction for consistency with MCP.
+     * Mutating sync tools are wrapped in a transaction for consistency with MCP.
      * (CLS context is provided by the route handler.)
      */
     toToolSet(): ToolSet {
         const set: ToolSet = {};
         for (const [name, def] of this) {
-            const execute = def.async
-                ? (def.mutates
-                    ? (args: unknown) => getSql().transactionalAsync(() => def.execute(args))
-                    : def.execute)
-                : (def.mutates
-                    ? (args: unknown) => getSql().transactional(() => def.execute(args))
-                    : def.execute);
+            const execute = !def.async && def.mutates
+                ? (args: unknown) => getSql().transactional(() => def.execute(args))
+                : def.execute;
 
             set[name] = tool({
                 description: def.description,
@@ -108,7 +107,7 @@ export class ToolRegistry implements Iterable<[string, ToolDefinition]> {
  *
  * Note: Tools have synchronous execute functions (no async/await) because
  * better-sqlite3 transactions are synchronous. A tool that has to await sets
- * `async: true`; its mutating calls run in `transactionalAsync`.
+ * `async: true` and runs its own transactions.
  */
 export function defineTools(tools: Record<string, ToolDefinition>): ToolRegistry {
     return new ToolRegistry(tools);
