@@ -71,22 +71,22 @@ const forwardItem = z.object({
         .describe("The note to forward the task to: a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
 });
 
-const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be HH:MM, such as 09:30");
+const headerClock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be HH:MM, such as 09:30");
 
 const header = z.object({
     noteId: z.string().describe("The note to draw the header on, as an image attachment named terrain.svg"),
-    start: clock.describe("Where the day starts, HH:MM: standup, such as 10:00"),
-    end: clock.describe("Where the day ends, HH:MM: bedtime, such as 23:00"),
-    workEnd: clock.optional().describe("Where work ends and the evening begins, HH:MM. Defaults to 18:00."),
+    start: headerClock.describe("Where the day starts, HH:MM: standup, such as 10:00"),
+    end: headerClock.describe("Where the day ends, HH:MM: bedtime, such as 23:00"),
+    workEnd: headerClock.optional().describe("Where work ends and the evening begins, HH:MM. Defaults to 18:00."),
     events: z.array(z.object({
-        start: clock,
-        end: clock,
+        start: headerClock,
+        end: headerClock,
         title: z.string(),
         overlap: z.boolean().optional().describe("Draw it as a hollow circle: it overlaps another meeting. Meetings that overlap in time are found anyway.")
     })).describe("The day's meetings"),
     work: z.array(z.object({
-        start: clock,
-        end: clock,
+        start: headerClock,
+        end: headerClock,
         label: z.string(),
         focus: z.boolean().optional().describe("The one focus block, drawn in the accent colour")
     })).describe("Planned work blocks"),
@@ -118,13 +118,13 @@ const reads = {
     })
 };
 
-const clock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Must be HH:MM, from 00:00 to 24:00");
+const inputsClock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Must be HH:MM, from 00:00 to 24:00");
 
 const inputs = z.object({
     date: periodKey("day").describe("The day to read inputs for, YYYY-MM-DD"),
     context: z.array(z.string()).optional().describe("The day's Context lines. A line that names a ticket key and says it is open overrides Jira's Done."),
-    workStart: clock.optional().describe("Start of the work window, HH:MM. Defaults to 10:00."),
-    workEnd: clock.optional().describe("End of the work window, HH:MM. Defaults to 18:00.")
+    workStart: inputsClock.optional().describe("Start of the work window, HH:MM. Defaults to 10:00."),
+    workEnd: inputsClock.optional().describe("End of the work window, HH:MM. Defaults to 18:00.")
 });
 
 export const toolInputs = {
