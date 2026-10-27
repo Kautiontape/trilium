@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
     get: vi.fn(async (url: string): Promise<unknown> => (url === "keyboard-actions" ? [] : {})),
     put: vi.fn(async (_url: string, _body: { content: string }) => {}),
     streamChatCompletion: vi.fn(),
+    showMessage: vi.fn(),
     chat: null as UseLlmChatReturn | null
 }));
 
@@ -21,6 +22,7 @@ vi.mock("../../services/date_notes.js", () => ({
 vi.mock("../../services/server.js", () => ({ default: { get: h.get, put: h.put } }));
 vi.mock("../../services/llm_chat.js", () => ({ streamChatCompletion: h.streamChatCompletion }));
 vi.mock("../../services/i18n.js", () => ({ t: (key: string) => key }));
+vi.mock("../../services/toast.js", () => ({ default: { showMessage: h.showMessage } }));
 vi.mock("../type_widgets/llm_chat/ChatInputBar.js", () => ({
     default: ({ chat }: { chat: UseLlmChatReturn }) => {
         h.chat = chat;
@@ -40,7 +42,7 @@ vi.mock("../react/hooks.js", async (importOriginal) => ({
     useNoteLabelBoolean: () => [ false ]
 }));
 
-import SidebarChat, { openNewChat, PENDING_OPENER_TTL_MS } from "./SidebarChat";
+import SidebarChat, { openNewChat, PENDING_OPENER_TTL_MS, STOP_TIMEOUT_MS } from "./SidebarChat";
 
 const OLD_CHAT = {
     version: 1,
@@ -67,7 +69,7 @@ describe("openNewChat", () => {
         } as Parameters<typeof options.load>[0]);
         h.getMostRecentLlmChat.mockResolvedValue({ noteId: "old" });
         h.get.mockImplementation(async (url: string) => (url === "keyboard-actions" ? [] : { content: JSON.stringify(OLD_CHAT) }));
-        h.createLlmChat.mockResolvedValue({ noteId: "new" });
+        h.createLlmChat.mockReset().mockResolvedValue({ noteId: "new" });
         h.streamChatCompletion.mockImplementation(async () => {});
     });
 
@@ -131,6 +133,48 @@ describe("openNewChat", () => {
         await waitForSaves();
         expect(savedTo("second").join()).toContain("Second");
         expect(savedTo("second").join()).not.toContain("First");
+    });
+
+    it("says so, and leaves the chat as it is, when the running reply does not stop", async () => {
+        await mount();
+        // A stream that ignores its abort signal.
+        h.streamChatCompletion.mockImplementation(() => new Promise(() => {}));
+        h.createLlmChat.mockResolvedValueOnce({ noteId: "first" }).mockResolvedValueOnce({ noteId: "second" });
+        openNewChat("First");
+        await flush();
+
+        vi.useFakeTimers({ toFake: [ "setTimeout", "clearTimeout" ] });
+        openNewChat("Second");
+        await flush();
+        expect(h.showMessage).not.toHaveBeenCalled();
+        await act(async () => {
+            vi.advanceTimersByTime(STOP_TIMEOUT_MS);
+        });
+        await flush();
+
+        expect(h.showMessage).toHaveBeenCalledWith("sidebar_chat.opener_still_replying", expect.any(Number), expect.any(String));
+        expect(h.createLlmChat).toHaveBeenCalledTimes(1);
+        expect(h.streamChatCompletion).toHaveBeenCalledTimes(1);
+    });
+
+    it("still loads the most recent chat when an opener fails to create its own during startup", async () => {
+        let deliverRecent: (value: unknown) => void = () => {};
+        h.getMostRecentLlmChat.mockImplementation(() => new Promise((resolve) => {
+            deliverRecent = resolve;
+        }));
+        h.createLlmChat.mockRejectedValueOnce(new Error("offline"));
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        await mount();
+
+        openNewChat("Plan my day 2026-11-04");
+        await flush();
+        deliverRecent({ noteId: "old" });
+        await flush();
+
+        expect(h.get).toHaveBeenCalledWith("notes/old/blob");
+        expect(h.chat?.messages).toEqual([ expect.objectContaining({ content: "An older question" }) ]);
+        expect(h.streamChatCompletion).not.toHaveBeenCalled();
+        error.mockRestore();
     });
 
     it("keeps an older chat that loads late from overwriting the opener's chat", async () => {

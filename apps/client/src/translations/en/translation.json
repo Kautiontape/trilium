@@ -2672,7 +2672,8 @@
     "rename_message": "Enter a new name for this chat:",
     "delete": "Delete",
     "delete_chat": "Delete chat",
-    "delete_confirm": "Delete this chat? This can't be undone."
+    "delete_confirm": "Delete this chat? This can't be undone.",
+    "opener_still_replying": "The chat is still replying. Try again in a moment."
   },
   "shared_switch": {
     "shared": "Shared",

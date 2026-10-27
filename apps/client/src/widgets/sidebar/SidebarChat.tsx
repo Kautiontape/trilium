@@ -9,6 +9,7 @@ import dateNoteService, { type RecentLlmChat } from "../../services/date_notes.j
 import dialog from "../../services/dialog.js";
 import { t } from "../../services/i18n.js";
 import server from "../../services/server.js";
+import toast from "../../services/toast.js";
 import { randomString } from "../../services/utils.js";
 import ws from "../../services/ws.js";
 import { formatDateTime } from "../../utils/formatters";
@@ -213,14 +214,13 @@ export default function SidebarChat() {
     const startWithOpener = useCallback(async (text: string) => {
         if (startingRef.current) return;
         startingRef.current = true;
-        openerStartedRef.current = true;
 
         try {
             // A reply still streaming would land in the new chat, and the opener could not be sent.
             if (chatRef.current.isStreaming) {
                 chatRef.current.stopStreaming();
                 if (!(await untilIdle(idleWaitersRef.current))) {
-                    console.error("The running reply did not stop, so no new chat was started.");
+                    toast.showMessage(t("sidebar_chat.opener_still_replying"), 5000, "bx bx-bot");
                     startingRef.current = false;
                     return;
                 }
@@ -233,6 +233,8 @@ export default function SidebarChat() {
                 return;
             }
             const current = chatRef.current;
+            // Set only now, so a failed start leaves the startup load of the most recent chat alone.
+            openerStartedRef.current = true;
             setChatNoteId(note.noteId);
             current.clearMessages();
             current.setEnableNoteTools(true);
@@ -506,7 +508,7 @@ export default function SidebarChat() {
 export const PENDING_OPENER_TTL_MS = 10_000;
 
 /** How long a new chat waits for a running reply to stop before giving up. */
-const STOP_TIMEOUT_MS = 5000;
+export const STOP_TIMEOUT_MS = 5000;
 
 /** An opener sent before the chat mounted, and the mounted chat's handler for one. */
 let pendingOpener: { text: string; at: number } | null = null;
