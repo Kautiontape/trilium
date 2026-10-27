@@ -676,6 +676,9 @@ importers:
       '@triliumnext/backup-container':
         specifier: workspace:*
         version: link:../../packages/trilium-backup-container
+      '@triliumnext/caius':
+        specifier: workspace:*
+        version: link:../../packages/caius
       '@triliumnext/commons':
         specifier: workspace:*
         version: link:../../packages/commons
