@@ -617,7 +617,7 @@
       "follow_up": "Follow up",
       "heads_up": "Heads-up",
       "carry_week": "Carry {{- lines}} into next week?",
-      "carry_day": "Keep {{- lines}} going into {{- day}}?",
+      "carry_day": "Keep {{- lines}} going?",
       "list_and": "{{- head}} and {{- last}}",
       "list_more": "{{- head}} …and {{count}} more"
     }

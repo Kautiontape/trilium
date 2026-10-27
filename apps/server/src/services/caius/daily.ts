@@ -132,7 +132,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
     const noticed = [ ...keep, ...carry ];
     const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
-    const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek, weekdayName(targetDay)) ] : []) ];
+    const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
     const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
     return reply(read.standing, { context: read.context, targetWeek, noticed }, question, null);
 }
@@ -234,9 +234,9 @@ const CARRY_NAMED = 4;
 
 /**
  * The one carry question, naming the lines: "Carry 'A' and 'B' into next week?", or, when the next
- * workday is in the same week, "Keep 'A' going into Wednesday?".
+ * workday is in the same week, "Keep 'A' going?".
  */
-export function carryQuestion(lines: string[], sameWeek: boolean, dayName: string): string {
+export function carryQuestion(lines: string[], sameWeek: boolean): string {
     const quoted = lines.map((line) => `'${line}'`);
     const named = quoted.slice(0, CARRY_NAMED);
     const list = quoted.length > CARRY_NAMED
@@ -244,7 +244,7 @@ export function carryQuestion(lines: string[], sameWeek: boolean, dayName: strin
         : named.length > 1
             ? t("caius.daily.list_and", { head: named.slice(0, -1).join(", "), last: named.at(-1) })
             : named[0] ?? "";
-    return sameWeek ? t("caius.daily.carry_day", { lines: list, day: dayName }) : t("caius.daily.carry_week", { lines: list });
+    return sameWeek ? t("caius.daily.carry_day", { lines: list }) : t("caius.daily.carry_week", { lines: list });
 }
 
 /** A work bar's label: the task's first Jira key, else its text cut to `LABEL_LENGTH`. */
