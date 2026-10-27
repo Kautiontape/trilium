@@ -4,6 +4,7 @@
 
 import { createHash } from 'node:crypto';
 import { parseDocument, type ParsedTask, type State } from '../core/index.js';
+import { now as clock } from '../clock.js';
 import { resolveHorizon, resolveProject, type Config, type ProjectContext, type Grain, type Bucket } from '../resolve/index.js';
 
 export interface IndexedTask {
@@ -87,7 +88,7 @@ export interface VaultDoc {
 }
 
 /** Parse → resolve → reconcile over already-read documents. Pure of I/O. */
-export function scanDocs(docs: VaultDoc[], config: Config, now: Date = new Date()): ScanResult {
+export function scanDocs(docs: VaultDoc[], config: Config, now: Date = clock()): ScanResult {
   const files: FileRecord[] = [];
   const tasks: IndexedTask[] = [];
   const parses: ParsedTask[] = []; // parallel to tasks, for the resolve pass

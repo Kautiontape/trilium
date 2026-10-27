@@ -29,7 +29,7 @@ vi.mock("./i18n.js", () => ({
 
 import { noteSavedDataStore, setEditorNoteId } from "../widgets/react/NoteStore.js";
 import {
-    ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, type CaiusItemResult, caiusWrite, describeSkip,
+    ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, caiusNow, type CaiusItemResult, caiusWrite, describeSkip,
     flushEditors,
     forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, RELOAD_TIMEOUT_MS
 } from "./caius.js";
@@ -609,6 +609,18 @@ describe("isCaiusEnabled", () => {
 
         expect(h.getWithSilentNotFound).toHaveBeenCalledTimes(2);
         expect(h.getWithSilentNotFound).toHaveBeenCalledWith("caius/status");
+    });
+
+    it("follows the server's dev clock when the status carries one, and the browser's otherwise", async () => {
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true, now: "2026-11-06T17:30:00" });
+        await isCaiusEnabled();
+        const at = caiusNow();
+        expect([ at.getMonth(), at.getDate(), at.getHours() ]).toEqual([ 10, 6, 17 ]);
+
+        forgetCaiusStatus();
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true });
+        await isCaiusEnabled();
+        expect(Math.abs(caiusNow().getTime() - Date.now())).toBeLessThan(1000);
     });
 
     it("reads enabled: false, which the server answers when the service fails to load", async () => {

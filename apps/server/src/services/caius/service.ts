@@ -13,6 +13,8 @@
 import {
     acceptTasks,
     addTasks,
+    caiusClock,
+    clockOverride,
     daysLate,
     diffSummary,
     dismissTasks,
@@ -186,9 +188,23 @@ export const caiusService = createCaiusService();
 /**
  * The moment the planning operations treat as "now": Trilium's local date and time, which follows
  * the `trilium-local-now-datetime` header when the request carries one and the server clock
- * otherwise.
+ * otherwise. With `TRILIUM_ENV=dev`, `CAIUS_NOW` replaces it (see `caiusClock()` in the library).
  */
-export function caiusNow(): Date {
+export function caiusNow(env: Record<string, string | undefined> = process.env): Date {
+    return caiusClock(env, triliumNow);
+}
+
+/** `CAIUS_NOW` as the local `YYYY-MM-DDTHH:mm:ss` the client reads, or `undefined` outside dev. */
+export function caiusDevNow(env: Record<string, string | undefined> = process.env): string | undefined {
+    const at = clockOverride(env);
+    if (!at) {
+        return undefined;
+    }
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
+
+function triliumNow(): Date {
     const match = dateUtils.localNowDateTime().match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
     if (!match) {
         return new Date();

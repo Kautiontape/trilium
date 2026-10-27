@@ -129,6 +129,19 @@ export interface CaiusOpenTask {
 interface CaiusStatus {
     enabled: boolean;
     detail?: unknown;
+    /** The server's local time, `YYYY-MM-DDTHH:mm:ss`, sent only when its dev clock is set. */
+    now?: string;
+}
+
+/** The gap between the server's dev clock and this browser's, in ms; 0 without a dev clock. */
+let clockOffset = 0;
+
+/**
+ * The moment the Plan tab treats as now: the browser clock, or the server's when it runs a dev
+ * `CAIUS_NOW` (known once `isCaiusEnabled()` has answered).
+ */
+export function caiusNow() {
+    return new Date(Date.now() + clockOffset);
 }
 
 let statusRequest: Promise<boolean> | null = null;
@@ -161,6 +174,8 @@ async function fetchStatus() {
     try {
         const status = await server.getWithSilentNotFound<CaiusStatus>("caius/status");
         lastKnownEnabled = status?.enabled === true;
+        const serverNow = status?.now ? new Date(status.now).getTime() : NaN;
+        clockOffset = Number.isNaN(serverNow) ? 0 : serverNow - Date.now();
     } catch {
         lastKnownEnabled = false;
         statusRequest = null;

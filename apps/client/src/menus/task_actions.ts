@@ -4,7 +4,7 @@ import { DEFAULT_TASK_STATES, type TaskStateDef } from "@triliumnext/commons";
 import appContext, { type CommandNames } from "../components/app_context.js";
 import type FNote from "../entities/fnote.js";
 import {
-    caiusApi, type CaiusTaskState, caiusWrite, describeSkip, type EditableElement, findOpenEditors,
+    caiusApi, caiusNow, type CaiusTaskState, caiusWrite, describeSkip, type EditableElement, findOpenEditors,
     flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, wasCaiusEnabled
 } from "../services/caius.js";
 import dialog from "../services/dialog.js";
@@ -59,17 +59,17 @@ export function buildTaskActionItems(target: TaskTarget): MenuItem<CommandNames>
                 {
                     title: t("caius.forward_tomorrow"),
                     uiIcon: "bx bx-sun",
-                    handler: () => void forwardTask(target, tomorrowKey(new Date()))
+                    handler: () => void forwardTask(target, tomorrowKey(caiusNow()))
                 },
                 {
                     title: t("caius.forward_next_week"),
                     uiIcon: "bx bx-calendar-week",
-                    handler: () => void forwardTask(target, nextWeekKey(new Date()))
+                    handler: () => void forwardTask(target, nextWeekKey(caiusNow()))
                 },
                 {
                     title: t("caius.forward_next_month"),
                     uiIcon: "bx bx-calendar",
-                    handler: () => void forwardTask(target, nextMonthKey(new Date()))
+                    handler: () => void forwardTask(target, nextMonthKey(caiusNow()))
                 },
                 { kind: "separator" },
                 {
@@ -180,7 +180,7 @@ export async function runTaskCommand(command: TaskCommand, ntxId?: string | null
             await setTaskState(target, command);
             break;
         case "forwardTomorrow":
-            await forwardTask(target, tomorrowKey(new Date()));
+            await forwardTask(target, tomorrowKey(caiusNow()));
             break;
         case "drop":
             await dropTask(target);
@@ -420,7 +420,7 @@ async function pickDateAndForward(target: TaskTarget) {
     const value = (await dialog.prompt({
         title: t("caius.forward_pick_title"),
         message: t("caius.forward_pick_message"),
-        defaultValue: tomorrowKey(new Date())
+        defaultValue: tomorrowKey(caiusNow())
     }))?.trim();
     if (!value) {
         return;

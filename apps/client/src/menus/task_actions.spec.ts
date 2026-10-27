@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
 vi.mock("../components/app_context.js", () => ({ default: { tabManager: h.tabManager } }));
 vi.mock("../services/froca.js", () => ({ default: { notes: h.notes } }));
 vi.mock("../services/caius.js", () => ({
+    caiusNow: () => new Date(),
     caiusApi: h.api,
     caiusWrite: h.caiusWrite,
     describeSkip: (reason: string) => `skip:${reason}`,

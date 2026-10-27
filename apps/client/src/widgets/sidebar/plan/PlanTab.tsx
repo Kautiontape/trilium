@@ -8,7 +8,7 @@ import appContext from "../../../components/app_context";
 import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
-    caiusApi, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
+    caiusApi, caiusNow, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
     isCaiusEnabled, RELOAD_TIMEOUT_MS, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
@@ -58,8 +58,16 @@ export interface PlanTaskRef {
  */
 export default function PlanTab() {
     const { note, noteContext } = useActiveNoteContext();
-    const [ period, setPeriod ] = useState<ViewedPeriod>(() => periodOfNote(note, new Date()));
-    useEffect(() => setPeriod(periodOfNote(note, new Date())), [ note ]);
+    const [ period, setPeriod ] = useState<ViewedPeriod>(() => periodOfNote(note, caiusNow()));
+    useEffect(() => {
+        setPeriod(periodOfNote(note, caiusNow()));
+        // The server's dev clock is known once the status has answered.
+        let mounted = true;
+        void isCaiusEnabled().then(() => mounted && setPeriod(periodOfNote(note, caiusNow())));
+        return () => {
+            mounted = false;
+        };
+    }, [ note ]);
 
     const key = periodKey(period);
     const { data, error, reload, refresh } = usePlanData(period.kind, key);
@@ -94,7 +102,7 @@ export default function PlanTab() {
                         sections={current.sections}
                         onChanged={refresh}
                     />
-                    {!isPastPeriod(current.plan.period, current.plan.key, new Date()) && (
+                    {!isPastPeriod(current.plan.period, current.plan.key, caiusNow()) && (
                         <PlanPullIn
                             plan={current.plan}
                             lanes={current.lanes}
@@ -102,7 +110,7 @@ export default function PlanTab() {
                             onChanged={refresh}
                         />
                     )}
-                    {current.plan.noteId && isCloseable(period, new Date()) && (
+                    {current.plan.noteId && isCloseable(period, caiusNow()) && (
                         <PlanClose
                             key={key}
                             plan={current.plan}
@@ -134,7 +142,7 @@ function PlanPeriodBar({ period, onChange }: {
     period: ViewedPeriod;
     onChange: (period: ViewedPeriod) => void;
 }) {
-    const now = new Date();
+    const now = caiusNow();
     const key = periodKey(period);
     const isCurrent = key === periodKey({ kind: period.kind, anchor: now });
 

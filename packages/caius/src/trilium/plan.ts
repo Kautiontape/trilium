@@ -5,6 +5,7 @@
 // write if the note changed, never call the calendar endpoints on a dry run, and
 // be safe to run twice.
 
+import { now as clock } from '../clock.js';
 import { scanDocs } from '../index/index.js';
 import { newListItemId, tokenZoneStart } from './html-util.js';
 import { scanTokens } from '../core/index.js';
@@ -175,7 +176,7 @@ async function journalKeys(api: NoteStore, now: Date): Promise<Map<string, strin
 }
 
 export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOptions & { now?: Date } = {}): Promise<Done<AddRequest>[]> {
-  const now = opts.now ?? new Date();
+  const now = opts.now ?? clock();
   let journal: Map<string, string> | null = null;
   const newId = opts.newId ?? newListItemId;
 

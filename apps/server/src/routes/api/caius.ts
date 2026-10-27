@@ -15,8 +15,9 @@ type CaiusModule = typeof import("../../services/caius/service.js");
 export default {
     status: async () => {
         try {
-            await loadCaius();
-            return { enabled: true };
+            const caius = await loadCaius();
+            const now = caius.caiusDevNow();
+            return { enabled: true, ...(now ? { now } : {}) };
         } catch (e) {
             return { enabled: false, detail: messageOf(e) };
         }
