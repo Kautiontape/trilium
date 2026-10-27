@@ -130,6 +130,12 @@ describe("plan tasks", () => {
         expect(acceptSections(html)).toEqual([ "Morning", "Deep work" ]);
     });
 
+    it("keeps Meetings, Context and the headings inside them out of Accept", () => {
+        const html = "<h3>🗓 Meetings</h3><h4>Am</h4><h3>Context</h3><h4>Notes</h4><h4> </h4>"
+            + "<h2>Morning</h2><h3>Deep work</h3><h2>Context</h2><h3>Suggested</h3><h3>Later</h3>";
+        expect(acceptSections(html)).toEqual([ "Morning", "Deep work" ]);
+    });
+
     it("shows a Markdown link in a task's text as its label", () => {
         expect(taskLabel("Forward me [from Sunday 25](#root/irdD0L4zQixz) and [x](y)"))
             .toBe("Forward me from Sunday 25 and x");

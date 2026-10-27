@@ -4475,6 +4475,7 @@
       "duplicate": "This task is already open elsewhere in the Journal.",
       "edited": "The note changed while Caius was writing to it, so nothing was written. Try again.",
       "not_suggested": "Only a task under Suggested can be accepted or dismissed.",
+      "prose_section": "That heading holds notes, not tasks.",
       "same_day": "This task is already in that note.",
       "unreadable": "Caius cannot change this note: it is protected or not a text note.",
       "other": "Caius skipped this task: {{- reason}}"

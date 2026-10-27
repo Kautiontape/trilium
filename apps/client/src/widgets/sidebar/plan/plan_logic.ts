@@ -145,9 +145,25 @@ export function capacityStatus({ totalMinutes, target }: CaiusPlan["capacity"]) 
  */
 export function acceptSections(html: string) {
     const document = new DOMParser().parseFromString(html, "text/html");
-    const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"))
-        .map((heading) => (heading.textContent ?? "").trim())
-        .filter((heading) => heading.length > 0 && !isSuggested(heading));
+    // Meetings and Context hold notes, not tasks, down to the next heading of their level or higher.
+    const open: { level: number; prose: boolean }[] = [];
+    const headings: string[] = [];
+    for (const heading of document.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
+        const name = (heading.textContent ?? "").trim();
+        if (!name.replace(/[^\p{L}\p{N}]+/gu, "")) {
+            continue;
+        }
+
+        const level = Number(heading.tagName[1]);
+        while (open.length && (open.at(-1)?.level ?? 0) >= level) {
+            open.pop();
+        }
+        const prose = /^(meetings|context)$/.test(name.replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase());
+        open.push({ level, prose });
+        if (!open.some((entry) => entry.prose) && !isSuggested(name)) {
+            headings.push(name);
+        }
+    }
     return [ ...new Set(headings) ];
 }
 

@@ -537,6 +537,7 @@ describe("describeSkip", () => {
         expect(describeSkip("not_found", true)).toBe("caius.skip.not_found_after_save");
         expect(describeSkip("not_found", false)).toBe("caius.skip.not_found");
         expect(describeSkip("already_done", true)).toBe("caius.skip.already_done");
+        expect(describeSkip("prose_section", true)).toBe("caius.skip.prose_section");
         expect(describeSkip("weird", true)).toBe("caius.skip.other {\"reason\":\"weird\"}");
     });
 

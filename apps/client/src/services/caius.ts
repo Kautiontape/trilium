@@ -675,8 +675,8 @@ export function describeSkip(reason: string, flushed: boolean) {
 /** Every reason the library and the routes skip an item for, besides `not_found`. */
 const KNOWN_SKIP_REASONS = [
     "already_cancelled", "already_doing", "already_done", "already_moved", "bad_request",
-    "dismissed", "duplicate", "edited", "not_live", "not_suggested", "same_day", "stale",
-    "unreadable"
+    "dismissed", "duplicate", "edited", "not_live", "not_suggested", "prose_section", "same_day",
+    "stale", "unreadable"
 ];
 
 function describeError(error: unknown) {
