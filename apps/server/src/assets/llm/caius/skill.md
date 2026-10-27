@@ -39,6 +39,7 @@ Every write tool takes an `items` list. Every write also takes `dryRun`, and `ht
 | `caius_forward` | Move a task to another day, week or month. The old copy is marked Rescheduled with a link; an open copy appears under the same header in the target. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "to": "2026-W45" }] }` |
 | `caius_assign_ids` | Give every Journal list item that has no `listItemId` one, so the other tools can target it. Reports per note how many items get an id and, on a dry run, their text. It is a dry run unless `dryRun` is `false`. Only when Shawn asks; show him the dry run first. | `{}` for the dry run, then `{ "dryRun": false }` |
 | `caius_inputs` | Read the day's Jira hand-offs, asks and done checks, the calendar events and the capacity the meetings leave. Read-only; pass the day's Context lines. A failed source is named in `errors`. | `{ "date": "2026-10-27", "context": ["ZAP-2590 is open"] }` |
+| `caius_header` | Draw the day as terrain, from standup to bedtime, and attach it to a note as `terrain.svg`. A second call updates the same attachment. Returns `attachmentId` and the `<img>` `snippet` to put in the note; the note's text is not changed. Give `latitude` and `longitude` to add the weather. | `{ "noteId": "…", "start": "10:00", "end": "23:00", "events": [{ "start": "10:00", "end": "10:15", "title": "Standup" }], "work": [{ "start": "13:00", "end": "14:00", "label": "ZAP-1", "focus": true }] }` |
 
 `noteId` and `listItemId` always come from `caius_plan` or `caius_open`. Never guess them.
 

@@ -8,6 +8,7 @@ For the method see [method.md](method.md); for using it see [README.md](README.m
 |---|---|
 | `packages/caius/` | The library. No Trilium imports. `core/` is the task-line grammar, `resolve/` the horizon rules, `index/` the scan, `trilium/` the note-level logic: `journal`, `plan`, `plan-read`, `daynote`, `until`, `context`, `plan-html`, `forward`, `forward-html`, `sections`, `keys`, `markdown`, `html-util`, `present`, and `store` (the `NoteStore` interface). Beside them are `clock.ts` (the one place the time is read) and `workday.ts`. It reaches notes only through that interface. |
 | `apps/server/src/services/caius/` | `store.ts` (the becca `NoteStore` and the lock), `service.ts` (the operations), `schemas.ts` (zod inputs), `tools.ts` (the tool registry), `register.ts` (the defensive loader and the skill). |
+| `apps/server/src/services/caius/weather.ts` | `fetchDayWeather()`: today's WMO code from Open-Meteo, `undefined` on any failure or after 3 s. |
 | `apps/server/src/routes/api/caius.ts` | The `/api/caius/*` routes. |
 | `apps/server/src/assets/llm/caius/skill.md` | The `caius` skill sheet. |
 | `apps/client/src/services/caius.ts` | The route client and the write protocol. |
@@ -71,6 +72,12 @@ Every read of the time goes through `now()` (`clock.ts`, exported as `caiusClock
 ### Async tools, no outer transaction
 
 The tool layer originally took only synchronous tools. It now also takes tools declared `async: true`, which MCP and the chat pipeline await. An async tool manages its own transactions, so there is **no transaction around a call**. The step 2 review found that an outer `transactionalAsync` breaks when an MCP batch or parallel tool calls start in the same tick, and that a failed nested write can hide earlier committed writes from open editors. (`caius_assign_ids` and the other writes set `mutates: true` and `async: true`.)
+
+## The day's drawing
+
+`renderDayTerrain()` (`packages/caius/src/draw/terrain.ts`) is a pure function from `{ start, end, events, work, workEnd?, weather? }` to an SVG string: a port of the daily brief's `brief-terrain`, with an evening divider and a weather icon added. It keeps `width`, `height` and `viewBox`, uses mid-tone colours that read on light and dark (an SVG attachment shows as an `<img>` and cannot see the theme), and sets every `font-size` so text is at least 11 px when shown 700 px wide. Every text is escaped. The weather icon comes from the WMO code (`weatherIcon()`).
+
+`caius_header` (`service.header`) fetches the weather first, outside the lock, then takes the lock, renders, and calls `putAttachment()` in `store.ts`. That function updates the note's attachment with the same role and title through `note.saveAttachment()`, or creates it, in one transaction. Attachments are not in `NoteStore`: the interface is note-level, and `etapiClient` would need an implementation of it too. `createCaiusService` and `createCaiusTools` take the weather fetcher as an optional argument, so tests never reach the network.
 
 ## The routes and the `stale` token
 
@@ -140,7 +147,7 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 
 ## Tools, skill and loading
 
-`tools.ts` is registered with `registerToolRegistryLoader`, which puts the eleven tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
+`tools.ts` is registered with `registerToolRegistryLoader`, which puts the twelve tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
 
 ## `caius_inputs`
 

@@ -30,6 +30,7 @@ import {
     type OpenTask,
     presentResult,
     readPlan,
+    renderDayTerrain,
     scanDocs,
     setMeetings,
     setStates,
@@ -51,13 +52,17 @@ import {
     type DismissInput,
     type ExplainInput,
     type ForwardInput,
+    type HeaderInput,
     type OpenInput,
     type PlanInput,
     type SetStateInput
 } from "./schemas.js";
-import { createBeccaStore, withCaiusLock } from "./store.js";
+import { createBeccaStore, putAttachment, withCaiusLock } from "./store.js";
+import { type DayWeather, fetchDayWeather } from "./weather.js";
 
 export { routeInputs } from "./schemas.js";
+
+const TERRAIN_TITLE = "terrain.svg";
 
 const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
     done: "done",
@@ -65,7 +70,7 @@ const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
     cancelled: "drop"
 };
 
-export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
+export function createCaiusService(baseStore: NoteStore = createBeccaStore(), weatherOf: (latitude: number, longitude: number) => Promise<DayWeather | undefined> = fetchDayWeather) {
     const store = withListItemIds(baseStore);
 
     return {
@@ -171,6 +176,23 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
             const result = await setMeetings(store, { date, lines }, { dryRun });
             return withBlobIds([ result ]);
         }),
+
+        header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
+            // The forecast can take 3 s, so it is fetched before the lock is taken.
+            const weather = latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude);
+            return withCaiusLock("caius_header", async () => {
+                const note = await store.note(noteId).catch(() => undefined);
+                if (!note) {
+                    return { error: "not_found", detail: `Note '${noteId}' not found` };
+                }
+                if (note.isProtected) {
+                    return { error: "bad_request", detail: `Note '${noteId}' is protected and cannot be modified` };
+                }
+                const svg = renderDayTerrain({ ...day, ...(weather ? { weather } : {}) });
+                const { attachmentId, created } = putAttachment(noteId, { role: "image", mime: "image/svg+xml", title: TERRAIN_TITLE, content: svg });
+                return { attachmentId, created, snippet: `<img src="api/attachments/${attachmentId}/image/${TERRAIN_TITLE}">` };
+            });
+        },
 
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);

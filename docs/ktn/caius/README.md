@@ -66,7 +66,7 @@ With the caret outside a Journal task you get "Put the caret in a task in a Jour
 
 ## MCP and the AI assistant
 
-Caius registers eleven tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
+Caius registers twelve tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
 
 | Tool | Does |
 |---|---|
@@ -81,6 +81,7 @@ Caius registers eleven tools on Trilium's `/mcp` endpoint (which needs an ETAPI 
 | `caius_set_state` | Marks tasks `done`, `doing` or `cancelled` (needs a reason). |
 | `caius_forward` | Forwards tasks to a day, week or month. |
 | `caius_assign_ids` | Gives every Journal list item an id; see below. |
+| `caius_header` | Draws the day as terrain and attaches it to a note as `terrain.svg`; see below. |
 
 The **`caius` skill sheet** (`load_skill` with `caius`) teaches an agent the method, the tools, and how to run daily planning and shutdown. Only agents that can load it see it, and only while Caius is on.
 
@@ -103,6 +104,10 @@ The settings are in [internals.md](internals.md#caius_inputs).
 Actions find a task by its list item id. Newer items have one; about 87 older Journal items and plain bullets do not. Without an id, an item cannot be targeted, and the menu answers "Caius could not find this task".
 
 `caius_assign_ids` adds the ids. It is a **dry run unless you pass `dryRun: false`**: the dry run lists, per note, how many items would get an id and their text. Run the dry run, look at it, then run it for real. It writes to the live Journal, so run it once, when you are ready. Caius also gives an id to any item without one in every note it writes, so only the notes it has never touched need the backfill.
+
+### The day's drawing
+
+`caius_header` draws the day as one line, from standup to bedtime: meetings raise it, planned work sits in labelled bars under it, the focus block is clay, and a faint divider marks where work ends (`workEnd`, default `18:00`). Give `latitude` and `longitude` and the day's weather from Open-Meteo shows as a small icon in the top-right corner; without them, or if the lookup fails, there is none. The drawing is saved as an image attachment named `terrain.svg` on the note you pass as `noteId`. A second call updates that attachment instead of adding another. The tool answers with the attachment id and the snippet to put in the note, `<img src="api/attachments/<id>/image/terrain.svg">`; it never changes the note's text.
 
 ## When Caius is off
 

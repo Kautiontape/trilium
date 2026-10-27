@@ -71,6 +71,32 @@ const forwardItem = z.object({
         .describe("The note to forward the task to: a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
 });
 
+const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be HH:MM, such as 09:30");
+
+const header = z.object({
+    noteId: z.string().describe("The note to draw the header on, as an image attachment named terrain.svg"),
+    start: clock.describe("Where the day starts, HH:MM: standup, such as 10:00"),
+    end: clock.describe("Where the day ends, HH:MM: bedtime, such as 23:00"),
+    workEnd: clock.optional().describe("Where work ends and the evening begins, HH:MM. Defaults to 18:00."),
+    events: z.array(z.object({
+        start: clock,
+        end: clock,
+        title: z.string(),
+        overlap: z.boolean().optional().describe("Draw it as a hollow circle: it overlaps another meeting. Meetings that overlap in time are found anyway.")
+    })).describe("The day's meetings"),
+    work: z.array(z.object({
+        start: clock,
+        end: clock,
+        label: z.string(),
+        focus: z.boolean().optional().describe("The one focus block, drawn in the accent colour")
+    })).describe("Planned work blocks"),
+    latitude: z.number().min(-90).max(90).optional().describe("With longitude, adds the day's weather to the drawing"),
+    longitude: z.number().min(-180).max(180).optional().describe("With latitude, adds the day's weather to the drawing")
+}).refine(
+    (input) => (input.latitude === undefined) === (input.longitude === undefined),
+    "Give latitude and longitude together, or neither"
+);
+
 const writes = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item).min(1), dryRun, html });
 
 const reads = {
@@ -108,7 +134,8 @@ export const toolInputs = {
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
     setState: writes(stateItem),
-    forward: writes(forwardItem)
+    forward: writes(forwardItem),
+    header
 };
 
 export const routeInputs = {
@@ -137,6 +164,7 @@ export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;
 export type ContextInput = z.infer<typeof reads.context>;
 export type AssignIdsInput = z.infer<typeof reads.assignIds>;
+export type HeaderInput = z.infer<typeof header>;
 export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;

@@ -11,9 +11,10 @@ import type { z } from "zod";
 import { toolInputs } from "./schemas.js";
 import { readInputs } from "./inputs/index.js";
 import { createCaiusService } from "./service.js";
+import type { DayWeather } from "./weather.js";
 
-export function createCaiusTools(store?: NoteStore) {
-    const service = createCaiusService(store);
+export function createCaiusTools(store?: NoteStore, weatherOf?: (latitude: number, longitude: number) => Promise<DayWeather | undefined>) {
+    const service = createCaiusService(store, weatherOf);
 
     return defineTools({
         caius_plan: {
@@ -97,6 +98,14 @@ export function createCaiusTools(store?: NoteStore) {
             async: true,
             mutates: true,
             execute: parsed(toolInputs.assignIds, service.assignIds)
+        },
+
+        caius_header: {
+            description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
+            inputSchema: toolInputs.header,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.header, service.header)
         }
     });
 }
