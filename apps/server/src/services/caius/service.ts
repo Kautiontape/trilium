@@ -1,0 +1,174 @@
+/**
+ * The Caius operations, shared by the `caius_*` tools and the `/api/caius/*` routes. Each one
+ * composes the `@triliumnext/caius` library the way the Caius CLI does for its Trilium commands,
+ * takes input its caller has validated against `schemas.ts`, and runs under `withCaiusLock`. The
+ * entry points never call one another, since the lock is not re-entrant. Each store write commits
+ * in its own transaction behind a compare-and-swap, and gives any list item without an id one.
+ */
+
+import {
+    acceptTasks,
+    addTasks,
+    daysLate,
+    dismissTasks,
+    forwardTasks,
+    isPeriodKey,
+    loadJournal,
+    loadStateSymbols,
+    type NoteStore,
+    openTasks,
+    type OpenTask,
+    presentResult,
+    readPlan,
+    scanDocs,
+    setStates,
+    type StateAction,
+    suggestedTasks,
+    TRILIUM_CONFIG,
+    withListItemIds
+} from "@triliumnext/caius";
+import { date_utils as dateUtils } from "@triliumnext/core";
+
+import {
+    type AcceptInput,
+    type AddInput,
+    DEFAULT_OPEN_LIMIT,
+    type DismissInput,
+    type ExplainInput,
+    type ForwardInput,
+    type OpenInput,
+    type PlanInput,
+    type SetStateInput
+} from "./schemas.js";
+import { createBeccaStore, withCaiusLock } from "./store.js";
+
+export { routeInputs } from "./schemas.js";
+
+const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
+    done: "done",
+    doing: "start",
+    cancelled: "drop"
+};
+
+export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
+    const store = withListItemIds(baseStore);
+
+    return {
+        plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
+            const now = caiusNow();
+            const key = date ?? currentKey(period, now);
+            if (!isPeriodKey(period, key)) {
+                return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
+            }
+            return readPlan(store, period, key, now);
+        }),
+
+        open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
+            const now = caiusNow();
+            const { docs } = await loadJournal(store);
+            const result = scanDocs(docs, TRILIUM_CONFIG, now);
+            const tasks = [
+                ...openTasks(docs, result).map((t) => toLaneTask(t, t.horizon, now)),
+                ...suggestedTasks(docs, now).map((t) => toLaneTask(t, "suggested", now))
+            ].filter((t) => !lane || t.lane === lane);
+            return { total: tasks.length, tasks: tasks.slice(0, limit) };
+        }),
+
+        explain: ({ noteId, listItemId }: ExplainInput) => withCaiusLock("caius_explain", async () => {
+            const now = caiusNow();
+            const { docs } = await loadJournal(store);
+            const doc = docs.find((d) => d.noteId === noteId);
+            const line = doc && [...doc.itemIds].find(([, id]) => id === listItemId)?.[0];
+            if (!doc || line === undefined) {
+                return { error: "not_found", detail: `No task ${listItemId} in note ${noteId}` };
+            }
+
+            const period = doc.path.match(/^Journal\/\w+\/([^/]+?)(?:\.md|\/)/)?.[1] ?? "";
+            if (doc.suggested.has(line)) {
+                return {
+                    noteId, listItemId, lane: "suggested", period,
+                    rule: "Suggested section",
+                    source: "The task is under the note's Suggested heading, so it is not part of any lane until accepted"
+                };
+            }
+
+            const task = scanDocs(docs, TRILIUM_CONFIG, now).tasks.find((t) => t.file === doc.path && t.line === line);
+            const horizon = task?.derivations.find((d) => d.axis === "horizon");
+            if (!task || !horizon) {
+                return { error: "not_found", detail: `Task ${listItemId} was not found in the scan of note ${noteId}` };
+            }
+            const lateBy = horizon.value === "overdue" ? daysLate(period, now) : null;
+            return {
+                noteId, listItemId, text: task.text, state: task.state, period,
+                lane: horizon.value, rule: horizon.rule, source: horizon.source,
+                ...(lateBy === null ? {} : { daysLate: lateBy })
+            };
+        }),
+
+        add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => ({
+            results: (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html))
+        })),
+
+        accept: ({ items, dryRun, html }: AcceptInput) => withCaiusLock("caius_accept", async () => ({
+            results: (await acceptTasks(store, items, { dryRun })).map((r) => presentResult(r, html))
+        })),
+
+        dismiss: ({ items, dryRun, html }: DismissInput) => withCaiusLock("caius_dismiss", async () => ({
+            results: (await dismissTasks(store, items, { dryRun })).map((r) => presentResult(r, html))
+        })),
+
+        setState: ({ items, dryRun, html }: SetStateInput) => withCaiusLock("caius_set_state", async () => {
+            const states = await loadStateSymbols(store);
+            const results: object[] = [];
+            for (const { state, ...item } of items) {
+                results.push(...(await setStates(store, STATE_ACTION[state], [item], { dryRun, states })).map((r) => presentResult(r, html)));
+            }
+            return { results };
+        }),
+
+        forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => ({
+            results: (await forwardTasks(store, items, { dryRun })).map((r) => presentResult(r, html))
+        }))
+    };
+}
+
+export type CaiusService = ReturnType<typeof createCaiusService>;
+
+export const caiusService = createCaiusService();
+
+/**
+ * The moment the planning operations treat as "now": Trilium's local date and time, which follows
+ * the `trilium-local-now-datetime` header when the request carries one and the server clock
+ * otherwise.
+ */
+export function caiusNow(): Date {
+    const match = dateUtils.localNowDateTime().match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+    if (!match) {
+        return new Date();
+    }
+    const [year, month, day, hour, minute, second] = match.slice(1).map(Number) as [number, number, number, number, number, number];
+    return new Date(year, month - 1, day, hour, minute, second);
+}
+
+function currentKey(period: "day" | "week" | "month", now: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    if (period === "day") {
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    }
+    if (period === "month") {
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+    }
+    // ISO week: the year and number of the week's Thursday.
+    const thursday = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
+    const week = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
+    return `${thursday.getUTCFullYear()}-W${pad(week)}`;
+}
+
+/** An open task as the library reports it, plus the lane it sits in and, when overdue, how late it is. */
+type LaneTask = OpenTask & { lane: string | null; daysLate?: number };
+
+function toLaneTask(task: OpenTask, lane: string | null, now: Date): LaneTask {
+    const lateBy = lane === "overdue" ? daysLate(task.period, now) : null;
+    return { ...task, lane, ...(lateBy === null ? {} : { daysLate: lateBy }) };
+}
