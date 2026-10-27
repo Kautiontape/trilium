@@ -33,8 +33,8 @@ export async function loadCaiusTools(
 export function registerCaiusSkill(readSheet: () => string | null = readCaiusSheet): () => void {
     return registerSkill({
         name: "caius",
-        description: "Planning with Caius — the Journal's day, week and month notes, the cascade, capacity, daily planning and shutdown, and how to use the caius_* tools.",
-        summary: "planning with the Caius tools (day, week and month notes, capacity, daily planning and shutdown)",
+        description: "Planning with Caius — the Journal's day, week and month notes, the cascade, capacity, daily planning and shutdown, the Wind down and Plan my day conversations (openers such as \"Wind down 2026-11-06\" and \"Plan my day 2026-11-09\"), and how to use the caius_* tools.",
+        summary: "planning with the Caius tools (day, week and month notes, capacity, daily planning and shutdown, Wind down and Plan my day)",
         read: readSheet
     });
 }

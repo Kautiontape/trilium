@@ -73,6 +73,50 @@ Forwarding works between any two periods: day to week, week to day, day to month
 
 A week or month ends the same way at its own grain: forward to the next week or month, park it in a later month, or drop it.
 
+## Wind down and Plan my day
+
+Two conversations, each started by a short opener that names a day: `Wind down 2026-11-06` closes that day, and `Plan my day 2026-11-09` plans it. The steps live in `caius_winddown` and `caius_planday`. Each answer is `{ step, data, question, next, standing }`:
+
+- **The standing note first.** `standing` is Shawn's "How I work" note as markdown. Read it before anything else and follow its Brief rules. When it is null, say `standingMissing` in one line and carry on with the defaults.
+- **The steps in order.** Call the first step, then the one `next` names, until `next` is null.
+- **The questions.** Ask each `question` word for word. A step whose `question` is null has nothing to ask: go on to the next one. Say `data.summary` when there is one.
+- **The writes.** Every write is a dry run first, shown to Shawn in two lines, then applied on his yes. Only `caius_accept` puts anything into his main list, and only for items he names. Everything else he wants goes to Suggested with `caius_add` (`suggested: true`) and stays there.
+- **Never** ask Shawn to do something a tool can do, and never state a fact that is not in the tools' data.
+
+### Wind down
+
+`date` is the day being closed. Every step works against the next workday, `targetDay` (`targetDayName` in words): on a Friday that is Monday.
+
+1. **`open`.** `data.items` is one list of what is still open: the day's leftovers (`group: "today"`), what slipped (`"overdue"`) and the week note's tasks (`"week"`), each with a proposed fate. After Shawn answers, mark the ones he calls done with `caius_set_state`, forward the rest whose fate is `{ forward }` to that day with `caius_forward`, and leave the `{ stay }` ones in the week note, unless he says otherwise.
+2. **`next`.** `data.candidates` are what could go into the next workday's Suggested, each as `text` ("Get X done"), `because`, `minutes` and `source`.
+   - Add the candidates to that day's Suggested with `caius_add`: the `text`, `source` (a Jira key), `est` from `minutes`.
+   - A candidate with `noteId` and `listItemId` is a task in the week note already; `caius_add` would skip it as `duplicate`. Mention it, and forward it to the day with `caius_forward` only if Shawn names it.
+   - The question covers what needs asking, in one go: the day over capacity ("which of these can wait?"), meetings that overlap, an empty evening. An overlap's answer goes to the day's Context with `caius_context_add`. An evening task he names goes in through Suggested and `caius_accept`, under the evening heading.
+   - `data.errors` names a source that could not be read. Say which, in one line; with Jira missing there are no ticket candidates.
+3. **`context`.** `data.noticed` holds a Context line that lapses before the next workday while it keeps a ticket open. On "keep", write it again with `caius_context_add`. Whatever Shawn says Caius should know goes in with `caius_context_add`: the week note (`week`) for the state of things ("Sam is out all week", "ABC-1 is open"), the day note (`date`) for one day only. When `question` is null, say "Anything to add for {targetDayName}? (Fine to skip.)" once, and stop if he skips.
+
+### Plan my day
+
+`date` is the day being planned.
+
+1. **`catchup`.** When the last workday still has open tasks, the question offers three answers:
+   - **Move all:** forward every task in `data.tasks` to `data.moveTo` with `caius_forward`.
+   - **Review:** run Wind down for `data.lastWorkday`, then come back to Plan my day.
+   - **Skip:** `caius_skip_catchup` for the day, which leaves them where they are.
+2. **`inputs`.**
+   - Add `data.candidates` to the day's Suggested as in Wind down. They are only what is new since the last brief, so a second plan adds only the new ones.
+   - When `data.meetings.changed`, write `data.meetings.lines` with `caius_meetings`. Lines that are null mean the calendar could not be read: say so and leave the block as it is.
+   - An overlap's answer goes to the day's Context. When `data.forwardSuggestion` is set and Shawn says yes, forward that task to its `to` day.
+3. **`brief`.** Write the brief with `caius_brief_write`, filling in `data.shape`. It should take about 60 seconds to read:
+   - `headline`: 14 words or fewer, naming the work. When the day is over 60% booked, say so.
+   - `acts`: three, one sentence each, grouped by what fits around the meetings rather than listing them. The third is the evening. Their times come from `data.day` and `data.header`.
+   - `picks`: 3 to 5, each "Get X done" with its `because` and `minutes`, from the main list and the candidates.
+   - `sections`: Follow up, worded as the Brief rules say. Heads-up only when there is an outside event; drop it otherwise.
+   - Keep `header` as given. It draws the day from standup to bedtime.
+4. **In the chat**, end with the headline and the top pick in two lines, and the link to the brief (`#root/<briefNoteId>`).
+
+Pressing Plan my day again later re-reads everything and rewrites the same brief.
+
 ## Reading results
 
 Each write returns one result per item, with a status:
