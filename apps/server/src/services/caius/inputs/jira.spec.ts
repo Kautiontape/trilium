@@ -55,7 +55,8 @@ describe("caius_inputs Jira", () => {
         expect(result.handoff.map((t) => [ t.key, t.daysInStatus ])).toEqual([
             [ "ZAP-101", 6 ],   // the changelog's last move into Dev Verify
             [ "ZAP-103", 3 ],
-            [ "ZAP-110", 2 ]    // no changelog entry: statuscategorychangedate
+            [ "ZAP-110", 2 ],   // no changelog entry: statuscategorychangedate
+            [ "ZAP-111", 3 ]    // QA Testing
         ]);
         expect(result.handoff[0]).toMatchObject({
             summary: "Verify the export retry on staging",
@@ -113,12 +114,15 @@ describe("caius_inputs Jira", () => {
 
 describe("Jira helpers", () => {
     it("matches hand-off statuses in full and ignoring case", () => {
-        expect([ "dev verify", "QA", "code review" ].every(isHandoffStatus)).toBe(true);
-        expect([ "QA Testing", "Ready For QA", "In Progress" ].some(isHandoffStatus)).toBe(false);
+        const waiting = [ "dev verify", "Code Review", "READY FOR QA", "qa testing", "Pending Feedback" ];
+        expect(waiting.every(isHandoffStatus)).toBe(true);
+        expect([ "QA", "In Progress", "Ready To Work", "Dev Verify Later" ].some(isHandoffStatus)).toBe(false);
     });
 
     it("reads a ticket key together with the word open, not reopened", () => {
         expect([ ...overriddenKeys([ "ZAP-2590 is open", "SUR-7 and CM-12: open", "ZIS-3 reopened", "no key here, open" ]) ]).toEqual([ "ZAP-2590", "SUR-7", "CM-12" ]);
+        expect([ ...overriddenKeys([ "ZAP-1 is not open", "ZAP-2 isn't open", "ZAP-3 is no longer open", "ZAP-4 isn’t open", "ZAP-5 is NOT open" ]) ]).toEqual([]);
+        expect([ ...overriddenKeys([ "ZAP-6 is open, not blocked" ]) ]).toEqual([ "ZAP-6" ]);
     });
 
     it("flattens Atlassian Document Format to one line", () => {

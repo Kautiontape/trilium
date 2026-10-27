@@ -8,7 +8,7 @@
 import type { HandoffTicket, JiraAsk, JiraInputs, JiraTicket } from "./types.js";
 
 /** Statuses that mean a ticket is waiting on its assignee. Compared case-insensitively and in full. */
-export const HANDOFF_STATUSES = [ "Dev Verify", "QA", "Code Review" ];
+export const HANDOFF_STATUSES = [ "Code Review", "Dev Verify", "Ready For QA", "QA Testing", "Pending Feedback" ];
 
 export const JIRA_TIMEOUT_MS = 10_000;
 const ASK_WINDOW_DAYS = 7;
@@ -107,10 +107,18 @@ export async function readJira(deps: JiraDeps, context: string[] = []): Promise<
 export function overriddenKeys(context: string[]): Set<string> {
     const keys = new Set<string>();
     for (const line of context) {
-        if (!/\bopen\b/i.test(line)) continue;
+        if (!saysOpen(line)) continue;
         for (const [ key ] of line.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g)) keys.add(key);
     }
     return keys;
+}
+
+/** Whether the line has the word "open" that is not negated ("not open", "isn't open", "no longer open"). */
+function saysOpen(line: string): boolean {
+    for (const match of line.matchAll(/\bopen\b/gi)) {
+        if (!/(?:\bnot|\bno longer|n['’]t)\s+$/i.test(line.slice(0, match.index))) return true;
+    }
+    return false;
 }
 
 /** Whether a status is one of `HANDOFF_STATUSES`, ignoring case. */

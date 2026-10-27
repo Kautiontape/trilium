@@ -82,9 +82,9 @@ On a dry run a write changes nothing and reports what it would do. Add `html: tr
 
 `{ date, context?, workStart?, workEnd? }` returns `{ date, jira, calendar, capacity, errors }`. `context` is the day's Context lines. The work window defaults to 10:00–18:00. It reads no notes and writes nothing. A source that fails adds `{ source, error }` to `errors`, and the other still returns.
 
-- **`jira.handoff`:** your tickets in Dev Verify, QA or Code Review, with `daysInStatus`.
+- **`jira.handoff`:** your tickets in Code Review, Dev Verify, Ready For QA, QA Testing or Pending Feedback, with `daysInStatus`.
 - **`jira.asks`:** comments from the last 7 days that mention you or end in a question and came after your own last comment on that ticket.
-- **`jira.done`:** tickets whose resolution is set or whose status category is Done. A Context line that names a ticket and says it is open (for example "ZAP-2590 is open") marks it `overridden: true` and takes it out of `done`.
+- **`jira.done`:** tickets whose resolution is set or whose status category is Done. A Context line that names a ticket and says it is open (for example "ZAP-2590 is open"; "not open", "isn't open" and "no longer open" don't count) marks it `overridden: true` and takes it out of `done`.
 - **`calendar`:** the day's events with `start`, `end`, `title`, `attendees`, `allDay`, `declined`, `source` and, where two meetings overlap, `overlap`. The same title and start in two feeds is one event.
 - **`capacity`:** `{ windowMinutes, bookedMinutes, openMinutes, targetMinutes, bookedRatio }`. The target is 65% of the open time, at most 240 minutes.
 
