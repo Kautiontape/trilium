@@ -424,7 +424,8 @@ describe("openTaskInNote", () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
         setEditorNoteId(editor, "yesterday");
         editor.setData("<p>Marker</p><ul class=\"todo-list\">"
-            + "<li data-list-item-id=\"eone\">One</li><li data-list-item-id=\"etwo\">Two</li></ul>");
+            + "<li data-list-item-id=\"eone\">One</li>"
+            + "<li data-list-item-id=\"etwo\">Two</li></ul>");
         await opening;
 
         expect(getEditorNoteId(editor)).toBe("yesterday");
