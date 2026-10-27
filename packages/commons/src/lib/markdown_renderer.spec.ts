@@ -569,6 +569,22 @@ describe("renderToHtml", () => {
             expect(render("$a+b$")).toBe('<span class="math-tex">\\(a+b\\)</span>');
         });
 
+        it("applies each part of the rule on its own", () => {
+            // Only the no-digit-after-closing rule keeps these as text.
+            expect(render("$5-$10")).toBe("<p>$5-$10</p>");
+            expect(render("$5,$6")).toBe("<p>$5,$6</p>");
+            // Only the opening-space rule keeps this as text.
+            expect(render("$ x$")).toBe("<p>$ x$</p>");
+
+            expect(render("($x$)")).toBe('<p>(<span class="math-tex">\\(x\\)</span>)</p>');
+            expect(render("$x$, $y$.")).toBe(
+                '<span class="math-tex">\\(x\\)</span>, <span class="math-tex">\\(y\\)</span>.'
+            );
+            const table = render("| a | b |\n|---|---|\n| $5 | $x$ |");
+            expect(table).toContain("<td>$5</td>");
+            expect(table).toContain('<td><span class="math-tex">\\(x\\)</span></td>');
+        });
+
         it("does not convert an escaped dollar to a formula", () => {
             const html = render("price is \\$5 today");
             expect(html).toContain("$5");
