@@ -258,8 +258,12 @@ export default function EditableText({ note, parentComponent, ntxId, noteContext
                 textEditor
             });
         },
-        async saveNoteDetailNowCommand() {
-            // used by cutToNote in CKEditor build
+        async saveNoteDetailNowCommand(data?: { force?: boolean }) {
+            // Used by cutToNote in the CKEditor build, and before a Caius write. `force` saves the
+            // editor's content even with no change pending.
+            if (data?.force) {
+                spacedUpdate.scheduleUpdate();
+            }
             await spacedUpdate.updateNowIfNecessary();
         }
     });

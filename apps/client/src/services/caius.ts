@@ -501,10 +501,34 @@ export async function flushEditors(editors: CKTextEditor[]) {
     for (const editor of editors) {
         const domRoot = editor.editing.view.getDomRoot();
         const component = domRoot ? appContext.getComponentByEl(domRoot) : null;
-        await component?.triggerCommand("saveNoteDetailNow");
+        if (await holdsUnsavedListItemIds(editor)) {
+            await component?.triggerCommand("saveNoteDetailNow", { force: true });
+        } else {
+            await component?.triggerCommand("saveNoteDetailNow");
+        }
     }
 
     await ws.waitForMaxKnownEntityChangeId();
+}
+
+/**
+ * Whether `editor` holds list item ids its note's stored content lacks. CKEditor gives an id to
+ * every list item it loads without one, which is no change to save, so the server would not know
+ * the id a task action sends.
+ */
+async function holdsUnsavedListItemIds(editor: CKTextEditor) {
+    const noteId = getEditorNoteId(editor);
+    const blob = noteId ? await froca.getBlob("notes", noteId) : null;
+    if (!blob || typeof blob.content !== "string") {
+        return false;
+    }
+
+    const stored = new Set(listItemIds(blob.content));
+    return listItemIds(editor.getData()).some((id) => !stored.has(id));
+}
+
+function listItemIds(html: string) {
+    return Array.from(html.matchAll(/data-list-item-id="([^"]+)"/g), (match) => match[1]);
 }
 
 /**

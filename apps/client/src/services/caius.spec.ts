@@ -1,8 +1,10 @@
+import type { CKTextEditor } from "@triliumnext/ckeditor5";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
     notes: {} as Record<string, { blobId: string; getOwnedLabelValue?: (name: string) => string | null }>,
     blobPromises: {} as Record<string, unknown>,
+    getBlob: vi.fn(async (_entityType: string, _noteId: string): Promise<{ content: string } | null> => null),
     getComponentByEl: vi.fn(),
     triggerEvent: vi.fn(),
     waitForMaxKnownEntityChangeId: vi.fn(async () => {}),
@@ -15,7 +17,9 @@ const h = vi.hoisted(() => ({
 vi.mock("../components/app_context.js", () => ({
     default: { getComponentByEl: h.getComponentByEl, triggerEvent: h.triggerEvent }
 }));
-vi.mock("./froca.js", () => ({ default: { notes: h.notes, blobPromises: h.blobPromises } }));
+vi.mock("./froca.js", () => ({
+    default: { notes: h.notes, blobPromises: h.blobPromises, getBlob: h.getBlob }
+}));
 vi.mock("./ws.js", () => ({ default: { waitForMaxKnownEntityChangeId: h.waitForMaxKnownEntityChangeId } }));
 vi.mock("./server.js", () => ({ default: { getWithSilentNotFound: h.getWithSilentNotFound, post: h.post } }));
 vi.mock("./toast.js", () => ({ default: { showMessage: h.showMessage, showError: h.showError } }));
@@ -26,6 +30,7 @@ vi.mock("./i18n.js", () => ({
 import { setEditorNoteId } from "../widgets/react/NoteStore.js";
 import {
     ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, type CaiusItemResult, caiusWrite, describeSkip,
+    flushEditors,
     forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, RELOAD_TIMEOUT_MS
 } from "./caius.js";
 import type LoadResults from "./load_results.js";
@@ -38,6 +43,10 @@ function openEditor(noteId: string) {
     domRoot.className = "ck-editor__editable";
     const editor = {
         editing: { view: { getDomRoot: () => domRoot } },
+        html: "",
+        getData() {
+            return this.html;
+        },
         data: {
             on: (_event: string, listener: () => void) => listeners.add(listener),
             off: (_event: string, listener: () => void) => listeners.delete(listener)
@@ -461,6 +470,30 @@ describe("caiusWrite", () => {
         expect(call).toHaveBeenCalledWith(undefined);
         expect(h.getComponentByEl).not.toHaveBeenCalled();
         expect(h.showMessage).toHaveBeenCalledWith("done!");
+    });
+});
+
+describe("flushEditors", () => {
+    beforeEach(() => {
+        document.body.innerHTML = "";
+        vi.clearAllMocks();
+    });
+
+    it("forces a save when the editor holds list item ids the stored note lacks", async () => {
+        const editor = openEditor("n1");
+        const save = stubSaves("n1");
+        const stored = "<ul><li>No id yet</li></ul>";
+        h.getBlob.mockResolvedValue({ content: stored });
+
+        // CKEditor gives an id to every list item it loads without one; that alone is no change.
+        editor.html = "<ul><li data-list-item-id=\"einvented\">No id yet</li></ul>";
+        await flushEditors([ editor as unknown as CKTextEditor ]);
+        expect(save).toHaveBeenCalledWith("saveNoteDetailNow", { force: true });
+
+        save.mockClear();
+        h.getBlob.mockResolvedValue({ content: editor.html });
+        await flushEditors([ editor as unknown as CKTextEditor ]);
+        expect(save.mock.calls).toEqual([ [ "saveNoteDetailNow" ] ]);
     });
 });
 

@@ -149,6 +149,23 @@ describe("EditableText", () => {
         expect(settled).toBe(true);
     });
 
+    it("saves unchanged content only when saveNoteDetailNow is forced", async () => {
+        const harness = setupHarness();
+        cleanupHarness = harness.cleanup;
+        await harness.show(harness.noteA);
+        const putSpy = vi.spyOn(server, "put").mockResolvedValue(undefined);
+        // Whatever loading the note left pending is saved first; after that nothing is pending.
+        await harness.parent.triggerCommand("saveNoteDetailNow" as never);
+        putSpy.mockClear();
+
+        await harness.parent.triggerCommand("saveNoteDetailNow" as never);
+        expect(putSpy).not.toHaveBeenCalled();
+
+        await harness.parent.triggerCommand("saveNoteDetailNow" as never, { force: true } as never);
+        expect(putSpy).toHaveBeenCalledTimes(1);
+        expect(putSpy.mock.calls[0]?.[1]).toEqual({ content: "<p>first</p><p>second</p>" });
+    });
+
     it("keeps the caret when the open note reloads, but not across a note switch", async () => {
         const harness = setupHarness();
         cleanupHarness = harness.cleanup;
