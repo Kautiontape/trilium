@@ -82,8 +82,8 @@ const stateItem = z.object({
 
 const forwardItem = z.object({
     ...taskRef,
-    to: z.string().regex(DAY, "Forwarding takes a day, YYYY-MM-DD; weeks and months are not supported yet")
-        .describe("The day to forward the task to, YYYY-MM-DD")
+    to: z.string().refine((to) => DAY.test(to) || WEEK.test(to) || MONTH.test(to), "Forwarding takes a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
+        .describe("The note to forward the task to: a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
 });
 
 const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
@@ -246,7 +246,7 @@ export function createCaiusTools(store = createBeccaStore()) {
         },
 
         caius_forward: {
-            description: "Forward tasks to a later day: marks each as rescheduled and copies it to the day note. Takes a list of items; days only.",
+            description: "Forward tasks to another day, week or month note: marks each as rescheduled and copies it to the target. The source can be a day, week or month note too. Takes a list of items; `to` is YYYY-MM-DD, YYYY-Www or YYYY-MM.",
             inputSchema: z.object({ items: z.array(forwardItem).min(1), dryRun, html }),
             async: true,
             mutates: true,

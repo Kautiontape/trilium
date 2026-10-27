@@ -1,4 +1,4 @@
-// Pure HTML transforms for forwarding a task between Trilium day notes.
+// Pure HTML transforms for forwarding a task between Trilium day, week and month notes.
 //
 // Day notes are CKEditor HTML, so a forward edits that HTML directly (never a
 // markdown round trip). node-html-parser finds elements and gives each its
@@ -32,9 +32,9 @@ export { newListItemId };
 export type ItemProblem = 'not_found' | 'not_live' | 'already_moved';
 
 export interface MarkOptions {
-  /** Note id of the day the task moves to (the reference link points here). */
+  /** Note id of the day, week or month the task moves to (the reference link points here). */
   targetNoteId: string;
-  /** Link text, e.g. "Tuesday 27" (see dayLabel). */
+  /** Link text, e.g. "Tuesday 27" (see periodLabel). */
   targetLabel: string;
   states: StateSymbols;
   /** The Rescheduled state's id and title; Shawn's are `_rescheduled` / "Rescheduled". */
@@ -44,7 +44,7 @@ export interface MarkOptions {
 
 export interface CopyOptions {
   sourceNoteId: string;
-  /** Link text for the "from …" back link, e.g. "Monday 26". */
+  /** Link text for the "from …" back link, e.g. "Monday 26" or "week 45". */
   sourceLabel: string;
   states: StateSymbols;
   newId?: () => string;
@@ -55,6 +55,7 @@ export type InsertResult =
   | { ok: true; html: string; section: string | null }
   | { ok: false; reason: ItemProblem; scheduledTo: string[] };
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DEFAULT_STATE_ID = '_rescheduled';
 const DEFAULT_STATE_TITLE = 'Rescheduled';
@@ -65,6 +66,22 @@ export function dayLabel(date: string): string {
   if (!m) return date;
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
   return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}`;
+}
+
+/**
+ * The short link text for a day, ISO week or month note: "Tuesday 27", "week 45",
+ * "November". A month in a year other than `inYear` carries it ("January 2027").
+ * Anything else comes back as given.
+ */
+export function periodLabel(key: string, inYear?: number): string {
+  const week = /^(\d{4})-W(\d{2})$/.exec(key);
+  if (week) return `week ${Number(week[2])}`;
+  const month = /^(\d{4})-(\d{2})$/.exec(key);
+  if (month && MONTHS[Number(month[2]) - 1]) {
+    const name = MONTHS[Number(month[2]) - 1]!;
+    return inYear === undefined || Number(month[1]) === inYear ? name : `${name} ${month[1]}`;
+  }
+  return dayLabel(key);
 }
 
 /** Note ids the item's trailing "scheduled …" reference links point at. */
@@ -109,7 +126,7 @@ export function inspectItem(
 /**
  * Mark an item (and its still-live sub-items) Rescheduled: state attribute,
  * title, checked box, plus a trailing italic "scheduled Tuesday 27" note whose
- * link points at the target day.
+ * link points at the target note.
  */
 export function markRescheduled(html: string, id: string, opts: MarkOptions): MarkResult {
   const stateId = opts.stateId ?? DEFAULT_STATE_ID;

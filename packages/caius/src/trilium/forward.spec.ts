@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { forwardTasks } from './forward.js';
 import type { NoteReader, StoreNote } from './store.js';
+import { fakeTrilium, li as hli, periodNote, ul as hul } from './helpers.js';
 
 const STATES = new Map([['_rescheduled', '>']]);
 
@@ -181,5 +182,112 @@ describe('forwardTasks', () => {
     expect(f.log).toContain('calendar 2026-11-02');
     expect(f.html['new-2026-11-02']).toContain('<h2>☑️ Tasks</h2>');
     expect(f.html.mon).toContain('href="#root/new-2026-11-02"');
+  });
+});
+
+describe('forwardTasks to and from weeks and months', () => {
+  const seed = () =>
+    fakeTrilium({
+      mon: [periodNote('mon', 'dateNote', '2026-10-26'), '<h2>☑️ Tasks</h2><h3>Work</h3>' + hul(hli('eone', 'Write it'))],
+      wk: [periodNote('wk', 'weekNote', '2026-W45'), '<h2>☑️ Tasks</h2><h3>Work</h3>' + hul(hli('ewk', 'Week thing'))],
+      mo: [periodNote('mo', 'monthNote', '2026-11'), '<h2>☑️ Tasks</h2>' + hul(hli('emo', 'Month thing'))],
+      dec: [periodNote('dec', 'monthNote', '2026-12'), '<h2>☑️ Tasks</h2>' + hul(hli('edec', 'December thing'))],
+    });
+  const go = (f: ReturnType<typeof seed>, noteId: string, listItemId: string, to: string, extra = {}) =>
+    forwardTasks(f.api, [{ noteId, listItemId, to }], { states: STATES, newId: () => 'enewid', ...extra });
+
+  it('forwards a day to a week, labelling both links with the note they point at', async () => {
+    const f = seed();
+    const [r] = await go(f, 'mon', 'eone', '2026-W45');
+    expect(r).toMatchObject({ status: 'moved' });
+    expect(f.html.mon).toContain('<em>scheduled <a class="reference-link" href="#root/wk">week 45</a></em>');
+    expect(f.html.wk).toContain('Write it <a class="reference-link" href="#root/mon">from Monday 26</a>');
+    expect(f.log.filter((l) => l.startsWith('put'))).toEqual(['put wk', 'put mon']);
+  });
+
+  it('forwards a day to a month, naming the year only when it differs', async () => {
+    const f = seed();
+    await go(f, 'mon', 'eone', '2026-11');
+    expect(f.html.mon).toContain('>November</a></em>');
+    expect(f.html.mo).toContain('from Monday 26</a>');
+
+    const g = seed();
+    const [r] = await go(g, 'mon', 'eone', '2027-01');
+    expect(r).toMatchObject({ status: 'moved' });
+    expect(g.html.mon).toContain('href="#root/new-2027-01">January 2027</a></em>');
+    expect(g.html['new-2027-01']).toContain('from Monday 26</a>');
+  });
+
+  it('forwards a week or a month down to a day, and a week to a month', async () => {
+    const f = seed();
+    await go(f, 'wk', 'ewk', '2026-10-28');
+    expect(f.html.wk).toContain('scheduled <a class="reference-link" href="#root/new-2026-10-28">Wednesday 28</a>');
+    expect(f.html['new-2026-10-28']).toContain('Week thing <a class="reference-link" href="#root/wk">from week 45</a>');
+
+    const [m] = await go(f, 'mo', 'emo', '2026-W46');
+    expect(m).toMatchObject({ status: 'moved' });
+    expect(f.html['new-2026-W46']).toContain('from November</a>');
+
+    const g = seed();
+    await go(g, 'wk', 'ewk', '2026-12');
+    expect(g.html.wk).toContain('>December</a></em>');
+    expect(g.html.dec).toContain('from week 45</a>');
+    const [y] = await go(g, 'dec', 'edec', '2027-01-04');
+    expect(y).toMatchObject({ status: 'moved' });
+    expect(g.html['new-2027-01-04']).toContain('from December 2026</a>');
+  });
+
+  it('creates a missing month through calendarMonth, and a missing week through calendarWeek', async () => {
+    const f = seed();
+    await go(f, 'mon', 'eone', '2027-03');
+    expect(f.log).toContain('create monthNote=2027-03');
+    expect(f.html['new-2027-03']).toContain('Write it');
+    expect(f.html['new-2027-03']).not.toContain('[…]');
+    const w = seed();
+    await go(w, 'mon', 'eone', '2027-W10');
+    expect(w.log).toContain('create weekNote=2027-W10');
+  });
+
+  it('a dry run for a missing month or week previews against an empty note and creates nothing', async () => {
+    const f = seed();
+    const [r] = await go(f, 'mon', 'eone', '2027-03', { dryRun: true });
+    expect(r).toMatchObject({ status: 'moved', dryRun: true });
+    if (r!.status !== 'moved') throw new Error();
+    expect(r.detail).toContain('month note');
+    expect(r.changes![0]!.before).toBe('');
+    expect(r.changes![0]!.after).toContain('Write it');
+    expect(r.changes![1]!.after).toContain('March 2027');
+    const [w] = await go(f, 'mon', 'eone', '2027-W10', { dryRun: true });
+    if (w!.status !== 'moved') throw new Error();
+    expect(w.detail).toContain('week note');
+    expect(f.log).toEqual([]);
+  });
+
+  it('skips a forward to the note the task is already in, whatever its period', async () => {
+    const f = seed();
+    const rs = await forwardTasks(
+      f.api,
+      [
+        { noteId: 'mon', listItemId: 'eone', to: '2026-10-26' },
+        { noteId: 'wk', listItemId: 'ewk', to: '2026-W45' },
+        { noteId: 'mo', listItemId: 'emo', to: '2026-11' },
+      ],
+      { states: STATES },
+    );
+    expect(rs.map((r) => (r.status === 'skipped' ? r.reason : r.status))).toEqual(['same_day', 'same_day', 'same_day']);
+    expect(rs[0]).toMatchObject({ detail: expect.stringContaining('same note') });
+    expect(f.log).toEqual([]);
+  });
+
+  it('rejects a malformed target', async () => {
+    const f = seed();
+    const rs = await forwardTasks(f.api, [{ noteId: 'mon', listItemId: 'eone', to: '2026-W5' }, { noteId: 'mon', listItemId: 'eone', to: '2026-13' }], { states: STATES });
+    expect(rs.map((r) => (r.status === 'skipped' ? r.reason : r.status))).toEqual(['bad_request', 'bad_request']);
+  });
+
+  it('replaces the untouched template placeholder in a freshly created period note', async () => {
+    const f = seed();
+    await go(f, 'mon', 'eone', '2027-W10');
+    expect(f.html['new-2027-W10']).not.toContain('[…]');
   });
 });

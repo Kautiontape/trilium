@@ -156,15 +156,25 @@ describe("caius tools", () => {
         expect(schema.safeParse({ items: [{ ...base, state: "done" }] }).success).toBe(true);
     });
 
-    it("caius_forward moves a task to a later day and refuses a week or month", async () => {
+    it("caius_forward moves a task to a day or a week, and accepts a month", async () => {
         const result = await call("caius_forward", { items: [{ noteId: noteIds.today, listItemId: "t2", to: "2031-05-07" }] });
         expect(result.results[0]).toMatchObject({ status: "moved" });
         expect((await call("caius_plan", { period: "day", date: "2031-05-07" })).sections.flatMap((s: any) => s.tasks.map((t: any) => t.text)).join("\n")).toContain("Move me");
 
+        await cls.init(async () => store.putContent(noteIds.today, `${await store.content(noteIds.today)}${ul(li("t4", "Back up to the week"))}`));
+        const toWeek = await call("caius_forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: WEEK }] });
+        expect(toWeek.results[0]).toMatchObject({ status: "moved" });
+        const weekTexts = (await call("caius_plan", { period: "week", date: WEEK })).sections.flatMap((s: any) => s.tasks.map((t: any) => t.text));
+        expect(weekTexts.join("\n")).toContain("Back up to the week");
+        expect(await store.content(noteIds.today)).toContain(`href="#root/${noteIds.week}">week 19</a>`);
+
         const schema = toolNamed("caius_forward").inputSchema;
         const base = { noteId: "n", listItemId: "i" };
-        expect(schema.safeParse({ items: [{ ...base, to: "2031-W20" }] }).success).toBe(false);
-        expect(schema.safeParse({ items: [{ ...base, to: "2031-06" }] }).success).toBe(false);
-        expect(schema.safeParse({ items: [{ ...base, to: "2031-05-08" }] }).success).toBe(true);
+        for (const to of ["2031-W20", "2031-06", "2031-05-08"]) {
+            expect(schema.safeParse({ items: [{ ...base, to }] }).success).toBe(true);
+        }
+        for (const to of ["tomorrow", "2031", "2031-W2"]) {
+            expect(schema.safeParse({ items: [{ ...base, to }] }).success).toBe(false);
+        }
     });
 });

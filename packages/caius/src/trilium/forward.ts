@@ -1,4 +1,4 @@
-// Forward a task from one Trilium day note to another, the way Shawn does it by
+// Forward a task from one Trilium day, week or month note to another, the way Shawn does it by
 // hand: the old copy becomes Rescheduled with a "scheduled <day>" note, and an
 // open copy appears under the same section of the target day.
 //
@@ -9,18 +9,21 @@
 // item already Rescheduled is skipped, and a copy already sitting in the target
 // (a forward that died between the two writes) is not duplicated.
 
-import { label, type NoteReader, type StoreNote } from './store.js';
+import { label, type NoteReader, type NoteStore, type StoreNote } from './store.js';
 import { loadStateSymbols } from './journal.js';
-import { periodQuery } from './plan-read.js';
-import { dayLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
+import { PERIODS, periodQuery, type PeriodKind } from './plan-read.js';
+import { periodLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
 import type { StateSymbols } from './markdown.js';
 
 export interface ForwardRequest {
   noteId: string;
   listItemId: string;
-  /** Target day, YYYY-MM-DD. */
+  /** Target day YYYY-MM-DD, ISO week YYYY-Www or month YYYY-MM. */
   to: string;
 }
+
+/** Weeks and months are only needed when a request targets one. */
+export type ForwardStore = NoteReader & Partial<Pick<NoteStore, 'calendarWeek' | 'calendarMonth'>>;
 
 export type SkipReason = ItemProblem | 'edited' | 'same_day' | 'bad_request' | 'unreadable';
 
@@ -48,30 +51,30 @@ export interface ForwardOptions {
   newId?: () => string;
 }
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-export async function forwardTasks(api: NoteReader, requests: ForwardRequest[], opts: ForwardOptions = {}): Promise<ForwardResult[]> {
+export async function forwardTasks(api: ForwardStore, requests: ForwardRequest[], opts: ForwardOptions = {}): Promise<ForwardResult[]> {
   const states = opts.states ?? (await loadStateSymbols(api));
   const stateId = [...states].find(([, symbol]) => symbol === '>')?.[0] ?? '_rescheduled';
-  const days = new Map<string, StoreNote | null>();
+  const periods = new Map<string, StoreNote | null>();
 
-  const day = async (date: string): Promise<StoreNote | null> => {
-    if (days.has(date)) return days.get(date)!;
+  const period = async (kind: PeriodKind, key: string): Promise<StoreNote | null> => {
+    if (periods.has(key)) return periods.get(key)!;
     let note: StoreNote | null;
     if (opts.dryRun) {
       // The calendar endpoint creates missing notes, so a dry run only searches.
-      note = (await api.search(periodQuery('dateNote', date)))[0] ?? null;
+      note = (await api.search(periodQuery(PERIODS[kind].label, key)))[0] ?? null;
     } else {
-      note = await api.calendarDay(date);
+      const create = { day: api.calendarDay, week: api.calendarWeek, month: api.calendarMonth }[kind];
+      if (!create) throw new Error(`this store cannot create ${kind} notes`);
+      note = await create.call(api, key);
     }
-    days.set(date, note);
+    periods.set(key, note);
     return note;
   };
 
   const results: ForwardResult[] = [];
   for (const req of requests) {
     try {
-      results.push(await forwardOne(api, req, { ...opts, states, stateId }, day));
+      results.push(await forwardOne(api, req, { ...opts, states, stateId }, period));
     } catch (e) {
       results.push({ ...req, status: 'failed', error: e instanceof Error ? e.message : String(e) });
     }
@@ -80,34 +83,36 @@ export async function forwardTasks(api: NoteReader, requests: ForwardRequest[], 
 }
 
 async function forwardOne(
-  api: NoteReader,
+  api: ForwardStore,
   req: ForwardRequest,
   opts: ForwardOptions & { states: StateSymbols; stateId: string },
-  day: (date: string) => Promise<StoreNote | null>,
+  period: (kind: PeriodKind, key: string) => Promise<StoreNote | null>,
 ): Promise<ForwardResult> {
   const skip = (reason: SkipReason, detail?: string): ForwardResult => ({ ...req, status: 'skipped', reason, detail });
-  if (!req.noteId || !req.listItemId || !DATE.test(req.to ?? '')) {
-    return skip('bad_request', 'need noteId, listItemId and to as YYYY-MM-DD');
+  const kind = periodKind(req.to);
+  if (!req.noteId || !req.listItemId || !kind) {
+    return skip('bad_request', 'need noteId, listItemId and to as YYYY-MM-DD, YYYY-Www or YYYY-MM');
   }
 
   const source = await api.note(req.noteId);
   if (source.type !== 'text' || source.isProtected) return skip('unreadable', 'source is protected or not a text note');
-  const target = await day(req.to);
-  if (target && target.noteId === source.noteId) return skip('same_day', 'source is already that day');
+  const target = await period(kind, req.to);
+  if (target && target.noteId === source.noteId) return skip('same_day', 'same note: the task is already in that note');
   if (target && (target.type !== 'text' || target.isProtected)) return skip('unreadable', 'target is protected or not a text note');
 
   const sourceHtml = await api.content(source.noteId);
   // A dry run for a day that doesn't exist yet previews against an empty note.
   const targetHtml = target ? await api.content(target.noteId) : '';
-  const targetId = target?.noteId ?? 'NEW-DAY-NOTE';
+  const targetId = target?.noteId ?? `NEW-${kind.toUpperCase()}-NOTE`;
 
-  const sourceLabel = dayOrTitle(source);
+  const sourceKey = periodKey(source);
+  const sourceLabel = sourceKey ? periodLabel(sourceKey, yearOf(req.to)) : source.title;
   const base = { states: opts.states, stateId: opts.stateId };
 
   const marked = markRescheduled(sourceHtml, req.listItemId, {
     ...base,
     targetNoteId: targetId,
-    targetLabel: dayLabel(req.to),
+    targetLabel: periodLabel(req.to, sourceKey ? yearOf(sourceKey) : undefined),
   });
   if (!marked.ok) {
     if (marked.reason === 'already_moved') {
@@ -135,7 +140,7 @@ async function forwardOne(
       ...req,
       status: 'moved',
       dryRun: true,
-      detail: target ? undefined : `${req.to} has no day note yet; a real run would create it`,
+      detail: target ? undefined : `${req.to} has no ${kind} note yet; a real run would create it`,
       changes: [
         { noteId: targetId, role: 'target', before: targetHtml, after: newTarget, unchanged: alreadyCopied },
         { noteId: source.noteId, role: 'source', before: sourceHtml, after: marked.html },
@@ -161,7 +166,23 @@ async function forwardOne(
   return { ...req, status: 'moved', detail: alreadyCopied ? 'target already held the copy' : undefined };
 }
 
-function dayOrTitle(note: StoreNote): string {
-  const date = label(note, 'dateNote');
-  return date ? dayLabel(date) : note.title;
+/** The period a `to` value names, or null when it isn't a real day, ISO week or month. */
+function periodKind(to: string | undefined): PeriodKind | null {
+  for (const kind of ['day', 'week', 'month'] as const) {
+    if (!PERIODS[kind].pattern.test(to ?? '')) continue;
+    const [, month, rest] = /^\d{4}-(?:W)?(\d{2})(?:-(\d{2}))?$/.exec(to!) ?? [];
+    const n = Number(month);
+    if (kind === 'week') return n >= 1 && n <= 53 ? kind : null;
+    if (n < 1 || n > 12) return null;
+    if (kind === 'day' && (Number(rest) < 1 || Number(rest) > 31)) return null;
+    return kind;
+  }
+  return null;
 }
+
+/** The day, week or month a note stands for, from its label. */
+function periodKey(note: StoreNote): string | undefined {
+  return label(note, 'dateNote') ?? label(note, 'weekNote') ?? label(note, 'monthNote');
+}
+
+const yearOf = (key: string) => Number(key.slice(0, 4));

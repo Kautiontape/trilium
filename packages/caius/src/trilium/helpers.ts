@@ -82,10 +82,10 @@ export function fakeTrilium(seed: Record<string, [StoreNote, string]>, o: { temp
       return Object.values(notes).find((n) => n.attributes.some((a) => a.name === 'dateNote' && a.value === date)) ?? create('dateNote', date);
     },
     async calendarWeek(week) {
-      return create('weekNote', week);
+      return Object.values(notes).find((n) => n.attributes.some((a) => a.name === 'weekNote' && a.value === week)) ?? create('weekNote', week);
     },
     async calendarMonth(month) {
-      return create('monthNote', month);
+      return Object.values(notes).find((n) => n.attributes.some((a) => a.name === 'monthNote' && a.value === month)) ?? create('monthNote', month);
     },
     async addLabel(noteId, name, value) {
       log.push(`label ${noteId} ${name}=${value}`);

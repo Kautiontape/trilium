@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { dayLabel, hasCopy, insertCopy, inspectItem, markRescheduled } from './forward-html.js';
+import { dayLabel, periodLabel, hasCopy, insertCopy, inspectItem, markRescheduled } from './forward-html.js';
 
 const STATES = new Map([
   ['doing', '/'],
@@ -23,6 +23,20 @@ const SRC_ID = 'srcnote';
 const TGT_ID = 'tgtnote';
 const mark = { targetNoteId: TGT_ID, targetLabel: 'Tuesday 27', states: STATES };
 const copy = { sourceNoteId: SRC_ID, sourceLabel: 'Monday 26', states: STATES };
+
+describe('periodLabel', () => {
+  it('names a day, week or month in the short style, adding the year to a month in another year', () => {
+    expect(periodLabel('2026-10-27')).toBe('Tuesday 27');
+    expect(periodLabel('2026-W45')).toBe('week 45');
+    expect(periodLabel('2026-W05')).toBe('week 5');
+    expect(periodLabel('2026-11')).toBe('November');
+    expect(periodLabel('2026-11', 2026)).toBe('November');
+    expect(periodLabel('2027-01', 2026)).toBe('January 2027');
+    expect(periodLabel('2027-W02', 2026)).toBe('week 2');
+    expect(periodLabel('2027-01-04', 2026)).toBe('Monday 4');
+    expect(periodLabel('nonsense')).toBe('nonsense');
+  });
+});
 
 describe('dayLabel', () => {
   it('names the weekday and day of month', () => {
