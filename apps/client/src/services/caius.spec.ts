@@ -30,7 +30,7 @@ import {
 /** A stand-in for a CKEditor showing `noteId`, mounted where `findOpenEditors()` looks. */
 function openEditor(noteId: string) {
     const listeners = new Set<() => void>();
-    const locks = new Set<string>();
+    const locks = new Set<string | symbol>();
     const domRoot = document.createElement("div");
     domRoot.className = "ck-editor__editable";
     const editor = {
@@ -39,8 +39,8 @@ function openEditor(noteId: string) {
             on: (_event: string, listener: () => void) => listeners.add(listener),
             off: (_event: string, listener: () => void) => listeners.delete(listener)
         },
-        enableReadOnlyMode: vi.fn((lock: string) => locks.add(lock)),
-        disableReadOnlyMode: vi.fn((lock: string) => locks.delete(lock)),
+        enableReadOnlyMode: vi.fn((lock: string | symbol) => locks.add(lock)),
+        disableReadOnlyMode: vi.fn((lock: string | symbol) => locks.delete(lock)),
         get isReadOnly() {
             return locks.size > 0;
         },
@@ -98,7 +98,8 @@ describe("caiusWrite", () => {
         await Promise.resolve();
 
         expect(save).toHaveBeenCalledWith("saveNoteDetailNow");
-        expect(editor.enableReadOnlyMode).toHaveBeenCalledWith(CAIUS_WRITE_LOCK);
+        const [ lock ] = editor.enableReadOnlyMode.mock.calls[0] ?? [];
+        expect(typeof lock === "symbol" && lock.description).toBe(CAIUS_WRITE_LOCK);
         expect(seen).toEqual([ { readOnly: true, blobId: "blob1" } ]);
         // Still locked: the reload has not happened yet.
         expect(editor.isReadOnly).toBe(true);
@@ -191,6 +192,32 @@ describe("caiusWrite", () => {
         expect(first.enableReadOnlyMode).toHaveBeenCalled();
         expect(other.enableReadOnlyMode).not.toHaveBeenCalled();
         expect(first.isReadOnly || second.isReadOnly).toBe(false);
+    });
+
+    it("keeps the editor read-only until the last of two overlapping writes on the note ends", async () => {
+        const editor = openEditor("n1");
+        stubSaves("n1");
+        let finishFirst = (_results: CaiusItemResult[]) => {};
+        let finishSecond = (_results: CaiusItemResult[]) => {};
+        const first = caiusWrite("n1", () => new Promise((resolve) => {
+            finishFirst = resolve;
+        }), "first");
+        const second = caiusWrite("n1", () => new Promise((resolve) => {
+            finishSecond = resolve;
+        }), "second");
+        await vi.waitFor(() => expect(editor.listenerCount).toBe(2));
+
+        finishFirst(moved);
+        editor.reload();
+        await first;
+        expect(h.showMessage).toHaveBeenCalledWith("first");
+        expect(editor.isReadOnly).toBe(true);
+
+        finishSecond(moved);
+        await second;
+        expect(editor.isReadOnly).toBe(false);
+        const [ [ firstLock ], [ secondLock ] ] = editor.enableReadOnlyMode.mock.calls;
+        expect(firstLock).not.toBe(secondLock);
     });
 
     it("calls the route straight away when the note is not open", async () => {

@@ -8,7 +8,11 @@ import server from "./server.js";
 import toast from "./toast.js";
 import ws from "./ws.js";
 
-/** The read-only lock `caiusWrite()` holds on every editor showing the note it writes to. */
+/**
+ * The description of the read-only lock `caiusWrite()` holds on every editor showing the note it
+ * writes to. Each write locks with a `Symbol` of its own, so that one write ending does not unlock
+ * the editor for another still running on the same note.
+ */
 export const CAIUS_WRITE_LOCK = "caius-write";
 
 /** How long `caiusWrite()` waits for an open editor to reload the note after a write. */
@@ -130,8 +134,9 @@ export async function caiusWrite(
     successMessage: string
 ): Promise<CaiusItemResult[] | null> {
     const editors = findOpenEditors(noteId);
+    const lock = Symbol(CAIUS_WRITE_LOCK);
     for (const editor of editors) {
-        editor.enableReadOnlyMode(CAIUS_WRITE_LOCK);
+        editor.enableReadOnlyMode(lock);
     }
 
     const flushAndCall = async () => {
@@ -171,7 +176,7 @@ export async function caiusWrite(
         return null;
     } finally {
         for (const editor of editors) {
-            editor.disableReadOnlyMode(CAIUS_WRITE_LOCK);
+            editor.disableReadOnlyMode(lock);
         }
     }
 }
