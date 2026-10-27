@@ -16,10 +16,7 @@ test("A Journal task forwarded to tomorrow from its right-click menu is copied t
     test.skip(isStandalone(testInfo), "The standalone build has no /api/caius routes.");
 
     const app = new App(page, context);
-    // The browser keeps its native menu on a task until it knows Caius is on.
-    const status = page.waitForResponse((response) => response.url().includes("/api/caius/status"));
     await app.goto();
-    await status;
 
     const { today, tomorrow } = await page.evaluate(() => {
         const key = (date: Date) => [ date.getFullYear(), date.getMonth() + 1, date.getDate() ]
@@ -41,20 +38,31 @@ test("A Journal task forwarded to tomorrow from its right-click menu is copied t
     await page.evaluate((noteId) => {
         location.hash = `#root/${noteId}`;
     }, todayNoteId);
-    const task = app.currentNoteSplit.locator(".ck-editor__editable .todo-list__label__description",
-        { hasText: "Forward me from the e2e test" });
-    await task.click({ button: "right" });
-
+    const editable = app.currentNoteSplit.locator(".ck-editor__editable");
+    const task = editable.locator(".todo-list__label__description", { hasText: "Forward me from the e2e test" });
     const menu = page.locator("#context-menu-container");
-    await menu.locator(".dropdown-item > span", { hasText: /^Task$/ }).hover();
+    const taskRow = menu.locator(".dropdown-item.caius-task-actions");
+    // The browser keeps its native menu on a task until the client has learned that Caius is on,
+    // so right-click until Trilium's menu comes up with the Task row.
+    await expect(async () => {
+        await task.click({ button: "right" });
+        await expect(taskRow).toBeVisible({ timeout: 500 });
+    }).toPass();
+
+    await taskRow.hover();
     await menu.locator(".dropdown-item > span", { hasText: /^Forward$/ }).hover();
     await menu.locator(".dropdown-item > span", { hasText: /^Tomorrow$/ }).click();
     await expect(page.locator("#toast-container")).toContainText(`Forwarded to ${tomorrow}.`);
+    await expect(editable).toHaveAttribute("contenteditable", "true");
 
     const tomorrowNoteId = await dayNoteId(page, tomorrow);
-    const { content } = await api(page, "GET", `notes/${tomorrowNoteId}/blob`) as { content: string };
-    expect(content).toContain("Forward me from the e2e test");
-    expect(content).toContain(`href="#root/${todayNoteId}"`);
+    const copy = await noteContent(page, tomorrowNoteId);
+    expect(copy).toContain("Forward me from the e2e test");
+    expect(copy).toContain(`href="#root/${todayNoteId}"`);
+
+    const original = await noteContent(page, todayNoteId);
+    expect(original).toMatch(/data-trilium-task-state="[^"]+" title="Rescheduled"/);
+    expect(original).toMatch(new RegExp(`<em>scheduled\\s*(?:</em>)?<a href="#root/${tomorrowNoteId}">`));
 });
 
 /** Calls the internal API from inside the page, so the request carries the session and CSRF token. */
@@ -78,6 +86,11 @@ async function api(page: Page, method: string, path: string, body?: object) {
 
 function calendarRoots(page: Page) {
     return api(page, "GET", `search/${encodeURIComponent("#calendarRoot")}`) as Promise<string[]>;
+}
+
+async function noteContent(page: Page, noteId: string) {
+    const { content } = await api(page, "GET", `notes/${noteId}/blob`) as { content: string };
+    return content;
 }
 
 async function dayNoteId(page: Page, date: string) {
