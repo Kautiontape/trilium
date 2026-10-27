@@ -8,6 +8,7 @@
 import {
     type Candidate,
     type ContextEntry,
+    contextNotes,
     dayCandidates,
     DEFAULT_ESTIMATE,
     findPeriodNote,
@@ -26,7 +27,6 @@ import {
     type NoteStore,
     openTasks,
     overlapPairs,
-    periodSpan,
     type PlanTask,
     type PlanView,
     readPlan,
@@ -121,13 +121,14 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         .map((line) => ({ kind: "keep" as const, line: line.text, until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
         .filter((line) => line.keys.length)
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
-    // When the next workday is in another week, the closing week's note stops being read: its lines
-    // still in force by the next week's Monday are offered to carry into the next week's note.
-    const closingWeek = isoWeekKey(utcDay(date));
+    // A line in force today from a note the next workday no longer reads lapses unseen, so it is
+    // offered to carry into the next workday's week note. Last week's note counts as unread: on a
+    // Monday it is read for that day only. A line whose text that day already reads is not offered.
     const targetWeek = isoWeekKey(utcDay(targetDay));
-    const monday = periodSpan("week", targetWeek).start;
-    const carry = closingWeek === targetWeek ? [] : today.context
-        .filter((line) => line.period === "week" && line.key === closingWeek && (line.until === undefined || line.until >= monday))
+    const reads = new Set(contextNotes(targetDay).filter((n) => !n.oneDay).map((n) => `${n.period}:${n.key}`));
+    const readThen = new Set(read.context.filter((line) => reads.has(`${line.period}:${line.key}`)).map((line) => sameText(line.text)));
+    const carry = today.context
+        .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= targetDay) && !readThen.has(sameText(line.text)))
         .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
     const noticed = [ ...keep, ...carry ];
     const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ t("caius.daily.carry") ] : []) ];
@@ -300,6 +301,8 @@ export function present(candidate: Candidate) {
             : t("caius.daily.because_week");
     return { text: reason.kind === "week" ? subject : t("caius.daily.get_done", { subject }), because, ...rest };
 }
+
+const sameText = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 
 /** The weekday of a `YYYY-MM-DD`, from the server catalogue: "Monday". */
 export function weekdayName(date: string): string {

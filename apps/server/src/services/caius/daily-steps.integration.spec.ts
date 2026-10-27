@@ -216,6 +216,34 @@ describe("caius_winddown", () => {
         expect(quiet.data.noticed).toEqual([]);
     });
 
+    it("context: on Monday offers last week's lines that Tuesday will no longer read (a missed Friday)", async () => {
+        const answer = await call("caius_winddown", { date: MONDAY, step: "context" });
+        expect(answer.data.targetWeek).toBe("2026-W46");
+        expect(answer.data.noticed).toEqual([
+            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
+            { kind: "carry", line: "Release branch is cut" }
+        ]);
+    });
+
+    it("context: offers a day note's line that outlasts the days its note is read", async () => {
+        expect((await call("caius_context_add", { date: THURSDAY, text: "Vendor freeze", until: "2026-11-13" })).results[0]).toMatchObject({ status: "added" });
+        // Tuesday still reads Thursday's note; Wednesday does not.
+        expect((await call("caius_winddown", { date: MONDAY, step: "context" })).data.noticed.map((n: any) => n.line)).not.toContain("Vendor freeze");
+        const answer = await call("caius_winddown", { date: TUESDAY, step: "context" });
+        expect(answer.data.noticed).toEqual([ { kind: "carry", line: "Vendor freeze", until: "2026-11-13" } ]);
+        expect(answer.question).not.toBeNull();
+    });
+
+    it("context: does not offer a line already carried into a note the next day reads", async () => {
+        for (const item of [ { text: "Sam is out", until: "2026-11-11" }, { text: "Release branch is cut" }, { text: "Vendor freeze", until: "2026-11-13" } ]) {
+            expect((await call("caius_context_add", { week: "2026-W46", ...item })).results[0]).toMatchObject({ status: "added" });
+        }
+        for (const date of [ FRIDAY, MONDAY, TUESDAY ]) {
+            const answer = await call("caius_winddown", { date, step: "context" });
+            expect(answer.data.noticed.filter((n: any) => n.kind === "carry"), date).toEqual([]);
+        }
+    });
+
     it("next: a candidate put in Suggested and then dismissed does not come back", async () => {
         const sources = async () => (await call("caius_winddown", { date: FRIDAY, step: "next" })).data.candidates.map((c: any) => c.source);
         expect(await sources()).toContain("ZAP-101");
