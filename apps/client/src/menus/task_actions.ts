@@ -151,10 +151,20 @@ export const TASK_ACTIONS_CLASS = "caius-task-actions";
 
 /**
  * Whether a right-click on `element` would show the Task submenu, answered synchronously from the
- * last known Caius status, for the browser's `contextmenu` listener.
+ * last known Caius status, for the browser's `contextmenu` listener. Over a task while that status
+ * is `false`, it asks the server again, so that the next right-click can open the menu.
  */
 export function isOverJournalTask(element: Element | null) {
-    return !!element && wasCaiusEnabled() && !!findTaskAtElement(element);
+    if (!element || !findTaskAtElement(element)) {
+        return false;
+    }
+
+    if (!wasCaiusEnabled()) {
+        void isCaiusEnabled();
+        return false;
+    }
+
+    return true;
 }
 
 /** Runs `command` on the todo item at the caret in the note context `ntxId`, or the active one. */

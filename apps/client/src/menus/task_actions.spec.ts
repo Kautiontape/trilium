@@ -287,8 +287,13 @@ describe("reading the task from the editor", () => {
         expect(findTaskAtElement(item("eopen"))).toBeNull();
         editor.disableReadOnlyMode("test");
 
+        // A failed status probe is asked again from a right-click on a task, and only there.
         h.wasCaiusEnabled.mockReturnValue(false);
+        h.isCaiusEnabled.mockClear();
+        expect(isOverJournalTask(paragraph)).toBe(false);
+        expect(h.isCaiusEnabled).not.toHaveBeenCalled();
         expect(isOverJournalTask(item("eopen"))).toBe(false);
+        expect(h.isCaiusEnabled).toHaveBeenCalled();
         h.wasCaiusEnabled.mockReturnValue(true);
 
         h.notes.day = fakeNote([]);
