@@ -36,6 +36,7 @@ const event = (start: string, end: string, title: string, o: Partial<CalendarEve
 /** What the stubbed `caius_inputs` answers, by date. Context lines that say a ticket is open override `done`, as the real one does. */
 const jiraByDate: Record<string, JiraInputs> = {};
 const calendars: Record<string, CalendarEvent[]> = {};
+const errorsByDate: Record<string, CaiusInputs["errors"]> = {};
 const inputsCalls: InputsInput[] = [];
 
 async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
@@ -55,7 +56,7 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
         },
         calendar,
         capacity: dayCapacity(calendar, { workStart: input.workStart, workEnd: input.workEnd }),
-        errors: []
+        errors: errorsByDate[input.date] ?? []
     };
 }
 
@@ -300,5 +301,18 @@ describe("caius_planday", () => {
         const answer = await call("caius_planday", { date: MONDAY, step: "inputs", refresh: true });
         expect(answer.data.plannedAt).toBe(`${FRIDAY}T17:30:00`);
         expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-106" ]);
+    });
+
+    it("brief: draws the meetings the other feeds returned when one feed failed, and leaves the Meetings block alone", async () => {
+        errorsByDate[TUESDAY] = [ { source: "calendar", error: "feed_1_timeout" } ];
+        try {
+            const inputs = await call("caius_planday", { date: TUESDAY, step: "inputs", refresh: true });
+            expect(inputs.data.meetings).toMatchObject({ lines: null, changed: false });
+            const brief = await call("caius_planday", { date: TUESDAY, step: "brief" });
+            expect(brief.data.header.events).toEqual([ { start: "10:00", end: "12:00", title: "Workshop" } ]);
+            expect(brief.data.header.work[0]).toMatchObject({ start: "12:00", label: "Huge thing" });
+        } finally {
+            delete errorsByDate[TUESDAY];
+        }
     });
 });

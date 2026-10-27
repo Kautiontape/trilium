@@ -136,9 +136,12 @@ export function createCaiusService(
         for (const [ old, entry ] of inputsCache) {
             if (clockMs() - entry.at >= INPUTS_TTL_MS) inputsCache.delete(old);
         }
-        // An answer missing a source is fetched again next time, so the source can come back.
+        // An answer missing a source is fetched again next time, so the source can come back, and
+        // an older answer is not served after it.
         if (inputs.errors.every((e) => isInputWarning(e.error))) {
             inputsCache.set(key, { at: clockMs(), inputs });
+        } else {
+            inputsCache.delete(key);
         }
         return { inputs, context, standing, rhythm };
     }

@@ -189,7 +189,8 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
 
     const plan = await deps.locked("caius_planday", () => readPlan(deps.store, "day", date, deps.now));
     const { start, end, workEnd, from } = read.rhythm;
-    const events = calendarFailed ? [] : read.inputs.calendar
+    // The drawing takes whatever the feeds returned; only the Meetings block refuses a partial calendar.
+    const events = read.inputs.calendar
         .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
         .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
