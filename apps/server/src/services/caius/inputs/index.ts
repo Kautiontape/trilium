@@ -8,8 +8,9 @@
 import { dayCapacity } from "@triliumnext/caius";
 
 import type { InputsInput } from "../schemas.js";
+import { readCalendar } from "./calendar.js";
 import { JiraError, type JiraDeps, readJira } from "./jira.js";
-import type { CaiusInputs, InputError, JiraInputs } from "./types.js";
+import type { CaiusInputs, CalendarEvent, InputError, JiraInputs } from "./types.js";
 
 export type { CaiusInputs } from "./types.js";
 
@@ -24,11 +25,20 @@ export async function readInputs(input: InputsInput, deps: InputsDeps = defaultD
         errors.push({ source: "jira", error: e instanceof JiraError ? e.code : "unexpected" });
     }
 
+    let calendar: CalendarEvent[] = [];
+    try {
+        const read = await readCalendar(deps, input.date);
+        calendar = read.events;
+        errors.push(...read.errors);
+    } catch {
+        errors.push({ source: "calendar", error: "unexpected" });
+    }
+
     return {
         date: input.date,
         jira,
-        calendar: [],
-        capacity: dayCapacity([], { workStart: input.workStart, workEnd: input.workEnd }),
+        calendar,
+        capacity: dayCapacity(calendar, { workStart: input.workStart, workEnd: input.workEnd }),
         errors
     };
 }

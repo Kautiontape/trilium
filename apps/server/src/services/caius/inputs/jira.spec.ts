@@ -40,8 +40,11 @@ function fakeJira() {
     return { doFetch, calls, headers };
 }
 
-const run = (fetchImpl: typeof fetch, env: Record<string, string | undefined> = ENV, context?: string[]) =>
-    readInputs({ date: "2026-10-27", context }, { fetch: fetchImpl, env, now: () => NOW });
+/** Runs `caius_inputs` with no calendar feeds set, and drops that source's `not_configured` entry. */
+async function run(fetchImpl: typeof fetch, env: Record<string, string | undefined> = ENV, context?: string[]) {
+    const result = await readInputs({ date: "2026-10-27", context }, { fetch: fetchImpl, env, now: () => NOW });
+    return { ...result, errors: result.errors.filter((e) => e.source === "jira") };
+}
 
 describe("caius_inputs Jira", () => {
     it("lists hand-off tickets with their days in status, across pages", async () => {
