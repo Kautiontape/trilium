@@ -140,6 +140,39 @@ describe("caius_inputs Jira under strain", () => {
         expect(twice.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "http_429" } ]);
     });
 
+    it("checks the named tickets in one key search and calls the resolved or Done ones done", async () => {
+        const keySearches: string[] = [];
+        const named = (fail: boolean) => withFixtures((url) => {
+            const jql = url.searchParams.get("jql") ?? "";
+            if (url.pathname !== "/rest/api/3/search/jql" || !jql.startsWith("key in")) return undefined;
+            keySearches.push(jql);
+            if (fail) return new Response("{}", { status: 400 });
+            return new Response(JSON.stringify({ isLast: true, issues: [
+                { key: "ZAP-120", fields: { status: { name: "Closed", statusCategory: { key: "done" } }, resolution: null } },
+                { key: "ZAP-121", fields: { status: { name: "In Progress", statusCategory: { key: "indeterminate" } }, resolution: null } },
+                { key: "ZAP-122", fields: { status: { name: "Dev Verify", statusCategory: { key: "indeterminate" } }, resolution: { name: "Won't Do" } } },
+                { key: "ZAP-2590", fields: { status: { name: "Done", statusCategory: { key: "done" } }, resolution: { name: "Done" } } }
+            ] }));
+        });
+        const read = (fetchImpl: typeof fetch, keys?: string[]) => readInputs(
+            { date: "2026-10-27", context: [ "ZAP-2590 is open" ], keys },
+            { fetch: fetchImpl, env: ENV, now: () => NOW }
+        );
+
+        const result = await read(named(false), [ "zap-120", "ZAP-121", "ZAP-122", "ZAP-2590", "ZAP-120", "a1b2c3", "ZAP-1) OR (project = X" ]);
+        expect(keySearches).toEqual([ "key in (ZAP-120, ZAP-121, ZAP-122, ZAP-2590) ORDER BY key" ]);
+        expect(result.jira.done).toEqual([ "ZAP-103", "ZAP-104", "ZAP-120", "ZAP-122" ]);
+        expect(result.errors.filter((e) => e.source === "jira")).toEqual([]);
+
+        keySearches.length = 0;
+        expect((await read(named(false), [ "a1b2c3" ])).jira.done).toEqual([ "ZAP-103", "ZAP-104" ]);
+        expect(keySearches).toEqual([]);
+
+        const failed = await read(named(true), [ "ZAP-120" ]);
+        expect(failed.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "done_partial" } ]);
+        expect(failed.jira.done).toEqual([ "ZAP-103", "ZAP-104" ]);
+    });
+
     it("drops the comment clause once when Jira rejects the involved search with a 400", async () => {
         const involvedJql: string[] = [];
         const rejecting = (always: boolean) => withFixtures((url) => {

@@ -150,6 +150,7 @@ const inputsClock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Mus
 const inputs = z.object({
     date: periodKey("day").describe("The day to read inputs for, YYYY-MM-DD"),
     context: z.array(z.string()).optional().describe("The day's Context lines. A line that names a ticket key and says it is open overrides Jira's Done."),
+    keys: z.array(z.string()).optional().describe("More ticket keys to check for Done, such as those named in the week note's items and the Context lines"),
     workStart: inputsClock.optional().describe("Start of the work window, HH:MM. Defaults to 10:00."),
     workEnd: inputsClock.optional().describe("End of the work window, HH:MM. Defaults to 18:00.")
 });

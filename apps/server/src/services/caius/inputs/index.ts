@@ -28,7 +28,7 @@ export function isInputWarning(error: string): boolean {
 export async function readInputs(input: InputsInput, deps: InputsDeps = defaultDeps()): Promise<CaiusInputs> {
     const errors: InputError[] = [];
     const [ jiraRead, calendarRead ] = await Promise.allSettled([
-        readJira(deps, input.context),
+        readJira(deps, input.context, input.keys),
         readCalendar(deps, input.date)
     ]);
 

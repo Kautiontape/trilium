@@ -114,7 +114,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
     }
 
     // A line in force today that lapses before the target day and keeps a ticket open: Jira's own
-    // answer is not consulted, since it covers only tickets that are hand-offs or have an ask.
+    // answer is not consulted, since `done` leaves out every key a Context line calls open.
     const today = await deps.locked("caius_winddown", () => gatherContext(deps.store, date));
     const keep = today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)

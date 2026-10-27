@@ -50,9 +50,9 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
         jira: {
             handoff: jira.handoff.map(mark),
             asks: jira.asks.map((ask) => ({ ...ask, ticket: mark(ask.ticket) })),
-            // As the real reader does: only tickets it read as hand-offs or asks can be done.
+            // As the real reader does: only tickets it read as hand-offs or asks, or that `keys` names, can be done.
             done: jira.done.filter((key) => !overridden.has(key)
-                && [ ...jira.handoff, ...jira.asks.map((ask) => ask.ticket) ].some((t) => t.key === key))
+                && ([ ...jira.handoff, ...jira.asks.map((ask) => ask.ticket) ].some((t) => t.key === key) || (input.keys ?? []).includes(key)))
         },
         calendar,
         capacity: dayCapacity(calendar, { workStart: input.workStart, workEnd: input.workEnd }),
@@ -336,6 +336,19 @@ describe("caius_planday", () => {
         const answer = await call("caius_planday", { date: MONDAY, step: "inputs", refresh: true });
         expect(answer.data.plannedAt).toBe(`${FRIDAY}T17:30:00`);
         expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-106" ]);
+    });
+
+    it("inputs: leaves out a week item naming a ticket Jira calls done that is neither a hand-off nor an ask", async () => {
+        const day = "2026-11-17";
+        await cls.init(async () => {
+            const week = await store.calendarWeek("2026-W47");
+            await store.putContent(week.noteId, `<h3>Context</h3>${bullets("ZAP-140 waits on legal")}<h3>Work</h3>${ul(li("x1", "Ship ZAP-130 rollout ~30m"), li("x2", "Plain week item ~30m"))}`);
+        });
+        jiraByDate[day] = { handoff: [], asks: [], done: [ "ZAP-130" ] };
+
+        const answer = await call("caius_planday", { date: day, step: "inputs" });
+        expect(answer.data.candidates.map((c: any) => c.text)).toEqual([ "Plain week item" ]);
+        expect(inputsCalls.at(-1)?.keys).toEqual([ "ZAP-130", "ZAP-140" ]);
     });
 
     it("brief: draws the meetings the other feeds returned when one feed failed, and leaves the Meetings block alone", async () => {

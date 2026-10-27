@@ -16,6 +16,8 @@ const EXCERPT_LENGTH = 200;
 const PAGE_SIZE = 50;
 const MAX_PAGES = 10;
 const MAX_ASK_TICKETS = 80;
+/** Most keys checked in the `key in (…)` search, which travels in a URL. */
+const MAX_NAMED_KEYS = 100;
 const CONCURRENCY = 4;
 const RETRY_STATUSES = [ 429, 502, 503, 504 ];
 const MAX_RETRY_WAIT_MS = 5000;
@@ -72,7 +74,11 @@ export interface JiraRead {
     warnings: string[];
 }
 
-export async function readJira(deps: JiraDeps, context: string[] = []): Promise<JiraRead> {
+/**
+ * Reads the user's Jira. `keys` names more tickets to judge done, such as those in week items and
+ * Context lines; a failure on that search is not fatal (`done_partial`).
+ */
+export async function readJira(deps: JiraDeps, context: string[] = [], keys: string[] = []): Promise<JiraRead> {
     const config = readConfig(deps.env);
     const api = jiraApi(config, deps.fetch, deps.sleep ?? sleep);
     const now = deps.now();
@@ -107,11 +113,14 @@ export async function readJira(deps: JiraDeps, context: string[] = []): Promise<
     });
     const asks = found.flat();
 
-    // Done is judged only for tickets the result offers: the hand-offs and those with an ask.
+    // Done is judged for tickets the result offers, the hand-offs and those with an ask, and for `keys`.
     const finished = new Set<string>();
     const offered = new Set([ ...handoffIssues.map((i) => i.key), ...asks.map((a) => a.ticket.key) ]);
     for (const issue of [ ...assigned.issues, ...scanned ]) {
         if (offered.has(issue.key) && isDone(issue)) finished.add(issue.key);
+    }
+    for (const issue of await namedIssues(api, keys, warnings)) {
+        if (isDone(issue)) finished.add(issue.key);
     }
 
     const overridden = overriddenKeys(context);
@@ -140,6 +149,21 @@ async function searchInvolved(api: Api, warnings: Set<string>): Promise<{ issues
     }
     warnings.add("involved_narrowed");
     return search(api, `(assignee = currentUser() OR watcher = currentUser()) ${window}`);
+}
+
+/** The tickets among `keys` that Jira has, read in one `key in (…)` search. Anything that is not a ticket key is left out. */
+async function namedIssues(api: Api, keys: string[], warnings: Set<string>): Promise<RawIssue[]> {
+    const wanted = [ ...new Set(keys.map((key) => key.toUpperCase()).filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key))) ];
+    if (!wanted.length) return [];
+    if (wanted.length > MAX_NAMED_KEYS) warnings.add("done_truncated");
+    try {
+        const named = await search(api, `key in (${wanted.slice(0, MAX_NAMED_KEYS).join(", ")}) ORDER BY key`);
+        if (named.truncated) warnings.add("search_truncated");
+        return named.issues;
+    } catch {
+        warnings.add("done_partial");
+        return [];
+    }
 }
 
 /** Maps `items` with at most `CONCURRENCY` calls in flight, keeping their order. */

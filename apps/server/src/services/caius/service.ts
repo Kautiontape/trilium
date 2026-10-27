@@ -23,7 +23,9 @@ import {
     findPeriodNote,
     forwardTasks,
     gatherContext,
+    isoWeekKey,
     isPeriodKey,
+    keysOf,
     label,
     listItemsWithoutIds,
     loadJournal,
@@ -73,7 +75,7 @@ import {
     type WindDownInput
 } from "./schemas.js";
 import { findBrief, PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
+import { catchupOf, type DayRead, mainTasks, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -143,16 +145,22 @@ export function createCaiusService(
     }
 
     /**
-     * `caius_inputs` for a day, cached, with the Context in force passed along and the work window
-     * from the standing note's Rhythm. The notes are read under the lock, the sources outside it.
+     * `caius_inputs` for a day, cached, with the Context in force passed along, the ticket keys its
+     * week items and Context lines name, and the work window from the standing note's Rhythm. The
+     * notes are read under the lock, the sources outside it.
      */
     async function dayRead(date: string, refresh = false): Promise<DayRead> {
-        const { context, standing } = await withCaiusLock("caius_day_read", async () => ({
+        const { context, standing, week } = await withCaiusLock("caius_day_read", async () => ({
             context: (await gatherContext(store, date)).context,
-            standing: await readStanding()
+            standing: await readStanding(),
+            week: mainTasks(await readPlan(store, "week", isoWeekKey(new Date(`${date}T00:00:00Z`)), caiusNow()))
         }));
         const rhythm = readRhythm(standing.markdown);
-        const input: InputsInput = { date, context: context.map((line) => line.text), workStart: rhythm.start, workEnd: rhythm.workEnd };
+        const lines = context.map((line) => line.text);
+        const keys = [ ...new Set([ ...week.flatMap((task) => keysOf(task.text)), ...lines.flatMap((line) => keysOf(line)) ]) ]
+            .filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key))
+            .sort();
+        const input: InputsInput = { date, context: lines, keys, workStart: rhythm.start, workEnd: rhythm.workEnd };
         return { inputs: await cachedInputs(input, refresh), context, standing, rhythm };
     }
 
