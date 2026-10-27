@@ -198,6 +198,15 @@ describe("caius_winddown", () => {
         expect(answer.data.summary).toBe("Thursday holds 3 h 45 m of work against 4 h open. Fits.");
     });
 
+    it("next: leaves empty to-dos out of the evening's minutes, as the plan's capacity does", async () => {
+        const work = `<h3>Work</h3>${ul(li("th1", "Spec ~1h30m"), li("th2", "Review ~1h"), li("th3", "Fix ~30m"))}`;
+        await cls.init(() => dayNote("2026-11-12", `${work}<h3>Evening</h3>${ul(
+            li("th4", "Walk ~45m"), li("th5", ""), li("th6", "Stretch ~15m", { sub: ul(li("th7", "")) }))}`));
+        const answer = await call("caius_winddown", { date: WEDNESDAY, step: "next" });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180, eveningMinutes: 60 });
+        await cls.init(() => dayNote("2026-11-12", `${work}<h3>Evening</h3>${ul(li("th4", "Walk ~45m"))}`));
+    });
+
     it("context: notices an override that lapses before Monday and asks to keep it", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "context" });
         expect(answer).toMatchObject({ step: "context", targetDay: MONDAY, next: null });

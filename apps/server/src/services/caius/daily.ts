@@ -317,8 +317,10 @@ async function dayFacts(store: NoteStore, date: string, now: Date) {
     const weekPlan = await readPlan(store, "week", weekKey, now);
     const live = liveKeys((await loadJournal(store)).docs, now);
     const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)) ];
-    const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks).filter(isLive);
-    // As the plan's capacity counts them: a task with live sub-items counts through them.
+    const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks)
+        .filter((task) => isLive(task) && task.text.trim() !== "");
+    // As the plan's capacity counts them: a task with live sub-items counts through them, and an
+    // empty to-do is not a task.
     const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
     const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
     return { plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, evening: eveningTasks.length > 0, eveningMinutes };
