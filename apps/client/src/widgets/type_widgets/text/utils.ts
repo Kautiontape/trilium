@@ -1,4 +1,4 @@
-import type { CKTextEditor, ModelElement } from "@triliumnext/ckeditor5";
+import type { CKTextEditor, ModelElement, ModelPosition } from "@triliumnext/ckeditor5";
 
 import appContext from "../../../components/app_context";
 import content_renderer from "../../../services/content_renderer";
@@ -75,45 +75,180 @@ export function refreshIncludedNote(container: HTMLDivElement, noteId: string) {
 }
 
 /**
- * Replaces the content of the editor and puts the selection back at the same model paths, clamped
- * to the new document. `editor.setData()` alone moves the caret to the start of the note. The
- * restored selection is not an undo step and does not fire `change:data`, so it triggers no save.
+ * Replaces the content of the editor and puts the selection back on the same content.
+ * `editor.setData()` alone moves the caret to the start of the note. Top-level blocks that match
+ * between the old and the new document carry the selection along when blocks are inserted or
+ * removed above it; otherwise it goes back to the same model path, clamped to the new document.
+ * Restoring it applies no operations, so it adds no undo step and fires no `change:data`.
  */
 export function setDataKeepingSelection(
     editor: Pick<CKTextEditor, "model" | "setData">,
     data: string
 ) {
     const { model } = editor;
-    const { anchor, focus } = model.document.selection;
-    const anchorPath = anchor?.path;
-    const focusPath = focus?.path;
+    const oldRoot = model.document.getRoot();
+    const saved = oldRoot ? saveSelection(model, oldRoot) : null;
 
     editor.setData(data);
 
     const root = model.document.getRoot();
-    if (!anchorPath || !focusPath || !root) return;
+    if (!saved || !root) return;
 
     try {
-        const newAnchor = findNearestSelectablePosition(model, root, anchorPath);
-        const newFocus = findNearestSelectablePosition(model, root, focusPath);
-        if (!newAnchor || !newFocus) return;
-
-        model.enqueueChange({ isUndoable: false }, (writer) => {
-            writer.setSelection(newAnchor);
-            writer.setSelectionFocus(newFocus);
-        });
+        restoreSelection(model, root, saved);
     } catch (e) {
         // The selection `setData()` left at the start of the document stays in place.
         console.warn("Unable to restore the selection after reloading the note content", e);
     }
 }
 
+type Model = CKTextEditor["model"];
+type Path = readonly number[];
+
+/** What a top-level block is compared by when matching the old document against the new one. */
+interface BlockIdentity {
+    name: string;
+    text: string;
+    listItemId?: string;
+}
+
+interface SavedSelection {
+    blocks: BlockIdentity[];
+    ranges: { start: Path; end: Path }[];
+    isBackward: boolean;
+    /** The object the selection is on (an image, an included note), by the path before it. */
+    selectedElement?: { name: string; path: Path };
+}
+
+function saveSelection(model: Model, root: ModelElement): SavedSelection | null {
+    const { selection } = model.document;
+    const ranges = [ ...selection.getRanges() ].map((range) => ({
+        start: range.start.path,
+        end: range.end.path
+    }));
+    if (!ranges.length) return null;
+
+    const selectedElement = selection.getSelectedElement();
+    return {
+        blocks: getBlockIdentities(model, root),
+        ranges,
+        isBackward: selection.isBackward,
+        selectedElement: selectedElement
+            ? { name: selectedElement.name, path: model.createPositionBefore(selectedElement).path }
+            : undefined
+    };
+}
+
+function restoreSelection(model: Model, root: ModelElement, saved: SavedSelection) {
+    const mapPath = createPathMapper(saved.blocks, getBlockIdentities(model, root));
+    const positionAt = (path: Path) => clampPosition(model, root, mapPath(path));
+
+    if (saved.selectedElement) {
+        const element = positionAt(saved.selectedElement.path).nodeAfter;
+        if (element?.is("element", saved.selectedElement.name) && model.schema.isObject(element)) {
+            model.enqueueChange({ isUndoable: false }, (writer) => {
+                writer.setSelection(element, "on");
+            });
+            return;
+        }
+    }
+
+    if (saved.ranges.length > 1) {
+        // Several ranges select table cells. Snapping them to text positions would turn the cell
+        // selection into a text range, so they are restored as they are and left to the post-fixer.
+        const ranges = saved.ranges.map(({ start, end }) => {
+            const [ from, to ] = [ positionAt(start), positionAt(end) ];
+            return from.isAfter(to) ? model.createRange(to, from) : model.createRange(from, to);
+        });
+        model.enqueueChange({ isUndoable: false }, (writer) => {
+            writer.setSelection(ranges, { backward: saved.isBackward });
+        });
+        return;
+    }
+
+    const [ { start, end } ] = saved.ranges;
+    const [ anchorPath, focusPath ] = saved.isBackward ? [ end, start ] : [ start, end ];
+    const anchor = toSelectablePosition(model, positionAt(anchorPath));
+    const focus = toSelectablePosition(model, positionAt(focusPath));
+    if (!anchor || !focus) return;
+
+    model.enqueueChange({ isUndoable: false }, (writer) => {
+        writer.setSelection(anchor);
+        writer.setSelectionFocus(focus);
+    });
+}
+
+function getBlockIdentities(model: Model, root: ModelElement): BlockIdentity[] {
+    const blocks: BlockIdentity[] = [];
+    for (const child of root.getChildren()) {
+        if (!child.is("element")) continue;
+
+        let text = "";
+        for (const item of model.createRangeIn(child).getItems()) {
+            if (item.is("$textProxy")) {
+                text += item.data;
+            }
+        }
+
+        const listItemId = child.getAttribute("listItemId");
+        blocks.push({
+            name: child.name,
+            text,
+            listItemId: typeof listItemId === "string" ? listItemId : undefined
+        });
+    }
+    return blocks;
+}
+
+/**
+ * Blocks match by list item id, so an edited list item still matches, or by name and text, so an
+ * unchanged list item matches even when content without `data-list-item-id` got new ids.
+ */
+function isSameBlock(a: BlockIdentity, b: BlockIdentity) {
+    return (a.listItemId !== undefined && a.listItemId === b.listItemId)
+        || (a.name === b.name && a.text === b.text);
+}
+
+/**
+ * Moves the top-level index of a path from the old document to the new one. The blocks before the
+ * first difference keep their index and the blocks after the last one shift by the change in the
+ * block count. A block in between follows its list item if that still exists, or keeps its index.
+ */
+function createPathMapper(oldBlocks: BlockIdentity[], newBlocks: BlockIdentity[]) {
+    const shared = Math.min(oldBlocks.length, newBlocks.length);
+    let head = 0;
+    while (head < shared && isSameBlock(oldBlocks[head], newBlocks[head])) {
+        head++;
+    }
+    let tail = 0;
+    const fromEnd = (blocks: BlockIdentity[]) => blocks[blocks.length - 1 - tail];
+    while (tail < shared - head && isSameBlock(fromEnd(oldBlocks), fromEnd(newBlocks))) {
+        tail++;
+    }
+
+    function mapIndex(index: number) {
+        if (index < head) return index;
+        if (index >= oldBlocks.length - tail) return index + newBlocks.length - oldBlocks.length;
+
+        const listItemId = oldBlocks[index]?.listItemId;
+        if (!listItemId) return index;
+
+        // A list item can span several blocks; keep the caret in the same one of them.
+        const isInItem = (block: BlockIdentity) => block.listItemId === listItemId;
+        const blockInItem = oldBlocks.slice(0, index).filter(isInItem).length;
+        const itemIndexes = [ ...newBlocks.entries() ]
+            .filter(([ , block ]) => isInItem(block))
+            .map(([ blockIndex ]) => blockIndex);
+        return itemIndexes[Math.min(blockInItem, itemIndexes.length - 1)] ?? index;
+    }
+
+    return ([ index, ...rest ]: Path) => {
+        return index === undefined ? [] : [ mapIndex(index), ...rest ];
+    };
+}
+
 /** Resolves `path` in `root`, clamping each offset to what the new document has. */
-function findNearestSelectablePosition(
-    model: CKTextEditor["model"],
-    root: ModelElement,
-    path: readonly number[]
-) {
+function clampPosition(model: Model, root: ModelElement, path: Path) {
     let parent = root;
     let offset = 0;
 
@@ -127,7 +262,10 @@ function findNearestSelectablePosition(
         parent = child;
     }
 
-    const position = model.createPositionAt(parent, offset);
+    return model.createPositionAt(parent, offset);
+}
+
+function toSelectablePosition(model: Model, position: ModelPosition) {
     return model.schema.getNearestSelectionRange(position)?.start ?? null;
 }
 
