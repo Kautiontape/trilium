@@ -115,6 +115,31 @@ describe("CaiusNudgeBar", () => {
         expect(h.apply).toHaveBeenCalledWith(expect.objectContaining({ expectedBlobId: undefined }));
     });
 
+    it("frees the buttons and reads the state again when the move fails", async () => {
+        h.nudge.mockResolvedValue(CATCHUP);
+        const failure = new Error("write failed");
+        h.caiusWrite.mockImplementation(async () => {
+            throw failure;
+        });
+        const unhandled = vi.fn();
+        const listeners = process.listeners("unhandledRejection");
+        process.removeAllListeners("unhandledRejection");
+        process.on("unhandledRejection", unhandled);
+        try {
+            const bar = await mount(today);
+            await press(button(bar, "Move all to today"));
+            await settle();
+            await new Promise((resolve) => setImmediate(resolve));
+
+            expect(unhandled).toHaveBeenCalledWith(failure, expect.anything());
+            expect(button(bar, "Move all to today").hasAttribute("disabled")).toBe(false);
+            expect(h.nudge).toHaveBeenCalledTimes(2);
+        } finally {
+            process.removeAllListeners("unhandledRejection");
+            for (const listener of listeners) process.on("unhandledRejection", listener);
+        }
+    });
+
     it("offers Plan my day before a plan, and Refresh after one, with the planned time", async () => {
         h.nudge.mockResolvedValue({ date: TODAY, lastWorkday: "2026-11-03", state: "unplanned" });
         const bar = await mount(today);

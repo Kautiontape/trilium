@@ -50,9 +50,12 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
     };
     const moveAll = async (tasks: MovableTask[]) => {
         setBusy(true);
-        await moveToToday(tasks, date);
-        setBusy(false);
-        refresh();
+        try {
+            await moveToToday(tasks, date);
+        } finally {
+            setBusy(false);
+            refresh();
+        }
     };
     const skip = async () => {
         setBusy(true);
