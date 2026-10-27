@@ -291,7 +291,7 @@ async function settleReload(reload: PendingReload) {
 }
 
 /** Drops froca's cached blobs of `noteIds` and has the widgets showing them fetch them again. */
-function fetchContentAgain(noteIds: string[]) {
+export function fetchContentAgain(noteIds: string[]) {
     const loadResults = new LoadResults([]);
     for (const noteId of new Set(noteIds)) {
         for (const key of Object.keys(froca.blobPromises)) {

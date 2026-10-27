@@ -8,10 +8,13 @@ import { render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import appContext from "../../../components/app_context";
 import Component from "../../../components/component";
 import NoteContext from "../../../components/note_context";
 import FBlob from "../../../entities/fblob";
 import type FNote from "../../../entities/fnote";
+import { fetchContentAgain } from "../../../services/caius";
+import froca from "../../../services/froca";
 import LoadResults from "../../../services/load_results";
 import server from "../../../services/server";
 import { buildNote } from "../../../test/easy-froca";
@@ -162,6 +165,31 @@ describe("EditableText", () => {
 
         await harness.show(harness.noteB);
         expect(editor.model.document.selection.getFirstPosition()?.path).toEqual([ 0, 0 ]);
+    });
+
+    it("loads the note's content again when Caius asks, past froca's cached blob", async () => {
+        const harness = setupHarness();
+        cleanupHarness = harness.cleanup;
+        const { noteA } = harness;
+        await harness.show(noteA);
+        vi.spyOn(server, "put").mockResolvedValue(undefined);
+
+        // The real fetch path, with a blob cached before the Caius write.
+        noteA.getBlob = () => froca.getBlob("notes", noteA.noteId);
+        froca.blobPromises[`notes-${noteA.noteId}`] = Promise.resolve(blobOf(noteA, "<p>stale</p>"));
+        const written = "<p>first [caius]</p><p>second</p>";
+        const fetch = vi.spyOn(server, "getWithSilentNotFound")
+            .mockResolvedValue({ ...blobOf(noteA, written) });
+        // `appContext` dispatches to the component tree, which here is `parent`.
+        vi.spyOn(appContext, "triggerEvent").mockImplementation(
+            (name, data) => harness.parent.handleEvent(name, data as never) as Promise<unknown> as never);
+
+        await act(async () => {
+            fetchContentAgain([ noteA.noteId ]);
+        });
+
+        await vi.waitFor(() => expect(harness.editor().getData()).toBe(written));
+        expect(fetch).toHaveBeenCalledWith(`notes/${noteA.noteId}/blob`);
     });
 });
 
