@@ -19,7 +19,8 @@ export function clockOverride(env: Env = processEnv()): Date | null {
   if (!override) return null;
   const [year, month, day, hour, minute, second] = override.slice(1).map((part) => Number(part || 0)) as [number, number, number, number, number, number];
   const at = new Date(year, month - 1, day, hour, minute, second);
-  return at.getDate() === day ? at : null;
+  const real = at.getFullYear() === year && at.getMonth() === month - 1 && at.getDate() === day && at.getHours() === hour && at.getMinutes() === minute;
+  return real ? at : null;
 }
 
 function processEnv(): Env {

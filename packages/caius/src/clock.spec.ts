@@ -24,6 +24,14 @@ describe('now', () => {
     }
   });
 
+  it('ignores a CAIUS_NOW that is not a real date and time', () => {
+    const real = new Date(2020, 0, 1);
+    for (const bad of ['2026-13-01T10:00', '2026-02-30T10:00', '2026-11-06T25:00', '2026-11-06T10:61', '2026-00-10T10:00']) {
+      expect(now({ TRILIUM_ENV: 'dev', CAIUS_NOW: bad }, () => real)).toBe(real);
+    }
+    expect(now({ TRILIUM_ENV: 'dev', CAIUS_NOW: '2026-02-28T23:59' }, () => real)).not.toBe(real);
+  });
+
   it('takes the real time from the fallback when there is no override', () => {
     const real = new Date(2026, 0, 2, 3, 4);
     expect(now({}, () => real)).toBe(real);
