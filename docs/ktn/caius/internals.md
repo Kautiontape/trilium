@@ -6,7 +6,7 @@ For the method see [method.md](method.md); for using it see [README.md](README.m
 
 | Where | What |
 |---|---|
-| `packages/caius/` | The library. No Trilium imports. `core/` is the task-line grammar, `resolve/` the horizon rules, `index/` the scan, `trilium/` the note-level logic: `journal`, `plan`, `plan-read`, `plan-html`, `forward`, `forward-html`, `sections`, `keys`, `markdown`, `html-util`, `present`, and `store` (the `NoteStore` interface). It reaches notes only through that interface. |
+| `packages/caius/` | The library. No Trilium imports. `core/` is the task-line grammar, `resolve/` the horizon rules, `index/` the scan, `trilium/` the note-level logic: `journal`, `plan`, `plan-read`, `daynote`, `until`, `context`, `plan-html`, `forward`, `forward-html`, `sections`, `keys`, `markdown`, `html-util`, `present`, and `store` (the `NoteStore` interface). Beside them are `clock.ts` (the one place the time is read) and `workday.ts`. It reaches notes only through that interface. |
 | `apps/server/src/services/caius/` | `store.ts` (the becca `NoteStore` and the lock), `service.ts` (the operations), `schemas.ts` (zod inputs), `tools.ts` (the tool registry), `register.ts` (the defensive loader and the skill). |
 | `apps/server/src/routes/api/caius.ts` | The `/api/caius/*` routes. |
 | `apps/server/src/assets/llm/caius/skill.md` | The `caius` skill sheet. |
@@ -36,6 +36,20 @@ The note's HTML becomes markdown only to be parsed: text is not escaped (so `~2h
 ### Sections, critical, Suggested
 
 Each task gets a `section` (nearest heading above) and a `sectionKind`: `slot` for Morning / Afternoon / Evening, `area` for Foundation / Growth / Recharge, otherwise `group`. Names compare ignoring case, emoji and spacing. A task inside an Important block is critical: the derived markdown gets a trailing `!!!` (tier 3) and nothing is written back. Tasks under Suggested lose their checkbox in what the scanner sees, so they reach no horizon and no capacity.
+
+### Meetings and Context
+
+`buildDoc` finds the `### Meetings` and `### Context` sections with `ProseTracker` in `sections.ts`: a heading's level decides where one ends, and names compare like section names. Their lines lose any checkbox in both `text` and `fullText`, except lines in the Important block, so every reader (the scan, lanes, capacity, the duplicate check) sees plain bullets. The bullets are kept as `TriliumDoc.meetings` and `contextLines`. `readPlan` returns them as `meetings`, `context` and `expiredContext`.
+
+`parseContext` (`until.ts`) takes off a trailing `(until …)` that parses as a date: `Fri 6 Nov`, `6 Nov` or `2026-11-06`, a year-less one resolved to the year nearest the note's date. An unparseable suffix stays in the text. A line is expired when its date is before the plan's date: the day itself, or for a week or month note today when it falls in the period, else the nearer end of it.
+
+The HTML side refuses the same sections. `inProseSection` stops `forward` from moving a to-do under them, and `placeForwarded` and the template check skip their lists. `replaceMeetings` splices a plain `<ul>` between the Meetings heading and the next heading of the same or a higher level, or the Important block; with no heading it adds one at the top, below a leading include-note. `setMeetings` writes it as a compare-and-swap, creating a missing day note unless it is a dry run. It is reached through `caiusService.setMeetings` under the lock; no tool or route calls it yet. `withListItemIds` still gives an id to any other list item without one in that write.
+
+`gatherContext` (`context.ts`) reads the date's day note, the last three workday notes before it (`lastWorkday`), the current ISO week note and, on a Monday, last week's. It never creates a note and skips a missing, protected or non-text one. It drops expired lines and keeps the newest of two lines with the same text (compared ignoring case and spacing). A day note is dated by its day, a week note by its Monday, and a day beats a week that starts the same day. The service runs it as `caius_context`.
+
+### The clock
+
+Every read of the time goes through `now()` (`clock.ts`, exported as `caiusClock`). With `TRILIUM_ENV=dev` and `CAIUS_NOW` set it returns that local time; otherwise it returns the real one, which on the server is Trilium's own (`caiusNow()` in `service.ts`). `scanDocs`, `readPlan` and `addTasks` default to it. When the dev clock is set, `/api/caius/status` also answers `now`, and the client's `caiusNow()` (`services/caius.ts`) keeps the gap between that and the browser's clock. The Plan tab and the task actions read "today" from it. `nextWorkday` and `lastWorkday` (`workday.ts`) step over Saturday and Sunday; the Tomorrow fates stay the literal next day.
 
 ## `NoteStore` and its two adapters
 
@@ -126,7 +140,7 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 
 ## Tools, skill and loading
 
-`tools.ts` is registered with `registerToolRegistryLoader`, which puts the nine tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
+`tools.ts` is registered with `registerToolRegistryLoader`, which puts the ten tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
 
 ## Not done
 

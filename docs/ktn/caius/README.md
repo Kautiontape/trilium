@@ -9,6 +9,9 @@ The routes, the Plan tab and the task actions shipped in PR #12. The method behi
 - Day, week and month notes found by label: `#dateNote=2026-10-27`, `#weekNote=2026-W44` (ISO weeks) and `#monthNote=2026-10`, under the note labelled `#calendarRoot`. Trilium's own calendar creates them.
 - Tasks are to-do list items in those notes. A note counts as part of the Journal when it, or its direct parent, carries one of those labels.
 - Top to bottom in a note: an optional **Important** block (the critical tasks), tasks in priority order under headings of your choosing, and a **Suggested** section last. Items under Suggested are not tasks until you accept them.
+- Day and week notes can also have a **Meetings** and a **Context** section (a heading of any level named exactly that). Both hold plain bullets, and nothing under either is a task, even a to-do item: it never counts toward capacity, shows in a lane, forwards or triggers anything that counts live tasks. A section runs to the next heading of the same or a higher level, so a lower heading stays inside it. The Important block is the one exception, because it can sit below Context.
+  - Meetings are clock lines, such as `- 10:00 Standup (Sasha, James)`. Planning rewrites only this block.
+  - Context is what is known about the state of things, such as `- ZAP-2590 is open (until Fri 6 Nov)`. A trailing `(until Fri 6 Nov)`, `(until 6 Nov)` or `(until 2026-11-06)` ends the line after that day; the year is the one nearest the note's date. Any other suffix stays in the text.
 - Estimates are `~30m` style tokens in the task text. A task without one counts as 30 minutes.
 - Protected notes and notes labelled `#morningBrief` are skipped.
 
@@ -46,6 +49,10 @@ On desktop, the right pane has a **Plan** tab. It follows the active note: a day
 - **Pull in.** Three lanes: Overdue, This week and This month, 20 rows each. A row's text opens the task in its note. The **→** button forwards the task into the period you are viewing; an editor open on that note is locked and reloaded along with the task's own note. Tasks already in this note are left out. A past period has no Pull in card, since nothing should be pulled into a closed note.
 - **Close.** Offered for a past period, today from 15:00, and the current week or month. Every open task gets one fate. A past period offers Today first (This week or This month when closing a week or month), then Tomorrow, Next week, Next month and Drop (with a reason). Fates count from now, not from the period being closed, and the picker names the target note, such as "Today → 2026-10-27". The card counts "N of M decided". **Apply** writes them all in one go, and lists any task that was skipped. Apply is one request (`POST /api/caius/apply`): the forwards, then the drops. A task with open sub-items carries them along, so the sub-items are not listed on their own; a sub-item is told from its parent by the parent's list item id, so two tasks with the same text are not confused. Pushing a task to its project note is not offered yet.
 
+## The dev clock
+
+In a development server, set `TRILIUM_ENV=dev` and `CAIUS_NOW` to a local time such as `2026-11-06T17:30`, and Caius treats that as now: lanes, horizons, the Close card's "from 15:00" rule and the Plan tab's "today" all follow it. Anywhere else, including a production server that has `CAIUS_NOW` set, it uses the real time. A value that is not a local ISO time is ignored.
+
 ## Shortcuts
 
 Four commands act on the Journal task at the caret. They have **no default keys**; bind them in Options → Shortcuts (they are also in the command palette):
@@ -59,13 +66,14 @@ With the caret outside a Journal task you get "Put the caret in a task in a Jour
 
 ## MCP and the AI assistant
 
-Caius registers nine tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
+Caius registers ten tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
 
 | Tool | Does |
 |---|---|
-| `caius_plan` | Reads one day, week or month: sections, tasks, estimates, capacity. |
+| `caius_plan` | Reads one day, week or month: sections, tasks, estimates, capacity, and its `meetings`, `context` and `expiredContext`. |
 | `caius_open` | Lists open tasks across the Journal by lane, with `noteId`, `listItemId` and days late. |
 | `caius_explain` | Says why a task is in its lane. |
+| `caius_context` | Reads the Context in force for a day (`{ date }`): that day's note, the last three workday notes, the current week note and, on a Monday, last week's. Expired lines are dropped; the same text in two notes is returned once, from the newer. |
 | `caius_add` | Adds a task to a period under a heading, in the Important block, or under Suggested. |
 | `caius_accept` | Moves a Suggested item up under a heading or into the Important block. |
 | `caius_dismiss` | Removes a Suggested item and remembers it was dismissed. |
