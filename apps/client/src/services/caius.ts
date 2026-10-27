@@ -225,12 +225,17 @@ export type CaiusConversation = "plan" | "winddown";
 
 /**
  * Shows the sidebar chat and starts a new conversation in it, with note tools on, whose first
- * message is `opener`. With AI off there is no chat to show, so a toast says so; with no provider
- * the chat shows its own setup prompt and nothing is sent.
+ * message is `opener`. With AI off, in the old layout or on an AI chat note there is no chat tab to
+ * show, so a toast says so and nothing waits; with no provider the chat shows its own setup prompt
+ * and nothing is sent.
  */
 export async function startCaiusConversation(opener: string) {
     if (!options.is("aiEnabled")) {
         toast.showMessage(t("caius.chat_off"), 5000, "bx bx-bot");
+        return;
+    }
+    if (!options.is("newLayout") || appContext.tabManager.getActiveContextNote()?.type === "llmChat") {
+        toast.showMessage(t("caius.chat_unavailable"), 5000, "bx bx-bot");
         return;
     }
 

@@ -13,12 +13,18 @@ const h = vi.hoisted(() => ({
     showMessage: vi.fn(),
     showError: vi.fn(),
     aiEnabled: true,
+    newLayout: true,
+    activeNoteType: "text",
     hasProvider: true,
     openNewChat: vi.fn()
 }));
 
 vi.mock("../components/app_context.js", () => ({
-    default: { getComponentByEl: h.getComponentByEl, triggerEvent: h.triggerEvent }
+    default: {
+        getComponentByEl: h.getComponentByEl,
+        triggerEvent: h.triggerEvent,
+        tabManager: { getActiveContextNote: () => ({ type: h.activeNoteType }) }
+    }
 }));
 vi.mock("./froca.js", () => ({
     default: { notes: h.notes, blobPromises: h.blobPromises, getBlob: h.getBlob }
@@ -26,7 +32,9 @@ vi.mock("./froca.js", () => ({
 vi.mock("./ws.js", () => ({ default: { waitForMaxKnownEntityChangeId: h.waitForMaxKnownEntityChangeId } }));
 vi.mock("./server.js", () => ({ default: { getWithSilentNotFound: h.getWithSilentNotFound, post: h.post } }));
 vi.mock("./toast.js", () => ({ default: { showMessage: h.showMessage, showError: h.showError } }));
-vi.mock("./options.js", () => ({ default: { is: (name: string) => name === "aiEnabled" && h.aiEnabled } }));
+vi.mock("./options.js", () => ({
+    default: { is: (name: string) => (name === "aiEnabled" && h.aiEnabled) || (name === "newLayout" && h.newLayout) }
+}));
 vi.mock("./llm_providers.js", () => ({ readSelectedModels: () => ({ models: [], groups: [], hasProvider: h.hasProvider }) }));
 vi.mock("../widgets/sidebar/SidebarChat.jsx", () => ({ openNewChat: h.openNewChat }));
 vi.mock("./i18n.js", () => ({
@@ -641,6 +649,8 @@ describe("startCaiusConversation", () => {
         vi.clearAllMocks();
         h.triggerEvent.mockReset();
         h.aiEnabled = true;
+        h.newLayout = true;
+        h.activeNoteType = "text";
         h.hasProvider = true;
     });
 
@@ -655,6 +665,19 @@ describe("startCaiusConversation", () => {
         h.hasProvider = false;
         await startCaiusConversation("Wind down 2026-11-03");
         expect(h.triggerEvent).toHaveBeenCalledWith("selectRightPaneTab", { tabId: "chat", keepOpen: true });
+        expect(h.openNewChat).not.toHaveBeenCalled();
+    });
+
+    it("says where the chat is when the layout or the active note has none, without queueing the opener", async () => {
+        h.newLayout = false;
+        await startCaiusConversation("Plan my day 2026-11-04");
+        h.newLayout = true;
+        h.activeNoteType = "llmChat";
+        await startCaiusConversation("Plan my day 2026-11-04");
+
+        expect(h.showMessage).toHaveBeenCalledTimes(2);
+        expect(h.showMessage).toHaveBeenLastCalledWith("caius.chat_unavailable", expect.any(Number), expect.any(String));
+        expect(h.triggerEvent).not.toHaveBeenCalled();
         expect(h.openNewChat).not.toHaveBeenCalled();
     });
 
