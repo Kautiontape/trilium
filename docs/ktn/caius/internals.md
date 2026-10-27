@@ -41,7 +41,7 @@ Each task gets a `section` (nearest heading above) and a `sectionKind`: `slot` f
 
 `NoteStore` (`packages/caius/src/trilium/store.ts`) is the whole of what the library needs from Trilium: `search`, `note`, `content`, `putContent`, `calendarDay` / `calendarWeek` / `calendarMonth`, and `addLabel`.
 
-- **`createBeccaStore()`** (`apps/server/src/services/caius/store.ts`) is the one in use. It works on becca and the core services directly, with no HTTP, and mirrors the ETAPI handlers call for call. Search ignores the client's hoisted note, as ETAPI does, so a user hoisted into a subtree still sees the whole Journal.
+- **`createBeccaStore()`** (`apps/server/src/services/caius/store.ts`) is the one in use. It works on becca and the core services directly, with no HTTP, and mirrors the ETAPI handlers call for call. Search ignores the client's hoisted note (`ignoreHoistedNote`), as ETAPI does, so a user hoisted into a subtree still sees the whole Journal. With no `#calendarRoot`, the reads (`open`, `explain`, `assign_ids`) answer empty rather than failing.
 - **`etapiClient()`** (`packages/caius/src/trilium/etapi.ts`) is the original adapter on ETAPI. Nothing in the fork uses it. It is what an ETAPI command-line tool would be built on, if a fallback is ever wanted.
 
 `withListItemIds(store)` wraps either one so that every `putContent` passes through `ensureListItemIds`.
@@ -101,11 +101,11 @@ Each CKEditor `<li>` has a `data-list-item-id`. The scan records it per markdown
 Every Caius write happens on the server. Caius logic is never re-implemented against CKEditor's model. For an action started on a note that is open in an editor, `caiusWrite()` in `apps/client/src/services/caius.ts`:
 
 1. **Locks.** Finds every live editor holding the note (and any in `alsoLock`, such as a forward's target) and calls `enableReadOnlyMode` on each, with a `Symbol` of its own, so one write ending does not unlock the editor for another.
-2. **Waits its turn.** Writes on the same note go through a per-note queue (`writeQueues`), one at a time.
+2. **Waits its turn.** Writes on the same note go through a per-note queue (`writeQueues`), one at a time. When its turn comes, a write looks up the open editors of its notes again, locks any that appeared during the wait with its own `Symbol`, and unlocks exactly the ones it locked.
 3. **Saves.** Triggers `saveNoteDetailNow` on each editor, then `ws.waitForMaxKnownEntityChangeId()`, so `froca.notes[id].blobId` is the saved content's. Without that wait the client would send the pre-save `blobId` and spend its retry on its own lag.
 4. **Sends the token.** POSTs the route with `expectedBlobId`.
 5. **Retries once.** On a `stale` skip, saves again and repeats once. A second `stale` is shown as the "changed while Caius was writing" toast.
-6. **Waits for the reload.** If any result changed something, waits until each locked editor has had its data replaced (`editor.data` `set`, registered before the request, since the reload can beat the response over the WebSocket). Editors that miss it for 3 s (`RELOAD_TIMEOUT_MS`) have the note fetched again and get another 3 s; if that fails too, the "Reload the note before typing" toast appears.
+6. **Waits for the reload.** If any result changed something, waits until each locked editor of a note that was actually written has had its data replaced. A forward's `moved` result carries `writtenNoteIds` (the target, then the source; only the source when the target already held the copy), and editors of other locked notes stop listening and unlock at once. The reload shows as `editor.data` `set`, with listeners registered before the request, since the reload can beat the response over the WebSocket). Editors that miss it for 3 s (`RELOAD_TIMEOUT_MS`) have the note fetched again and get another 3 s; if that fails too, the "Reload the note before typing" toast appears.
 7. **Unlocks**, in a `finally`.
 
 **Time bounds.** The save and the request each get 10 s (`ANSWER_TIMEOUT_MS`); past that the write is abandoned with "Caius didn't answer in time. The change may still arrive…". The editor lock is held for the whole write.

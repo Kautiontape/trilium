@@ -43,8 +43,8 @@ On desktop, the right pane has a **Plan** tab. It follows the active note: a day
 
 - **Capacity.** Minutes planned against the target: 180–240 for a day, 720–900 for a week, none for a month. "N unestimated, counted at 30 min" opens a list of those tasks; click one to jump to it and add an estimate.
 - **Suggested.** The Suggested items of the period, each with Accept (pick a heading, or Critical) and Dismiss.
-- **Pull in.** Three lanes: Overdue, This week and This month, 20 rows each. A row's text opens the task in its note. The **→** button forwards the task into the period you are viewing. Tasks already in this note are left out.
-- **Close.** Offered for a past period, today from 15:00, and the current week or month. Every open task gets one fate: Tomorrow, Next week, Next month or Drop (with a reason). The card counts "N of M decided". **Apply** writes them all in one go, and lists any task that was skipped. A task with open sub-items carries them along, so the sub-items are not listed on their own. Pushing a task to its project note is not offered yet.
+- **Pull in.** Three lanes: Overdue, This week and This month, 20 rows each. A row's text opens the task in its note. The **→** button forwards the task into the period you are viewing; an editor open on that note is locked and reloaded along with the task's own note. Tasks already in this note are left out.
+- **Close.** Offered for a past period, today from 15:00, and the current week or month. Every open task gets one fate. A past period offers Today first (This week or This month when closing a week or month), then Tomorrow, Next week, Next month and Drop (with a reason). Fates count from now, not from the period being closed, and the picker names the target note, such as "Today → 2026-10-27". The card counts "N of M decided". **Apply** writes them all in one go, and lists any task that was skipped. A task with open sub-items carries them along, so the sub-items are not listed on their own. Pushing a task to its project note is not offered yet.
 
 ## Shortcuts
 
@@ -93,6 +93,8 @@ If the Caius code fails to load, Trilium logs `Caius disabled: <reason>` in the 
 - `/api/caius/*` answers `503 caius_unavailable`, and `/api/caius/status` answers `{ "enabled": false, "detail": … }`.
 
 The failure is remembered until the server restarts. Find the reason in the server log, fix it and restart.
+
+A document with no `#calendarRoot` (no Journal) is not "off": Caius is running, and the Plan tab shows empty lanes instead of errors.
 
 ## Troubleshooting
 
