@@ -200,19 +200,22 @@ describe("createNote", () => {
         expect(removeSelection).toHaveBeenCalled();
     });
 
-    it("logs a failed save of the source note once instead of leaving it unhandled", async () => {
+    it("handles a failed save of the source note without logging it again", async () => {
         setActiveContext(true);
+        const failedSave = Promise.reject(new Error("save failed"));
+        const handled = vi.spyOn(failedSave, "catch");
         const textEditor = {
             getSelectedHtml: () => "<p>cut me</p>",
-            removeSelection: vi.fn(async () => {
-                throw new Error("save failed");
-            })
+            removeSelection: vi.fn(() => failedSave)
         } as any;
 
         await noteCreateService.createNote("root", { saveSelection: true, textEditor });
+        expect(handled).toHaveBeenCalledOnce();
 
-        await vi.waitFor(() => expect(logError).toHaveBeenCalledOnce());
-        expect(logError.mock.calls[0][0]).toContain("save failed");
+        // Lets the handler `createNote()` attached run before checking what it did.
+        handled.mockRestore();
+        await failedSave.catch(() => {});
+        expect(logError).not.toHaveBeenCalled();
     });
 
     it("treats a non-heading selection as content with no title", async () => {
