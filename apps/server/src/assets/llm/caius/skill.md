@@ -74,6 +74,8 @@ Each write returns one result per item, with a status:
 
 A skipped item is often right. Report it to Shawn instead of working around it.
 
+`journal: false` on an answer from `caius_open`, `caius_explain` or `caius_assign_ids` means this Trilium has no Journal (no note carries `#calendarRoot`). That is not "nothing to do": say so to Shawn rather than reporting an empty plan.
+
 ## Rules
 
 - Run any batch with `dryRun: true` first and show Shawn the summary. Apply it only after he agrees.

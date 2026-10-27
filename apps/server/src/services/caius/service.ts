@@ -76,6 +76,9 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
             const now = caiusNow();
             const docs = await journalDocs(store);
+            if (!docs) {
+                return { total: 0, tasks: [], ...NO_JOURNAL };
+            }
             const result = scanDocs(docs, TRILIUM_CONFIG, now);
             const tasks = [
                 ...openTasks(docs, result).map((t) => toLaneTask(t, t.horizon, now)),
@@ -87,6 +90,9 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
         explain: ({ noteId, listItemId }: ExplainInput) => withCaiusLock("caius_explain", async () => {
             const now = caiusNow();
             const docs = await journalDocs(store);
+            if (!docs) {
+                return { error: "not_found", detail: "There is no Journal: no note carries #calendarRoot", ...NO_JOURNAL };
+            }
             const doc = docs.find((d) => d.noteId === noteId);
             const line = doc && [...doc.itemIds].find(([, id]) => id === listItemId)?.[0];
             if (!doc || line === undefined) {
@@ -156,7 +162,7 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);
             const results: AssignIdsResult[] = [];
-            for (const doc of docs) {
+            for (const doc of docs ?? []) {
                 const result = await assignIdsInNote(store, doc.noteId, doc.path, { dryRun, html });
                 if (result) {
                     results.push(result);
@@ -166,7 +172,8 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
                 ...(dryRun ? { dryRun: true } : {}),
                 notes: results.length,
                 added: results.reduce((sum, r) => sum + (r.added ?? 0), 0),
-                ...withBlobIds(results)
+                ...withBlobIds(results),
+                ...(docs ? {} : NO_JOURNAL)
             };
         })
     };
@@ -291,15 +298,18 @@ function withBlobIds<R extends object>(results: R[]) {
 }
 
 /**
- * The Journal's notes, or none when no note carries `#calendarRoot`: a document that doesn't use
- * the Journal has no tasks, rather than an error on every read.
+ * The Journal's notes, or null when no note carries `#calendarRoot`: a document that doesn't use the
+ * Journal, whose reads answer with {@link NO_JOURNAL} rather than an error.
  */
 async function journalDocs(store: NoteStore) {
     if (!(await store.search("#calendarRoot")).length) {
-        return [];
+        return null;
     }
     return (await loadJournal(store)).docs;
 }
+
+/** Added to an answer from a document with no Journal, so that it reads apart from "nothing to do". */
+const NO_JOURNAL = { journal: false } as const;
 
 /** One note's part in `assignIds`. */
 interface AssignIdsResult {
