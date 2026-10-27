@@ -12,7 +12,7 @@
 import type { VaultDoc } from '../index/index.js';
 import { label, type NoteReader, type StoreNote } from './store.js';
 import { htmlToMarkdownWithIds, DEFAULT_STATE_SYMBOLS, type StateSymbols } from './markdown.js';
-import { neutralizeSuggested } from './sections.js';
+import { bulletTexts, neutralizeProse, neutralizeSuggested, proseKinds } from './sections.js';
 
 export interface TriliumDoc extends VaultDoc {
   noteId: string;
@@ -24,6 +24,10 @@ export interface TriliumDoc extends VaultDoc {
   critical: Set<number>;
   /** 0-based line of `text` → the Trilium `data-list-item-id` of the `<li>` it came from. */
   itemIds: Map<number, string>;
+  /** The bullets under `### Meetings`, as written. */
+  meetings: string[];
+  /** The bullets under `### Context`, as written (a trailing `(until …)` still on). */
+  contextLines: string[];
 }
 
 export interface JournalLoad {
@@ -116,10 +120,17 @@ export async function loadJournal(api: NoteReader): Promise<JournalLoad> {
   return { docs, calendarRootId: root.noteId, skipped };
 }
 
-/** One note's HTML as a document: scanner text, full text, item ids, critical and Suggested lines. */
+/**
+ * One note's HTML as a document: scanner text, full text, item ids, critical and Suggested lines,
+ * and the Meetings and Context bullets. Nothing under those two headings is a task, so their
+ * checkboxes are dropped from both texts.
+ */
 export function buildDoc(note: StoreNote, path: string, html: string, states: StateSymbols): TriliumDoc {
-  const { markdown, itemIds, critical } = htmlToMarkdownWithIds(html, states);
+  const { markdown: raw, itemIds, critical } = htmlToMarkdownWithIds(html, states);
+  const markdown = neutralizeProse(raw, critical);
   const { text, suggested } = neutralizeSuggested(markdown);
+  const kinds = proseKinds(raw);
+  const under = (kind: string) => bulletTexts(raw.split('\n').filter((_, i) => kinds[i] === kind && !critical.has(i)));
   return {
     path,
     noteId: note.noteId,
@@ -128,6 +139,8 @@ export function buildDoc(note: StoreNote, path: string, html: string, states: St
     suggested,
     critical,
     itemIds,
+    meetings: under('meetings'),
+    contextLines: under('context'),
     mtime: Date.parse(note.utcDateModified) || 0,
   };
 }

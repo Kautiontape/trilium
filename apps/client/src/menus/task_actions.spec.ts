@@ -1,5 +1,5 @@
 import { ClassicEditor, Essentials, Heading, List, Paragraph, TodoList } from "ckeditor5";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
     notes: {} as Record<string, unknown>,
@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
     isCaiusEnabled: vi.fn(async () => true),
     openPeriodNoteIds: vi.fn((key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])),
     wasCaiusEnabled: vi.fn(() => true),
+    startCaiusConversation: vi.fn(async () => {}),
     prompt: vi.fn(),
     showMessage: vi.fn(),
     showError: vi.fn(),
@@ -26,6 +27,9 @@ const h = vi.hoisted(() => ({
 vi.mock("../components/app_context.js", () => ({ default: { tabManager: h.tabManager } }));
 vi.mock("../services/froca.js", () => ({ default: { notes: h.notes } }));
 vi.mock("../services/caius.js", () => ({
+    caiusNow: () => new Date(),
+    caiusOpener: (kind: string, date: string) => `${kind} ${date}`,
+    startCaiusConversation: h.startCaiusConversation,
     caiusApi: h.api,
     caiusWrite: h.caiusWrite,
     describeSkip: (reason: string) => `skip:${reason}`,
@@ -48,7 +52,7 @@ import { setEditorNoteId } from "../widgets/react/NoteStore.js";
 import type { MenuCommandItem, MenuItem } from "./context_menu.js";
 import {
     buildTaskActionItems, buildTaskActionsMenuItem, findTaskAtElement, findTaskAtSelection,
-    isForwardKey, isJournalNote, isOverJournalTask, nextMonthKey, nextWeekKey, runTaskCommand,
+    isForwardKey, isJournalNote, isOverJournalTask, nextMonthKey, nextWeekKey, runDayCommand, runTaskCommand,
     type TaskTarget, tomorrowKey
 } from "./task_actions.js";
 
@@ -287,8 +291,13 @@ describe("reading the task from the editor", () => {
         expect(findTaskAtElement(item("eopen"))).toBeNull();
         editor.disableReadOnlyMode("test");
 
+        // A failed status probe is asked again from a right-click on a task, and only there.
         h.wasCaiusEnabled.mockReturnValue(false);
+        h.isCaiusEnabled.mockClear();
+        expect(isOverJournalTask(paragraph)).toBe(false);
+        expect(h.isCaiusEnabled).not.toHaveBeenCalled();
         expect(isOverJournalTask(item("eopen"))).toBe(false);
+        expect(h.isCaiusEnabled).toHaveBeenCalled();
         h.wasCaiusEnabled.mockReturnValue(true);
 
         h.notes.day = fakeNote([]);
@@ -403,5 +412,26 @@ describe("forward keys", () => {
         for (const key of [ "2026-13", "2026-W54", "2026-W00", "2026-10-32", "26-10-28", "tomorrow" ]) {
             expect(isForwardKey(key)).toBe(false);
         }
+    });
+});
+
+describe("runDayCommand", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.useFakeTimers({ toFake: [ "Date" ] });
+        vi.setSystemTime(new Date(2026, 10, 4, 9, 0));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("starts the conversation for today by the Caius clock, or toasts while Caius is off", async () => {
+        await runDayCommand("plan");
+        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("plan 2026-11-04");
+        await runDayCommand("winddown");
+        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("winddown 2026-11-04");
+
+        h.isCaiusEnabled.mockResolvedValueOnce(false);
+        await runDayCommand("plan");
+        expect(h.showMessage).toHaveBeenCalledWith("caius.disabled", 3000, "bx bx-info-circle");
+        expect(h.startCaiusConversation).toHaveBeenCalledTimes(2);
     });
 });

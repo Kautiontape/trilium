@@ -4,7 +4,9 @@ import appContext from "../components/app_context.js";
 import { getEditorNoteId, noteSavedDataStore } from "../widgets/react/NoteStore.js";
 import froca from "./froca.js";
 import { t } from "./i18n.js";
+import { readSelectedModels } from "./llm_providers.js";
 import LoadResults from "./load_results.js";
+import options from "./options.js";
 import server from "./server.js";
 import toast from "./toast.js";
 import ws from "./ws.js";
@@ -129,6 +131,26 @@ export interface CaiusOpenTask {
 interface CaiusStatus {
     enabled: boolean;
     detail?: unknown;
+    /** The server's local time, `YYYY-MM-DDTHH:mm:ss`, sent only when its dev clock is set. */
+    now?: string;
+}
+
+/** The nudge bar's state for a day: the catch-up first, then whether the day has a brief. */
+export type CaiusNudge = { date: string; lastWorkday: string } & (
+    | { state: "catchup"; tasks: { noteId: string; listItemId: string | null; text: string }[] }
+    | { state: "unplanned" }
+    | { state: "planned"; plannedAt: string | null }
+);
+
+/** The gap between the server's dev clock and this browser's, in ms; 0 without a dev clock. */
+let clockOffset = 0;
+
+/**
+ * The moment the Plan tab treats as now: the browser clock, or the server's when it runs a dev
+ * `CAIUS_NOW` (known once `isCaiusEnabled()` has answered).
+ */
+export function caiusNow() {
+    return new Date(Date.now() + clockOffset);
 }
 
 let statusRequest: Promise<boolean> | null = null;
@@ -161,6 +183,8 @@ async function fetchStatus() {
     try {
         const status = await server.getWithSilentNotFound<CaiusStatus>("caius/status");
         lastKnownEnabled = status?.enabled === true;
+        const serverNow = status?.now ? new Date(status.now).getTime() : NaN;
+        clockOffset = Number.isNaN(serverNow) ? 0 : serverNow - Date.now();
     } catch {
         lastKnownEnabled = false;
         statusRequest = null;
@@ -185,8 +209,44 @@ export const caiusApi = {
     dismiss: (items: CaiusDismissItem[]) => postItems("dismiss", items),
     /** Close: the forwards, then the drops, in one request behind one version check. */
     apply: (body: CaiusApplyRequest) => postWrite("caius/apply", body),
-    explain
+    explain,
+    /** The state of the nudge bar on the day note of `date`. */
+    nudge: (date: string) => server.get<CaiusNudge>(`caius/nudge?${new URLSearchParams({ date }).toString()}`),
+    /** Lets Plan my day leave the last workday's open tasks where they are, for `date`. */
+    skipCatchup: (date: string) => server.post<object>("caius/skip-catchup", { date })
 };
+
+/** The first message of a planning conversation, in the words the `caius` skill sheet reads. */
+export function caiusOpener(kind: CaiusConversation, date: string) {
+    return `${kind === "plan" ? "Plan my day" : "Wind down"} ${date}`;
+}
+
+export type CaiusConversation = "plan" | "winddown";
+
+/**
+ * Shows the sidebar chat and starts a new conversation in it, with note tools on, whose first
+ * message is `opener`. With AI off, in the old layout or on an AI chat note there is no chat tab to
+ * show, so a toast says so and nothing waits; with no provider the chat shows its own setup prompt
+ * and nothing is sent.
+ */
+export async function startCaiusConversation(opener: string) {
+    if (!options.is("aiEnabled")) {
+        toast.showMessage(t("caius.chat_off"), 5000, "bx bx-bot");
+        return;
+    }
+    if (!options.is("newLayout") || appContext.tabManager.getActiveContextNote()?.type === "llmChat") {
+        toast.showMessage(t("caius.chat_unavailable"), 5000, "bx bx-bot");
+        return;
+    }
+
+    void appContext.triggerEvent("selectRightPaneTab", { tabId: "chat", keepOpen: true });
+    if (!readSelectedModels().hasProvider) {
+        return;
+    }
+
+    const { openNewChat } = await import("../widgets/sidebar/SidebarChat.jsx");
+    openNewChat(opener);
+}
 
 /**
  * Why a task is in its lane. The route answers 404 `{ error: "not_found" }` for an item it cannot
@@ -660,8 +720,8 @@ export function describeSkip(reason: string, flushed: boolean) {
 /** Every reason the library and the routes skip an item for, besides `not_found`. */
 const KNOWN_SKIP_REASONS = [
     "already_cancelled", "already_doing", "already_done", "already_moved", "bad_request",
-    "dismissed", "duplicate", "edited", "not_live", "not_suggested", "same_day", "stale",
-    "unreadable"
+    "dismissed", "duplicate", "edited", "not_live", "not_suggested", "prose_section", "same_day",
+    "stale", "unreadable"
 ];
 
 function describeError(error: unknown) {

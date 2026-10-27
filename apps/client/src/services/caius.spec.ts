@@ -11,11 +11,20 @@ const h = vi.hoisted(() => ({
     getWithSilentNotFound: vi.fn(),
     post: vi.fn(),
     showMessage: vi.fn(),
-    showError: vi.fn()
+    showError: vi.fn(),
+    aiEnabled: true,
+    newLayout: true,
+    activeNoteType: "text",
+    hasProvider: true,
+    openNewChat: vi.fn()
 }));
 
 vi.mock("../components/app_context.js", () => ({
-    default: { getComponentByEl: h.getComponentByEl, triggerEvent: h.triggerEvent }
+    default: {
+        getComponentByEl: h.getComponentByEl,
+        triggerEvent: h.triggerEvent,
+        tabManager: { getActiveContextNote: () => ({ type: h.activeNoteType }) }
+    }
 }));
 vi.mock("./froca.js", () => ({
     default: { notes: h.notes, blobPromises: h.blobPromises, getBlob: h.getBlob }
@@ -23,15 +32,20 @@ vi.mock("./froca.js", () => ({
 vi.mock("./ws.js", () => ({ default: { waitForMaxKnownEntityChangeId: h.waitForMaxKnownEntityChangeId } }));
 vi.mock("./server.js", () => ({ default: { getWithSilentNotFound: h.getWithSilentNotFound, post: h.post } }));
 vi.mock("./toast.js", () => ({ default: { showMessage: h.showMessage, showError: h.showError } }));
+vi.mock("./options.js", () => ({
+    default: { is: (name: string) => (name === "aiEnabled" && h.aiEnabled) || (name === "newLayout" && h.newLayout) }
+}));
+vi.mock("./llm_providers.js", () => ({ readSelectedModels: () => ({ models: [], groups: [], hasProvider: h.hasProvider }) }));
+vi.mock("../widgets/sidebar/SidebarChat.jsx", () => ({ openNewChat: h.openNewChat }));
 vi.mock("./i18n.js", () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key)
 }));
 
 import { noteSavedDataStore, setEditorNoteId } from "../widgets/react/NoteStore.js";
 import {
-    ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, type CaiusItemResult, caiusWrite, describeSkip,
+    ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, caiusNow, type CaiusItemResult, caiusWrite, describeSkip,
     flushEditors,
-    forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, RELOAD_TIMEOUT_MS
+    forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, RELOAD_TIMEOUT_MS, startCaiusConversation
 } from "./caius.js";
 import type LoadResults from "./load_results.js";
 
@@ -537,6 +551,7 @@ describe("describeSkip", () => {
         expect(describeSkip("not_found", true)).toBe("caius.skip.not_found_after_save");
         expect(describeSkip("not_found", false)).toBe("caius.skip.not_found");
         expect(describeSkip("already_done", true)).toBe("caius.skip.already_done");
+        expect(describeSkip("prose_section", true)).toBe("caius.skip.prose_section");
         expect(describeSkip("weird", true)).toBe("caius.skip.other {\"reason\":\"weird\"}");
     });
 
@@ -611,8 +626,66 @@ describe("isCaiusEnabled", () => {
         expect(h.getWithSilentNotFound).toHaveBeenCalledWith("caius/status");
     });
 
+    it("follows the server's dev clock when the status carries one, and the browser's otherwise", async () => {
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true, now: "2026-11-06T17:30:00" });
+        await isCaiusEnabled();
+        const at = caiusNow();
+        expect([ at.getMonth(), at.getDate(), at.getHours() ]).toEqual([ 10, 6, 17 ]);
+
+        forgetCaiusStatus();
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true });
+        await isCaiusEnabled();
+        expect(Math.abs(caiusNow().getTime() - Date.now())).toBeLessThan(1000);
+    });
+
     it("reads enabled: false, which the server answers when the service fails to load", async () => {
         h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: false, detail: "Cannot find module" });
         await expect(isCaiusEnabled()).resolves.toBe(false);
+    });
+});
+
+describe("startCaiusConversation", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        h.triggerEvent.mockReset();
+        h.aiEnabled = true;
+        h.newLayout = true;
+        h.activeNoteType = "text";
+        h.hasProvider = true;
+    });
+
+    it("shows the chat tab without toggling it away, and sends the opener as a new conversation", async () => {
+        await startCaiusConversation("Plan my day 2026-11-04");
+        expect(h.triggerEvent).toHaveBeenCalledWith("selectRightPaneTab", { tabId: "chat", keepOpen: true });
+        expect(h.openNewChat).toHaveBeenCalledWith("Plan my day 2026-11-04");
+        expect(h.showMessage).not.toHaveBeenCalled();
+    });
+
+    it("shows the chat's own setup prompt without sending when no provider is set up", async () => {
+        h.hasProvider = false;
+        await startCaiusConversation("Wind down 2026-11-03");
+        expect(h.triggerEvent).toHaveBeenCalledWith("selectRightPaneTab", { tabId: "chat", keepOpen: true });
+        expect(h.openNewChat).not.toHaveBeenCalled();
+    });
+
+    it("says where the chat is when the layout or the active note has none, without queueing the opener", async () => {
+        h.newLayout = false;
+        await startCaiusConversation("Plan my day 2026-11-04");
+        h.newLayout = true;
+        h.activeNoteType = "llmChat";
+        await startCaiusConversation("Plan my day 2026-11-04");
+
+        expect(h.showMessage).toHaveBeenCalledTimes(2);
+        expect(h.showMessage).toHaveBeenLastCalledWith("caius.chat_unavailable", expect.any(Number), expect.any(String));
+        expect(h.triggerEvent).not.toHaveBeenCalled();
+        expect(h.openNewChat).not.toHaveBeenCalled();
+    });
+
+    it("says so when AI is off, since there is no chat to show", async () => {
+        h.aiEnabled = false;
+        await startCaiusConversation("Wind down 2026-11-03");
+        expect(h.showMessage).toHaveBeenCalledWith("caius.chat_off", expect.any(Number), expect.any(String));
+        expect(h.triggerEvent).not.toHaveBeenCalled();
+        expect(h.openNewChat).not.toHaveBeenCalled();
     });
 });

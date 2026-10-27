@@ -3,7 +3,7 @@ import "./PlanClose.css";
 import { useState } from "preact/hooks";
 
 import {
-    caiusApi, type CaiusForwardItem, type CaiusItemResult, type CaiusPeriodKind, type CaiusPlan,
+    caiusApi, caiusNow, type CaiusForwardItem, type CaiusItemResult, type CaiusPeriodKind, type CaiusPlan,
     type CaiusPlanTask, type CaiusSetStateItem, caiusWrite, describeOutcome, findOpenEditors,
     openPeriodNoteIds
 } from "../../../services/caius";
@@ -44,7 +44,7 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
     const [ applying, setApplying ] = useState(false);
     const candidates = closeCandidates(plan);
     // One moment per render, so that Apply sends each task where its row says.
-    const now = new Date();
+    const now = caiusNow();
     const fateKinds = closeFates(plan.period, plan.key, now);
     const targetable = candidates.filter((task) => task.listItemId);
     const decided = targetable

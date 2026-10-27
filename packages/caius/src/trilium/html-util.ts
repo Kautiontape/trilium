@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { HTMLElement, parse } from 'node-html-parser';
 import { scanTokens } from '../core/index.js';
 import type { StateSymbols } from './markdown.js';
+import { ProseTracker } from './sections.js';
 
 export function newListItemId(): string {
   return `e${randomBytes(16).toString('hex')}`;
@@ -104,6 +105,18 @@ export function sectionOf(root: HTMLElement, li: HTMLElement): string | null {
   return null;
 }
 
+/** Whether the item sits under a Meetings or Context heading (down to the next of that level or higher). */
+export function inProseSection(root: HTMLElement, li: HTMLElement): boolean {
+  let top: HTMLElement = li;
+  while (top.parentNode && top.parentNode !== root) top = top.parentNode as HTMLElement;
+  const tracker = new ProseTracker();
+  for (const el of elements(root)) {
+    if (el === top) break;
+    if (isHeading(el)) tracker.enter(el.text, Number(el.tagName[1]));
+  }
+  return tracker.kind !== null && !isCriticalAside(top);
+}
+
 export const attrRe = (name: string) => new RegExp(`\\s+${name}(?:=(?:"[^"]*"|'[^']*'|[^\\s>]+))?(?=[\\s>/])`);
 
 /** Rewrite an `<li …>` open tag: optionally a new id, and the state/title attributes. */
@@ -147,6 +160,19 @@ export function liveDescendants(li: HTMLElement, states: StateSymbols): HTMLElem
 }
 
 /** `<aside class="admonition important">`: the critical block. */
+/** Whether the item is inside the Important block. */
+export function inCriticalAside(li: HTMLElement): boolean {
+  for (let n = li.parentNode as HTMLElement | null; n; n = n.parentNode as HTMLElement | null) {
+    if (n.tagName && isCriticalAside(n)) return true;
+  }
+  return false;
+}
+
+/** The include-note section a day note starts with. */
+export function isIncludeNote(el: HTMLElement): boolean {
+  return el.tagName === 'SECTION' && el.classList.contains('include-note');
+}
+
 export function isCriticalAside(el: HTMLElement): boolean {
   return el.tagName === 'ASIDE' && el.classList.contains('admonition') && el.classList.contains('important');
 }

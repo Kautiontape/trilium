@@ -12,29 +12,39 @@
 
 import {
     acceptTasks,
+    addContext,
     addTasks,
+    caiusClock,
+    clockOverride,
     daysLate,
     diffSummary,
     dismissTasks,
     ensureListItemIds,
+    findPeriodNote,
     forwardTasks,
+    gatherContext,
     isPeriodKey,
+    label,
     listItemsWithoutIds,
     loadJournal,
     loadStateSymbols,
+    meetingLines,
+    readRhythm,
     type NoteStore,
     openTasks,
     type OpenTask,
     presentResult,
     readPlan,
+    renderDayTerrain,
     scanDocs,
+    setMeetings,
     setStates,
     type StateAction,
     suggestedTasks,
     TRILIUM_CONFIG,
     withListItemIds
 } from "@triliumnext/caius";
-import { becca, date_utils as dateUtils } from "@triliumnext/core";
+import { becca, date_utils as dateUtils, markdownExportService, markdownImportService } from "@triliumnext/core";
 import { t } from "i18next";
 
 import {
@@ -42,17 +52,42 @@ import {
     type AddInput,
     type ApplyInput,
     type AssignIdsInput,
+    type BriefWriteInput,
+    type ContextAddInput,
+    type ContextInput,
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
     type ExplainInput,
     type ForwardInput,
+    type HeaderDay,
+    type HeaderInput,
+    type InputsInput,
+    type MeetingsInput,
+    type NudgeInput,
     type OpenInput,
+    type PlanDayInput,
     type PlanInput,
-    type SetStateInput
+    type SetStateInput,
+    type SkipCatchupInput,
+    type WindDownInput
 } from "./schemas.js";
-import { createBeccaStore, withCaiusLock } from "./store.js";
+import { findBrief, PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
+import { catchupOf, type DayRead, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
+import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
+import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
+import { type DayWeather, fetchDayWeather } from "./weather.js";
 
 export { routeInputs } from "./schemas.js";
+
+const TERRAIN_TITLE = "terrain.svg";
+
+/** How long a `caius_inputs` answer is reused for the same day and Context. */
+export const INPUTS_TTL_MS = 15 * 60_000;
+
+export type InputsReader = (input: InputsInput) => Promise<CaiusInputs>;
+
+/** The label of the standing note, "How I work". */
+const STANDING_LABEL = "assistantContext";
 
 const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
     done: "done",
@@ -60,8 +95,60 @@ const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
     cancelled: "drop"
 };
 
-export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
+export function createCaiusService(
+    baseStore: NoteStore = createBeccaStore(),
+    weatherOf: (latitude: number, longitude: number) => Promise<DayWeather | undefined> = fetchDayWeather,
+    inputsOf: InputsReader = (input) => readInputs(input),
+    clockMs: () => number = Date.now
+) {
     const store = withListItemIds(baseStore);
+    const inputsCache = new Map<string, { at: number; inputs: CaiusInputs }>();
+
+    /** The standing note (`#assistantContext`) as markdown. The caller holds the lock. */
+    async function readStanding(): Promise<Standing> {
+        const [ note ] = (await store.search(`#${STANDING_LABEL}`)).filter((n) => n.attributes.some((a) => a.type === "label" && a.name === STANDING_LABEL));
+        if (!note) {
+            return { markdown: null, missing: t("caius.daily.standing_missing") };
+        }
+        if (note.type !== "text" || note.isProtected) {
+            return { markdown: null, missing: t("caius.daily.standing_unreadable") };
+        }
+        return { markdown: markdownExportService.toMarkdown(await store.content(note.noteId)) };
+    }
+
+    /**
+     * `caius_inputs` for a day, with the Context in force passed along and the work window from the
+     * standing note's Rhythm. An answer for the same input is reused for `INPUTS_TTL_MS`, timed on
+     * the real clock since `CAIUS_NOW` stands still, unless a source failed; `refresh` fetches again. The notes are read
+     * under the lock, the sources outside it.
+     */
+    async function dayRead(date: string, refresh = false): Promise<DayRead> {
+        const { context, standing } = await withCaiusLock("caius_day_read", async () => ({
+            context: (await gatherContext(store, date)).context,
+            standing: await readStanding()
+        }));
+        const rhythm = readRhythm(standing.markdown);
+        const input: InputsInput = { date, context: context.map((line) => line.text), workStart: rhythm.start, workEnd: rhythm.workEnd };
+        const key = JSON.stringify(input);
+        const hit = inputsCache.get(key);
+        if (!refresh && hit && clockMs() - hit.at < INPUTS_TTL_MS) {
+            return { inputs: hit.inputs, context, standing, rhythm };
+        }
+        const inputs = await inputsOf(input);
+        for (const [ old, entry ] of inputsCache) {
+            if (clockMs() - entry.at >= INPUTS_TTL_MS) inputsCache.delete(old);
+        }
+        // An answer missing a source is fetched again next time, so the source can come back, and
+        // an older answer is not served after it.
+        if (inputs.errors.every((e) => isInputWarning(e.error))) {
+            inputsCache.set(key, { at: clockMs(), inputs });
+        } else {
+            inputsCache.delete(key);
+        }
+        return { inputs, context, standing, rhythm };
+    }
+
+    const stepDeps = (): StepDeps => ({ store, now: caiusNow(), locked: withCaiusLock, dayRead, standing: readStanding });
 
     return {
         plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
@@ -123,6 +210,8 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
             };
         }),
 
+        context: ({ date }: ContextInput) => withCaiusLock("caius_context", () => gatherContext(store, date)),
+
         add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => withBlobIds(
             (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html))
         )),
@@ -159,6 +248,101 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
             })).map((r) => presentResult(r)));
         }),
 
+        /** Replaces the Meetings block of a day note; no tool or route reaches it yet. */
+        setMeetings: ({ date, lines, dryRun }: { date: string; lines: string[]; dryRun?: boolean }) => withCaiusLock("caius_set_meetings", async () => {
+            const result = await setMeetings(store, { date, lines }, { dryRun });
+            return withBlobIds([ result ]);
+        }),
+
+        /**
+         * Writes the Meetings block of a day note: `items` when given, else the day's calendar as
+         * clock lines. A calendar that could not be read writes nothing, so a feed that fails never
+         * empties the block.
+         */
+        meetings: async ({ date, items, dryRun, refresh }: MeetingsInput) => {
+            let lines = items;
+            if (!lines) {
+                const { inputs } = await dayRead(date, refresh);
+                const errors = inputs.errors.filter((e) => e.source === "calendar" && !isInputWarning(e.error));
+                if (errors.length) {
+                    return { date, status: "skipped", reason: "calendar_unavailable", errors };
+                }
+                lines = meetingLines(inputs.calendar);
+            }
+            const written = lines;
+            return withCaiusLock("caius_meetings", async () => {
+                const result = await setMeetings(store, { date, lines: written }, { dryRun });
+                return { date, source: items ? "items" : "calendar", lines: written, ...withBlobIds([ withDiff(result) ]) };
+            });
+        },
+
+        contextAdd: ({ dryRun, ...req }: ContextAddInput) => withCaiusLock("caius_context_add", async () => {
+            const result = await addContext(store, req, { dryRun, now: caiusNow() });
+            return withBlobIds([ withDiff(result) ]);
+        }),
+
+        /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
+        skipCatchup: ({ date }: SkipCatchupInput) => withCaiusLock("caius_skip_catchup", async () => {
+            const existing = await findPeriodNote(store, "day", date);
+            const note = existing ?? await store.calendarDay(date);
+            if (note.isProtected) {
+                return { date, error: "bad_request", detail: `The day note for ${date} is protected` };
+            }
+            const labelled = note.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
+            if (!labelled) setLabel(note.noteId, SKIP_CATCHUP_LABEL, date);
+            return { date, noteId: note.noteId, status: labelled ? "unchanged" : "updated", created: !existing };
+        }),
+
+        winddown: (input: WindDownInput) => windDown(stepDeps(), input),
+
+        planday: (input: PlanDayInput) => planDay(stepDeps(), input),
+
+        /**
+         * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and
+         * the brief lookup of `caius_brief_write`: `catchup` while the last workday has live tasks,
+         * then `planned` once the day has a brief, else `unplanned`. Reads only.
+         */
+        nudge: ({ date }: NudgeInput) => withCaiusLock("caius_nudge", async () => {
+            const { lastWorkday, note, tasks } = await catchupOf(store, date, caiusNow());
+            if (tasks.length) {
+                return { date, state: "catchup", lastWorkday, tasks: tasks.map(({ noteId, listItemId, text }) => ({ noteId, listItemId, text })) };
+            }
+            const brief = note ? await findBrief(store, note.noteId, date) : null;
+            return brief
+                ? { date, state: "planned", lastWorkday, plannedAt: label(brief, PLANNED_AT_LABEL) ?? null }
+                : { date, state: "unplanned", lastWorkday };
+        }),
+
+        header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
+            // The forecast can take 3 s, so it is fetched before the lock is taken.
+            const weather = latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude);
+            return withCaiusLock("caius_header", async () => {
+                const note = await store.note(noteId).catch(() => undefined);
+                if (!note) {
+                    return { error: "not_found", detail: `Note '${noteId}' not found` };
+                }
+                if (note.isProtected) {
+                    return { error: "bad_request", detail: `Note '${noteId}' is protected and cannot be modified` };
+                }
+                const { attachmentId, created } = drawHeader(noteId, day, weather);
+                return { attachmentId, created, snippet: `<img src="api/attachments/${attachmentId}/image/${TERRAIN_TITLE}">` };
+            });
+        },
+
+        /**
+         * Writes the day's Morning Brief, its `Header` child with the drawing, and the header's
+         * include-note at the top of the day note. The weather is fetched before the lock.
+         */
+        briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
+            const weather = input.dryRun || latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude);
+            return withCaiusLock("caius_brief_write", () => writeBrief({
+                store,
+                draw: (noteId) => drawHeader(noteId, input.header, weather).attachmentId,
+                render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
+                plannedAt: localIso(caiusNow())
+            }, input));
+        },
+
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);
             const results: AssignIdsResult[] = [];
@@ -186,9 +370,31 @@ export const caiusService = createCaiusService();
 /**
  * The moment the planning operations treat as "now": Trilium's local date and time, which follows
  * the `trilium-local-now-datetime` header when the request carries one and the server clock
- * otherwise.
+ * otherwise. With `TRILIUM_ENV=dev`, `CAIUS_NOW` replaces it (see `caiusClock()` in the library).
  */
-export function caiusNow(): Date {
+export function caiusNow(env: Record<string, string | undefined> = process.env): Date {
+    return caiusClock(env, triliumNow);
+}
+
+/** `CAIUS_NOW` as the local `YYYY-MM-DDTHH:mm:ss` the client reads, or `undefined` outside dev. */
+export function caiusDevNow(env: Record<string, string | undefined> = process.env): string | undefined {
+    const at = clockOverride(env);
+    return at ? localIso(at) : undefined;
+}
+
+/** A moment as local `YYYY-MM-DDTHH:mm:ss`. */
+function localIso(at: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
+
+/** Draws the day on a note as its `terrain.svg` attachment, created or updated. The caller holds the lock. */
+function drawHeader(noteId: string, day: HeaderDay, weather: DayWeather | undefined) {
+    const svg = renderDayTerrain({ ...day, ...(weather ? { weather } : {}) });
+    return putAttachment(noteId, { role: "image", mime: "image/svg+xml", title: TERRAIN_TITLE, content: svg });
+}
+
+function triliumNow(): Date {
     const match = dateUtils.localNowDateTime().match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
     if (!match) {
         return new Date();
@@ -295,6 +501,15 @@ function withBlobIds<R extends object>(results: R[]) {
         }
     }
     return { results, blobIds };
+}
+
+/** A dry run's result with its full `before` and `after` HTML reduced to the diff summary. */
+function withDiff<R extends object>(result: R): R | Omit<R, "before" | "after"> {
+    if (!("before" in result) || !("after" in result) || typeof result.before !== "string" || typeof result.after !== "string") {
+        return result;
+    }
+    const { before, after, ...rest } = result;
+    return { ...rest, ...diffSummary(before, after) };
 }
 
 /**

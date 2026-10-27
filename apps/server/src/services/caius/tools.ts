@@ -9,14 +9,20 @@ import { defineTools } from "@triliumnext/core/src/services/llm/tools/tool_regis
 import type { z } from "zod";
 
 import { toolInputs } from "./schemas.js";
-import { createCaiusService } from "./service.js";
+import { readInputs } from "./inputs/index.js";
+import { createCaiusService, type InputsReader } from "./service.js";
+import type { DayWeather } from "./weather.js";
 
-export function createCaiusTools(store?: NoteStore) {
-    const service = createCaiusService(store);
+export function createCaiusTools(
+    store?: NoteStore,
+    weatherOf?: (latitude: number, longitude: number) => Promise<DayWeather | undefined>,
+    inputsOf?: InputsReader
+) {
+    const service = createCaiusService(store, weatherOf, inputsOf);
 
     return defineTools({
         caius_plan: {
-            description: "Read the plan of one day, week or month note: its sections, tasks, estimates and capacity. Use it to see what is planned for a period.",
+            description: "Read the plan of one day, week or month note: its sections, tasks, estimates and capacity, plus its Meetings bullets and the Context lines in force (expired ones apart). Use it to see what is planned for a period.",
             inputSchema: toolInputs.plan,
             async: true,
             execute: parsed(toolInputs.plan, service.plan)
@@ -34,6 +40,20 @@ export function createCaiusTools(store?: NoteStore) {
             inputSchema: toolInputs.explain,
             async: true,
             execute: parsed(toolInputs.explain, service.explain)
+        },
+
+        caius_context: {
+            description: "Read the Context in force for a day: the Context lines of that day's note, the last three workday notes, the current week note and, on a Monday, last week's. Expired lines are left out, and a line in several notes is returned once. Use it to see what is known about the state of things before planning a day.",
+            inputSchema: toolInputs.context,
+            async: true,
+            execute: parsed(toolInputs.context, service.context)
+        },
+
+        caius_inputs: {
+            description: "Read the day's outside inputs live: Jira tickets handed off to the user (Dev Verify, QA, Code Review) with their age, recent comments that mention or ask the user, which tickets Jira calls done, the day's calendar events from the iCal feeds, and the capacity the meetings leave. Pass the day's Context lines so a line such as \"ZAP-2590 is open\" beats Jira's Done. A source that fails is named in errors and the rest still return.",
+            inputSchema: toolInputs.inputs,
+            async: true,
+            execute: parsed(toolInputs.inputs, (input) => readInputs(input))
         },
 
         caius_add: {
@@ -82,6 +102,60 @@ export function createCaiusTools(store?: NoteStore) {
             async: true,
             mutates: true,
             execute: parsed(toolInputs.assignIds, service.assignIds)
+        },
+
+        caius_meetings: {
+            description: "Write the Meetings block of a day note: plain clock lines such as \"10:00 Standup (Sam, Riley)\", never tasks. Without items, the lines come from the day's calendar: declined and all-day events left out, up to four first names, and (overlaps) on meetings that overlap. Replaces only that block; creates the day note if missing. Dry run first.",
+            inputSchema: toolInputs.meetings,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.meetings, service.meetings)
+        },
+
+        caius_context_add: {
+            description: "Add one Context line to a day note (date) or an ISO week note (week): a plain bullet under ### Context, never a task. A line about the state of things goes in the week note; only a line about one day goes in that day's note. until is written as (until Fri 6 Nov). Text already in force is skipped as duplicate. Creates the heading and the note if missing. Dry run first.",
+            inputSchema: toolInputs.contextAdd,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.contextAdd, service.contextAdd)
+        },
+
+        caius_brief_write: {
+            description: "Write the day's Morning Brief: a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there. A re-run updates the same notes. Dry run first.",
+            inputSchema: toolInputs.briefWrite,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.briefWrite, service.briefWrite)
+        },
+
+        caius_skip_catchup: {
+            description: "Skip Plan my day's catch-up for a day: labels that day's note #caiusSkipCatchup=<date>, so the last workday's open tasks are left where they are and the catchup step no longer asks. Creates the day note if missing.",
+            inputSchema: toolInputs.skipCatchup,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.skipCatchup, service.skipCatchup)
+        },
+
+        caius_winddown: {
+            description: "Run one step of the Wind down conversation for the day being closed (date); every step works against the next workday. Steps in order: open (the live tasks of the day, overdue ones and the week's, each with a proposed fate), next (candidates for the next workday's Suggested, its capacity, overlaps and evening), context (the Context in force and anything noticed). Returns { step, data, question, next, standing }: ask question verbatim; a null question means nothing to ask; still do the step's writes (dry run first). Then call the step named by next. Reads only; make the writes with the other caius_* tools, dry run first.",
+            inputSchema: toolInputs.winddown,
+            async: true,
+            execute: parsed(toolInputs.winddown, service.winddown)
+        },
+
+        caius_planday: {
+            description: "Run one step of the Plan my day conversation for date. Steps in order: catchup (the last workday's open tasks, unless caius_skip_catchup was used for date), inputs (candidates new since the last brief, the Meetings block to write, overlaps, and on a day over 60% booked a task to move to the next workday), brief (the day's span from the standing note's Rhythm, the work blocks for the drawing, the standing note's Brief rules and the input caius_brief_write takes). Returns { step, data, question, next, standing }: ask question verbatim; a null question means nothing to ask; still do the step's writes (dry run first). Then call the step named by next. Reads only.",
+            inputSchema: toolInputs.planday,
+            async: true,
+            execute: parsed(toolInputs.planday, service.planday)
+        },
+
+        caius_header: {
+            description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
+            inputSchema: toolInputs.header,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.header, service.header)
         }
     });
 }

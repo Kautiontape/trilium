@@ -51,6 +51,14 @@ it("offers the caius skill only while it is registered, and names every tool the
         expect(sheet, `the sheet should mention ${name}`).toContain(`\`${name}\``);
     }
     expect(sheet.split("\n").length).toBeGreaterThanOrEqual(80);
+    // The openers follow only their own section, and no step lets the agent choose the main list.
+    expect(sheet).toContain("For `Wind down` and `Plan my day` openers, follow only this section.");
+    expect(sheet).not.toContain("until the day fits its capacity");
+    expect(sheet).toContain("A null `question` means nothing to ask; still do the step's writes (dry run first)");
+    expect(sheet).toContain("On \"keep\", write it again with `caius_context_add` to the next workday's week, `data.targetWeek`, not the closing week");
+    expect(sheet).toContain("Add the candidates to that day's Suggested with `caius_add` and `suggested: true`");
+    expect(sheet).toContain("Lines about the state of things go to the week note; a day note only for a line about that day.");
+    expect(sheet).not.toContain("When the next workday is in another week, `noticed` also holds");
 
     unregister();
     expect(readSkill("caius")).toBeNull();

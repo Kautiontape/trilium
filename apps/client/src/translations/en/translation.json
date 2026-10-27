@@ -2672,7 +2672,8 @@
     "rename_message": "Enter a new name for this chat:",
     "delete": "Delete",
     "delete_chat": "Delete chat",
-    "delete_confirm": "Delete this chat? This can't be undone."
+    "delete_confirm": "Delete this chat? This can't be undone.",
+    "opener_still_replying": "The chat is still replying. Try again in a moment."
   },
   "shared_switch": {
     "shared": "Shared",
@@ -4148,6 +4149,7 @@
       "caius_plan": "Read plan",
       "caius_open": "List open tasks",
       "caius_explain": "Explain task lane",
+      "caius_context": "Read context",
       "caius_add": "Add tasks",
       "caius_accept": "Accept suggested tasks",
       "caius_dismiss": "Dismiss suggested tasks",
@@ -4474,6 +4476,7 @@
       "duplicate": "This task is already open elsewhere in the Journal.",
       "edited": "The note changed while Caius was writing to it, so nothing was written. Try again.",
       "not_suggested": "Only a task under Suggested can be accepted or dismissed.",
+      "prose_section": "That heading holds notes, not tasks.",
       "same_day": "This task is already in that note.",
       "unreadable": "Caius cannot change this note: it is protected or not a text note.",
       "other": "Caius skipped this task: {{- reason}}"
@@ -4524,6 +4527,24 @@
       "closed_other": "Closed {{count}} tasks.",
       "result": "{{- text}}: {{- message}}",
       "not_applied": "Not applied: the batch stopped before this task."
-    }
+    },
+    "chat_off": "Caius plans in the AI chat, which is off. Turn on AI features in Options to use it.",
+    "plan_my_day": "Plan my day",
+    "wind_down": "Wind down",
+    "nudge": {
+      "catchup_one": "{{- weekday}} has {{count}} open task.",
+      "catchup_other": "{{- weekday}} has {{count}} open tasks.",
+      "move_all": "Move all to today",
+      "review": "Review",
+      "skip": "Skip",
+      "unplanned": "No plan yet.",
+      "planned": "Planned {{time}}.",
+      "refresh": "Refresh",
+      "hide": "Hide for today",
+      "moved_one": "Moved {{count}} task to today.",
+      "moved_other": "Moved {{count}} tasks to today.",
+      "planned_untimed": "Planned."
+    },
+    "chat_unavailable": "Open the sidebar chat from a regular note to start Caius."
   }
 }

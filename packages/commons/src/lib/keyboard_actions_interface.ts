@@ -78,6 +78,8 @@ const enum KeyboardActionNamesEnum {
     caiusTaskDone,
     caiusForwardTomorrow,
     caiusTaskDrop,
+    caiusPlanDay,
+    caiusWindDown,
     editReadOnlyNote,
     addNewLabel,
     addNewRelation,

@@ -6,8 +6,10 @@ For the method see [method.md](method.md); for using it see [README.md](README.m
 
 | Where | What |
 |---|---|
-| `packages/caius/` | The library. No Trilium imports. `core/` is the task-line grammar, `resolve/` the horizon rules, `index/` the scan, `trilium/` the note-level logic: `journal`, `plan`, `plan-read`, `plan-html`, `forward`, `forward-html`, `sections`, `keys`, `markdown`, `html-util`, `present`, and `store` (the `NoteStore` interface). It reaches notes only through that interface. |
+| `packages/caius/` | The library. No Trilium imports. `core/` is the task-line grammar, `resolve/` the horizon rules, `index/` the scan, `trilium/` the note-level logic: `journal`, `plan`, `plan-read`, `daynote`, `until`, `context`, `plan-html`, `forward`, `forward-html`, `sections`, `keys`, `markdown`, `html-util`, `present`, `brief-html`, and `store` (the `NoteStore` interface). `daily/` holds the pure parts of Wind down and Plan my day: `meetings`, `candidates`, `standing`, `blocks` and `format`. Beside them are `clock.ts` (the one place the time is read) and `workday.ts`. It reaches notes only through that interface. |
 | `apps/server/src/services/caius/` | `store.ts` (the becca `NoteStore` and the lock), `service.ts` (the operations), `schemas.ts` (zod inputs), `tools.ts` (the tool registry), `register.ts` (the defensive loader and the skill). |
+| `apps/server/src/services/caius/daily.ts`, `brief.ts` | The Wind down and Plan my day steps, and `caius_brief_write`. |
+| `apps/server/src/services/caius/weather.ts` | `fetchDayWeather()`: today's WMO code from Open-Meteo, `undefined` on any failure or after 3 s. |
 | `apps/server/src/routes/api/caius.ts` | The `/api/caius/*` routes. |
 | `apps/server/src/assets/llm/caius/skill.md` | The `caius` skill sheet. |
 | `apps/client/src/services/caius.ts` | The route client and the write protocol. |
@@ -37,6 +39,20 @@ The note's HTML becomes markdown only to be parsed: text is not escaped (so `~2h
 
 Each task gets a `section` (nearest heading above) and a `sectionKind`: `slot` for Morning / Afternoon / Evening, `area` for Foundation / Growth / Recharge, otherwise `group`. Names compare ignoring case, emoji and spacing. A task inside an Important block is critical: the derived markdown gets a trailing `!!!` (tier 3) and nothing is written back. Tasks under Suggested lose their checkbox in what the scanner sees, so they reach no horizon and no capacity.
 
+### Meetings and Context
+
+`buildDoc` finds the `### Meetings` and `### Context` sections with `ProseTracker` in `sections.ts`: a heading's level decides where one ends, and names compare like section names. Their lines lose any checkbox in both `text` and `fullText`, except lines in the Important block, so every reader (the scan, lanes, capacity, the duplicate check) sees plain bullets. The bullets are kept as `TriliumDoc.meetings` and `contextLines`. `readPlan` returns them as `meetings`, `context` and `expiredContext`.
+
+`parseContext` (`until.ts`) takes off a trailing `(until …)` that parses as a date: `Fri 6 Nov`, `6 Nov` or `2026-11-06`, a year-less one resolved forward to the next occurrence on or after the note's date (the previous one when that is over 300 days ahead). An unparseable suffix stays in the text. A line is expired when its date is before the plan's date: the day itself, or for a week or month note today when it falls in the period, else the nearer end of it.
+
+The HTML side refuses the same sections. `inProseSection` stops `forward` and the state changes from touching a to-do under them, `addTasks` and `acceptTasks` skip a placement that would land inside them (`prose_section`, checked on the resulting note), and `placeForwarded` and the template check skip their lists. A forwarded Important task goes to the target's Important block, which is created when missing. `replaceMeetings` splices a plain `<ul>` between the Meetings heading and the next heading of the same or a higher level, or the Important block; with no heading it adds one at the top, below a leading include-note. `setMeetings` writes it as a compare-and-swap, creating a missing day note unless it is a dry run (whose diff is then against an empty note, and says so). It answers `unchanged` when the bullet texts already match, and keeps the existing item ids by position otherwise. `caius_meetings` calls it under the lock. `withListItemIds` still gives an id to any other list item without one in that write.
+
+`gatherContext` (`context.ts`) reads the date's day note, the last three workday notes before it (`lastWorkday`), the current ISO week note and, on a Monday, last week's. It never creates a note and skips a missing, protected or non-text one. It keeps the newest of two lines with the same text, expired or not, then drops the expired ones, so a newer note that ends a line hides the older open-ended copy (compared ignoring case and spacing). A day note is dated by its day, a week note by its Monday, and a day beats a week that starts the same day. The service runs it as `caius_context`.
+
+### The clock
+
+Every read of the time goes through `now()` (`clock.ts`, exported as `caiusClock`). With `TRILIUM_ENV=dev` and `CAIUS_NOW` set it returns that local time; otherwise it returns the real one, which on the server is Trilium's own (`caiusNow()` in `service.ts`). `scanDocs`, `readPlan` and `addTasks` default to it. When the dev clock is set, `/api/caius/status` also answers `now`, and the client's `caiusNow()` (`services/caius.ts`) keeps the gap between that and the browser's clock. The Plan tab and the task actions read "today" from it. `nextWorkday` and `lastWorkday` (`workday.ts`) step over Saturday and Sunday; the Tomorrow fates stay the literal next day.
+
 ## `NoteStore` and its two adapters
 
 `NoteStore` (`packages/caius/src/trilium/store.ts`) is the whole of what the library needs from Trilium: `search`, `note`, `content`, `putContent`, `calendarDay` / `calendarWeek` / `calendarMonth`, and `addLabel`.
@@ -57,6 +73,12 @@ Each task gets a `section` (nearest heading above) and a `sectionKind`: `slot` f
 ### Async tools, no outer transaction
 
 The tool layer originally took only synchronous tools. It now also takes tools declared `async: true`, which MCP and the chat pipeline await. An async tool manages its own transactions, so there is **no transaction around a call**. The step 2 review found that an outer `transactionalAsync` breaks when an MCP batch or parallel tool calls start in the same tick, and that a failed nested write can hide earlier committed writes from open editors. (`caius_assign_ids` and the other writes set `mutates: true` and `async: true`.)
+
+## The day's drawing
+
+`renderDayTerrain()` (`packages/caius/src/draw/terrain.ts`) is a pure function from `{ start, end, events, work, workEnd?, weather? }` to an SVG string: a port of the daily brief's `brief-terrain`, with an evening divider and a weather icon added. It keeps `width`, `height` and `viewBox`, uses mid-tone colours that read on light and dark (an SVG attachment shows as an `<img>` and cannot see the theme), and sets every `font-size` so text is at least 11 px when shown 700 px wide. Every text is escaped. The weather icon comes from the WMO code (`weatherIcon()`).
+
+`caius_header` (`service.header`) fetches the weather first, outside the lock, then takes the lock, renders, and calls `putAttachment()` in `store.ts`. That function updates the note's attachment with the same role and title through `note.saveAttachment()`, or creates it, in one transaction. Attachments are not in `NoteStore`: the interface is note-level, and `etapiClient` would need an implementation of it too. `createCaiusService` and `createCaiusTools` take the weather fetcher as an optional argument, so tests never reach the network.
 
 ## The routes and the `stale` token
 
@@ -126,7 +148,52 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 
 ## Tools, skill and loading
 
-`tools.ts` is registered with `registerToolRegistryLoader`, which puts the nine tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
+`tools.ts` is registered with `registerToolRegistryLoader`, which puts the eighteen tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
+
+## `caius_inputs`
+
+`apps/server/src/services/caius/inputs/` holds `jira.ts`, `calendar.ts` and `index.ts` (`readInputs`). The capacity arithmetic is `dayCapacity` in `packages/caius/src/inputs/capacity.ts`. The tool reads no notes, so it does not take `withCaiusLock`: holding the lock across Jira and feed requests would stall the Plan tab. Each source takes `fetch`, the environment and the clock as arguments, and a spec runs on recorded files under `services/caius/fixtures/`.
+
+| Setting | Meaning |
+|---|---|
+| `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_TOKEN` | Jira Cloud site and basic-auth credentials. With any unset the Jira source answers `not_configured`. |
+| `CAIUS_ICAL_URLS` | Comma-separated secret iCal URLs. Unset answers `calendar: not_configured`. |
+| `CAIUS_USER_EMAILS` | Optional, comma-separated. Addresses that count as you when reading an attendee's `PARTSTAT`, in addition to `JIRA_EMAIL`. |
+
+- **Jira.** REST v3 with a 10 s timeout per request. A 429, 502, 503 or 504 is retried once after `Retry-After` (at most 5 s, else 1 s). The identity and the two searches are fatal; a failure on one ticket's comments or changelog is not (`asks_partial`, `handoff_partial`). At most 80 tickets are scanned for asks (`asks_truncated`) and each search stops at 10 pages (`search_truncated`). Comments and changelogs are fetched four at a time. The search window is `updated >= -8d`; the exact 7 days are applied to each comment. Ticket keys in Context lines match in any case. Issues come from `/search/jql` and are followed with `nextPageToken`; comments and the changelog page with `startAt`. `HANDOFF_STATUSES` (`jira.ts`) is compared case-insensitively and in full, so "QA" alone matches none of the longer QA statuses. `daysInStatus` is the age of the last changelog move into the current status, else of `statuscategorychangedate`. A comment mentions you when it has a `mention` node with your account id. Errors are codes (`not_configured`, `http_401`, `timeout`, `network`, `bad_response`); they never carry a URL, header or token.
+- **Calendar.** `ical.js` expands RRULE and EXDATE, and a RECURRENCE-ID override stands as its own event at its new time. Times are the server's local time; a `VTIMEZONE` in the feed is registered before reading. Cancelled events are skipped. All-day events read `00:00`–`24:00` and never count as booked. Events with the same title and start are merged across feeds and within one feed, sources combined, and one decline marks the merged event declined. Overlap is strict: back-to-back meetings don't overlap. A cancelled instance (STATUS:CANCELLED with a RECURRENCE-ID) removes its slot from the master. A feed's error is `feed_<index>_<http_NNN|timeout|network|parse>`, and `feed_<index>_unknown_tz` is a warning; the URL is never reported.
+- **Capacity.** Booked time is the union of the non-declined timed meetings clipped to the window, so overlapping meetings count once.
+
+## Wind down and Plan my day
+
+**The pure parts** live in `packages/caius/src/daily/`:
+- `meetingLines` and `overlapPairs` (`meetings.ts`) turn calendar events into the Meetings block's clock lines and the overlapping pairs.
+- `readRhythm` and `sectionOf` (`standing.ts`) read the standing note's markdown.
+- `layoutWork` (`blocks.ts`) places the main list in the free time.
+- `dayCandidates`, `liveKeys` and `keysOf` (`candidates.ts`) hold the candidate rules.
+
+`addContext` and `addContextLine` sit beside `setMeetings` in `daynote.ts`, and the brief's markup is built by `brief-html.ts`.
+
+**Keys.** `keysOf` derives a task's keys the way `caius_add` and `caius_dismiss` do: its Jira keys and links, else a hash of its text. A candidate that was suggested and then dismissed therefore matches the `#caiusDismissed` label. A Jira candidate's key is its ticket key, which is what `caius_add` stores for `source`.
+
+**The steps** are in `apps/server/src/services/caius/daily.ts`, behind two service entry points. Neither holds the lock across the network.
+1. `dayRead` reads the Context in force (`gatherContext`) and the standing note under the lock.
+2. It then calls `caius_inputs` outside the lock.
+3. Each step reads the notes it needs under the lock again.
+
+The lock is never taken twice by one call, since it isn't re-entrant.
+
+**The inputs cache** lives in the service instance. Its key is the whole `caius_inputs` input (date, Context lines and the work window from the Rhythm), so an answer read without the Context's overrides is never reused for one that needs them. An entry lasts `INPUTS_TTL_MS` (15 minutes), timed on the real clock (`Date.now`, injectable), since the dev clock `CAIUS_NOW` stands still. An answer with an error that `isInputWarning` (`inputs/index.ts`) does not call a warning is not stored, so a failed source is tried again on the next call. `createCaiusService` and `createCaiusTools` take the inputs reader as an argument, as they do the weather fetcher, so specs stub `caius_inputs`.
+
+**Lanes in the wind-down.** `open` works out lanes from noon of `date`, not from now, so a wind-down run the next morning still treats `date` as today.
+
+**`caius_brief_write`** (`brief.ts`) finds the brief as the push script does: a child of the day note labelled `#morningBrief=<date>` without `#morningBriefPage` or `#morningBriefRevision`. It reads the day note's children rather than searching, since a search leaves protected notes out. It finds the header as the brief's child titled `Header`. A protected brief or Header, or a protected child of the brief whose title can't be read, gets `{ error: "bad_request" }` before anything is written. `#caiusPlannedAt` is set only after all three content writes went through, so a write that lost its compare-and-swap leaves the previous plan's time, and the answer's `plannedAt` is null. `NoteStore` can neither create a child note nor set a label in place, so two helpers sit beside `putAttachment` in `store.ts`:
+- `createChildNote` creates the note through `noteService.createNewNote`.
+- `setLabel` sets a label through `BNote.setLabel`, so a re-run replaces `#caiusPlannedAt` instead of adding a second one.
+
+Each runs in its own transaction. Content goes through the store's compare-and-swap. The sections go through `markdownImportService.renderToHtml`, as the note tools' markdown does. The drawing step is `drawHeader`, shared with `caius_header`. `withInclude` adds the include-note (`data-box-size="full"`, as the demo stores it) only when no include-note of the header is anywhere in the day note.
+
+**Strings.** The questions, the reasons, the date line and the pick line are in the server catalogue under `caius.brief.*` and `caius.daily.*`. The `(until …)` suffix is not, because `parseContext` reads it back in English.
 
 ## Not done
 

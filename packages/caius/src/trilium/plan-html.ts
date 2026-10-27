@@ -5,7 +5,7 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { isSuggestedName, normName } from './sections.js';
+import { isSuggestedName, normName, ProseTracker } from './sections.js';
 import {
   apply,
   checkboxEdit,
@@ -13,7 +13,9 @@ import {
   elements,
   findItem,
   isCriticalAside,
+  inProseSection,
   isHeading,
+  isIncludeNote,
   isPlaceholder,
   isTask,
   isTodoList,
@@ -64,9 +66,16 @@ function insertInList(html: string, list: HTMLElement, item: string, position?: 
   return insertAt(at, item);
 }
 
+/** Whether the item with this id sits inside a Meetings or Context section of `html`. */
+export function inProseById(html: string, id: string): boolean {
+  const root = parse(html, { comment: true });
+  const li = findItem(root, id);
+  return !!li && inProseSection(root, li);
+}
+
 /** True when the note has a task outside Suggested, so an untouched template can be told apart. */
 function hasRealTasks(root: HTMLElement): boolean {
-  return root.querySelectorAll('li').some((li) => isTask(li) && !isSuggestedName(sectionOf(root, li)));
+  return root.querySelectorAll('li').some((li) => isTask(li) && !isSuggestedName(sectionOf(root, li)) && !inProseSection(root, li));
 }
 
 /** Level for a header Caius creates: one below the template's lone title, else the level in use. */
@@ -75,6 +84,28 @@ function newHeaderLevel(top: HTMLElement[]): number {
   if (!heads.length) return 2;
   if (heads.length === 1) return normName(heads[0]!.text) === 'tasks' ? Math.min(levelOf(heads[0]!) + 1, 6) : levelOf(heads[0]!);
   return Math.max(...heads.map(levelOf));
+}
+
+/** A paragraph or plain list whose only text is the template's `[…]`. */
+const isFiller = (el: HTMLElement) => isPlaceholder(el) || (el.tagName === 'P' && /^\[(…|\.{3})\]$/.test(el.text.trim()));
+
+/**
+ * Where a new Important block goes: below a leading include-note and any Meetings and Context
+ * blocks, just above the first other content.
+ */
+function importantBlockAt(top: HTMLElement[]): number {
+  let at = 0;
+  const tracker = new ProseTracker();
+  for (const [i, el] of top.entries()) {
+    if (i === 0 && isIncludeNote(el)) at = el.range[1];
+    else if (isHeading(el)) {
+      tracker.enter(el.text, levelOf(el));
+      if (!tracker.kind) break;
+      at = el.range[1];
+    } else if (tracker.kind) at = el.range[1];
+    else break;
+  }
+  return at;
 }
 
 /**
@@ -107,8 +138,11 @@ export function placeTask(html: string, item: string, target: Target, position?:
     const aside = top.find(isCriticalAside);
     const list = aside && elements(aside).find(isTodoList);
     if (aside && list) edits.push(insertInList(html, list, item, position));
-    else if (aside) edits.push(insertAt(aside.range[1] - '</aside>'.length, newList(item)));
-    else edits.push(insertAt(0, `<aside class="admonition important">${newList(item)}</aside>`));
+    else if (aside) {
+      // The template's `[…]` stands in for the first task, so it goes when that arrives.
+      for (const filler of elements(aside).filter(isFiller)) edits.push({ start: filler.range[0], end: filler.range[1], text: '' });
+      edits.push(insertAt(aside.range[1] - '</aside>'.length, newList(item)));
+    } else edits.push(insertAt(importantBlockAt(top), `<aside class="admonition important">${newList(item)}</aside>`));
   } else if (target.kind === 'suggested') {
     if (suggestedIdx >= 0) intoHeading(suggestedIdx);
     else {
@@ -133,11 +167,13 @@ export function placeTask(html: string, item: string, target: Target, position?:
 
 /**
  * Where `forward` puts a copy: the list under the header with the same name,
- * else the first task list outside the critical block and Suggested, else a new
+ * else the first task list outside the critical block, Suggested, Meetings and Context (an Important
+ * item goes to the target's Important block instead), else a new
  * "Tasks" list (above Suggested). An untouched template's placeholder is
  * replaced rather than left above the new list.
  */
-export function placeForwarded(html: string, item: string, section: string | null): string {
+export function placeForwarded(html: string, item: string, section: string | null, important = false): string {
+  if (important) return placeTask(html, item, { kind: 'critical' });
   const root = parse(html, { comment: true });
   const top = elements(root);
   const intoFound = (found: { list?: HTMLElement; placeholder?: HTMLElement }, headingEnd: number): string => {
@@ -147,13 +183,22 @@ export function placeForwarded(html: string, item: string, section: string | nul
   };
 
   if (section) {
-    const i = top.findIndex((e) => isHeading(e) && norm(e.text) === norm(section) && !isSuggestedName(e.text));
+    const tracker = new ProseTracker();
+    const i = top.findIndex((e) => {
+      if (!isHeading(e)) return false;
+      tracker.enter(e.text, levelOf(e));
+      return norm(e.text) === norm(section) && !isSuggestedName(e.text) && !tracker.kind;
+    });
     if (i >= 0) return intoFound(scanSection(top, i), top[i]!.range[1]);
   }
 
   let inSuggested = false;
+  const tracker = new ProseTracker();
   for (const el of top) {
-    if (isHeading(el)) inSuggested = isSuggestedName(el.text);
+    if (isHeading(el)) {
+      inSuggested = isSuggestedName(el.text);
+      tracker.enter(el.text, levelOf(el));
+    } else if (tracker.kind) continue;
     else if (!inSuggested && isTodoList(el)) return apply(html, [insertInList(html, el, item)]);
     else if (!inSuggested && isPlaceholder(el)) return apply(html, [{ start: el.range[0], end: el.range[1], text: newList(item) }]);
   }
@@ -162,7 +207,7 @@ export function placeForwarded(html: string, item: string, section: string | nul
   return suggested ? apply(html, [insertAt(suggested.range[0], block)]) : html + block;
 }
 
-export type TakeProblem = 'not_found' | 'not_suggested';
+export type TakeProblem = 'not_found' | 'not_live' | 'not_suggested';
 
 /** A task item under the Suggested heading: its markup, text and links. */
 export interface SuggestedItem {
@@ -174,6 +219,7 @@ export interface SuggestedItem {
 function suggestedLi(root: HTMLElement, id: string): { li: HTMLElement } | { reason: TakeProblem } {
   const li = findItem(root, id);
   if (!li || !isTask(li)) return { reason: 'not_found' };
+  if (inProseSection(root, li)) return { reason: 'not_live' };
   const nested = li.parentNode?.parentNode;
   if (nested instanceof HTMLElement && nested.tagName === 'LI') return { reason: 'not_suggested' };
   if (!isSuggestedName(sectionOf(root, li))) return { reason: 'not_suggested' };
@@ -234,6 +280,7 @@ export function setTaskState(
   const root = parse(html, { comment: true });
   const li = findItem(root, id);
   if (!li || !isTask(li)) return { ok: false, reason: 'not_found' };
+  if (inProseSection(root, li)) return { ok: false, reason: 'not_live' };
   const from = itemState(li, opts.states);
   const same = { done: 'done', start: 'doing', drop: 'cancelled' }[action] as ItemState;
   if (from === same) return { ok: false, reason: `already_${same}` as StateProblem, from };
