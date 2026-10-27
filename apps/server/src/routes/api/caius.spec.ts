@@ -139,11 +139,14 @@ describe("Caius routes", () => {
         await post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t4", to: "tomorrow" }] }).expect(400);
     });
 
-    it("assigns missing list item ids, dry run first", async () => {
+    it("assigns missing list item ids, as a dry run unless told otherwise", async () => {
         const dry = await post("/api/caius/assign-ids", { dryRun: true }).expect(200);
         expect(dry.body).toMatchObject({ dryRun: true, notes: 1, added: 1, results: [{ noteId: noteIds.older, items: ["Older task"] }] });
 
-        const real = await post("/api/caius/assign-ids", {}).expect(200);
+        expect((await post("/api/caius/assign-ids", {}).expect(200)).body).toMatchObject({ dryRun: true, added: 1 });
+        expect(await store.content(noteIds.older)).toBe("<ul><li>Older task</li></ul>");
+
+        const real = await post("/api/caius/assign-ids", { dryRun: false }).expect(200);
         expect(real.body).toMatchObject({ notes: 1, added: 1 });
         expect(await store.content(noteIds.older)).toMatch(/^<ul><li data-list-item-id="e[0-9a-f]{32}">Older task<\/li><\/ul>$/);
         await post("/api/caius/assign-ids", { dryRun: "yes" }).expect(400);

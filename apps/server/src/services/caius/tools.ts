@@ -77,7 +77,7 @@ export function createCaiusTools(store?: NoteStore) {
         },
 
         caius_assign_ids: {
-            description: "Give every list item in the Journal that has no list item id a stable one, so the caius_* tools and Trilium's task actions can target it. Reports, per note, how many items get an id and, on a dry run, their text. Run it as a dry run first.",
+            description: "Give every list item in the Journal that has no list item id a stable one, so the caius_* tools and Trilium's task actions can target it. Reports, per note, how many items get an id and, on a dry run, their text. It is a dry run unless dryRun is false; show that first.",
             inputSchema: toolInputs.assignIds,
             async: true,
             mutates: true,

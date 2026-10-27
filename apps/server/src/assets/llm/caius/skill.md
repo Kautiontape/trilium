@@ -36,7 +36,7 @@ Every write tool takes an `items` list. Every write also takes `dryRun`, and `ht
 | `caius_dismiss` | Remove a Suggested item and keep it from being suggested again on that note. | `{ "items": [{ "noteId": "abc", "listItemId": "e123" }] }` |
 | `caius_set_state` | Mark tasks `done`, `doing` or `cancelled`. Cancelled needs a `reason`. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "state": "cancelled", "reason": "no longer needed" }] }` |
 | `caius_forward` | Move a task to another day, week or month. The old copy is marked Rescheduled with a link; an open copy appears under the same header in the target. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "to": "2026-W45" }] }` |
-| `caius_assign_ids` | Give every Journal list item that has no `listItemId` one, so the other tools can target it. Reports per note how many items get an id and, on a dry run, their text. Only when Shawn asks, dry run first. | `{ "dryRun": true }` |
+| `caius_assign_ids` | Give every Journal list item that has no `listItemId` one, so the other tools can target it. Reports per note how many items get an id and, on a dry run, their text. It is a dry run unless `dryRun` is `false`. Only when Shawn asks; show him the dry run first. | `{}` for the dry run, then `{ "dryRun": false }` |
 
 `noteId` and `listItemId` always come from `caius_plan` or `caius_open`. Never guess them.
 

@@ -180,7 +180,7 @@ describe("caius tools", () => {
         }
     });
 
-    it("caius_assign_ids fills missing list item ids across the Journal, dry run first, and then has nothing to do", async () => {
+    it("caius_assign_ids fills missing list item ids across the Journal, as a dry run unless told otherwise, and then has nothing to do", async () => {
         const bare = `<h3>Work</h3><ul class="todo-list">${li("", "First bare").replace(' data-list-item-id=""', "")}`
             + `${li("kept", "Has one")}</ul><ul><li>Bullet<ol><li>Nested</li></ol></li></ul>`;
         const noteId = await cls.init(async () => {
@@ -201,13 +201,16 @@ describe("caius tools", () => {
         expect(full).toMatchObject({ before: bare, after: expect.stringContaining("data-list-item-id=\"e") });
         expect(full).not.toHaveProperty("changes");
 
-        const real = await call("caius_assign_ids", {});
+        expect(await call("caius_assign_ids", {})).toMatchObject({ dryRun: true, notes: 1, added: 3 });
+        expect(await store.content(noteId)).toBe(bare);
+
+        const real = await call("caius_assign_ids", { dryRun: false });
         expect(real).toMatchObject({ notes: 1, added: 3, results: [{ noteId, added: 3, status: "updated" }] });
         const filled = await store.content(noteId);
         expect(filled.match(/data-list-item-id="e[0-9a-f]{32}"/g)).toHaveLength(3);
         expect(filled).toContain('data-list-item-id="kept"');
 
-        expect(await call("caius_assign_ids", {})).toEqual({ notes: 0, added: 0, results: [] });
+        expect(await call("caius_assign_ids", { dryRun: false })).toEqual({ notes: 0, added: 0, results: [] });
         expect(await store.content(noteId)).toBe(filled);
     });
 
@@ -226,7 +229,7 @@ describe("caius tools", () => {
         };
         const [, assignIds] = [...createCaiusTools(racing)].find(([name]) => name === "caius_assign_ids") ?? [];
 
-        const result = await cls.init(() => assignIds?.execute({}) as Promise<any>);
+        const result = await cls.init(() => assignIds?.execute({ dryRun: false }) as Promise<any>);
 
         expect(result.results).toEqual([expect.objectContaining({ noteId, status: "skipped", reason: "edited", added: 1 })]);
         expect(await store.content(noteId)).toBe("<p>Edited by hand</p>");

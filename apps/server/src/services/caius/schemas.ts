@@ -83,7 +83,10 @@ const reads = {
         limit: z.number().int().positive().optional().describe(`Maximum number of tasks to return. Defaults to ${DEFAULT_OPEN_LIMIT}.`)
     }),
     explain: z.object(taskRef),
-    assignIds: z.object({ dryRun, html })
+    assignIds: z.object({
+        dryRun: z.boolean().default(true).describe("Report what would change without writing anything. Defaults to true; pass false to write."),
+        html
+    })
 };
 
 export const toolInputs = {
