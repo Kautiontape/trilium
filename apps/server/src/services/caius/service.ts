@@ -35,6 +35,7 @@ import {
     withListItemIds
 } from "@triliumnext/caius";
 import { becca, date_utils as dateUtils } from "@triliumnext/core";
+import { t } from "i18next";
 
 import {
     type AcceptInput,
@@ -96,7 +97,8 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
                 return {
                     noteId, listItemId, lane: "suggested", period,
                     rule: "Suggested section",
-                    source: "The task is under the note's Suggested heading, so it is not part of any lane until accepted"
+                    source: "The task is under the note's Suggested heading, so it is not part of any lane until accepted",
+                    summary: t("caius.explain.suggested")
                 };
             }
 
@@ -109,7 +111,8 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
             return {
                 noteId, listItemId, text: task.text, state: task.state, period,
                 lane: horizon.value, rule: horizon.rule, source: horizon.source,
-                ...(lateBy === null ? {} : { daysLate: lateBy })
+                ...(lateBy === null ? {} : { daysLate: lateBy }),
+                summary: explainSummary(horizon.value, horizon.rule, horizon.source, lateBy)
             };
         }),
 
@@ -191,6 +194,55 @@ function currentKey(period: "day" | "week" | "month", now: Date): string {
     const week = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
     return `${thursday.getUTCFullYear()}-W${pad(week)}`;
 }
+
+/**
+ * One sentence on why a task sits in its lane, such as "Overdue by 3 days: it's in the day note for
+ * Monday 26 October, which is past." It reads the period and how it relates to now from `source`
+ * (`past day 2026-10-26 vs now`), and falls back to `rule` and `source` for any other horizon rule.
+ */
+export function explainSummary(lane: string, rule: string, source: string, lateBy: number | null): string {
+    const laneLabel = lane === "overdue" && lateBy
+        ? t("caius.explain.overdue_by", { count: lateBy })
+        : t(`caius.explain.lane.${lane}`, { defaultValue: lane.replaceAll("_", " ") });
+    const { relation, unit, key } = source.match(
+        /^(?<relation>past|current|future) (?<unit>day|week|month) (?<key>\S+) vs now$/
+    )?.groups ?? {};
+    if (!relation || !unit || !key) {
+        return t("caius.explain.other", { lane: laneLabel, rule, source });
+    }
+
+    return t(`caius.explain.${relation}.${unit}`, { lane: laneLabel, period: periodName(unit, key) });
+}
+
+/** "Monday 26 October", "week 43 of 2026" or "October 2026", with names from the server catalogue. */
+function periodName(unit: string, key: string): string {
+    const day = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (unit === "day" && day) {
+        const [year, month, date] = day.slice(1).map(Number) as [number, number, number];
+        const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, date)).getUTCDay()] ?? "";
+        return t("caius.explain.day_name", {
+            weekday: t(`weekdays.${weekday}`), day: date, month: t(`months.${MONTHS[month - 1] ?? ""}`)
+        });
+    }
+
+    const week = key.match(/^(\d{4})-W(\d{2})$/);
+    if (unit === "week" && week) {
+        return t("caius.explain.week_name", { week: Number(week[2]), year: week[1] });
+    }
+
+    const month = key.match(/^(\d{4})-(\d{2})$/);
+    if (unit === "month" && month) {
+        return t("caius.explain.month_name", { month: t(`months.${MONTHS[Number(month[2]) - 1] ?? ""}`), year: month[1] });
+    }
+
+    return key;
+}
+
+const WEEKDAYS = [ "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday" ];
+const MONTHS = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december"
+];
 
 /** One note's part in `assignIds`. */
 interface AssignIdsResult {

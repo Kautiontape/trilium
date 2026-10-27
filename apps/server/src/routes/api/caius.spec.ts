@@ -2,6 +2,7 @@ import { becca, cls } from "@triliumnext/core";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { type ApiTestContext, bootLoggedInApp } from "../../../spec/support/internal_api.js";
+import { explainSummary } from "../../services/caius/service.js";
 import { createBeccaStore, withCaiusLock } from "../../services/caius/store.js";
 
 const li = (id: string, text: string) =>
@@ -58,7 +59,11 @@ describe("Caius routes", () => {
 
     it("explains a task, and answers 404 and 400", async () => {
         const explained = await get(`/api/caius/explain?noteId=${noteIds.past}&listItemId=o1`).expect(200);
-        expect(explained.body).toMatchObject({ lane: "overdue", daysLate: 2 });
+        expect(explained.body).toMatchObject({
+            lane: "overdue", daysLate: 2,
+            summary: "Overdue by 2 days: it's in the day note for Sunday 4 May, which is past."
+        });
+        expect(explained.body.rule).toContain("past");
 
         await get(`/api/caius/explain?noteId=${noteIds.past}&listItemId=nope`).expect(404);
         await get(`/api/caius/explain?noteId=${noteIds.past}`).expect(400);
@@ -80,13 +85,28 @@ describe("Caius routes", () => {
         expect(bad.body.message).toContain("Give exactly one of date, week or month");
     });
 
-    it("accepts and dismisses Suggested items, and skips an item whose note changed as stale", async () => {
+    it("summarizes why a task is in its lane", () => {
+        expect(explainSummary("overdue", "", "past day 2031-05-05 vs now", 1))
+            .toBe("Overdue by 1 day: it's in the day note for Monday 5 May, which is past.");
+        expect(explainSummary("today", "", "current day 2031-05-06 vs now", null))
+            .toBe("Today: it's in the day note for Tuesday 6 May, which is today.");
+        expect(explainSummary("orbit", "", "future week 2031-W20 vs now", null))
+            .toBe("In orbit: it's in the note for week 20 of 2031, which is still ahead.");
+        expect(explainSummary("orbit", "", "current month 2031-05 vs now", null))
+            .toBe("In orbit: it's in the month note for May 2031, which is this month.");
+        expect(explainSummary("later", "default", "no horizon rule matched", null))
+            .toBe("later: default (no horizon rule matched).");
+    });
+
+    it("accepts and dismisses Suggested items, skips an item whose note changed as stale, and skips the check without expectedBlobId", async () => {
         const stale = await post("/api/caius/dismiss", { items: [{ noteId: noteIds.today, listItemId: "s2", expectedBlobId: "an-old-blob" }] }).expect(200);
         expect(stale.body.results).toEqual([{ noteId: noteIds.today, listItemId: "s2", status: "skipped", reason: "stale", blobId: blobOf(noteIds.today) }]);
         expect(await store.content(noteIds.today)).toContain("Dismiss me");
 
+        const blobBeforeAccept = blobOf(noteIds.today);
         const accepted = await post("/api/caius/accept", { items: [{ noteId: noteIds.today, listItemId: "s1", section: "Work", expectedBlobId: blobOf(noteIds.today) }] }).expect(200);
         expect(accepted.body.results[0]).toMatchObject({ status: "accepted" });
+        expect(blobOf(noteIds.today)).not.toBe(blobBeforeAccept);
 
         const dismissed = await post("/api/caius/dismiss", { items: [{ noteId: noteIds.today, listItemId: "s2" }] }).expect(200);
         expect(dismissed.body.results[0]).toMatchObject({ status: "dismissed" });

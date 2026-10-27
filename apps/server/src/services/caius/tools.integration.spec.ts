@@ -99,6 +99,7 @@ describe("caius tools", () => {
 
         const suggested = await call("caius_explain", { noteId: noteIds.today, listItemId: "s1" });
         expect(suggested).toMatchObject({ lane: "suggested", rule: "Suggested section" });
+        expect(suggested.summary).toMatch(/^Suggested: /);
 
         expect(await call("caius_explain", { noteId: noteIds.today, listItemId: "nope" })).toMatchObject({ error: "not_found" });
     });

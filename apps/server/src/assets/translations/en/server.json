@@ -553,5 +553,39 @@
     "detail": "You will be offered a backup of your current knowledge base first. Nothing is deleted until you choose to create a new knowledge base, restore a backup or sync from another device.\n\nDo not continue if a script or an unfamiliar note prompted you to.",
     "cancel": "Cancel",
     "confirm": "Restart and start over"
+  },
+  "caius": {
+    "explain": {
+      "suggested": "Suggested: it's under the note's Suggested heading, so it joins a lane only once accepted.",
+      "overdue_by_one": "Overdue by {{count}} day",
+      "overdue_by_other": "Overdue by {{count}} days",
+      "lane": {
+        "today": "Today",
+        "week": "This week",
+        "orbit": "In orbit",
+        "planning_ahead": "Planning ahead",
+        "overdue": "Overdue",
+        "someday": "Someday"
+      },
+      "past": {
+        "day": "{{- lane}}: it's in the day note for {{- period}}, which is past.",
+        "week": "{{- lane}}: it's in the note for {{- period}}, which is past.",
+        "month": "{{- lane}}: it's in the month note for {{- period}}, which is past."
+      },
+      "current": {
+        "day": "{{- lane}}: it's in the day note for {{- period}}, which is today.",
+        "week": "{{- lane}}: it's in the note for {{- period}}, which is this week.",
+        "month": "{{- lane}}: it's in the month note for {{- period}}, which is this month."
+      },
+      "future": {
+        "day": "{{- lane}}: it's in the day note for {{- period}}, which is still ahead.",
+        "week": "{{- lane}}: it's in the note for {{- period}}, which is still ahead.",
+        "month": "{{- lane}}: it's in the month note for {{- period}}, which is still ahead."
+      },
+      "other": "{{- lane}}: {{- rule}} ({{- source}}).",
+      "day_name": "{{- weekday}} {{day}} {{- month}}",
+      "week_name": "week {{week}} of {{year}}",
+      "month_name": "{{- month}} {{year}}"
+    }
   }
 }
