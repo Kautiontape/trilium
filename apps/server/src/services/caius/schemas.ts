@@ -83,6 +83,9 @@ const reads = {
         limit: z.number().int().positive().optional().describe(`Maximum number of tasks to return. Defaults to ${DEFAULT_OPEN_LIMIT}.`)
     }),
     explain: z.object(taskRef),
+    context: z.object({
+        date: periodKey("day").describe("The day to gather Context for, YYYY-MM-DD")
+    }),
     assignIds: z.object({
         dryRun: z.boolean().default(true).describe("Report what would change without writing anything. Defaults to true; pass false to write."),
         html
@@ -121,6 +124,7 @@ export const routeInputs = {
 export type PlanInput = z.infer<typeof reads.plan>;
 export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;
+export type ContextInput = z.infer<typeof reads.context>;
 export type AssignIdsInput = z.infer<typeof reads.assignIds>;
 export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;

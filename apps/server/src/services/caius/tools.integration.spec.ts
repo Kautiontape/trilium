@@ -52,15 +52,15 @@ beforeAll(async () => {
 afterAll(() => vi.useRealTimers());
 
 describe("caius tools", () => {
-    it("lists the nine tools, with reads non-mutating and writes async and mutating", () => {
+    it("lists the ten tools, with reads non-mutating and writes async and mutating", () => {
         const defs = new Map([...caiusTools]);
         expect([...defs.keys()]).toEqual([
-            "caius_plan", "caius_open", "caius_explain", "caius_add",
+            "caius_plan", "caius_open", "caius_explain", "caius_context", "caius_add",
             "caius_accept", "caius_dismiss", "caius_set_state", "caius_forward", "caius_assign_ids"
         ]);
         for (const [name, def] of defs) {
             expect(def.async).toBe(true);
-            expect(!!def.mutates).toBe(!["caius_plan", "caius_open", "caius_explain"].includes(name));
+            expect(!!def.mutates).toBe(!["caius_plan", "caius_open", "caius_explain", "caius_context"].includes(name));
         }
     });
 

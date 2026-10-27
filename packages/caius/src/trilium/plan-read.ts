@@ -39,7 +39,7 @@ export function isPeriodKey(kind: PeriodKind, key: string): boolean {
 const DAY_MS = 86_400_000;
 
 /** `YYYY-Www` for a UTC date: the year and number of its week's Thursday. */
-function isoWeekKey(date: Date): string {
+export function isoWeekKey(date: Date): string {
   const thursday = new Date(date.getTime() + (3 - ((date.getUTCDay() + 6) % 7)) * DAY_MS);
   const year = thursday.getUTCFullYear();
   const week = Math.ceil(((thursday.getTime() - Date.UTC(year, 0, 1)) / DAY_MS + 1) / 7);

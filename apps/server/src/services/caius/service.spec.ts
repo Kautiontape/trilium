@@ -53,6 +53,23 @@ describe("the caius service writing Meetings", () => {
     });
 });
 
+describe("the caius service reading Context", () => {
+    const note = {
+        noteId: "d", title: "d", type: "text", isProtected: false, parentNoteIds: [], childNoteIds: [],
+        attributes: [ { type: "label", name: "dateNote", value: "2026-11-06" } ], utcDateModified: ""
+    };
+    const store = {
+        search: async () => [ note ],
+        note: async () => note,
+        content: async () => "<h3>Context</h3><ul><li>Jaco out (until Fri 6 Nov)</li><li>Gone (until 5 Nov)</li></ul>"
+    } as unknown as NoteStore;
+
+    it("returns the lines in force for the day", async () => {
+        const answer = await createCaiusService(store).context({ date: "2026-11-06" });
+        expect(answer.context.map((line) => line.text)).toEqual([ "Jaco out" ]);
+    });
+});
+
 describe("caiusNow", () => {
     it("takes CAIUS_NOW under TRILIUM_ENV=dev and Trilium's local time otherwise", () => {
         const dev = caiusNow({ TRILIUM_ENV: "dev", CAIUS_NOW: "2026-11-06T17:30" });

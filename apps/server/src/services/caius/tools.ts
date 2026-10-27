@@ -36,6 +36,13 @@ export function createCaiusTools(store?: NoteStore) {
             execute: parsed(toolInputs.explain, service.explain)
         },
 
+        caius_context: {
+            description: "Read the Context in force for a day: the Context lines of that day's note, the last three workday notes, the current week note and, on a Monday, last week's. Expired lines are left out, and a line in several notes is returned once. Use it to see what is known about the state of things before planning a day.",
+            inputSchema: toolInputs.context,
+            async: true,
+            execute: parsed(toolInputs.context, service.context)
+        },
+
         caius_add: {
             description: "Add tasks to a day, week or month note, in a section, the Important block or the Suggested section. Takes a list of items.",
             inputSchema: toolInputs.add,

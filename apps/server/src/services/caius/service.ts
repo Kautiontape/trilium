@@ -20,6 +20,7 @@ import {
     dismissTasks,
     ensureListItemIds,
     forwardTasks,
+    gatherContext,
     isPeriodKey,
     listItemsWithoutIds,
     loadJournal,
@@ -45,6 +46,7 @@ import {
     type AddInput,
     type ApplyInput,
     type AssignIdsInput,
+    type ContextInput,
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
     type ExplainInput,
@@ -125,6 +127,8 @@ export function createCaiusService(baseStore: NoteStore = createBeccaStore()) {
                 summary: explainSummary(horizon.value, horizon.rule, horizon.source, lateBy)
             };
         }),
+
+        context: ({ date }: ContextInput) => withCaiusLock("caius_context", () => gatherContext(store, date)),
 
         add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => withBlobIds(
             (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html))

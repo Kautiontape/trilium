@@ -4148,6 +4148,7 @@
       "caius_plan": "Read plan",
       "caius_open": "List open tasks",
       "caius_explain": "Explain task lane",
+      "caius_context": "Read context",
       "caius_add": "Add tasks",
       "caius_accept": "Accept suggested tasks",
       "caius_dismiss": "Dismiss suggested tasks",

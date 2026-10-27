@@ -31,6 +31,7 @@ Every write tool takes an `items` list. Every write also takes `dryRun`, and `ht
 | `caius_plan` | Read one period's sections, tasks, estimates and capacity. | `{ "period": "day", "date": "2026-10-27" }` (date defaults to the current period) |
 | `caius_open` | List open tasks across the Journal by lane, with `noteId`, `listItemId` and `daysLate`. Lanes: overdue, today, week, orbit, planning_ahead, someday, suggested. | `{ "lane": "overdue", "limit": 20 }` |
 | `caius_explain` | Say why a task sits in its lane. | `{ "noteId": "abc", "listItemId": "e123" }` |
+| `caius_context` | Read the Context in force for a day: its note's Context lines, the last three workday notes' and the week note's (last week's too on a Monday), expired lines dropped. | `{ "date": "2026-11-09" }` |
 | `caius_add` | Add a task to a period, under a section, in the critical block, or under Suggested. | `{ "items": [{ "date": "2026-10-27", "section": "Work", "text": "Write the spec", "est": "1h" }] }` |
 | `caius_accept` | Move a Suggested item up under a section or into the critical block. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "section": "Work", "position": 1 }] }` |
 | `caius_dismiss` | Remove a Suggested item and keep it from being suggested again on that note. | `{ "items": [{ "noteId": "abc", "listItemId": "e123" }] }` |
