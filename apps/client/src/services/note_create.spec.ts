@@ -6,6 +6,9 @@ import noteAttributeCache from "./note_attribute_cache.js";
 import server from "./server.js";
 import ws from "./ws.js";
 
+const logError = vi.fn();
+vi.stubGlobal("logError", logError);
+
 // ---- Mocks for non-froca collaborators --------------------------------------
 // All mock state lives in a hoisted holder so the (hoisted) vi.mock factories
 // can safely reference it.
@@ -178,7 +181,7 @@ describe("createNote", () => {
 
     it("parses a heading selection into title/content and removes the selection (text context)", async () => {
         setActiveContext(true);
-        const removeSelection = vi.fn();
+        const removeSelection = vi.fn(async () => {});
         const textEditor = {
             getSelectedHtml: () => "<h2>My Heading</h2><p>body</p>",
             removeSelection
@@ -197,11 +200,29 @@ describe("createNote", () => {
         expect(removeSelection).toHaveBeenCalled();
     });
 
+    it("handles a failed save of the source note without logging it again", async () => {
+        setActiveContext(true);
+        const failedSave = Promise.reject(new Error("save failed"));
+        const handled = vi.spyOn(failedSave, "catch");
+        const textEditor = {
+            getSelectedHtml: () => "<p>cut me</p>",
+            removeSelection: vi.fn(() => failedSave)
+        } as any;
+
+        await noteCreateService.createNote("root", { saveSelection: true, textEditor });
+        expect(handled).toHaveBeenCalledOnce();
+
+        // Lets the handler `createNote()` attached run before checking what it did.
+        handled.mockRestore();
+        await failedSave.catch(() => {});
+        expect(logError).not.toHaveBeenCalled();
+    });
+
     it("treats a non-heading selection as content with no title", async () => {
         setActiveContext(true);
         const textEditor = {
             getSelectedHtml: () => "<p>just a paragraph</p>",
-            removeSelection: vi.fn()
+            removeSelection: vi.fn(async () => {})
         } as any;
 
         await noteCreateService.createNote("root", { saveSelection: true, textEditor });
@@ -218,7 +239,7 @@ describe("createNote", () => {
         // pane, so the active context is a different note of a different type entirely (#9890).
         setActiveContext(true);
         tabManager.activeNoteType = "book";
-        const removeSelection = vi.fn();
+        const removeSelection = vi.fn(async () => {});
         const textEditor = {
             getSelectedHtml: vi.fn(() => "<h1>Heading</h1><p>body</p>"),
             removeSelection

@@ -1,3 +1,5 @@
+
+import { deferred } from "@triliumnext/commons";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SpacedUpdate from "./spaced_update";
@@ -128,6 +130,56 @@ describe("SpacedUpdate", () => {
             shouldFail = false;
             await spacedUpdate.updateNowIfNecessary();
             expect(updater).toHaveBeenCalledTimes(2);
+        });
+
+        it("resolves only after a change made during the in-flight save is saved too", async () => {
+            const firstSave = deferred<void>();
+            const updater = vi.fn()
+                .mockReturnValueOnce(firstSave)
+                .mockResolvedValue(undefined);
+            const spacedUpdate = new SpacedUpdate(updater, 50);
+
+            spacedUpdate.scheduleUpdate();
+            let settled = false;
+            const flushed = spacedUpdate.updateNowIfNecessary().then(() => {
+                settled = true;
+            });
+            expect(updater).toHaveBeenCalledTimes(1);
+
+            // Typing continues while the first PUT is in flight.
+            spacedUpdate.scheduleUpdate();
+            firstSave.resolve();
+            await flushed;
+
+            expect(settled).toBe(true);
+            expect(updater).toHaveBeenCalledTimes(2);
+            expect(spacedUpdate.isAllSavedAndTriggerUpdate()).toBe(true);
+        });
+
+        it("saves a change scheduled just as a drain finishes before resolving", async () => {
+            const firstSave = deferred<void>();
+            const updater = vi.fn()
+                .mockReturnValueOnce(firstSave)
+                .mockResolvedValue(undefined);
+            const spacedUpdate = new SpacedUpdate(updater, 50);
+
+            spacedUpdate.scheduleUpdate();
+            const first = spacedUpdate.updateNowIfNecessary();
+
+            // This reaction runs after the drain loop exits but before the drain promise is
+            // cleared, so the second call joins a drain that has already stopped looking.
+            let second: Promise<void> | undefined;
+            firstSave.then(() => {
+                spacedUpdate.scheduleUpdate();
+                second = spacedUpdate.updateNowIfNecessary();
+            });
+            firstSave.resolve();
+            await first;
+            expect(second).toBeDefined();
+            await second;
+
+            expect(updater).toHaveBeenCalledTimes(2);
+            expect(spacedUpdate.isAllSavedAndTriggerUpdate()).toBe(true);
         });
     });
 

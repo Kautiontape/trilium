@@ -597,6 +597,13 @@ describe("timeLimit (default export)", () => {
         await assertion;
     });
 
+    it("rejects with the promise's own error when it fails before the limit", async () => {
+        const limited = utils.timeLimit(Promise.reject(new Error("save failed")), 50, "too slow");
+        const assertion = expect(limited).rejects.toThrow("save failed");
+        await vi.advanceTimersByTimeAsync(60);
+        await assertion;
+    });
+
     it("uses a default error message when none is supplied", async () => {
         const never = new Promise(() => {});
         const limited = utils.timeLimit(never, 50);

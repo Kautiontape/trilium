@@ -459,6 +459,10 @@ function timeLimit<T>(promise: Promise<T>, limitMs: number, errorMessage?: strin
             resolved = true;
 
             res(result);
+        }, (e) => {
+            resolved = true;
+
+            rej(e);
         });
 
         setTimeout(() => {
