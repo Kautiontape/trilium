@@ -66,7 +66,7 @@ With the caret outside a Journal task you get "Put the caret in a task in a Jour
 
 ## MCP and the AI assistant
 
-Caius registers eighteen tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Writes take an `items` list and a `dryRun` flag.
+Caius registers eighteen tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Most writes take an `items` list and a `dryRun` flag; `caius_meetings`, `caius_context_add` and `caius_brief_write` take one change and `dryRun`, and `caius_skip_catchup` has no dry run.
 
 | Tool | Does |
 |---|---|
@@ -116,7 +116,7 @@ Each step is one call, `caius_winddown` or `caius_planday` with `{ date, step }`
 - `next`: the step to call after it, or `null` at the end.
 - `standing`: the note labelled `#assistantContext` (the standing note, "How I work") as markdown, or `null` with `standingMissing`, a one-line reason.
 
-Nothing is kept between calls except what the notes hold, so calling a step again reads them again and a conversation that stopped can pick up where it was. The steps only read. Every change goes through the write tools, as a dry run first.
+Nothing is kept between calls except what the notes hold, so calling a step again reads them again and a conversation that stopped can pick up where it was. The steps only read. Every change goes through the write tools, as a dry run first. Only `caius_accept`, or a `caius_forward` of a task Shawn names, puts anything into his main list.
 
 **Wind down** closes `date` and works against the next workday after it (Friday → Monday):
 
