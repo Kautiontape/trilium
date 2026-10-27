@@ -1,5 +1,5 @@
 import type { NoteStore } from "@triliumnext/caius";
-import { cls, sql_init } from "@triliumnext/core";
+import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createBeccaStore } from "./store.js";
@@ -52,11 +52,11 @@ beforeAll(async () => {
 afterAll(() => vi.useRealTimers());
 
 describe("caius tools", () => {
-    it("lists the nine tools, with reads non-mutating and writes async and mutating", () => {
+    it("lists the ten tools, with reads non-mutating and writes async and mutating", () => {
         const defs = new Map([...caiusTools]);
         expect([...defs.keys()]).toEqual([
             "caius_plan", "caius_open", "caius_explain", "caius_add",
-            "caius_accept", "caius_dismiss", "caius_set_state", "caius_forward", "caius_assign_ids"
+            "caius_accept", "caius_dismiss", "caius_set_state", "caius_forward", "caius_assign_ids", "caius_header"
         ]);
         for (const [name, def] of defs) {
             expect(def.async).toBe(true);
@@ -233,5 +233,66 @@ describe("caius tools", () => {
 
         expect(result.results).toEqual([expect.objectContaining({ noteId, status: "skipped", reason: "edited", added: 1 })]);
         expect(await store.content(noteId)).toBe("<p>Edited by hand</p>");
+    });
+
+    describe("caius_header", () => {
+        const day = {
+            start: "10:00", end: "23:00",
+            events: [{ start: "10:00", end: "10:15", title: "Standup" }],
+            work: [{ start: "13:00", end: "14:00", label: "ZAP-1", focus: true }]
+        };
+
+        function headerTool(weather = vi.fn(async (_lat: number, _lon: number): Promise<{ code: number; label: string } | undefined> => ({ code: 61, label: "Rain" }))) {
+            const [, def] = [...createCaiusTools(undefined, weather)].find(([name]) => name === "caius_header") ?? [];
+            if (!def) throw new Error("caius_header not registered");
+            return { weather, run: (args: object) => cls.init(() => def.execute(args)) as Promise<any> };
+        }
+
+        it("writes terrain.svg as an image attachment, returns the snippet, and leaves the note's text alone", async () => {
+            const { weather, run } = headerTool();
+            const before = await store.content(noteIds.today);
+
+            const result = await run({ noteId: noteIds.today, ...day, latitude: 47.6, longitude: -122.3 });
+
+            expect(weather).toHaveBeenCalledWith(47.6, -122.3);
+            const attachments = becca.notes[noteIds.today].getAttachments();
+            expect(attachments).toHaveLength(1);
+            const [attachment] = attachments;
+            expect(attachment).toMatchObject({ role: "image", mime: "image/svg+xml", title: "terrain.svg" });
+            expect(result).toEqual({
+                attachmentId: attachment.attachmentId,
+                created: true,
+                snippet: `<img src="api/attachments/${attachment.attachmentId}/image/terrain.svg">`
+            });
+            const svg = String(attachment.getContent());
+            expect(svg).toContain("<svg");
+            expect(svg).toContain(">Rain</text>");
+            expect(await store.content(noteIds.today)).toBe(before);
+        });
+
+        it("updates the same attachment on a second call, and draws no weather without coordinates", async () => {
+            const { weather, run } = headerTool();
+            const first = becca.notes[noteIds.today].getAttachments()[0];
+
+            const result = await run({ noteId: noteIds.today, ...day, events: [] });
+
+            expect(weather).not.toHaveBeenCalled();
+            expect(result).toMatchObject({ attachmentId: first.attachmentId, created: false });
+            const attachments = becca.notes[noteIds.today].getAttachments();
+            expect(attachments).toHaveLength(1);
+            const svg = String(attachments[0].getContent());
+            expect(svg).not.toContain("Standup");
+            expect(svg).not.toContain('data-part="weather"');
+        });
+
+        it("draws without weather when the lookup fails, and rejects a missing note or half a coordinate", async () => {
+            const { run } = headerTool(vi.fn(async (_lat: number, _lon: number) => undefined));
+            expect(await run({ noteId: noteIds.week, ...day, latitude: 1, longitude: 2 })).toMatchObject({ created: true });
+            expect(String(becca.notes[noteIds.week].getAttachments()[0].getContent())).not.toContain('data-part="weather"');
+
+            expect(await run({ noteId: "nope", ...day })).toMatchObject({ error: "not_found" });
+            expect(() => run({ noteId: noteIds.week, ...day, latitude: 1 })).toThrow();
+            expect(() => run({ noteId: noteIds.week, ...day, start: "9am" })).toThrow();
+        });
     });
 });

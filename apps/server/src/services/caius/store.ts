@@ -104,6 +104,34 @@ export function createBeccaStore(): NoteStore {
     };
 }
 
+/** What `putAttachment` writes. */
+export interface AttachmentSpec {
+    role: string;
+    mime: string;
+    title: string;
+    content: string;
+}
+
+/**
+ * Writes an attachment on a note and answers its id. An attachment of the same role and title is
+ * updated in place, otherwise one is created, the way ETAPI's `POST /attachments` and
+ * `PATCH /attachments/:id` do through `saveAttachment`. It sits beside `createBeccaStore` rather
+ * than in `NoteStore`, which the ETAPI adapter would have to implement too, and the note's text is
+ * never touched. The caller provides the `cls.init()` context.
+ */
+export function putAttachment(noteId: string, { role, mime, title, content }: AttachmentSpec): { attachmentId: string; created: boolean } {
+    const note = getNote(noteId);
+    if (note.isProtected) {
+        throw new Error(`Note '${noteId}' is protected and cannot be modified.`);
+    }
+
+    return sql.transactional(() => {
+        const existing = note.getAttachmentsByRole(role).find((attachment) => attachment.title === title);
+        const attachment = note.saveAttachment({ attachmentId: existing?.attachmentId, role, mime, title, content });
+        return { attachmentId: attachment.attachmentId as string, created: !existing };
+    });
+}
+
 let lockTail: Promise<void> = Promise.resolve();
 
 /** How long a call can hold the lock before `withCaiusLock` warns that it is blocking the others. */
