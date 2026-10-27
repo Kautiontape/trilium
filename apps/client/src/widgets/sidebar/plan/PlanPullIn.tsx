@@ -3,12 +3,15 @@ import "./PlanPullIn.css";
 import { useState } from "preact/hooks";
 
 import {
-    caiusApi, type CaiusLane, type CaiusOpenTask, type CaiusPlan, caiusWrite, describeOutcome,
-    findOpenEditors
+    caiusApi, type CaiusItemResult, type CaiusLane, type CaiusOpenTask, type CaiusPlan,
+    type CaiusTaskState, caiusWrite, describeOutcome, findOpenEditors
 } from "../../../services/caius";
+import dialog from "../../../services/dialog";
 import { t } from "../../../services/i18n";
+import toast from "../../../services/toast";
 import { Badge } from "../../react/Badge";
-import Button from "../../react/Button";
+import Dropdown from "../../react/Dropdown";
+import { FormListItem } from "../../react/FormList";
 import LinkButton from "../../react/LinkButton";
 import RightPanelWidget from "../RightPanelWidget";
 import { taskLabel } from "./plan_logic";
@@ -16,7 +19,7 @@ import type { PlanTaskRef } from "./PlanTab";
 
 /**
  * Open tasks of the overdue, this week and this month lanes that are not in the viewed period's
- * note, each with a button that forwards it there.
+ * note, each with an Actions menu: pull it into the viewed period, mark it done or drop it.
  */
 export default function PlanPullIn({ plan, lanes, onOpen, onChanged }: {
     plan: CaiusPlan;
@@ -26,23 +29,55 @@ export default function PlanPullIn({ plan, lanes, onOpen, onChanged }: {
 }) {
     const [ outcomes, setOutcomes ] = useState<Record<string, string>>({});
 
-    async function pullIn({ noteId, listItemId }: CaiusOpenTask) {
+    async function write(
+        { noteId, listItemId }: CaiusOpenTask,
+        send: (expectedBlobId: string | undefined) => Promise<CaiusItemResult[]>,
+        successMessage: string,
+        options: { alsoLock?: string[] } = {}
+    ) {
         if (!listItemId) {
             return;
         }
 
         const flushed = findOpenEditors(noteId).length > 0;
-        const results = await caiusWrite(
-            noteId,
-            (expectedBlobId) => caiusApi.forward([
-                { noteId, listItemId, to: plan.key, expectedBlobId }
-            ]),
-            t("caius.forwarded", { to: plan.key }),
-            { alsoLock: plan.noteId ? [ plan.noteId ] : [] }
-        );
+        const results = await caiusWrite(noteId, send, successMessage, options);
         const outcome = describeOutcome(results?.[0], flushed);
         setOutcomes((previous) => ({ ...previous, [listItemId]: outcome ?? "" }));
         onChanged();
+    }
+
+    const pullIn = (task: CaiusOpenTask) => write(
+        task,
+        (expectedBlobId) => caiusApi.forward([
+            { noteId: task.noteId, listItemId: task.listItemId ?? "", to: plan.key, expectedBlobId }
+        ]),
+        t("caius.forwarded", { to: plan.key }),
+        { alsoLock: plan.noteId ? [ plan.noteId ] : [] }
+    );
+
+    const setState = (task: CaiusOpenTask, state: CaiusTaskState, reason?: string) => write(
+        task,
+        (expectedBlobId) => caiusApi.setState([ {
+            noteId: task.noteId, listItemId: task.listItemId ?? "", state, reason, expectedBlobId
+        } ]),
+        t(`caius.set_${state}`)
+    );
+
+    async function drop(task: CaiusOpenTask) {
+        const reason = await dialog.prompt({
+            title: t("caius.drop_title"),
+            message: t("caius.drop_message")
+        });
+        if (reason === null) {
+            return;
+        }
+
+        if (!reason.trim()) {
+            toast.showError(t("caius.drop_reason_required"));
+            return;
+        }
+
+        await setState(task, "cancelled", reason.trim());
     }
 
     return (
@@ -65,10 +100,11 @@ export default function PlanPullIn({ plan, lanes, onOpen, onChanged }: {
                                     <PullInRow
                                         key={`${task.noteId}-${task.listItemId ?? task.text}`}
                                         task={task}
-                                        target={plan.key}
                                         outcome={outcomes[task.listItemId ?? ""]}
                                         onOpen={onOpen}
                                         onPullIn={pullIn}
+                                        onDone={(row) => setState(row, "done")}
+                                        onDrop={drop}
                                     />
                                 ))}
                                 {hidden > 0 && (
@@ -85,12 +121,13 @@ export default function PlanPullIn({ plan, lanes, onOpen, onChanged }: {
     );
 }
 
-function PullInRow({ task, target, outcome, onOpen, onPullIn }: {
+function PullInRow({ task, outcome, onOpen, onPullIn, onDone, onDrop }: {
     task: CaiusOpenTask;
-    target: string;
     outcome: string | undefined;
     onOpen: (task: PlanTaskRef) => void;
     onPullIn: (task: CaiusOpenTask) => Promise<void>;
+    onDone: (task: CaiusOpenTask) => Promise<void>;
+    onDrop: (task: CaiusOpenTask) => Promise<void>;
 }) {
     return (
         <li>
@@ -106,13 +143,24 @@ function PullInRow({ task, target, outcome, onOpen, onPullIn }: {
                         text={t("caius.plan.days_late", { count: task.daysLate })}
                     />
                 )}
-                <Button
-                    size="small"
-                    text={t("caius.plan.pull_into", { period: target })}
+                <Dropdown
+                    className="plan-pull-in-actions"
+                    text={t("caius.plan.actions")}
+                    buttonClassName="btn-sm"
                     disabled={!task.listItemId}
-                    disabledTooltip={t("caius.plan.no_id")}
-                    onClick={() => void onPullIn(task)}
-                />
+                    noDropdownListStyle
+                    portalToBody
+                >
+                    <FormListItem icon="bx bx-right-arrow-alt" onClick={() => void onPullIn(task)}>
+                        {t("caius.plan.pull_in")}
+                    </FormListItem>
+                    <FormListItem icon="bx bx-check" onClick={() => void onDone(task)}>
+                        {t("caius.done")}
+                    </FormListItem>
+                    <FormListItem icon="bx bx-block" onClick={() => void onDrop(task)}>
+                        {t("caius.drop")}
+                    </FormListItem>
+                </Dropdown>
             </div>
             {outcome && <div className="plan-task-outcome">{outcome}</div>}
         </li>

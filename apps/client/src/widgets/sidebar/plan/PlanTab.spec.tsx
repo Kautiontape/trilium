@@ -63,6 +63,9 @@ vi.mock("../../react/Dropdown", () => ({
     )
 }));
 
+const prompt = vi.hoisted(() => vi.fn());
+vi.mock("../../../services/dialog", () => ({ default: { prompt } }));
+
 import PlanTab, { openTaskInNote, REFRESH_DELAY_MS, useCaiusEnabled } from "./PlanTab";
 
 const DAY_HTML = "<h2>Morning</h2><ul class=\"todo-list\"><li>…</li></ul>"
@@ -107,7 +110,7 @@ describe("PlanTab", () => {
 
         expect(text(tab, "#plan-suggested .plan-task-text")).toBe("An idea");
         // Headings come from the note itself, so an empty one is offered too; Suggested is not.
-        expect(menuItems(tab)).toEqual([ "Morning", "Afternoon", "Critical" ]);
+        expect(menuItems(tab.querySelector("#plan-suggested") ?? tab)).toEqual([ "Morning", "Afternoon", "Critical" ]);
 
         const overdue = tab.querySelector("[data-lane=overdue]");
         expect(overdue?.textContent).toContain("Late task");
@@ -162,7 +165,7 @@ describe("PlanTab", () => {
 
         expect(api.open).toHaveBeenCalledTimes(1);
         expect(api.open.mock.calls[0]?.[0]).toBeUndefined();
-        const rows = tab.querySelectorAll("[data-lane=overdue] li:not(.plan-lane-more)");
+        const rows = tab.querySelectorAll("[data-lane=overdue] .plan-task-list > li:not(.plan-lane-more)");
         expect(rows).toHaveLength(20);
         expect(text(tab, "[data-lane=overdue] .plan-lane-more")).toBe("and 5 more");
         expect(texts(tab, "[data-lane=week] li .plan-task-text")).toEqual([ "Week task" ]);
@@ -209,12 +212,26 @@ describe("PlanTab", () => {
         expect(api.plan).toHaveBeenCalledTimes(3);
     });
 
-    it("pulls a task into the viewed period through a write on the task's own note", async () => {
+    it("replaces the pull-in button with an Actions menu on each row", async () => {
         api.plan.mockResolvedValue(dayPlan());
         const tab = await mount();
-        expect(tab.querySelector("#plan-pull-in")).not.toBeNull();
 
-        await press(button(tab, "→ 2026-10-27", tab.querySelector("[data-lane=overdue]")));
+        const rows = [ ...tab.querySelectorAll("#plan-pull-in .plan-pull-in-row") ];
+        expect(rows.map((row) => row.textContent)).toEqual([
+            expect.stringContaining("Late task"), expect.stringContaining("Week task")
+        ]);
+        for (const row of rows) {
+            expect(menuItems(row)).toEqual([ "Pull in", "Done", "Drop…" ]);
+            expect(row.querySelector(".dropdown-stub > span")?.textContent).toBe("Actions");
+        }
+        expect(tab.textContent).not.toContain("→ 2026-10-27");
+    });
+
+    it("pulls a task into the viewed period from the Actions menu", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const tab = await mount();
+
+        await press(button(tab, "Pull in", tab.querySelector("[data-lane=overdue]")));
         // The viewed note is the target, so its editors are locked too.
         expect(caiusWrite).toHaveBeenLastCalledWith(
             "yesterday", expect.any(Function), "Forwarded to 2026-10-27.",
@@ -222,6 +239,57 @@ describe("PlanTab", () => {
         expect(api.forward).toHaveBeenCalledWith([
             { noteId: "yesterday", listItemId: "late", to: "2026-10-27", expectedBlobId: "blob-1" }
         ]);
+    });
+
+    it("marks a Pull in task done, then reloads without its row", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const tab = await mount();
+
+        const overdue = LANES.overdue;
+        LANES.overdue = [];
+        try {
+            await press(button(tab, "Done", tab.querySelector("[data-lane=overdue]")));
+            expect(caiusWrite).toHaveBeenLastCalledWith(
+                "yesterday", expect.any(Function), "Marked as done.", {});
+            expect(api.setState).toHaveBeenCalledWith([
+                { noteId: "yesterday", listItemId: "late", state: "done", expectedBlobId: "blob-1" }
+            ]);
+            await wait(REFRESH_DELAY_MS + 50);
+            expect(text(tab, "[data-lane=overdue]")).not.toContain("Late task");
+        } finally {
+            LANES.overdue = overdue;
+        }
+    });
+
+    it("drops a Pull in task with the reason asked for, and does nothing when asking is cancelled", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const tab = await mount();
+        const overdue = tab.querySelector("[data-lane=overdue]");
+
+        prompt.mockResolvedValueOnce(null);
+        await press(button(tab, "Drop…", overdue));
+        expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ title: "Drop task" }));
+        expect(api.setState).not.toHaveBeenCalled();
+
+        prompt.mockResolvedValueOnce("  no longer needed ");
+        await press(button(tab, "Drop…", overdue));
+        expect(caiusWrite).toHaveBeenLastCalledWith(
+            "yesterday", expect.any(Function), "Dropped.", {});
+        expect(api.setState).toHaveBeenCalledWith([ {
+            noteId: "yesterday", listItemId: "late", state: "cancelled",
+            reason: "no longer needed", expectedBlobId: "blob-1"
+        } ]);
+    });
+
+    it("shows no Pull in card for a past period", async () => {
+        activeNote.current = buildNote({
+            id: "yesterday", title: "26", "#dateNote": "2026-10-26", content: DAY_HTML
+        });
+        api.plan.mockResolvedValue({ ...dayPlan(), key: "2026-10-26", noteId: "yesterday" });
+        const tab = await mount();
+
+        expect(tab.querySelector("#plan-capacity")).not.toBeNull();
+        expect(tab.querySelector("#plan-pull-in")).toBeNull();
     });
 
     it("offers Today first when closing a past day, and forwards there", async () => {
