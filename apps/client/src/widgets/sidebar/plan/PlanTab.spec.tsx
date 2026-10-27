@@ -423,13 +423,13 @@ describe("openTaskInNote", () => {
         const opening = openTaskInNote(context, { noteId: "yesterday", listItemId: "etwo" });
         await new Promise((resolve) => setTimeout(resolve, 20));
         setEditorNoteId(editor, "yesterday");
-        editor.setData("<p>Marker</p><ul class=\"todo-list\"><li data-list-item-id=\"eone\">One</li>"
-            + "<li data-list-item-id=\"etwo\">Two</li></ul>");
+        editor.setData("<p>Marker</p><ul class=\"todo-list\">"
+            + "<li data-list-item-id=\"eone\">One</li><li data-list-item-id=\"etwo\">Two</li></ul>");
         await opening;
 
         expect(getEditorNoteId(editor)).toBe("yesterday");
-        expect(editor.model.document.selection.getFirstPosition()?.parent.getAttribute("listItemId"))
-            .toBe("etwo");
+        const caret = editor.model.document.selection.getFirstPosition();
+        expect(caret?.parent.getAttribute("listItemId")).toBe("etwo");
         await editor.destroy();
     });
 });
