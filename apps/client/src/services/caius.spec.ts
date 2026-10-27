@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
     getComponentByEl: vi.fn(),
     waitForMaxKnownEntityChangeId: vi.fn(async () => {}),
     getWithSilentNotFound: vi.fn(),
+    post: vi.fn(),
     showMessage: vi.fn(),
     showError: vi.fn()
 }));
@@ -14,14 +15,17 @@ vi.mock("../components/app_context.js", () => ({
 }));
 vi.mock("./froca.js", () => ({ default: { notes: h.notes } }));
 vi.mock("./ws.js", () => ({ default: { waitForMaxKnownEntityChangeId: h.waitForMaxKnownEntityChangeId } }));
-vi.mock("./server.js", () => ({ default: { getWithSilentNotFound: h.getWithSilentNotFound } }));
+vi.mock("./server.js", () => ({ default: { getWithSilentNotFound: h.getWithSilentNotFound, post: h.post } }));
 vi.mock("./toast.js", () => ({ default: { showMessage: h.showMessage, showError: h.showError } }));
 vi.mock("./i18n.js", () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key)
 }));
 
 import { setEditorNoteId } from "../widgets/react/NoteStore.js";
-import { CAIUS_WRITE_LOCK, type CaiusItemResult, caiusWrite, describeSkip, forgetCaiusStatus, isCaiusEnabled, RELOAD_TIMEOUT_MS } from "./caius.js";
+import {
+    CAIUS_WRITE_LOCK, caiusApi, type CaiusItemResult, caiusWrite, describeSkip, forgetCaiusStatus,
+    isCaiusEnabled, RELOAD_TIMEOUT_MS
+} from "./caius.js";
 
 /** A stand-in for a CKEditor showing `noteId`, mounted where `findOpenEditors()` looks. */
 function openEditor(noteId: string) {
@@ -207,6 +211,28 @@ describe("describeSkip", () => {
         expect(describeSkip("already_done", true)).toBe("caius.skip.already_done");
         expect(describeSkip("weird", true)).toBe("caius.skip.other {\"reason\":\"weird\"}");
     });
+
+    it("words every reason the library and the routes skip for", () => {
+        const reasons = [
+            "already_cancelled", "already_doing", "already_done", "already_moved", "bad_request",
+            "dismissed", "duplicate", "edited", "not_live", "not_suggested", "same_day", "stale",
+            "unreadable"
+        ];
+        for (const reason of reasons) {
+            expect(describeSkip(reason, true)).toBe(`caius.skip.${reason}`);
+        }
+    });
+});
+
+describe("caiusApi", () => {
+    it("posts the items for real and reads the results out of the response", async () => {
+        const results = [ { status: "updated", noteId: "n1" } ];
+        h.post.mockResolvedValueOnce({ results });
+        const item = { noteId: "n1", listItemId: "e1", state: "done" as const, expectedBlobId: "b1" };
+
+        await expect(caiusApi.setState([ item ])).resolves.toEqual(results);
+        expect(h.post).toHaveBeenCalledWith("caius/set-state", { items: [ item ], dryRun: false });
+    });
 });
 
 describe("isCaiusEnabled", () => {
@@ -224,5 +250,10 @@ describe("isCaiusEnabled", () => {
 
         expect(h.getWithSilentNotFound).toHaveBeenCalledTimes(2);
         expect(h.getWithSilentNotFound).toHaveBeenCalledWith("caius/status");
+    });
+
+    it("reads enabled: false, which the server answers when the service fails to load", async () => {
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: false, detail: "Cannot find module" });
+        await expect(isCaiusEnabled()).resolves.toBe(false);
     });
 });

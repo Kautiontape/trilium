@@ -48,7 +48,7 @@ export interface CaiusItemResult {
 }
 
 export type CaiusExplanation =
-    | { lane: string; rule: string; source: string; daysLate?: number }
+    | { lane: string; rule: string; source: string; daysLate?: number; summary: string }
     | { error: "not_found" };
 
 interface CaiusStatus {
@@ -105,12 +105,12 @@ export const caiusApi = {
 };
 
 async function postItems(action: string, items: object[]): Promise<CaiusItemResult[]> {
-    const response = await server.post<CaiusItemResult[] | { results: CaiusItemResult[] }>(
+    const response = await server.post<{ results: CaiusItemResult[] }>(
         `caius/${action}`,
         { items, dryRun: false }
     );
 
-    return Array.isArray(response) ? response : response.results;
+    return response.results;
 }
 
 /**
@@ -286,8 +286,11 @@ export function describeSkip(reason: string, flushed: boolean) {
         : t("caius.skip.other", { reason });
 }
 
+/** Every reason the library and the routes skip an item for, besides `not_found`. */
 const KNOWN_SKIP_REASONS = [
-    "stale", "already_done", "already_doing", "already_cancelled", "already_moved", "not_live"
+    "already_cancelled", "already_doing", "already_done", "already_moved", "bad_request",
+    "dismissed", "duplicate", "edited", "not_live", "not_suggested", "same_day", "stale",
+    "unreadable"
 ];
 
 function describeError(error: unknown) {

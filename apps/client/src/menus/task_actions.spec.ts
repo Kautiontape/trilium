@@ -174,10 +174,16 @@ describe("buildTaskActionItems", () => {
         });
 
         it("explains, saying to save first when the item is not found", async () => {
-            h.api.explain.mockResolvedValueOnce({ lane: "overdue", rule: "r1", source: "2026-10-20" });
+            h.api.explain.mockResolvedValueOnce({
+                lane: "overdue", rule: "r1", source: "past day 2026-10-20 vs now", daysLate: 7,
+                summary: "Overdue by 7 days: it's in the day note for Tuesday 20 October, which is past."
+            });
             await click(findItem(buildTaskActionItems(target()), "caius.explain"));
             expect(h.api.explain).toHaveBeenCalledWith("day", "eaaa");
-            expect(h.showMessage).toHaveBeenCalledWith("caius.explanation", 10_000, "bx bx-help-circle");
+            expect(h.showMessage).toHaveBeenCalledWith(
+                "Overdue by 7 days: it's in the day note for Tuesday 20 October, which is past.",
+                10_000, "bx bx-help-circle"
+            );
 
             h.api.explain.mockResolvedValueOnce({ error: "not_found" });
             await click(findItem(buildTaskActionItems(target()), "caius.explain"));
@@ -280,6 +286,27 @@ describe("reading the task from the editor", () => {
 
         h.notes.day = fakeNote([]);
         expect(findTaskAtElement(item("eopen"))).toBeNull();
+    });
+
+    it("offers a heading with odd spacing as a section the server matches, and skips an emoji Suggested", async () => {
+        editor.setData([
+            "<h2>  Deep&nbsp;&nbsp; Work </h2>",
+            "<h2>💡 Suggested</h2>",
+            "<ul class=\"todo-list\"><li data-list-item-id=\"eodd\"><label class=\"todo-list__label\"><input type=\"checkbox\" disabled><span class=\"todo-list__label__description\">idea</span></label></li></ul>"
+        ].join(""));
+        const found = findTaskAtElement(item("eodd"));
+        expect(found).toMatchObject({ inSuggested: true });
+        expect(found?.headers).toHaveLength(1);
+        if (!found) throw new Error("No task");
+
+        const heading = found.headers[0] ?? "";
+        h.caiusWrite.mockImplementation(async (_noteId: string, call: (blobId: string) => Promise<unknown>) => call("blob1"));
+        h.api.accept.mockClear();
+        await click(findItem(buildTaskActionItems(found), "caius.accept", heading));
+        const [ [ [ sent ] ] ] = h.api.accept.mock.calls as unknown as [ [ [ { section: string } ] ] ];
+        expect(sent.section).toBe(heading);
+        // The library's `normName()`: case and anything but letters and digits are ignored.
+        expect(sent.section.replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase()).toBe("deepwork");
     });
 
     it("reads custom states through their markdown symbol", () => {

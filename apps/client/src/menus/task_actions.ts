@@ -320,8 +320,9 @@ function isHeading(node: ModelNode): node is ModelElement {
     return isElement(node) && node.name.startsWith("heading");
 }
 
+/** Matches the library's `isSuggestedName()`, which ignores case and anything but letters and digits. */
 function isSuggested(heading: string) {
-    return heading.toLowerCase() === "suggested";
+    return heading.replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase() === "suggested";
 }
 
 function textOf(element: ModelElement) {
@@ -471,11 +472,7 @@ async function explainTask(target: TaskTarget) {
             return;
         }
 
-        const { daysLate, ...rest } = explanation;
-        const message = daysLate
-            ? t("caius.explanation_late", { ...rest, daysLate })
-            : t("caius.explanation", rest);
-        toast.showMessage(message, 10_000, "bx bx-help-circle");
+        toast.showMessage(explanation.summary, 10_000, "bx bx-help-circle");
     } catch (error) {
         forgetCaiusStatus();
         toast.showError(t("caius.request_failed", { message: String(error) }));

@@ -4448,8 +4448,6 @@
     "accept_critical": "Critical",
     "dismiss": "Dismiss",
     "explain": "Why is this here?",
-    "explanation": "Lane: {{- lane}}. Rule: {{- rule}}. Source: {{- source}}.",
-    "explanation_late": "Lane: {{- lane}}, {{daysLate}} days late. Rule: {{- rule}}. Source: {{- source}}.",
     "set_doing": "Marked as Doing.",
     "set_done": "Marked as done.",
     "set_cancelled": "Dropped.",
@@ -4468,6 +4466,13 @@
       "already_cancelled": "This task is already dropped.",
       "already_moved": "This task has already been forwarded.",
       "not_live": "This task is closed.",
+      "bad_request": "Caius could not make sense of this request.",
+      "dismissed": "This task was dismissed from this note before.",
+      "duplicate": "This task is already open elsewhere in the Journal.",
+      "edited": "The note changed while Caius was writing to it, so nothing was written. Try again.",
+      "not_suggested": "Only a task under Suggested can be accepted or dismissed.",
+      "same_day": "This task is already in that note.",
+      "unreadable": "Caius cannot change this note: it is protected or not a text note.",
       "other": "Caius skipped this task: {{- reason}}"
     }
   }
