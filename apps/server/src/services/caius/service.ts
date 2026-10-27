@@ -14,6 +14,7 @@ import {
     acceptTasks,
     addTasks,
     daysLate,
+    diffSummary,
     dismissTasks,
     ensureListItemIds,
     forwardTasks,
@@ -203,6 +204,8 @@ interface AssignIdsResult {
     error?: string;
     /** Dry run: the text of each list item that gets an id. */
     items?: string[];
+    /** Dry run without `html`: what differs between the note's HTML before and after. */
+    changes?: { noteId: string; role: "target"; removed: string; added: string }[];
     /** Dry run with `html`: the note's HTML before and after. */
     before?: string;
     after?: string;
@@ -211,7 +214,8 @@ interface AssignIdsResult {
 /**
  * Gives the note's list items without an id one, through the compare-and-swap, and reports how
  * many. Returns null when every item already has an id. A dry run lists the text of each item
- * instead of writing, and with `html` also carries the note's HTML before and after.
+ * instead of writing, with the diff summary of the change, or with `html` the note's HTML before
+ * and after.
  */
 async function assignIdsInNote(store: NoteStore, noteId: string, path: string, { dryRun, html }: AssignIdsInput): Promise<AssignIdsResult | null> {
     try {
@@ -224,7 +228,10 @@ async function assignIdsInNote(store: NoteStore, noteId: string, path: string, {
         const after = ensureListItemIds(before);
         const base = { noteId, title: (await store.note(noteId)).title, path, added: items.length };
         if (dryRun) {
-            return { ...base, status: "updated", items, ...(html ? { before, after } : {}) };
+            return {
+                ...base, status: "updated", items,
+                ...(html ? { before, after } : { changes: [{ noteId, role: "target", ...diffSummary(before, after) }] })
+            };
         }
         return await store.putContent(noteId, after, before)
             ? { ...base, status: "updated" }

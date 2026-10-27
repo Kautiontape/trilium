@@ -192,10 +192,13 @@ describe("caius tools", () => {
         expect(dry).toMatchObject({ dryRun: true, notes: 1, added: 3 });
         expect(dry.results).toEqual([{
             noteId, title: expect.any(String), path: "Journal/Daily/2031-05-20.md", added: 3, status: "updated",
-            items: ["First bare", "Bullet", "Nested"]
+            items: ["First bare", "Bullet", "Nested"],
+            changes: [{ noteId, role: "target", removed: expect.any(String), added: expect.stringContaining('data-list-item-id="e') }]
         }]);
         expect(await store.content(noteId)).toBe(bare);
-        expect((await call("caius_assign_ids", { dryRun: true, html: true })).results[0]).toMatchObject({ before: bare, after: expect.stringContaining("data-list-item-id=\"e") });
+        const full = (await call("caius_assign_ids", { dryRun: true, html: true })).results[0];
+        expect(full).toMatchObject({ before: bare, after: expect.stringContaining("data-list-item-id=\"e") });
+        expect(full).not.toHaveProperty("changes");
 
         const real = await call("caius_assign_ids", {});
         expect(real).toMatchObject({ notes: 1, added: 3, results: [{ noteId, added: 3, status: "updated" }] });
