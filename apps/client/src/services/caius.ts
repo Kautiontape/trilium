@@ -4,7 +4,9 @@ import appContext from "../components/app_context.js";
 import { getEditorNoteId, noteSavedDataStore } from "../widgets/react/NoteStore.js";
 import froca from "./froca.js";
 import { t } from "./i18n.js";
+import { readSelectedModels } from "./llm_providers.js";
 import LoadResults from "./load_results.js";
+import options from "./options.js";
 import server from "./server.js";
 import toast from "./toast.js";
 import ws from "./ws.js";
@@ -133,6 +135,13 @@ interface CaiusStatus {
     now?: string;
 }
 
+/** The nudge bar's state for a day: the catch-up first, then whether the day has a brief. */
+export type CaiusNudge = { date: string; lastWorkday: string } & (
+    | { state: "catchup"; tasks: { noteId: string; listItemId: string | null; text: string }[] }
+    | { state: "unplanned" }
+    | { state: "planned"; plannedAt: string | null }
+);
+
 /** The gap between the server's dev clock and this browser's, in ms; 0 without a dev clock. */
 let clockOffset = 0;
 
@@ -200,8 +209,39 @@ export const caiusApi = {
     dismiss: (items: CaiusDismissItem[]) => postItems("dismiss", items),
     /** Close: the forwards, then the drops, in one request behind one version check. */
     apply: (body: CaiusApplyRequest) => postWrite("caius/apply", body),
-    explain
+    explain,
+    /** The state of the nudge bar on the day note of `date`. */
+    nudge: (date: string) => server.get<CaiusNudge>(`caius/nudge?${new URLSearchParams({ date }).toString()}`),
+    /** Lets Plan my day leave the last workday's open tasks where they are, for `date`. */
+    skipCatchup: (date: string) => server.post<object>("caius/skip-catchup", { date })
 };
+
+/** The first message of a planning conversation, in the words the `caius` skill sheet reads. */
+export function caiusOpener(kind: CaiusConversation, date: string) {
+    return `${kind === "plan" ? "Plan my day" : "Wind down"} ${date}`;
+}
+
+export type CaiusConversation = "plan" | "winddown";
+
+/**
+ * Shows the sidebar chat and starts a new conversation in it, with note tools on, whose first
+ * message is `opener`. With AI off there is no chat to show, so a toast says so; with no provider
+ * the chat shows its own setup prompt and nothing is sent.
+ */
+export async function startCaiusConversation(opener: string) {
+    if (!options.is("aiEnabled")) {
+        toast.showMessage(t("caius.chat_off"), 5000, "bx bx-bot");
+        return;
+    }
+
+    void appContext.triggerEvent("selectRightPaneTab", { tabId: "chat", keepOpen: true });
+    if (!readSelectedModels().hasProvider) {
+        return;
+    }
+
+    const { openNewChat } = await import("../widgets/sidebar/SidebarChat.jsx");
+    openNewChat(opener);
+}
 
 /**
  * Why a task is in its lane. The route answers 404 `{ error: "not_found" }` for an item it cannot

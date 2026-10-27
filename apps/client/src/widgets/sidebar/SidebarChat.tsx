@@ -98,15 +98,21 @@ export default function SidebarChat() {
         chat.setChatNoteId(chatNoteId ?? undefined);
     }, [chatNoteId, chat.setChatNoteId]);
 
-    // Load the most recent chat on mount (runs once)
+    // A conversation started from elsewhere (see openNewChat): its opener, sent once the new chat
+    // renders empty with note tools on, since `handleSubmit` reads both from the render it belongs to.
+    const [opener, setOpener] = useState<string | null>(null);
+    const openerStartedRef = useRef(false);
+
+    // Load the most recent chat on mount (runs once), unless an opener is waiting to start a new one.
     useEffect(() => {
         let cancelled = false;
+        if (pendingOpener !== null) return;
 
         const loadMostRecentChat = async () => {
             try {
                 const existingChat = await dateNoteService.getMostRecentLlmChat();
 
-                if (cancelled) return;
+                if (cancelled || openerStartedRef.current) return;
 
                 if (existingChat) {
                     setChatNoteId(existingChat.noteId);
@@ -190,6 +196,45 @@ export default function SidebarChat() {
             console.error("Failed to create new chat:", err);
         }
     }, [spacedUpdate]);
+
+    const startWithOpener = useCallback(async (text: string) => {
+        openerStartedRef.current = true;
+        await spacedUpdate.updateNowIfNecessary();
+
+        try {
+            const note = await dateNoteService.createLlmChat();
+            if (note) {
+                setChatNoteId(note.noteId);
+                chatRef.current.clearMessages();
+                chatRef.current.setEnableNoteTools(true);
+                setOpener(text);
+            }
+        } catch (err) {
+            console.error("Failed to create new chat:", err);
+        }
+    }, [spacedUpdate]);
+    const startWithOpenerRef = useRef(startWithOpener);
+    startWithOpenerRef.current = startWithOpener;
+
+    useEffect(() => {
+        takeOpener = (text) => void startWithOpenerRef.current(text);
+        if (pendingOpener !== null) {
+            const text = pendingOpener;
+            pendingOpener = null;
+            takeOpener(text);
+        }
+        return () => {
+            takeOpener = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (opener === null || !chatNoteId || chat.messages.length > 0 || !chat.enableNoteTools || chat.isCheckingProvider) return;
+        setOpener(null);
+        chat.setChatNoteId(chatNoteId);
+        chat.setInput(opener);
+        void chat.handleSubmit(new Event("submit"));
+    }, [opener, chatNoteId, chat]);
 
     const handleSaveChat = useCallback(async () => {
         if (!chatNoteId) return;
@@ -420,4 +465,20 @@ export default function SidebarChat() {
             </div>
         </RightPanelWidget>
     );
+}
+
+/** An opener sent before the chat mounted, and the mounted chat's handler for one. */
+let pendingOpener: string | null = null;
+let takeOpener: ((text: string) => void) | null = null;
+
+/**
+ * Starts a new conversation in the sidebar chat, with note tools on, and sends `text` as its first
+ * message. The chat mounts when its tab is first shown, so a call made before then waits for it.
+ */
+export function openNewChat(text: string) {
+    if (takeOpener) {
+        takeOpener(text);
+    } else {
+        pendingOpener = text;
+    }
 }

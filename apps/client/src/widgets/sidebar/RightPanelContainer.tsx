@@ -81,8 +81,8 @@ export default function RightPanelContainer({ widgetsByParent }: { widgetsByPare
     // it away again when it is the tab on show — see reduceTabSelection for what that amounts to.
     // `peek` opens it as a glance instead of a dock; `expandWidgetId` opens the one widget the entry
     // point is really about, in case the user has it collapsed.
-    useTriliumEvent("selectRightPaneTab", ({ tabId, peek, expandWidgetId }) => {
-        const action = reduceTabSelection(mode, activeTab?.id, { tabId, peek });
+    useTriliumEvent("selectRightPaneTab", ({ tabId, peek, keepOpen, expandWidgetId }) => {
+        const action = reduceTabSelection(mode, activeTab?.id, { tabId, peek, keepOpen });
         if (action === "dismiss") {
             dismiss();
             return;
@@ -335,11 +335,11 @@ export type TabSelection = "open" | "select" | "dismiss" | "close";
  *
  * A `peek` entry point is only a glance, so pressing it for the tab already on show in a *docked* pane
  * selects rather than closes: the dock is the user's layout, not the badge's to undo — the press is
- * left to expand the widget it is about.
+ * left to expand the widget it is about. A `keepOpen` entry point never puts the tab away.
  */
-export function reduceTabSelection(mode: PaneMode, activeTabId: RightPaneTabId | undefined, { tabId, peek }: { tabId: RightPaneTabId; peek?: boolean }): TabSelection {
+export function reduceTabSelection(mode: PaneMode, activeTabId: RightPaneTabId | undefined, { tabId, peek, keepOpen }: { tabId: RightPaneTabId; peek?: boolean; keepOpen?: boolean }): TabSelection {
     if (mode === "closed") return "open";
-    if (activeTabId !== tabId) return "select";
+    if (activeTabId !== tabId || keepOpen) return "select";
     if (mode === "peek") return "dismiss";
     return peek ? "select" : "close";
 }

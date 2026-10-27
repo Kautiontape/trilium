@@ -406,6 +406,11 @@ export type CommandMappings = {
          */
         peek?: boolean;
         /**
+         * Show the tab even when it is the one on show already, for an entry point that puts something
+         * in it (a new chat), rather than toggling it away.
+         */
+        keepOpen?: boolean;
+        /**
          * The id of a widget of that tab (see `RightPanelWidget`) to expand, so that an entry point
          * aimed at one widget doesn't land on it collapsed.
          */
