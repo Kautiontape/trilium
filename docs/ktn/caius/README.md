@@ -44,10 +44,33 @@ The button disappears for a moment during a write (the editor is read-only) and 
 
 On desktop, the right pane has a **Plan** tab. It follows the active note: a day, week or month note shows its period, and any other note shows the current period. The Day / Week / Month switch and the ‹ › buttons move between periods, and Today jumps back. It reloads when Journal notes change, with one `/api/caius/open` call per refresh, and reads nothing while the tab is hidden: it reads once when you show it. Each card collapses.
 
+When the viewed period is a day, two buttons sit under the period bar: **Plan my day** and **Wind down**. Each opens the sidebar chat, starts a new conversation with note tools on, and sends the opener for that day by itself: `Plan my day 2026-11-04` or `Wind down 2026-11-04`. The chat that was open is left as it is, in the chat history. With AI features off there is no chat, and a toast says so; with no AI provider set up, the chat shows its "No AI provider configured" prompt and nothing is sent.
+
 - **Capacity.** Minutes planned against the target: 180–240 for a day, 720–900 for a week, none for a month. "N unestimated, counted at 30 min" opens a list of those tasks; click one to jump to it and add an estimate.
 - **Suggested.** The Suggested items of the period, each with Accept (pick a heading, or Critical) and Dismiss.
 - **Pull in.** Three lanes: Overdue, This week and This month, 20 rows each. A row's text opens the task in its note. The **→** button forwards the task into the period you are viewing; an editor open on that note is locked and reloaded along with the task's own note. Tasks already in this note are left out. A past period has no Pull in card, since nothing should be pulled into a closed note.
 - **Close.** Offered for a past period, today from 15:00, and the current week or month. Every open task gets one fate. A past period offers Today first (This week or This month when closing a week or month), then Tomorrow, Next week, Next month and Drop (with a reason). Fates count from now, not from the period being closed, and the picker names the target note, such as "Today → 2026-10-27". The card counts "N of M decided". **Apply** writes them all in one go, and lists any task that was skipped. Apply is one request (`POST /api/caius/apply`): the forwards, then the drops. A task with open sub-items carries them along, so the sub-items are not listed on their own; a sub-item is told from its parent by the parent's list item id, so two tasks with the same text are not confused. Pushing a task to its project note is not offered yet.
+
+## The nudge bar
+
+Today's day note (today by the Caius clock) shows a slim bar under its journal navigation, in the new layout. It holds one state at a time:
+
+| State | When | Bar | Actions |
+|---|---|---|---|
+| Catch-up | The last workday (Friday on a Monday) still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks." | **Move all to today**, **Review**, **Skip** |
+| Not planned | No catch-up is due, and today has no Morning Brief | "No plan yet." | **Plan my day** |
+| Planned | Today has a Morning Brief | "Planned 08:40." | **Refresh** |
+
+- **Move all to today** forwards those tasks to today in one request, with no chat, the way the Plan tab's Close does: today's note is locked and reloaded if it is open. A task without a list item id is counted but not moved; run the id backfill.
+- **Review** starts `Wind down <last workday>` in the sidebar chat.
+- **Skip** sets `#caiusSkipCatchup=<today>` on today's note, as `caius_skip_catchup` does, so the bar and Plan my day stop offering the catch-up.
+- **Plan my day** and **Refresh** start `Plan my day <today>`.
+
+The rules are those of Plan my day's `catchup` step and of `caius_brief_write`'s brief lookup, read through `GET /api/caius/nudge?date=YYYY-MM-DD`. The bar reads its state when the note opens, and again after a change to today's or the last workday's note, including a Caius write from the chat.
+
+The **×** hides the bar on that note for the rest of the day. It doesn't skip the catch-up. The dismissal is kept in this browser's local storage, so another browser or device still shows the bar.
+
+No bar shows on other notes, on past or future day notes, on a protected note, or while Caius is off.
 
 ## The dev clock
 
@@ -55,7 +78,7 @@ In a development server, set `TRILIUM_ENV=dev` and `CAIUS_NOW` to a local time s
 
 ## Shortcuts
 
-Four commands act on the Journal task at the caret. They have **no default keys**; bind them in Options → Shortcuts (they are also in the command palette):
+Six commands have **no default keys**; bind them in Options → Shortcuts (they are also in the command palette). Four act on the Journal task at the caret:
 
 - Mark Task as Doing
 - Mark Task as Done
@@ -63,6 +86,11 @@ Four commands act on the Journal task at the caret. They have **no default keys*
 - Drop Task (asks for a reason)
 
 With the caret outside a Journal task you get "Put the caret in a task in a Journal note first".
+
+Two start a planning conversation for today by the Caius clock, from anywhere, as the Plan tab's buttons do:
+
+- Caius: Plan my day
+- Caius: Wind down
 
 ## MCP and the AI assistant
 
@@ -178,8 +206,8 @@ Actions find a task by its list item id. Newer items have one; about 87 older Jo
 If the Caius code fails to load, Trilium logs `Caius disabled: <reason>` in the server log and carries on. `/mcp` keeps its other tools. You will see:
 
 - No Task submenu, and the browser's own menu on task lines.
-- No Plan tab and no mobile Task button.
-- The four commands toast "Caius is off, so task actions are unavailable."
+- No Plan tab, no nudge bar and no mobile Task button.
+- The six commands toast "Caius is off, so task actions are unavailable."
 - `/api/caius/*` answers `503 caius_unavailable`, and `/api/caius/status` answers `{ "enabled": false, "detail": … }`.
 
 The failure is remembered until the server restarts. Find the reason in the server log, fix it and restart.
