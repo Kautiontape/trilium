@@ -102,11 +102,15 @@ export default function SidebarChat() {
     // renders empty with note tools on, since `handleSubmit` reads both from the render it belongs to.
     const [opener, setOpener] = useState<string | null>(null);
     const openerStartedRef = useRef(false);
+    // A start in flight, from openNewChat until its opener is sent; a second call meanwhile is ignored.
+    const startingRef = useRef(false);
+    const mountOpenerRef = useRef<string | null>(null);
 
     // Load the most recent chat on mount (runs once), unless an opener is waiting to start a new one.
     useEffect(() => {
         let cancelled = false;
-        if (pendingOpener !== null) return;
+        mountOpenerRef.current = takePendingOpener();
+        if (mountOpenerRef.current !== null) return;
 
         const loadMostRecentChat = async () => {
             try {
@@ -119,7 +123,8 @@ export default function SidebarChat() {
                     // Load content
                     try {
                         const blob = await server.get<{ content: string }>(`notes/${existingChat.noteId}/blob`);
-                        if (!cancelled && blob?.content) {
+                        if (cancelled || openerStartedRef.current) return;
+                        if (blob?.content) {
                             const parsed: LlmChatContent = JSON.parse(blob.content);
                             chatRef.current.loadFromContent(parsed);
                         }
@@ -197,19 +202,46 @@ export default function SidebarChat() {
         }
     }, [spacedUpdate]);
 
+    // Resolves the waits of startWithOpener once a render shows no reply streaming.
+    const idleWaitersRef = useRef<(() => void)[]>([]);
+    useEffect(() => {
+        if (!chat.isStreaming) {
+            for (const resolve of idleWaitersRef.current.splice(0)) resolve();
+        }
+    }, [chat.isStreaming]);
+
     const startWithOpener = useCallback(async (text: string) => {
+        if (startingRef.current) return;
+        startingRef.current = true;
         openerStartedRef.current = true;
-        await spacedUpdate.updateNowIfNecessary();
 
         try {
-            const note = await dateNoteService.createLlmChat();
-            if (note) {
-                setChatNoteId(note.noteId);
-                chatRef.current.clearMessages();
-                chatRef.current.setEnableNoteTools(true);
-                setOpener(text);
+            // A reply still streaming would land in the new chat, and the opener could not be sent.
+            if (chatRef.current.isStreaming) {
+                chatRef.current.stopStreaming();
+                if (!(await untilIdle(idleWaitersRef.current))) {
+                    console.error("The running reply did not stop, so no new chat was started.");
+                    startingRef.current = false;
+                    return;
+                }
             }
+            await spacedUpdate.updateNowIfNecessary();
+
+            const note = await dateNoteService.createLlmChat();
+            if (!note) {
+                startingRef.current = false;
+                return;
+            }
+            const current = chatRef.current;
+            setChatNoteId(note.noteId);
+            current.clearMessages();
+            current.setEnableNoteTools(true);
+            for (const attachment of current.pendingAttachments) {
+                current.removePendingAttachment(attachment.attachmentId);
+            }
+            setOpener(text);
         } catch (err) {
+            startingRef.current = false;
             console.error("Failed to create new chat:", err);
         }
     }, [spacedUpdate]);
@@ -218,10 +250,9 @@ export default function SidebarChat() {
 
     useEffect(() => {
         takeOpener = (text) => void startWithOpenerRef.current(text);
-        if (pendingOpener !== null) {
-            const text = pendingOpener;
-            pendingOpener = null;
-            takeOpener(text);
+        if (mountOpenerRef.current !== null) {
+            takeOpener(mountOpenerRef.current);
+            mountOpenerRef.current = null;
         }
         return () => {
             takeOpener = null;
@@ -229,11 +260,15 @@ export default function SidebarChat() {
     }, []);
 
     useEffect(() => {
-        if (opener === null || !chatNoteId || chat.messages.length > 0 || !chat.enableNoteTools || chat.isCheckingProvider) return;
+        if (opener === null || !chatNoteId || chat.isStreaming || chat.messages.length > 0 || !chat.enableNoteTools || chat.isCheckingProvider) return;
         setOpener(null);
+        startingRef.current = false;
+        // `handleSubmit` sends the input; the draft in the input bar is put back once it has read it.
+        const draft = chat.getInput();
         chat.setChatNoteId(chatNoteId);
         chat.setInput(opener);
         void chat.handleSubmit(new Event("submit"));
+        chat.setInput(draft);
     }, [opener, chatNoteId, chat]);
 
     const handleSaveChat = useCallback(async () => {
@@ -467,8 +502,14 @@ export default function SidebarChat() {
     );
 }
 
+/** How long an opener sent before the chat mounted stays good; an older one is dropped. */
+export const PENDING_OPENER_TTL_MS = 10_000;
+
+/** How long a new chat waits for a running reply to stop before giving up. */
+const STOP_TIMEOUT_MS = 5000;
+
 /** An opener sent before the chat mounted, and the mounted chat's handler for one. */
-let pendingOpener: string | null = null;
+let pendingOpener: { text: string; at: number } | null = null;
 let takeOpener: ((text: string) => void) | null = null;
 
 /**
@@ -479,6 +520,24 @@ export function openNewChat(text: string) {
     if (takeOpener) {
         takeOpener(text);
     } else {
-        pendingOpener = text;
+        pendingOpener = { text, at: Date.now() };
     }
+}
+
+/** Takes the opener sent before mount, unless it is older than {@link PENDING_OPENER_TTL_MS}. */
+function takePendingOpener() {
+    const pending = pendingOpener;
+    pendingOpener = null;
+    return pending && Date.now() - pending.at <= PENDING_OPENER_TTL_MS ? pending.text : null;
+}
+
+/** Waits for the chat's next render without a streaming reply; `false` after {@link STOP_TIMEOUT_MS}. */
+function untilIdle(waiters: (() => void)[]) {
+    return new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), STOP_TIMEOUT_MS);
+        waiters.push(() => {
+            clearTimeout(timer);
+            resolve(true);
+        });
+    });
 }
