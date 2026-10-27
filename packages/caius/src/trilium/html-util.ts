@@ -4,12 +4,47 @@
 // markup we don't touch stays byte-for-byte as Trilium stored it.
 
 import { randomBytes } from 'node:crypto';
-import { HTMLElement } from 'node-html-parser';
+import { HTMLElement, parse } from 'node-html-parser';
 import { scanTokens } from '../core/index.js';
 import type { StateSymbols } from './markdown.js';
 
 export function newListItemId(): string {
   return `e${randomBytes(16).toString('hex')}`;
+}
+
+/**
+ * Give every `<li>` of a `<ul>` or `<ol>` that has no `data-list-item-id` a new one, placed first
+ * on the tag as CKEditor writes it. CKEditor invents a random id for such an item on every load,
+ * so Caius stores one instead. The rest of the string is left byte for byte.
+ */
+export function ensureListItemIds(html: string, newId: () => string = newListItemId): string {
+  const missing = itemsWithoutIds(parse(html, { comment: true }));
+  if (!missing.length) return html;
+  return apply(
+    html,
+    missing.map((li) => {
+      const start = li.range[0];
+      const end = html.indexOf('>', start + 3 + li.rawAttrs.length) + 1;
+      const rest = html.slice(start + 3, end).replace(attrRe('data-list-item-id'), '');
+      return { start, end, text: `${html.slice(start, start + 3)} data-list-item-id="${newId()}"${rest}` };
+    }),
+  );
+}
+
+/** The own text of each list item `ensureListItemIds` would give an id, in document order. */
+export function listItemsWithoutIds(html: string): string[] {
+  return itemsWithoutIds(parse(html, { comment: true })).map((li) => {
+    const own = descriptionOf(li)?.text ?? li.childNodes.filter((n) => !(n instanceof HTMLElement && /^(UL|OL)$/.test(n.tagName))).map((n) => n.text).join('');
+    return own.replace(/\s+/g, ' ').trim();
+  });
+}
+
+/** List items without a `data-list-item-id`. An empty one counts as missing, as it does for CKEditor. */
+function itemsWithoutIds(root: HTMLElement): HTMLElement[] {
+  return root.querySelectorAll('li').filter((li) => {
+    const parent = li.parentNode;
+    return parent instanceof HTMLElement && (parent.tagName === 'UL' || parent.tagName === 'OL') && !li.getAttribute('data-list-item-id');
+  });
 }
 
 export interface Edit {

@@ -1,6 +1,8 @@
 // The note store the planning code depends on. etapiClient() adapts ETAPI to it;
 // a host that owns the notes can implement it directly.
 
+import { ensureListItemIds } from './html-util.js';
+
 export interface StoreAttribute {
   type: 'label' | 'relation';
   name: string;
@@ -40,6 +42,17 @@ export interface NoteStore extends NoteReader {
   calendarMonth(month: string): Promise<StoreNote>;
   /** Add a (possibly repeated) label to a note. */
   addLabel(noteId: string, name: string, value: string): Promise<void>;
+}
+
+/**
+ * `store` with every `putContent` passed through `ensureListItemIds`, keeping its `expected`, so
+ * no list item Caius writes is left without an id.
+ */
+export function withListItemIds<S extends NoteReader>(store: S, newId?: () => string): S {
+  return {
+    ...store,
+    putContent: (noteId: string, html: string, expected?: string) => store.putContent(noteId, ensureListItemIds(html, newId), expected),
+  };
 }
 
 export function label(note: StoreNote, name: string): string | undefined {
