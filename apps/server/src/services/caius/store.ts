@@ -19,7 +19,12 @@ export function createBeccaStore(): NoteStore {
                 throw new Error("Search query must not be empty.");
             }
 
-            const context = new SearchContext({ fastSearch: true, ...(ancestorNoteId ? { ancestorNoteId } : {}) });
+            // A route request carries the client's hoisted note, which must not narrow the Journal.
+            const context = new SearchContext({
+                fastSearch: true,
+                ignoreHoistedNote: true,
+                ...(ancestorNoteId ? { ancestorNoteId } : {})
+            });
             const results = searchService.findResultsWithQuery(query, context);
             const notes: StoreNote[] = [];
             for (const result of results) {
