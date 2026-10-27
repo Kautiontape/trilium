@@ -74,18 +74,34 @@ describe("plan periods", () => {
 describe("plan tasks", () => {
     const plan = planOf([
         task({ listItemId: "a", text: "Parent" }),
-        task({ listItemId: "a1", text: "Sub one", parent: "Parent" }),
-        task({ listItemId: "a2", text: "Sub two", parent: "Parent", estMinutes: 15 }),
+        task({ listItemId: "a1", text: "Sub one", parent: "Parent", parentListItemId: "a" }),
+        task({
+            listItemId: "a2", text: "Sub two", parent: "Parent", parentListItemId: "a", estMinutes: 15
+        }),
         task({ listItemId: "b", text: "Estimated", estMinutes: 45 }),
         task({ listItemId: "c", text: "Doing", state: "in_progress" }),
         task({ listItemId: "d", text: "Done", state: "done" }),
         task({ listItemId: "e", text: "Done parent", state: "done" }),
-        task({ listItemId: "e1", text: "Orphan", parent: "Done parent", estMinutes: 10 })
+        task({
+            listItemId: "e1", text: "Orphan", parent: "Done parent", parentListItemId: "e", estMinutes: 10
+        })
     ], [ task({ listItemId: "k", text: "Critical", critical: true }) ]);
 
     it("lists the unestimated tasks the capacity counts, through sub-items", () => {
         // The server counts Sub one, Doing and Critical; Parent counts through its sub-items.
         expect(unestimatedTasks(plan).map((t) => t.listItemId)).toEqual([ "k", "a1", "c" ]);
+    });
+
+    it("tells a sub-item's parent by its id, not by its text", () => {
+        // Two live tasks and a done one share a name; only the done one has a live sub-item.
+        const emails = planOf([
+            task({ listItemId: "m1", text: "Email" }),
+            task({ listItemId: "m2", text: "Email" }),
+            task({ listItemId: "m3", text: "Email", state: "done" }),
+            task({ listItemId: "m3a", text: "Reply to Ann", parent: "Email", parentListItemId: "m3" }),
+            task({ listItemId: "m1a", text: "Reply to Bo", parent: "Email", parentListItemId: "m1" })
+        ]);
+        expect(closeCandidates(emails).map((t) => t.listItemId)).toEqual([ "m1", "m2", "m3a" ]);
     });
 
     it("asks a fate of every live task its parent does not carry", () => {
@@ -176,7 +192,7 @@ function keyOf(viewed: ViewedPeriod) {
 function task(overrides: Partial<CaiusPlanTask>): CaiusPlanTask {
     return {
         noteId: "day", listItemId: null, state: "open", text: "", estMinutes: null, parent: null,
-        section: "Morning", critical: false, ...overrides
+        parentListItemId: null, section: "Morning", critical: false, ...overrides
     };
 }
 

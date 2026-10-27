@@ -7,6 +7,7 @@ import { label, type NoteReader, type StoreNote } from './store.js';
 import { buildDoc, loadStateSymbols, type TriliumDoc } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import { headingsByLine, isSuggestedName, sectionKind, type SectionKind } from './sections.js';
+import { parentItemId } from './open.js';
 
 export type PeriodKind = 'day' | 'week' | 'month';
 
@@ -56,6 +57,8 @@ export interface PlanTask {
   estMinutes: number | null;
   /** The parent task's text when this is a sub-item. */
   parent: string | null;
+  /** The parent task's list item id when this is a sub-item and the parent has one. */
+  parentListItemId: string | null;
   /** Nearest heading above the task, null before any heading. */
   section: string | null;
   critical: boolean;
@@ -133,6 +136,7 @@ export function planTasks(doc: TriliumDoc, now: Date): { tasks: (PlanTask & { li
       text: t.text,
       estMinutes: t.estMinutes,
       parent: t.parentRowid === null ? null : (byRowid.get(t.parentRowid)?.text ?? null),
+      parentListItemId: parentItemId(doc, t.parentRowid === null ? undefined : byRowid.get(t.parentRowid)),
       section: headings[t.line] ?? null,
       critical: doc.critical.has(t.line),
       line: t.line,

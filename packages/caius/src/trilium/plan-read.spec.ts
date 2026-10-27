@@ -108,7 +108,8 @@ describe('readPlan (day)', () => {
       ['Finished', 'done'],
       ['Underway', 'in_progress'],
     ]);
-    expect(v.sections[1]!.tasks[1]).toMatchObject({ text: 'Step one', parent: 'Learn it' });
+    expect(v.sections[1]!.tasks[1]).toMatchObject({ text: 'Step one', parent: 'Learn it', parentListItemId: 'eg1' });
+    expect(v.sections[1]!.tasks[0]).toMatchObject({ text: 'Learn it', parentListItemId: null });
     expect(v.top3.map((t) => t.text)).toEqual(['First open', 'Underway', 'Learn it']);
     expect(v.suggested.map((t) => t.text)).toEqual(['Maybe do this']);
     expect(v.dismissed).toEqual(['ZAP-9']);
@@ -154,7 +155,8 @@ describe('open-trilium fields', () => {
     expect(tasks.find((t) => t.critical)).toMatchObject({ text: 'Ship the thing', rank: 0 });
     expect(first.rank).toBe(1);
     // existing fields are still there
-    expect(first).toMatchObject({ noteId: 'd', listItemId: 'em1', period: '2026-10-26', state: 'open', parent: null });
+    expect(first).toMatchObject({ noteId: 'd', listItemId: 'em1', period: '2026-10-26', state: 'open', parent: null, parentListItemId: null });
+    expect(tasks.find((t) => t.text === 'Step one')).toMatchObject({ parent: 'Learn it', parentListItemId: 'eg1' });
   });
   it('lists Suggested tasks as their own lane', () => {
     expect(suggestedTasks([doc], now)).toMatchObject([{ text: 'Maybe do this', section: 'Suggested', horizon: null, listItemId: 'es1' }]);

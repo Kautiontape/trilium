@@ -422,7 +422,7 @@ function dayPlan(): CaiusPlan {
 function planTask(overrides: Partial<CaiusPlanTask>): CaiusPlanTask {
     return {
         noteId: "today", listItemId: null, state: "open", text: "", estMinutes: null, parent: null,
-        section: "Morning", critical: false, ...overrides
+        parentListItemId: null, section: "Morning", critical: false, ...overrides
     };
 }
 
@@ -430,7 +430,8 @@ function openTask(
     overrides: Partial<CaiusOpenTask> & Pick<CaiusOpenTask, "noteId" | "period" | "text">
 ): CaiusOpenTask {
     return {
-        listItemId: null, state: "open", parent: null, section: null, lane: null, ...overrides
+        listItemId: null, state: "open", parent: null, parentListItemId: null, section: null,
+        lane: null, ...overrides
     };
 }
 

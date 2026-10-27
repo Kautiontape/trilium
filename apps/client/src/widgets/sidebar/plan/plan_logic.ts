@@ -108,13 +108,13 @@ export function planTasks(plan: CaiusPlan) {
 }
 
 /**
- * The live tasks that need a fate to close the period. A sub-item of a live task is left out: its
- * parent's forward or drop carries it along.
+ * The live tasks that need a fate to close the period. A sub-item of a live task, told by its
+ * parent's list item id, is left out: its parent's forward or drop carries it along.
  */
 export function closeCandidates(plan: CaiusPlan) {
     const live = planTasks(plan).filter(isLive);
-    const liveTexts = new Set(live.map((task) => task.text));
-    return live.filter((task) => task.parent === null || !liveTexts.has(task.parent));
+    const liveIds = new Set(live.map((task) => task.listItemId).filter((id) => id !== null));
+    return live.filter((task) => !task.parentListItemId || !liveIds.has(task.parentListItemId));
 }
 
 /**

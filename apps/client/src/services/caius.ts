@@ -77,6 +77,8 @@ export interface CaiusPlanTask {
     estMinutes: number | null;
     /** The parent task's text, for a sub-item. */
     parent: string | null;
+    /** The parent task's list item id, for a sub-item whose parent has one. */
+    parentListItemId: string | null;
     section: string | null;
     critical: boolean;
 }
@@ -116,6 +118,8 @@ export interface CaiusOpenTask {
     state: "open" | "in_progress";
     text: string;
     parent: string | null;
+    /** The parent task's list item id, for a sub-item whose parent has one. */
+    parentListItemId: string | null;
     section: string | null;
     lane: CaiusLane | null;
     /** Set for an overdue task. */
@@ -172,7 +176,8 @@ export const caiusApi = {
     /** Open tasks of `lane`, or of every lane when it is left out. */
     open: (lane: CaiusLane | undefined, limit: number) => {
         const query = new URLSearchParams({ ...(lane ? { lane } : {}), limit: String(limit) });
-        return server.get<{ total: number; tasks: CaiusOpenTask[] }>(`caius/open?${query.toString()}`);
+        const url = `caius/open?${query.toString()}`;
+        return server.get<{ total: number; tasks: CaiusOpenTask[] }>(url);
     },
     setState: (items: CaiusSetStateItem[]) => postItems("set-state", items),
     forward: (items: CaiusForwardItem[]) => postItems("forward", items),
