@@ -2,7 +2,7 @@
 
 Caius is the planner for the Journal in Trilium. It reads the day, week and month notes, works out which tasks belong in which lane (overdue, today, week, month and so on), and changes tasks for you: mark one done, forward it, drop it, accept a suggestion. It lives inside this fork, so it works from a right-click, from the Plan tab, from a phone, and from any AI agent connected to Trilium's MCP server.
 
-The method behind it is in [method.md](method.md). How it works is in [internals.md](internals.md). The original design and spike reports are in [design/](design/).
+The routes, the Plan tab and the task actions shipped in PR #12. The method behind it is in [method.md](method.md). How it works is in [internals.md](internals.md). The original design and spike reports are in [design/](design/).
 
 ## The Journal layout Caius expects
 

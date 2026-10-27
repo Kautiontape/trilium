@@ -115,7 +115,14 @@ Every Caius write happens on the server. Caius logic is never re-implemented aga
 
 `EditableText` keeps the caret across the reload when the reloaded note is the same note, through `setDataKeepingSelection`.
 
-**Known limits.** A key pressed while the editor is read-only is dropped. The table of contents no longer saves a note on open or reload: it keeps each heading's id in a `WeakMap`, not a `tocId` attribute in the model, so there is no echo save to send a mid-reload version back and revert a later write (this fix is in the editor-reload PR, not Caius). The one save Caius adds is `flushEditors` forcing a save (`saveNoteDetailNow` with `{ force: true }`) when the editor holds list item ids its note lacks, which CKEditor invents for id-less items. Writes that do not start in the open editor (MCP, the Plan tab on another note, another device) can still race someone typing in that note, as Trilium sync does today.
+**Known limits.** A key pressed while the editor is read-only is dropped. The table of contents no longer saves a note on open or reload: it keeps each heading's id in a `WeakMap`, not a `tocId` attribute in the model, so there is no echo save to send a mid-reload version back and revert a later write (this fix is in the editor-reload PR, not Caius). The one save Caius adds is `flushEditors` forcing a save (`saveNoteDetailNow` with `{ force: true }`) when the editor holds list item ids its note lacks, which CKEditor invents for id-less items. It forces only when froca's content equals what the editor last loaded or saved (`noteSavedDataStore`), so an outside write the editor has not loaded yet is never overwritten. `flushEditors` decides which editors to force before any of them saves. `apply` rejects an `expectedBlobId` when its items span more than one note (400), since the token versions one note. Without a token, items from several notes are accepted.
+
+Two known issues:
+
+- A collapsed list that auto-expands when the restored caret lands inside it saves the note on reload (`collapsible_list_items.ts:348-374`). That save is unchecked, so it could revert a Caius write the way the table of contents did.
+- With two editors on the same id-less note, the last forced save wins (`flushEditors` saves in DOM order), and the action can answer `not_found` if the clicked editor is not the last. `caius_assign_ids` removes the case.
+
+Writes that do not start in the open editor (MCP, the Plan tab on another note, another device) can still race someone typing in that note, as Trilium sync does today.
 
 ## Tools, skill and loading
 
