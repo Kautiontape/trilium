@@ -94,7 +94,8 @@ export interface CaiusPlan {
     };
 }
 
-export type CaiusLane = "overdue" | "today" | "week" | "orbit" | "planning_ahead" | "someday" | "suggested";
+export type CaiusLane =
+    "overdue" | "today" | "week" | "orbit" | "planning_ahead" | "someday" | "suggested";
 
 /** An open task anywhere in the Journal, as `/api/caius/open` lists it. */
 export interface CaiusOpenTask {
@@ -340,6 +341,15 @@ function showOutcome(results: CaiusItemResult[], successMessage: string, flushed
     }
 
     toast.showMessage(successMessage);
+}
+
+/** A skipped or failed item's outcome in plain words, or `null` when the write went through. */
+export function describeOutcome(result: CaiusItemResult | undefined, flushed: boolean) {
+    if (result?.status === "failed") {
+        return t("caius.request_failed", { message: result.error ?? "" });
+    }
+
+    return result?.status === "skipped" ? describeSkip(result.reason ?? "", flushed) : null;
 }
 
 /** A skip reason in plain words. `flushed` says whether the note was saved before the request. */

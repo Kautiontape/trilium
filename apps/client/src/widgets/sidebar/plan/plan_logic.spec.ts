@@ -12,15 +12,21 @@ const NOW = new Date(2026, 9, 27, 10, 0);
 
 describe("plan periods", () => {
     it("follows a day, week or month note, or its child, and falls back to today", () => {
-        const week = buildNote({ title: "Week 44", "#weekNote": "2026-W44", children: [ { id: "weekChild", title: "Child" } ] });
+        const week = buildNote({
+            title: "Week 44",
+            "#weekNote": "2026-W44",
+            children: [ { id: "weekChild", title: "Child" } ]
+        });
         const child = froca.notes["weekChild"];
-        expect(keyOf(periodOfNote(buildNote({ title: "Day", "#dateNote": "2026-10-20" }), NOW))).toBe("day 2026-10-20");
+        const of = (labels: Record<`#${string}`, string>) =>
+            keyOf(periodOfNote(buildNote({ title: "N", ...labels }), NOW));
+        expect(of({ "#dateNote": "2026-10-20" })).toBe("day 2026-10-20");
         expect(keyOf(periodOfNote(week, NOW))).toBe("week 2026-W44");
         expect(keyOf(periodOfNote(child, NOW))).toBe("week 2026-W44");
-        expect(keyOf(periodOfNote(buildNote({ title: "Month", "#monthNote": "2026-09" }), NOW))).toBe("month 2026-09");
-        expect(keyOf(periodOfNote(buildNote({ title: "Other" }), NOW))).toBe("day 2026-10-27");
+        expect(of({ "#monthNote": "2026-09" })).toBe("month 2026-09");
+        expect(of({})).toBe("day 2026-10-27");
         expect(keyOf(periodOfNote(null, NOW))).toBe("day 2026-10-27");
-        expect(keyOf(periodOfNote(buildNote({ title: "Bad", "#dateNote": "2026-02-30" }), NOW))).toBe("day 2026-10-27");
+        expect(of({ "#dateNote": "2026-02-30" })).toBe("day 2026-10-27");
     });
 
     it("parses keys only for periods that exist", () => {
@@ -42,7 +48,8 @@ describe("plan periods", () => {
         expect(steps("month", "2026-12", 1)).toBe("2027-01");
         expect(steps("month", "2026-01", -1)).toBe("2025-12");
         // A day late in a month steps by whole months, not by 31 days.
-        expect(periodKey(stepPeriod({ kind: "month", anchor: new Date(2026, 0, 31) }, 1))).toBe("2026-02");
+        const lateInJanuary = { kind: "month" as const, anchor: new Date(2026, 0, 31) };
+        expect(periodKey(stepPeriod(lateInJanuary, 1))).toBe("2026-02");
         // Switching kind keeps the day: 1 January 2027 is in the last week of 2026.
         expect(periodKey({ kind: "week", anchor: new Date(2027, 0, 1) })).toBe("2026-W53");
     });
@@ -81,7 +88,8 @@ describe("plan tasks", () => {
     });
 
     it("asks a fate of every live task its parent does not carry", () => {
-        expect(closeCandidates(plan).map((t) => t.listItemId)).toEqual([ "k", "a", "b", "c", "e1" ]);
+        expect(closeCandidates(plan).map((t) => t.listItemId))
+            .toEqual([ "k", "a", "b", "c", "e1" ]);
     });
 
     it("rates capacity against the target", () => {

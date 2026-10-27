@@ -29,6 +29,7 @@ import PdfAnnotations from "./pdf/PdfAnnotations";
 import PdfAttachments from "./pdf/PdfAttachments";
 import PdfLayers from "./pdf/PdfLayers";
 import PdfPages from "./pdf/PdfPages";
+import PlanTab, { useCaiusEnabled } from "./plan/PlanTab";
 import RightPanelWidget, { CollapsibleWidgets, ExpandWidgetRequest, ExpandWidgetRequests } from "./RightPanelWidget";
 import RightPanePeekButton from "./RightPanePeekButton";
 import RightPaneTabs, { RIGHT_PANE_TABS, RightPaneTabDefinition, RightPaneTabId } from "./RightPaneTabs";
@@ -208,6 +209,7 @@ function useItems(rightPaneVisible: boolean, widgetsByParent: WidgetsByParent): 
     const boardColumns = useGetContextData("boardColumns");
     // Subscribe to the AI toggle so the LLM chat is added/removed reactively without a page reload.
     const [ aiEnabled ] = useTriliumOptionBool("aiEnabled");
+    const caiusEnabled = useCaiusEnabled();
     const isPdf = noteType === "file" && noteMime === "application/pdf";
 
     if (!rightPaneVisible) return [];
@@ -277,6 +279,11 @@ function useItems(rightPaneVisible: boolean, widgetsByParent: WidgetsByParent): 
             // them shows the card's own empty state.
             enabled: boardColumns !== undefined,
             tab: "outline"
+        },
+        {
+            el: <PlanTab />,
+            enabled: caiusEnabled,
+            tab: "plan"
         },
         {
             el: <ChatHighlightsList />,

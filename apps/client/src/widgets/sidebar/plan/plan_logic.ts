@@ -1,5 +1,7 @@
 import type FNote from "../../../entities/fnote";
-import { dayKey, isSuggested, monthKey, nextMonthKey, nextWeekKey, tomorrowKey, weekKey } from "../../../menus/task_actions";
+import {
+    dayKey, isSuggested, monthKey, nextMonthKey, nextWeekKey, tomorrowKey, weekKey
+} from "../../../menus/task_actions";
 import type {
     CaiusForwardItem, CaiusPeriodKind, CaiusPlan, CaiusPlanTask, CaiusSetStateItem
 } from "../../../services/caius";
@@ -64,7 +66,7 @@ const KEY_PATTERNS: Record<CaiusPeriodKind, RegExp> = {
     month: /^(\d{4})-(\d{2})$/
 };
 
-/** The period `delta` periods of the same kind after `period` (before it, for a negative `delta`). */
+/** The period `delta` periods after `period`, or before it for a negative `delta`. */
 export function stepPeriod({ kind, anchor }: ViewedPeriod, delta: number): ViewedPeriod {
     const [ year, month, day ] = [ anchor.getFullYear(), anchor.getMonth(), anchor.getDate() ];
     switch (kind) {

@@ -1,0 +1,18 @@
+.plan-tab .plan-capacity {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    .plan-capacity-meter {
+        width: 100%;
+        height: 10px;
+    }
+
+    &.plan-capacity-over .plan-capacity-summary {
+        color: var(--danger-color);
+    }
+
+    .plan-capacity-unestimated {
+        align-self: flex-start;
+    }
+}

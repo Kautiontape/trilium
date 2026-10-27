@@ -1,0 +1,31 @@
+.plan-tab .plan-lane {
+    margin-bottom: 8px;
+
+    .plan-lane-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+    }
+
+    .plan-lane-empty,
+    .plan-lane-more {
+        color: var(--muted-text-color);
+    }
+
+    .plan-pull-in-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+
+        .plan-task-text {
+            flex: 1;
+            min-width: 0;
+        }
+    }
+
+    .plan-days-late {
+        --color: var(--danger-color);
+        flex-shrink: 0;
+    }
+}

@@ -1,0 +1,60 @@
+.plan-tab {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+
+    .plan-period-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px 8px;
+        padding: 4px 8px 8px;
+    }
+
+    .plan-period-step {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+    }
+
+    .plan-period-key {
+        min-width: 7em;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .plan-no-note {
+        padding: 0 8px 8px;
+        color: var(--muted-text-color);
+    }
+
+    /* Shared by the cards' task lists. */
+    .plan-task-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+
+        > li {
+            padding: 4px 0;
+            border-bottom: 1px solid var(--main-border-color);
+            overflow-wrap: anywhere;
+        }
+
+        > li:last-child {
+            border-bottom: none;
+        }
+    }
+
+    .plan-task-actions {
+        display: flex;
+        gap: 4px;
+        margin-top: 4px;
+    }
+
+    .plan-task-outcome {
+        margin-top: 2px;
+        font-size: 0.9em;
+        color: var(--muted-text-color);
+    }
+}

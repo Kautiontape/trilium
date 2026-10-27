@@ -3856,7 +3856,8 @@
     "tab_attributes": "Attributes",
     "tab_connections": "Connections",
     "tab_chat": "AI chat",
-    "tab_widgets": "Widgets"
+    "tab_widgets": "Widgets",
+    "tab_plan": "Plan"
   },
   "print_preview": {
     "title": "Print preview",
@@ -4474,6 +4475,47 @@
       "same_day": "This task is already in that note.",
       "unreadable": "Caius cannot change this note: it is protected or not a text note.",
       "other": "Caius skipped this task: {{- reason}}"
+    },
+    "plan": {
+      "load_failed": "Caius could not read the plan: {{- message}}",
+      "retry": "Retry",
+      "no_note": "There is no note for this period yet.",
+      "day": "Day",
+      "week": "Week",
+      "month": "Month",
+      "previous": "Previous",
+      "next": "Next",
+      "today": "Today",
+      "current_day": "Today",
+      "current_week": "This week",
+      "current_month": "This month",
+      "capacity": "Capacity",
+      "capacity_of_target": "{{total}} min planned of {{min}}–{{max}} min",
+      "capacity_total": "{{total}} min planned",
+      "unestimated_one": "{{count}} unestimated, counted at {{minutes}} min",
+      "unestimated_other": "{{count}} unestimated, counted at {{minutes}} min each",
+      "suggested": "Suggested",
+      "no_suggestions": "Nothing suggested.",
+      "no_id": "This task has no id yet. Open its note and save it first.",
+      "pull_in": "Pull in",
+      "lane_overdue": "Overdue",
+      "lane_week": "This week",
+      "lane_orbit": "This month",
+      "lane_empty": "Nothing here.",
+      "lane_more": "and {{count}} more",
+      "days_late_one": "{{count}} day late",
+      "days_late_other": "{{count}} days late",
+      "pull_into": "→ {{- period}}",
+      "close": "Close",
+      "close_nothing_open": "Every task here has a fate.",
+      "fate_drop": "Drop",
+      "fate_to": "{{- fate}} → {{- to}}",
+      "drop_reason": "Why drop it?",
+      "decided": "{{decided}} of {{total}} decided",
+      "apply": "Apply",
+      "closed_one": "Closed {{count}} task.",
+      "closed_other": "Closed {{count}} tasks.",
+      "not_applied": "Not applied: the batch stopped before this task."
     }
   }
 }
