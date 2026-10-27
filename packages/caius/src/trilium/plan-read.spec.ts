@@ -123,6 +123,19 @@ describe('readPlan (day)', () => {
     expect(capacity.target).toEqual({ min: 180, max: 240 });
   });
 
+  it('leaves empty to-do items out of capacity', async () => {
+    const html = '<h3>Work</h3>' + ul(li('t1', 'Estimated ~45m'), li('t2', 'No estimate'), li('t3', '   '));
+    const f = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] });
+    const { capacity } = await readPlan(f.api, 'day', '2026-10-26', now);
+    expect(capacity).toMatchObject({ plannedMinutes: 45, estimatedCount: 1, unestimatedCount: 1, unestimatedMinutes: 30, totalMinutes: 75 });
+  });
+
+  it('keeps a parent task counted when its only sub-item is empty', async () => {
+    const html = '<h3>Work</h3>' + ul(li('p1', 'Write report ~2h', { sub: ul(li('p1a', '')) }));
+    const { capacity } = await readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] }).api, 'day', '2026-10-26', now);
+    expect(capacity).toMatchObject({ plannedMinutes: 120, estimatedCount: 1, unestimatedCount: 0, totalMinutes: 120 });
+  });
+
   it('gives noteId null for a missing note and never creates one', async () => {
     const f = fakeTrilium(seed);
     const v = await readPlan(f.api, 'day', '2026-10-27', now);

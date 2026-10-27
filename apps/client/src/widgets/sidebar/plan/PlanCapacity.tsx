@@ -42,20 +42,22 @@ export default function PlanCapacity({ plan, onOpen }: {
                         />
                         <div className="plan-capacity-summary">
                             {t("caius.plan.capacity_of_target", {
-                                total: capacity.totalMinutes, min: target.min, max: target.max
+                                total: formatDuration(capacity.totalMinutes),
+                                range: formatRange(target.min, target.max)
                             })}
                         </div>
                     </>
                 ) : (
                     <div className="plan-capacity-summary">
-                        {t("caius.plan.capacity_total", { total: capacity.totalMinutes })}
+                        {t("caius.plan.capacity_total", { total: formatDuration(capacity.totalMinutes) })}
                     </div>
                 )}
                 {capacity.unestimatedCount > 0 && (
                     <LinkButton
                         className="plan-capacity-unestimated"
                         text={t("caius.plan.unestimated", {
-                            count: capacity.unestimatedCount, minutes: UNESTIMATED_MINUTES
+                            count: capacity.unestimatedCount,
+                            duration: formatDuration(UNESTIMATED_MINUTES)
                         })}
                         onClick={() => setListShown(!listShown)}
                     />
@@ -75,4 +77,24 @@ export default function PlanCapacity({ plan, onOpen }: {
             </div>
         </RightPanelWidget>
     );
+}
+
+/** `220` → "3 h 40 m", `45` → "45 m", `240` → "4 h", `0` → "0 m". */
+function formatDuration(minutes: number) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h === 0) {
+        return t("caius.plan.duration_m", { m });
+    }
+
+    return m === 0 ? t("caius.plan.duration_h", { h }) : t("caius.plan.duration_hm", { h, m });
+}
+
+/** `180, 240` → "3–4 h"; ends that are not whole hours are written out in full. */
+function formatRange(min: number, max: number) {
+    if (min % 60 === 0 && max % 60 === 0) {
+        return t("caius.plan.range_hours", { min: min / 60, max: max / 60 });
+    }
+
+    return t("caius.plan.range", { min: formatDuration(min), max: formatDuration(max) });
 }

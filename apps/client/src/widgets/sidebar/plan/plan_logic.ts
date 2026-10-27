@@ -119,10 +119,10 @@ export function closeCandidates(plan: CaiusPlan) {
 
 /**
  * The live tasks without an estimate, counted as `capacity.unestimatedCount` counts them: a task
- * with live sub-items counts through its sub-items instead.
+ * with live sub-items counts through its sub-items instead, and an empty to-do is not a task.
  */
 export function unestimatedTasks(plan: CaiusPlan) {
-    const live = planTasks(plan).filter(isLive);
+    const live = planTasks(plan).filter((task) => isLive(task) && task.text.trim() !== "");
     const parents = new Set(live.filter((task) => task.parent !== null).map((task) => task.parent));
     return live.filter((task) => !parents.has(task.text) && task.estMinutes === null);
 }
