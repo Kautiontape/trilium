@@ -1,5 +1,5 @@
 import { dayCapacity, type NoteStore } from "@triliumnext/caius";
-import { cls, sql_init } from "@triliumnext/core";
+import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { overriddenKeys } from "./inputs/jira.js";
@@ -266,6 +266,19 @@ describe("caius_winddown", () => {
         const dismissed = await call("caius_dismiss", { items: [ { noteId: notes.monday, listItemId: added.results[0].listItemId } ] });
         expect(dismissed.results[0]).toMatchObject({ status: "dismissed", key: "ZAP-101" });
         expect(await sources()).not.toContain("ZAP-101");
+    });
+
+    it("says in one line that a protected standing note can't be read", async () => {
+        const standing = becca.findAttributes("label", "assistantContext")[0]?.getNote();
+        if (!standing) throw new Error("no standing note");
+        standing.isProtected = true;
+        try {
+            const answer = await call("caius_winddown", { date: FRIDAY, step: "open" });
+            expect(answer.standing).toBeNull();
+            expect(answer.standingMissing).toBe("The standing note is protected or not a text note, so the rhythm and the brief rules are the defaults.");
+        } finally {
+            standing.isProtected = false;
+        }
     });
 
     it("says in one line that the standing note is missing", async () => {
