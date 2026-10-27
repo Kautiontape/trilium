@@ -183,10 +183,11 @@ export async function addContext(
   if (hit) {
     const longer = hit.until !== undefined && (until === undefined || hit.until < until);
     if (!longer) return { status: 'skipped', reason: 'duplicate', detail: `already in force: ${hit.text}` };
-    // The copy in force ends sooner: its `(until …)` is rewritten where it stands, unless it sits in
-    // an older day note, which drops out of the Context window, so the line goes to the target instead.
+    // The copy in force ends sooner. In the note asked for, its `(until …)` is rewritten where it
+    // stands. In another note, which can stop being read before the new date (an older day, last
+    // week), the line is written to the note asked for instead, where it is the newer copy.
     const where = 'noteId' in hit ? (hit as ContextEntry) : { period: 'week' as const, key, noteId: note!.noteId };
-    if (where.period === 'week' || where.noteId === note?.noteId) {
+    if (where.noteId === note?.noteId) {
       return extendUntil(api, where, hit.text, until, opts.dryRun);
     }
   }

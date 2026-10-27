@@ -257,8 +257,22 @@ describe('addContext keeping a line that lapses', () => {
     // Already in force that long: a duplicate.
     expect(await addContext(fake.api, { week: '2026-W45', text: 'ZAP-2590 is open', until: '2026-11-10' }, { now: WED })).toMatchObject({ status: 'skipped', reason: 'duplicate' });
     // No until keeps it for good.
-    expect(await addContext(fake.api, { date: '2026-11-05', text: 'ZAP-2590 is open' }, { now: WED })).toMatchObject({ status: 'updated', writtenNoteId: 'w', line: 'ZAP-2590 is open' });
+    expect(await addContext(fake.api, { week: '2026-W45', text: 'ZAP-2590 is open' }, { now: WED })).toMatchObject({ status: 'updated', writtenNoteId: 'w', line: 'ZAP-2590 is open' });
     expect(fake.html.w).toBe(`<h3>Context</h3><ul><li>ZAP-2590 is open</li></ul>${TASKS}`);
+  });
+
+  it('writes the line to the note asked for when the copy in force is in another note, even a week note', async () => {
+    // keep2.mts B: a Monday wind-down keeps a line in last week's note; that note stops being read after Monday.
+    const MON = new Date(2026, 10, 9, 19, 0);
+    const fake = fakeTrilium({ w: [periodNote('w', 'weekNote', '2026-W45'), lapsing('Mon 9 Nov')], m: [periodNote('m', 'dateNote', '2026-11-09'), TASKS] });
+    expect(await addContext(fake.api, { date: '2026-11-09', text: 'ZAP-2590 is open', until: '2026-11-13' }, { now: MON })).toMatchObject({ status: 'added', writtenNoteId: 'm' });
+    expect(fake.html.w).toBe(lapsing('Mon 9 Nov'));
+    expect(fake.html.m).toContain('<li>ZAP-2590 is open (until Fri 13 Nov)</li>');
+
+    // The same from a day of this week into next week's note.
+    const thisWeek = fakeTrilium({ w: [periodNote('w', 'weekNote', '2026-W45'), lapsing('Fri 6 Nov')] });
+    expect(await addContext(thisWeek.api, { week: '2026-W46', text: 'ZAP-2590 is open', until: '2026-11-13' }, { now: new Date(2026, 10, 6, 19) })).toMatchObject({ status: 'added', writtenNoteId: 'new-2026-W46' });
+    expect(thisWeek.html.w).toBe(lapsing('Fri 6 Nov'));
   });
 
   it('extends a copy in the target day note in place, and writes a copy in an older day note to the target', async () => {
