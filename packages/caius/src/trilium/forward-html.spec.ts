@@ -60,7 +60,7 @@ describe('markRescheduled', () => {
       li('eone', 'Do it &amp; more', { extra: ' title="x"' }),
       '<li data-list-item-id="eone" data-trilium-task-state="_rescheduled" title="Rescheduled">' +
         '<label class="todo-list__label"><input type="checkbox" checked="checked" disabled="disabled">' +
-        '<span class="todo-list__label__description">Do it &amp; more <em>scheduled <a class="reference-link" href="#root/tgtnote">Tuesday 27</a></em></span></label></li>',
+        '<span class="todo-list__label__description">Do it &amp; more <em>scheduled <a href="#root/tgtnote">Tuesday 27</a></em></span></label></li>',
     );
     expect(r.html).toBe(expected);
   });
@@ -98,6 +98,18 @@ describe('markRescheduled', () => {
     const again = markRescheduled(once.html, 'eone', mark);
     expect(again).toEqual({ ok: false, reason: 'already_moved', scheduledTo: [TGT_ID] });
   });
+
+  it('reads where an item was scheduled from the old reference links, as written and as CKEditor saves them', () => {
+    const moved = (description: string) => ul(li('emoved', description, { state: '_rescheduled', checked: true }));
+    const where = (description: string) => markRescheduled(moved(description), 'emoved', mark);
+    const scheduled = { ok: false, reason: 'already_moved', scheduledTo: [TGT_ID] };
+
+    expect(where('Do it <em>scheduled <a class="reference-link" href="#root/tgtnote">Tuesday 27</a></em>')).toEqual(scheduled);
+    expect(where('Do it <em>scheduled&nbsp;</em><a class="reference-link" href="#root/tgtnote">27 - Tuesday</a>')).toEqual(scheduled);
+    expect(where('Do it <em>scheduled </em><a href="#root/tgtnote"><em>Tuesday 27</em></a>')).toEqual(scheduled);
+    // A link in the task's own text is not where it was scheduled.
+    expect(where('See <a href="#root/other">the plan</a> <em>scheduled <a href="#root/tgtnote">Tuesday 27</a></em>')).toEqual(scheduled);
+  });
 });
 
 describe('insertCopy and Doing', () => {
@@ -122,7 +134,7 @@ describe('insertCopy', () => {
     expect(r.section).toBe('Work');
     const copied = r.html.slice(r.html.indexOf(li('ewrk2', 'Existing')) + li('ewrk2', 'Existing').length);
     expect(copied.startsWith('<li data-list-item-id="e')).toBe(true);
-    expect(copied).toContain('Ship &amp; tell <a class="reference-link" href="#root/srcnote">from Monday 26</a>');
+    expect(copied).toContain('Ship &amp; tell <a href="#root/srcnote">from Monday 26</a>');
     // only the sub-item that was Doing keeps its state; the parent's old title is gone
     expect(copied.match(/data-trilium-task-state/g)).toHaveLength(1);
     expect(copied).toMatch(/<li data-list-item-id="e[0-9a-f]{32}" data-trilium-task-state="doing">/);
@@ -193,6 +205,13 @@ describe('hasCopy and inspectItem', () => {
     expect(hasCopy(ul(li('ex', 'Do it')), source, 'eone', SRC_ID)).toBe(false);
   });
 
+  it('recognises a copy with the old reference link, as written and as CKEditor saves it', () => {
+    expect(hasCopy(ul(li('ex', 'Do it <a class="reference-link" href="#root/srcnote">from Monday 26</a>')), source, 'eone', SRC_ID)).toBe(true);
+    expect(hasCopy(ul(li('ex', 'Do it&nbsp;<a class="reference-link" href="#root/srcnote">26 - Monday</a>')), source, 'eone', SRC_ID)).toBe(true);
+    expect(hasCopy(ul(li('ex', 'Do it&nbsp;<a href="#root/srcnote">from Monday 26</a>')), source, 'eone', SRC_ID)).toBe(true);
+    expect(hasCopy(ul(li('ex', 'Do it <a href="#root/othernote">from Monday 26</a>')), source, 'eone', SRC_ID)).toBe(false);
+  });
+
   it('reads an item\'s text and section', () => {
     expect(inspectItem('<h3>Work</h3>' + source, 'eone', STATES)).toEqual({ ok: true, text: 'Do it', section: 'Work' });
   });
@@ -233,7 +252,7 @@ describe('trailing tokens stay trailing', () => {
     const source = '<h3>Work</h3>' + ul(li('etok', 'Write it &amp; send ~30m ! *2026-10-30'));
     const r = insertCopy('<h3>Work</h3>', source, 'etok', copy);
     if (!r.ok) throw new Error('expected ok');
-    expect(r.html).toContain('Write it &amp; send <a class="reference-link" href="#root/srcnote">from Monday 26</a> ~30m ! *2026-10-30</span>');
+    expect(r.html).toContain('Write it &amp; send <a href="#root/srcnote">from Monday 26</a> ~30m ! *2026-10-30</span>');
     const [task] = parseDocument(htmlToMarkdown(r.html, STATES), { tabWidth: 4 });
     expect(task!.tokens.map((t) => t.kind).sort()).toEqual(['due', 'estimate', 'importance']);
     expect(task!.text).toContain('from Monday 26');

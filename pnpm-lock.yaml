@@ -375,6 +375,9 @@ importers:
       '@prefresh/vite':
         specifier: 4.0.1
         version: 4.0.1(@babel/core@7.29.7(supports-color@10.2.2))(@prefresh/babel-plugin@0.5.3)(preact@10.29.8)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.104.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0))
+      '@triliumnext/caius':
+        specifier: workspace:*
+        version: link:../../packages/caius
       '@types/bootstrap':
         specifier: 5.2.11
         version: 5.2.11

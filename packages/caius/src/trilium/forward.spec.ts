@@ -73,9 +73,9 @@ describe('forwardTasks', () => {
     const [r] = await forwardTasks(f.api, [req], opts);
     expect(r).toMatchObject({ status: 'moved' });
     expect(f.log.filter((l) => l.startsWith('put'))).toEqual(['put tue', 'put mon']);
-    expect(f.html.tue).toContain('Write it <a class="reference-link" href="#root/mon">from Monday 26</a>');
+    expect(f.html.tue).toContain('Write it <a href="#root/mon">from Monday 26</a>');
     expect(f.html.mon).toContain('data-trilium-task-state="_rescheduled"');
-    expect(f.html.mon).toContain('<em>scheduled <a class="reference-link" href="#root/tue">Tuesday 27</a></em>');
+    expect(f.html.mon).toContain('<em>scheduled <a href="#root/tue">Tuesday 27</a></em>');
     expect(f.html.mon).toContain(li('etwo', 'Other'));
   });
 
@@ -198,8 +198,8 @@ describe('forwardTasks to and from weeks and months', () => {
     const f = seed();
     const [r] = await go(f, 'mon', 'eone', '2026-W45');
     expect(r).toMatchObject({ status: 'moved' });
-    expect(f.html.mon).toContain('<em>scheduled <a class="reference-link" href="#root/wk">week 45</a></em>');
-    expect(f.html.wk).toContain('Write it <a class="reference-link" href="#root/mon">from Monday 26</a>');
+    expect(f.html.mon).toContain('<em>scheduled <a href="#root/wk">week 45</a></em>');
+    expect(f.html.wk).toContain('Write it <a href="#root/mon">from Monday 26</a>');
     expect(f.log.filter((l) => l.startsWith('put'))).toEqual(['put wk', 'put mon']);
   });
 
@@ -219,8 +219,8 @@ describe('forwardTasks to and from weeks and months', () => {
   it('forwards a week or a month down to a day, and a week to a month', async () => {
     const f = seed();
     await go(f, 'wk', 'ewk', '2026-10-28');
-    expect(f.html.wk).toContain('scheduled <a class="reference-link" href="#root/new-2026-10-28">Wednesday 28</a>');
-    expect(f.html['new-2026-10-28']).toContain('Week thing <a class="reference-link" href="#root/wk">from week 45</a>');
+    expect(f.html.wk).toContain('scheduled <a href="#root/new-2026-10-28">Wednesday 28</a>');
+    expect(f.html['new-2026-10-28']).toContain('Week thing <a href="#root/wk">from week 45</a>');
 
     const [m] = await go(f, 'mo', 'emo', '2026-W46');
     expect(m).toMatchObject({ status: 'moved' });
