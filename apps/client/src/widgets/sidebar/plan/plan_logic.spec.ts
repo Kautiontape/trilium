@@ -104,6 +104,14 @@ describe("plan tasks", () => {
         expect(closeCandidates(blank).map((t) => t.listItemId)).toEqual([ "x1", "x2", "x3" ]);
     });
 
+    it("keeps an unestimated parent listed when its only sub-item is empty", () => {
+        const parent = planOf([
+            task({ listItemId: "p", text: "Parent" }),
+            task({ listItemId: "pa", text: " ", parent: "Parent", parentListItemId: "p" })
+        ]);
+        expect(unestimatedTasks(parent).map((t) => t.listItemId)).toEqual([ "p" ]);
+    });
+
     it("tells a sub-item's parent by its id, not by its text", () => {
         // Two live tasks and a done one share a name; only the done one has a live sub-item.
         const emails = planOf([
