@@ -19,6 +19,7 @@ import {
   escapeHtml,
   inspectSuggested,
   itemMarkup,
+  inProseById,
   placeTask,
   setTaskState,
   suggestedItems,
@@ -236,6 +237,7 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
     }
 
     const after = placeTask(html, markup, target);
+    if (inProseById(after, id)) return skip(req, 'prose_section', PROSE_DETAIL);
     const noteId = target_?.noteId ?? 'NEW-NOTE';
     const track = () => {
       const where = `${when.key}: ${req.text.trim()}`;
@@ -294,6 +296,7 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     const taken = takeSuggested(html, req.listItemId);
     if (!taken.ok) return skip(req, taken.reason, taken.reason === 'not_suggested' ? 'only an item under Suggested can be accepted (already accepted?)' : undefined);
     const after = placeTask(taken.html, taken.markup, target, req.position);
+    if (inProseById(after, req.listItemId)) return skip(req, 'prose_section', PROSE_DETAIL);
     if (opts.dryRun) {
       return { ...req, status: 'accepted', dryRun: true, listItemId: req.listItemId, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };
     }

@@ -65,6 +65,13 @@ function insertInList(html: string, list: HTMLElement, item: string, position?: 
   return insertAt(at, item);
 }
 
+/** Whether the item with this id sits inside a Meetings or Context section of `html`. */
+export function inProseById(html: string, id: string): boolean {
+  const root = parse(html, { comment: true });
+  const li = findItem(root, id);
+  return !!li && inProseSection(root, li);
+}
+
 /** True when the note has a task outside Suggested, so an untouched template can be told apart. */
 function hasRealTasks(root: HTMLElement): boolean {
   return root.querySelectorAll('li').some((li) => isTask(li) && !isSuggestedName(sectionOf(root, li)) && !inProseSection(root, li));
