@@ -53,6 +53,13 @@ describe('dayCandidates', () => {
     expect(candidates).toEqual([]);
   });
 
+  it('leaves out a week item that names a ticket Jira calls done', () => {
+    const candidates = dayCandidates({
+      jira, week: { key: '2026-W45', tasks: [weekTask('w1', 'Close out ZAP-5'), weekTask('w2', 'Write the spec')] }, live: new Map(), exclude: ['ZAP-1', 'ZAP-2', 'ZAP-3', 'ZAP-4'],
+    });
+    expect(candidates.map((c) => c.subject)).toEqual(['Write the spec']);
+  });
+
   it('keeps only what is new since a time: asks after it, hand-offs updated after it, no week items', () => {
     const candidates = dayCandidates({
       jira: { ...jira, handoff: [{ ...ticket('ZAP-7', { updated: '2026-11-06T09:30:00.000-0500' }), daysInStatus: 0 }, { ...ticket('ZAP-8', { updated: '2026-11-02T10:00:00.000-0500' }), daysInStatus: 4 }] },
