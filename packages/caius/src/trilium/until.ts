@@ -9,6 +9,7 @@ export interface ContextLine {
 const UNTIL = /\s*\(\s*until\s+([^()]*?)\s*\)\s*$/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const DAY_MS = 86_400_000;
+const MAX_AHEAD_DAYS = 300;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -17,7 +18,7 @@ const utcMs = (key: string) => Date.parse(`${key}T00:00:00Z`);
 /**
  * Splits Context bullets into the lines in force on `planDate` and the expired ones. A trailing
  * `(until Fri 6 Nov)`, `(until 6 Nov)` or `(until 2026-11-06)` is taken off the text and kept as
- * `until`, resolved against `noteDate` (to the nearest year); any other suffix stays in the text.
+ * `until`, resolved against `noteDate` (a year-less date is the next occurrence, or the previous when that is over 300 days ahead); any other suffix stays in the text.
  * A line whose `until` is before `planDate` is expired.
  */
 export function parseContext(lines: string[], noteDate: string, planDate: string = noteDate): { context: ContextLine[]; expiredContext: ContextLine[] } {
@@ -48,13 +49,22 @@ function resolveDate(text: string, noteDate: string): string | null {
     if (month < 0) return null;
   } else return null;
 
-  const years = year === null ? [-1, 0, 1].map((d) => Number(noteDate.slice(0, 4)) + d) : [year];
-  const found = years
-    .map((y) => ({ y, ms: Date.UTC(y, month, day) }))
-    .filter(({ y, ms }) => new Date(ms).getUTCFullYear() === y && new Date(ms).getUTCMonth() === month && new Date(ms).getUTCDate() === day);
+  const valid = (y: number) => {
+    const d = new Date(Date.UTC(y, month, day));
+    return d.getUTCFullYear() === y && d.getUTCMonth() === month && d.getUTCDate() === day ? d.getTime() : null;
+  };
+  if (year !== null) {
+    const ms = valid(year);
+    return ms === null ? null : dateKey(ms);
+  }
+  // A date without a year is the next occurrence on or after the note's date, unless that is over
+  // MAX_AHEAD_DAYS away, when it is the previous one ("30 Dec" in a 2 Jan note is last December).
+  const base = Number(noteDate.slice(0, 4));
   const near = utcMs(noteDate);
-  found.sort((a, b) => Math.abs(a.ms - near) - Math.abs(b.ms - near));
-  return found[0] ? dateKey(found[0].ms) : null;
+  const next = [base, base + 1, base + 2].map(valid).find((ms): ms is number => ms !== null && ms >= near);
+  const previous = [base, base - 1, base - 2].map(valid).find((ms): ms is number => ms !== null && ms < near);
+  const pick = next !== undefined && (next - near) / DAY_MS <= MAX_AHEAD_DAYS ? next : (previous ?? next);
+  return pick === undefined ? null : dateKey(pick);
 }
 
 /** The first and last day of a period, as `YYYY-MM-DD`. */

@@ -110,6 +110,9 @@ describe('until', () => {
     expect(parseContext(lines, '2026-11-06').context.map((c) => c.until)).toEqual(Array(5).fill('2026-11-06'));
     expect(parseContext(['a (until 6 Jan)'], '2026-12-30').context[0]?.until).toBe('2027-01-06');
     expect(parseContext(['a (until 30 Dec)'], '2027-01-04').expiredContext[0]?.until).toBe('2026-12-30');
+    // A year-less date is the next occurrence, or the previous one when that is over 300 days away.
+    expect(parseContext(['a (until 15 Jun)'], '2026-12-10').context[0]?.until).toBe('2027-06-15');
+    expect(parseContext(['a (until 15 Jun)'], '2026-06-15').context[0]?.until).toBe('2026-06-15');
     expect(parseContext(['a (until 6 Nov)'], '2026-11-07').expiredContext).toEqual([{ text: 'a', until: '2026-11-06' }]);
   });
 
