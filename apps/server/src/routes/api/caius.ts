@@ -34,7 +34,9 @@ export default {
     setState: caiusRoute((caius, req) => caius.caiusService.setState(parse(caius.routeInputs.setState, req.body))),
     forward: caiusRoute((caius, req) => caius.caiusService.forward(parse(caius.routeInputs.forward, req.body))),
     assignIds: caiusRoute((caius, req) => caius.caiusService.assignIds(parse(caius.routeInputs.assignIds, req.body))),
-    apply: caiusRoute((caius, req) => caius.caiusService.apply(parse(caius.routeInputs.apply, req.body)))
+    apply: caiusRoute((caius, req) => caius.caiusService.apply(parse(caius.routeInputs.apply, req.body))),
+    nudge: caiusRoute((caius, req) => caius.caiusService.nudge(parse(caius.routeInputs.nudge, { date: req.query.date }))),
+    skipCatchup: caiusRoute((caius, req) => caius.caiusService.skipCatchup(parse(caius.routeInputs.skipCatchup, req.body)))
 };
 
 let loading: Promise<CaiusModule> | undefined;

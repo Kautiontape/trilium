@@ -24,6 +24,7 @@ import {
     forwardTasks,
     gatherContext,
     isPeriodKey,
+    label,
     listItemsWithoutIds,
     loadJournal,
     loadStateSymbols,
@@ -62,6 +63,7 @@ import {
     type HeaderInput,
     type InputsInput,
     type MeetingsInput,
+    type NudgeInput,
     type OpenInput,
     type PlanDayInput,
     type PlanInput,
@@ -69,8 +71,8 @@ import {
     type SkipCatchupInput,
     type WindDownInput
 } from "./schemas.js";
-import { SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
-import { type DayRead, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
+import { findBrief, PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
+import { catchupOf, type DayRead, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -291,6 +293,22 @@ export function createCaiusService(
         winddown: (input: WindDownInput) => windDown(stepDeps(), input),
 
         planday: (input: PlanDayInput) => planDay(stepDeps(), input),
+
+        /**
+         * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and
+         * the brief lookup of `caius_brief_write`: `catchup` while the last workday has live tasks,
+         * then `planned` once the day has a brief, else `unplanned`. Reads only.
+         */
+        nudge: ({ date }: NudgeInput) => withCaiusLock("caius_nudge", async () => {
+            const { lastWorkday, note, tasks } = await catchupOf(store, date, caiusNow());
+            if (tasks.length) {
+                return { date, state: "catchup", lastWorkday, tasks: tasks.map(({ noteId, listItemId, text }) => ({ noteId, listItemId, text })) };
+            }
+            const brief = note ? await findBrief(store, note.noteId, date) : null;
+            return brief
+                ? { date, state: "planned", lastWorkday, plannedAt: label(brief, PLANNED_AT_LABEL) ?? null }
+                : { date, state: "unplanned", lastWorkday };
+        }),
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
             // The forecast can take 3 s, so it is fetched before the lock is taken.

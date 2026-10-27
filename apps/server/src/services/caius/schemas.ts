@@ -204,8 +204,15 @@ export const toolInputs = {
     header
 };
 
+/** The nudge bar's state for a day note. */
+const nudge = z.object({
+    date: periodKey("day").describe("The day note the bar is on, YYYY-MM-DD")
+});
+
 export const routeInputs = {
     ...reads,
+    nudge,
+    skipCatchup,
     add: writes(addItem),
     accept: writes(acceptItem.safeExtend(version)),
     dismiss: writes(dismissItem.extend(version)),
@@ -236,6 +243,7 @@ export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
 export type SkipCatchupInput = z.infer<typeof skipCatchup>;
+export type NudgeInput = z.infer<typeof nudge>;
 export type WindDownInput = z.infer<typeof winddown>;
 export type PlanDayInput = z.infer<typeof planday>;
 export type AddInput = z.infer<typeof toolInputs.add>;

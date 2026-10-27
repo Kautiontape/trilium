@@ -137,17 +137,10 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     });
 
     if (step === "catchup") {
-        const last = dayKey(lastWorkday(localDay(date)));
-        const { standing, skipped, tasks } = await deps.locked("caius_planday", async () => {
-            const note = await findPeriodNote(deps.store, "day", date);
-            const skipped = !!note?.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
-            return {
-                standing: await deps.standing(),
-                skipped,
-                tasks: skipped ? [] : mainTasks(await readPlan(deps.store, "day", last, deps.now))
-                    .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical }))
-            };
-        });
+        const { standing, catchup: { lastWorkday: last, skipped, tasks } } = await deps.locked("caius_planday", async () => ({
+            standing: await deps.standing(),
+            catchup: await catchupOf(deps.store, date, deps.now)
+        }));
         const question = tasks.length
             ? t("caius.daily.catchup", { weekday: weekdayName(last), count: tasks.length })
             : null;
@@ -212,6 +205,20 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         },
         errors: read.inputs.errors
     }, null, null);
+}
+
+/**
+ * What Plan my day offers to move to `date`: the live top-level tasks of the last workday, or none
+ * once the day note carries `#caiusSkipCatchup=<date>`. Answers the day note too, without creating
+ * it. The caller holds the lock.
+ */
+export async function catchupOf(store: NoteStore, date: string, now: Date) {
+    const last = dayKey(lastWorkday(localDay(date)));
+    const note = await findPeriodNote(store, "day", date);
+    const skipped = !!note?.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
+    const tasks = skipped ? [] : mainTasks(await readPlan(store, "day", last, now))
+        .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical }));
+    return { lastWorkday: last, note, skipped, tasks };
 }
 
 /** A work bar's label: the task's first Jira key, else its text cut to `LABEL_LENGTH`. */
