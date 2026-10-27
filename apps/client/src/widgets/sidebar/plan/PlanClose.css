@@ -1,0 +1,36 @@
+.plan-tab .plan-close-list {
+    .plan-task-text {
+        display: block;
+    }
+
+    .plan-close-fate {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+        margin-top: 4px;
+    }
+
+    .plan-close-target {
+        font-size: 0.9em;
+        color: var(--muted-text-color);
+    }
+
+    .plan-close-reason {
+        flex: 1 1 100%;
+    }
+}
+
+.plan-tab .plan-close-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.plan-tab .plan-close-results {
+    margin: 8px 0 0;
+    padding-inline-start: 16px;
+    font-size: 0.9em;
+}

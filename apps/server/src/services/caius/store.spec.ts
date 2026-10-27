@@ -78,6 +78,15 @@ describe("becca NoteStore", () => {
         const elsewhere = await inRequest(() => store.calendarMonth("2031-03"));
         expect(await store.search("#caiusTest", elsewhere.noteId)).toEqual([]);
         await expect(store.search("  ")).rejects.toThrow("empty");
+
+        // A route runs with the client's hoisted note, which must not narrow what Caius sees.
+        for (const hoisted of [ elsewhere.noteId, "null" ]) {
+            const found = await cls.init(() => {
+                cls.set("hoistedNoteId", hoisted);
+                return store.search("#caiusTest");
+            });
+            expect(found.map((n) => n.noteId)).toEqual([day.noteId]);
+        }
     });
 
     it("throws where ETAPI answers 404 or 400", async () => {

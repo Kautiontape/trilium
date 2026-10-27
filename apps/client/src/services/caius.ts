@@ -56,6 +56,63 @@ export type CaiusExplanation =
     | { lane: string; rule: string; source: string; daysLate?: number; summary: string }
     | { error: "not_found" };
 
+export type CaiusPeriodKind = "day" | "week" | "month";
+
+/** A task of a period note, as `/api/caius/plan` lists it. */
+export interface CaiusPlanTask {
+    noteId: string;
+    /** `null` for an item without `data-list-item-id`, which no write can target. */
+    listItemId: string | null;
+    state: "open" | "in_progress" | "done" | "cancelled" | "tombstone";
+    text: string;
+    estMinutes: number | null;
+    /** The parent task's text, for a sub-item. */
+    parent: string | null;
+    section: string | null;
+    critical: boolean;
+}
+
+/** One day, week or month note read as a plan. */
+export interface CaiusPlan {
+    period: CaiusPeriodKind;
+    key: string;
+    /** `null` when the note does not exist yet. */
+    noteId: string | null;
+    critical: CaiusPlanTask[];
+    sections: { name: string | null; kind: string | null; tasks: CaiusPlanTask[] }[];
+    top3: CaiusPlanTask[];
+    suggested: CaiusPlanTask[];
+    dismissed: string[];
+    capacity: {
+        plannedMinutes: number;
+        estimatedCount: number;
+        unestimatedCount: number;
+        unestimatedMinutes: number;
+        totalMinutes: number;
+        /** `null` for a month, which has no target. */
+        target: { min: number; max: number } | null;
+        horizons: Record<string, number>;
+    };
+}
+
+export type CaiusLane =
+    "overdue" | "today" | "week" | "orbit" | "planning_ahead" | "someday" | "suggested";
+
+/** An open task anywhere in the Journal, as `/api/caius/open` lists it. */
+export interface CaiusOpenTask {
+    noteId: string;
+    /** The period of the note the task is in: `2026-10-26`, `2026-W44` or `2026-10`. */
+    period: string;
+    listItemId: string | null;
+    state: "open" | "in_progress";
+    text: string;
+    parent: string | null;
+    section: string | null;
+    lane: CaiusLane | null;
+    /** Set for an overdue task. */
+    daysLate?: number;
+}
+
 interface CaiusStatus {
     enabled: boolean;
     detail?: unknown;
@@ -100,6 +157,12 @@ async function fetchStatus() {
 }
 
 export const caiusApi = {
+    plan: (period: CaiusPeriodKind, date: string) => server.get<CaiusPlan>(
+        `caius/plan?${new URLSearchParams({ period, date }).toString()}`
+    ),
+    open: (lane: CaiusLane, limit: number) => server.get<{ total: number; tasks: CaiusOpenTask[] }>(
+        `caius/open?${new URLSearchParams({ lane, limit: String(limit) }).toString()}`
+    ),
     setState: (items: CaiusSetStateItem[]) => postItems("set-state", items),
     forward: (items: CaiusForwardItem[]) => postItems("forward", items),
     accept: (items: CaiusAcceptItem[]) => postItems("accept", items),
@@ -424,6 +487,15 @@ function showOutcome(results: CaiusItemResult[], successMessage: string, flushed
     }
 
     toast.showMessage(successMessage);
+}
+
+/** A skipped or failed item's outcome in plain words, or `null` when the write went through. */
+export function describeOutcome(result: CaiusItemResult | undefined, flushed: boolean) {
+    if (result?.status === "failed") {
+        return t("caius.request_failed", { message: result.error ?? "" });
+    }
+
+    return result?.status === "skipped" ? describeSkip(result.reason ?? "", flushed) : null;
 }
 
 /** A skip reason in plain words. `flushed` says whether the note was saved before the request. */
