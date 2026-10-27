@@ -15,6 +15,7 @@ import {
   isCriticalAside,
   inProseSection,
   isHeading,
+  isIncludeNote,
   isPlaceholder,
   isTask,
   isTodoList,
@@ -85,6 +86,28 @@ function newHeaderLevel(top: HTMLElement[]): number {
   return Math.max(...heads.map(levelOf));
 }
 
+/** A paragraph or plain list whose only text is the template's `[…]`. */
+const isFiller = (el: HTMLElement) => isPlaceholder(el) || (el.tagName === 'P' && /^\[(…|\.{3})\]$/.test(el.text.trim()));
+
+/**
+ * Where a new Important block goes: below a leading include-note and any Meetings and Context
+ * blocks, just above the first other content.
+ */
+function importantBlockAt(top: HTMLElement[]): number {
+  let at = 0;
+  const tracker = new ProseTracker();
+  for (const [i, el] of top.entries()) {
+    if (i === 0 && isIncludeNote(el)) at = el.range[1];
+    else if (isHeading(el)) {
+      tracker.enter(el.text, levelOf(el));
+      if (!tracker.kind) break;
+      at = el.range[1];
+    } else if (tracker.kind) at = el.range[1];
+    else break;
+  }
+  return at;
+}
+
 /**
  * Put a ready-made `<li>` into the note. Section: the list under the matching
  * header (created, above Suggested, if missing). Critical: the Important block
@@ -115,8 +138,11 @@ export function placeTask(html: string, item: string, target: Target, position?:
     const aside = top.find(isCriticalAside);
     const list = aside && elements(aside).find(isTodoList);
     if (aside && list) edits.push(insertInList(html, list, item, position));
-    else if (aside) edits.push(insertAt(aside.range[1] - '</aside>'.length, newList(item)));
-    else edits.push(insertAt(0, `<aside class="admonition important">${newList(item)}</aside>`));
+    else if (aside) {
+      // The template's `[…]` stands in for the first task, so it goes when that arrives.
+      for (const filler of elements(aside).filter(isFiller)) edits.push({ start: filler.range[0], end: filler.range[1], text: '' });
+      edits.push(insertAt(aside.range[1] - '</aside>'.length, newList(item)));
+    } else edits.push(insertAt(importantBlockAt(top), `<aside class="admonition important">${newList(item)}</aside>`));
   } else if (target.kind === 'suggested') {
     if (suggestedIdx >= 0) intoHeading(suggestedIdx);
     else {

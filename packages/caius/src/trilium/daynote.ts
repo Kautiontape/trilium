@@ -1,7 +1,7 @@
 // The day note's Meetings block: replacing it in a note's HTML, and writing it to a day note.
 
 import { parse, type HTMLElement } from 'node-html-parser';
-import { apply, elements, isCriticalAside, isHeading, type Edit } from './html-util.js';
+import { apply, elements, isCriticalAside, isHeading, isIncludeNote, type Edit } from './html-util.js';
 import { escapeHtml } from './plan-html.js';
 import { findPeriodNote, isPeriodKey } from './plan-read.js';
 import { normName, proseKind } from './sections.js';
@@ -48,10 +48,6 @@ function meetingsBlock(top: HTMLElement[], html: string): { start: number; end: 
     texts: items.map((li) => li.text.replace(/\s+/g, ' ').trim()),
     ids: items.map((li) => li.getAttribute('data-list-item-id')),
   };
-}
-
-function isIncludeNote(el: HTMLElement): boolean {
-  return el.tagName === 'SECTION' && el.classList.contains('include-note');
 }
 
 export type MeetingsResult =

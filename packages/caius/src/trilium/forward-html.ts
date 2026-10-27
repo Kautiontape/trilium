@@ -121,6 +121,11 @@ function lookup(
   return { li };
 }
 
+/** The section an item is shown in: Important for the Important block, else its heading. */
+function sectionLabel(root: HTMLElement, li: HTMLElement): string | null {
+  return inCriticalAside(li) ? 'Important' : sectionOf(root, li);
+}
+
 /** What a caller needs to know about an item without changing anything. */
 export function inspectItem(
   html: string,
@@ -131,7 +136,7 @@ export function inspectItem(
   const root = parse(html, { comment: true });
   const found = lookup(root, id, states, stateId);
   if (!('li' in found)) return { ok: false, ...found };
-  return { ok: true, text: descriptionOf(found.li)?.text.trim() ?? '', section: sectionOf(root, found.li) };
+  return { ok: true, text: descriptionOf(found.li)?.text.trim() ?? '', section: sectionLabel(root, found.li) };
 }
 
 /**
@@ -212,7 +217,7 @@ export function insertCopy(targetHtml: string, sourceHtml: string, id: string, o
   const sourceRoot = parse(sourceHtml, { comment: true });
   const found = lookup(sourceRoot, id, opts.states, opts.stateId ?? DEFAULT_STATE_ID);
   if (!('li' in found)) return { ok: false, ...found };
-  const section = sectionOf(sourceRoot, found.li);
+  const section = sectionLabel(sourceRoot, found.li);
   const item = buildCopy(sourceHtml, found.li, opts);
   return { ok: true, html: placeForwarded(targetHtml, item, section, inCriticalAside(found.li)), section };
 }

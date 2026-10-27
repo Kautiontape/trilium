@@ -7,6 +7,8 @@ import { replaceMeetings, setMeetings } from './daynote.js';
 import { withListItemIds } from './store.js';
 import { readPlan } from './plan-read.js';
 import { setTaskState } from './plan-html.js';
+import { inspectItem } from './forward-html.js';
+import { gatherContext } from './context.js';
 
 // Notes in the day-note shape: include-note, Meetings, Context, the Important block, Tasks, Suggested.
 const NOW = new Date(2026, 10, 6, 9, 0);
@@ -136,5 +138,47 @@ describe('setMeetings through the id-adding store', () => {
   it('says what a dry run on a missing note is diffed against', async () => {
     const dry = await setMeetings(fakeTrilium({}).api, { date: '2026-11-09', lines: ['x'] }, { dryRun: true });
     expect(dry).toMatchObject({ status: 'dry-run', before: '', detail: expect.stringContaining('template') });
+  });
+});
+
+describe('a new Important block', () => {
+  const crit = { date: '2026-11-06', critical: true, text: 'Ship it ~1h' } as const;
+  const rest = `<h2>☑️ Tasks</h2>${ul(li('e1', 'A ~30m'))}`;
+  const run = async (html: string, extra: object = {}) => {
+    const fake = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), html] });
+    await addTasks(fake.api, [{ ...crit, ...extra }], { now: NOW });
+    return fake.html.d as string;
+  };
+
+  it('goes below the include-note and the Meetings and Context blocks, above the first other content', async () => {
+    const out = await run(HEAD + rest);
+    expect(out.indexOf('<aside')).toBe(HEAD.length);
+    expect(out.indexOf('<aside')).toBeLessThan(out.indexOf('<h2>'));
+    expect((await run(INCLUDE + rest)).indexOf('<aside')).toBe(INCLUDE.length);
+    expect((await run(rest)).startsWith('<aside')).toBe(true);
+    expect((await run(HEAD)).startsWith(HEAD + '<aside')).toBe(true);
+  });
+
+  it('replaces the template placeholder paragraph when the first task goes in', async () => {
+    const out = await run(HEAD + NO_ASIDE + rest);
+    expect(out).not.toContain('[…]');
+    expect(out).toContain('Ship it');
+    expect(out.split('<aside').length).toBe(2);
+  });
+
+  it('is named Important by the forward lookup, not by the heading above it', () => {
+    const html = HEAD + critical(li('ec', 'Ship ~1h')) + rest;
+    expect(inspectItem(html, 'ec', new Map())).toMatchObject({ ok: true, section: 'Important' });
+    expect(inspectItem(html, 'e1', new Map())).toMatchObject({ ok: true, section: '☑️ Tasks' });
+  });
+});
+
+describe('a line twice in one note', () => {
+  it('is in force when one copy is, whichever comes first', async () => {
+    const lines = ['Freeze (until 30 Nov)', 'Freeze (until 2 Nov)'];
+    for (const order of [lines, [...lines].reverse()]) {
+      const fake = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), `<h3>Context</h3>${bullets(...order)}`] });
+      expect((await gatherContext(fake.api, '2026-11-09')).context).toMatchObject([{ text: 'Freeze', until: '2026-11-30' }]);
+    }
   });
 });

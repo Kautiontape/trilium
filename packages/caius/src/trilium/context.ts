@@ -49,9 +49,10 @@ export async function gatherContext(api: NoteReader, date: string): Promise<{ da
     const note = await findPeriodNote(api, period as PeriodKind, key);
     if (!note || note.type !== 'text' || note.isProtected) continue;
     const doc = buildDoc(note, periodPath(period, key), await api.content(note.noteId), states);
-    // Expired lines take part, so that a newer note ending a line hides the older open-ended copy.
+    // Expired lines take part, so that a newer note ending a line hides the older open-ended copy;
+    // within one note an in force line is read last and so beats an expired copy.
     const { context, expiredContext } = parseContext(doc.contextLines, dated, date);
-    for (const [expired, lines] of [[false, context], [true, expiredContext]] as const) {
+    for (const [expired, lines] of [[true, expiredContext], [false, context]] as const) {
       for (const line of lines) {
         const id = sameText(line.text);
         kept.delete(id);

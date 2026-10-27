@@ -168,6 +168,11 @@ export function inCriticalAside(li: HTMLElement): boolean {
   return false;
 }
 
+/** The include-note section a day note starts with. */
+export function isIncludeNote(el: HTMLElement): boolean {
+  return el.tagName === 'SECTION' && el.classList.contains('include-note');
+}
+
 export function isCriticalAside(el: HTMLElement): boolean {
   return el.tagName === 'ASIDE' && el.classList.contains('admonition') && el.classList.contains('important');
 }
