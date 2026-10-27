@@ -556,6 +556,19 @@ describe("renderToHtml", () => {
             expect(render("$$x$$")).toBe('<span class="math-tex">\\[x\\]</span>');
         });
 
+        it("reads a dollar sign as math only under pandoc's tex_math_dollars rule", () => {
+            for (const text of [
+                "from $2 trillion to $1.5 trillion",
+                "$2m to $3m in revenue",
+                "costs $5 and $10"
+            ]) {
+                const html = render(text);
+                expect(html).not.toContain("math-tex");
+                expect(html).toBe(`<p>${text}</p>`);
+            }
+            expect(render("$a+b$")).toBe('<span class="math-tex">\\(a+b\\)</span>');
+        });
+
         it("does not convert an escaped dollar to a formula", () => {
             const html = render("price is \\$5 today");
             expect(html).toContain("$5");
