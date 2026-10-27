@@ -4517,6 +4517,7 @@
       "apply": "Apply",
       "closed_one": "Closed {{count}} task.",
       "closed_other": "Closed {{count}} tasks.",
+      "result": "{{- text}}: {{- message}}",
       "not_applied": "Not applied: the batch stopped before this task."
     }
   }

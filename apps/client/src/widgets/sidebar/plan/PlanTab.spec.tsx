@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
     dismiss: vi.fn(),
     forward: vi.fn(),
     setState: vi.fn(),
+    apply: vi.fn(),
     explain: vi.fn()
 }));
 const caiusWrite = vi.hoisted(() => vi.fn());
@@ -168,15 +169,33 @@ describe("PlanTab", () => {
         expect(titles[0]).toBe("Today → 2026-10-27");
         await press(button(first, "", first, "Today → 2026-10-27"));
         await press(button(tab, "Apply"));
-        expect(api.forward).toHaveBeenCalledWith([
-            { noteId: "yesterday", listItemId: "t1", to: "2026-10-27", expectedBlobId: "blob-1" }
-        ]);
+        expect(api.apply).toHaveBeenCalledWith({
+            forwards: [ { noteId: "yesterday", listItemId: "t1", to: "2026-10-27" } ],
+            drops: [],
+            expectedBlobId: "blob-1"
+        });
     });
 
-    it("applies the decided fates in a forward call and a drop call under one write", async () => {
+    it("forwards to the target the row showed, even when Apply comes after midnight", async () => {
+        vi.setSystemTime(new Date(2026, 9, 27, 23, 59, 50));
         api.plan.mockResolvedValue(dayPlan());
-        api.forward.mockResolvedValue([ { status: "moved" } ]);
-        api.setState.mockResolvedValue([ { status: "skipped", reason: "already_cancelled" } ]);
+        const tab = await mount();
+        const [ first ] = [ ...tab.querySelectorAll(".plan-close-list > li") ];
+        if (!first) throw new Error("no close row");
+        await press(button(first, "", first, "Tomorrow → 2026-10-28"));
+
+        vi.setSystemTime(new Date(2026, 9, 28, 0, 0, 30));
+        await press(button(tab, "Apply"));
+        expect(api.apply).toHaveBeenCalledWith(expect.objectContaining({
+            forwards: [ { noteId: "today", listItemId: "t1", to: "2026-10-28" } ]
+        }));
+    });
+
+    it("applies the decided fates in one request under one write", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        api.apply.mockResolvedValue([
+            { status: "moved" }, { status: "skipped", reason: "already_cancelled" }
+        ]);
         const tab = await mount();
         const [ first, second ] = [ ...tab.querySelectorAll(".plan-close-list > li") ];
 
@@ -200,32 +219,35 @@ describe("PlanTab", () => {
         // Tomorrow's note is open, so its editors are locked too.
         expect(caiusWrite).toHaveBeenCalledWith(
             "today", expect.any(Function), "Closed 2 tasks.", { alsoLock: [ "tomorrow" ] });
-        expect(api.forward).toHaveBeenCalledWith([
-            { noteId: "today", listItemId: "t1", to: "2026-10-28", expectedBlobId: "blob-1" }
-        ]);
-        // The forward changed the note, so the drop goes without the old blobId.
-        expect(api.setState).toHaveBeenCalledWith([
-            {
-                noteId: "today", listItemId: "t2", state: "cancelled", reason: "No longer needed",
-                expectedBlobId: undefined
-            }
-        ]);
+        // One request, so one version check before its first write and one commit set to settle.
+        expect(api.apply).toHaveBeenCalledTimes(1);
+        expect(api.apply).toHaveBeenCalledWith({
+            forwards: [ { noteId: "today", listItemId: "t1", to: "2026-10-28" } ],
+            drops: [ {
+                noteId: "today", listItemId: "t2", state: "cancelled", reason: "No longer needed"
+            } ],
+            expectedBlobId: "blob-1"
+        });
+        expect(api.forward).not.toHaveBeenCalled();
+        expect(api.setState).not.toHaveBeenCalled();
         expect(texts(tab, ".plan-close-results li")).toEqual([
             "Estimated: Forwarded to 2026-10-28.",
             "No estimate: This task is already dropped."
         ]);
     });
 
-    it("stops a batch whose forward is stale, so that the write retries it", async () => {
-        api.plan.mockResolvedValue(dayPlan());
-        api.forward.mockResolvedValue([ { status: "skipped", reason: "stale", blobId: "blob-2" } ]);
+    it("passes a stale batch back whole, so that the write saves and retries it", async () => {
+        api.apply.mockResolvedValue([
+            { status: "skipped", reason: "stale", blobId: "blob-2" },
+            { status: "skipped", reason: "stale", blobId: "blob-2" }
+        ]);
         const { applyFates } = await import("./PlanClose");
         const results = await applyFates({
             forward: [ { noteId: "today", listItemId: "t1", to: "2026-10-28" } ],
             drop: [ { noteId: "today", listItemId: "t2", state: "cancelled", reason: "x" } ]
         }, "blob-1");
-        expect(results).toEqual([ { status: "skipped", reason: "stale", blobId: "blob-2" } ]);
-        expect(api.setState).not.toHaveBeenCalled();
+        expect(results.every((result) => result.reason === "stale")).toBe(true);
+        expect(api.apply).toHaveBeenCalledTimes(1);
     });
 
     it("steps between periods, switches to the week, and comes back to today", async () => {

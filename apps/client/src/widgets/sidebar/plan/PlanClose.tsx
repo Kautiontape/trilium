@@ -16,7 +16,7 @@ import SegmentedChoice from "../../react/SegmentedChoice";
 import RightPanelWidget from "../RightPanelWidget";
 import {
     closeCandidates, closeFates, type Fate, type FateKind, fateTarget, groupFates, isDecided,
-    taskLabel
+    listedFates, taskLabel
 } from "./plan_logic";
 import type { PlanTaskRef } from "./PlanTab";
 
@@ -43,7 +43,9 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
     const [ results, setResults ] = useState<{ text: string; message: string }[]>([]);
     const [ applying, setApplying ] = useState(false);
     const candidates = closeCandidates(plan);
-    const fateKinds = closeFates(plan.period, plan.key, new Date());
+    // One moment per render, so that Apply sends each task where its row says.
+    const now = new Date();
+    const fateKinds = closeFates(plan.period, plan.key, now);
     const targetable = candidates.filter((task) => task.listItemId);
     const decided = targetable
         .filter((task) => task.listItemId && isDecided(fates[task.listItemId])).length;
@@ -59,7 +61,7 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
             return;
         }
 
-        const calls = groupFates(noteId, fates, new Date(), plan.period);
+        const calls = groupFates(noteId, listedFates(fates, candidates), now, plan.period);
         const items = [ ...calls.forward, ...calls.drop ];
         const flushed = findOpenEditors(noteId).length > 0;
         const targets = [ ...new Set(calls.forward.map((item) => item.to)) ]
@@ -107,6 +109,7 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
                             fate={task.listItemId ? fates[task.listItemId] : undefined}
                             kinds={fateKinds}
                             period={plan.period}
+                            now={now}
                             onFate={setFate}
                             onOpen={onOpen}
                         />
@@ -128,9 +131,7 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
             {results.length > 0 && (
                 <ul className="plan-close-results">
                     {results.map(({ text, message }, index) => (
-                        <li key={index}>
-                            <span className="plan-task-text">{text}</span>: {message}
-                        </li>
+                        <li key={index}>{t("caius.plan.result", { text, message })}</li>
                     ))}
                 </ul>
             )}
@@ -139,42 +140,27 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
 }
 
 /**
- * Sends the forwards, then the drops, all on one note. Only the first call carries the version
- * check: its write changes the note's `blobId`, and `caiusWrite` keeps the editors locked, so
- * nothing saves in between. A `stale` first call stops the batch, so that `caiusWrite` saves and
- * retries it.
+ * Sends the forwards, then the drops, all on one note, as one request: the server checks the
+ * version once and writes them under one lock. A stale batch comes back stale whole, so that
+ * `caiusWrite` saves and retries it.
  */
-export async function applyFates(
+export function applyFates(
     { forward, drop }: { forward: CaiusForwardItem[]; drop: CaiusSetStateItem[] },
     expectedBlobId: string | undefined
 ) {
-    const results = forward.length
-        ? await caiusApi.forward(forward.map((item) => ({ ...item, expectedBlobId })))
-        : [];
-    if (results.some((result) => result.status === "skipped" && result.reason === "stale")) {
-        return results;
-    }
-
-    if (drop.length) {
-        const dropBlobId = forward.length ? undefined : expectedBlobId;
-        results.push(...await caiusApi.setState(
-            drop.map((item) => ({ ...item, expectedBlobId: dropBlobId }))
-        ));
-    }
-
-    return results;
+    return caiusApi.apply({ forwards: forward, drops: drop, expectedBlobId });
 }
 
-function CloseRow({ task, fate, kinds, period, onFate, onOpen }: {
+function CloseRow({ task, fate, kinds, period, now, onFate, onOpen }: {
     task: CaiusPlanTask;
     fate: Fate | undefined;
     kinds: FateKind[];
     period: CaiusPeriodKind;
+    now: Date;
     onFate: (listItemId: string, fate: Fate | null) => void;
     onOpen: (task: PlanTaskRef) => void;
 }) {
     const { listItemId } = task;
-    const now = new Date();
 
     return (
         <li>

@@ -43,6 +43,13 @@ export type CaiusAcceptItem = CaiusItemRef & ({ section: string } | { critical: 
 
 export type CaiusDismissItem = CaiusItemRef;
 
+export interface CaiusApplyRequest {
+    forwards: Omit<CaiusForwardItem, "expectedBlobId">[];
+    drops: Omit<CaiusSetStateItem, "expectedBlobId">[];
+    /** The closed note's `blobId`, compared once before the first write. */
+    expectedBlobId?: string;
+}
+
 /** One item's outcome: `moved`, `added` and the like, `skipped` with a reason, or `failed`. */
 export interface CaiusItemResult {
     status: string;
@@ -169,6 +176,8 @@ export const caiusApi = {
     forward: (items: CaiusForwardItem[]) => postItems("forward", items),
     accept: (items: CaiusAcceptItem[]) => postItems("accept", items),
     dismiss: (items: CaiusDismissItem[]) => postItems("dismiss", items),
+    /** Close: the forwards, then the drops, in one request behind one version check. */
+    apply: (body: CaiusApplyRequest) => postWrite("caius/apply", body),
     explain
 };
 

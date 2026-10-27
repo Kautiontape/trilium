@@ -5,8 +5,8 @@ import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
     acceptSections, capacityStatus, closeCandidates, closeFates, fateTarget, groupFates,
-    isCloseable, parsePeriodKey, periodKey, periodOfNote, stepPeriod, taskLabel, unestimatedTasks,
-    type ViewedPeriod
+    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, stepPeriod, taskLabel,
+    unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
 
 const NOW = new Date(2026, 9, 27, 10, 0);
@@ -132,6 +132,14 @@ describe("plan tasks", () => {
         });
         expect(groupFates("day", { d: { kind: "drop" } }, NOW, "day"))
             .toEqual({ forward: [], drop: [] });
+    });
+
+    it("keeps only the fates of tasks still listed", () => {
+        const fates = {
+            kept: { kind: "tomorrow" as const }, gone: { kind: "drop" as const, reason: "x" }
+        };
+        expect(listedFates(fates, [ { listItemId: "kept" }, { listItemId: undefined } ]))
+            .toEqual({ kept: { kind: "tomorrow" } });
     });
 
     it("offers the current period first when closing a past one, and sends tasks there", () => {
