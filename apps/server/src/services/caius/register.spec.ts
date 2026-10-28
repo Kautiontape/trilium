@@ -70,6 +70,9 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(sheet).toContain("is already on the week's list: don't add it; `caius_forward` it");
     expect(sheet).toContain("Never \"no reply\", \"unanswered\", \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
     expect(sheet).toContain("a follow-up is worded as a follow-up, never \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
+    expect(sheet).toContain("anything new he says with `caius_context_add` and `date: targetDay`");
+    expect(sheet).toContain("up to 5 of his list; fewer is fine");
+    expect(sheet).toContain("Never mention `droppedPicks` to him.");
     expect(sheet).not.toContain("Every write is a dry run first, shown to Shawn in two lines, then applied on his yes");
 
     unregister();
