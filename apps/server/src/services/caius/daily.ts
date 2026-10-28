@@ -103,11 +103,20 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
             ...item, ...(done.has(keysOf(item.text)[0] ?? "") ? { jiraDone: true } : {}), ...(item.listItemId && held.has(item.listItemId) ? { fate: { held: true } } : {})
         }));
         const which = heldQuestion(items.filter((item) => item.listItemId && held.has(item.listItemId)).map(({ text, period }) => ({ text, period })));
-        const question = items.length ? [ t("caius.daily.open", { day: weekdayName(targetDay) }), ...(which ? [ which ] : []) ].join(" ") : null;
+        // An item carried on three workdays or more is offered a month instead; its fate stays the next workday.
+        const stale = await deps.locked("caius_winddown", () => staleItems(deps.store, deps.now, items.filter((item) => !("held" in item.fate)), targetDay));
+        const parked = items.map((item) => {
+            const park = item.listItemId ? stale.get(item.listItemId) : undefined;
+            return park ? { ...item, forwarded: park.forwarded, park: { month: park.month } } : item;
+        });
+        const parks = parked.flatMap((item) => "park" in item ? [ t("caius.daily.park", {
+            task: plainText(withoutMoveLinks(item.text)), count: item.forwarded, month: t(`months.${MONTHS[Number(item.park.month.slice(5, 7)) - 1]}`)
+        }) ] : []);
+        const question = items.length ? [ t("caius.daily.open", { day: weekdayName(targetDay) }), ...(which ? [ which ] : []), ...parks ].join(" ") : null;
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
-        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay), items: withRefs(items, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
     }
 
     const read = await deps.dayRead(targetDay, refresh);
@@ -144,6 +153,57 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     const question = [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ");
     return reply(read.standing, { context: read.context, targetWeek, keepDate: targetDay, noticed }, question, null);
 }
+
+/** Forwards from a day note after which the wind-down offers to park an item in the month. */
+const STALE_FORWARDS = 3;
+
+/**
+ * The `items` forwarded from a day note `STALE_FORWARDS` times or more, by `listItemId`: how many
+ * times, and the month the wind-down offers to park each in, `targetDay`'s. The caller holds the lock.
+ */
+export async function staleItems(store: NoteStore, now: Date, items: { listItemId: string | null; noteId: string; text: string }[], targetDay: string) {
+    const forwards = await timesForwarded(store, now);
+    const stale = new Map<string, { forwarded: number; month: string }>();
+    for (const item of items) {
+        const forwarded = forwards.get(copyKey(fromOf(item.text) ?? item.noteId, plainText(withoutMoveLinks(item.text)))) ?? 0;
+        if (item.listItemId && forwarded >= STALE_FORWARDS) stale.set(item.listItemId, { forwarded, month: targetDay.slice(0, 7) });
+    }
+    return stale;
+}
+
+/**
+ * How many times each item was forwarded from a day note, by `copyKey`: its copies moved on from a
+ * day note, each told by the note its "from" link points at (where it started, which every copy
+ * keeps) or, for the first copy, its own note, and by its words. Missed days between two forwards
+ * don't reset the count. The caller holds the lock.
+ */
+async function timesForwarded(store: NoteStore, now: Date): Promise<Map<string, number>> {
+    const { docs } = await loadJournal(store);
+    const byPath = new Map(docs.map((doc) => [ doc.path, doc ]));
+    const counts = new Map<string, number>();
+    for (const task of scanDocs(docs, TRILIUM_CONFIG, now).tasks) {
+        const doc = byPath.get(task.file);
+        const period = /^Journal\/Daily\/(\d{4}-\d{2}-\d{2})(?:\.md|\/)/.exec(task.file)?.[1];
+        const moved = task.state === "tombstone" || SCHEDULED.test(task.text);
+        if (!doc || !period || !moved) continue;
+        const key = copyKey(fromOf(task.text) ?? doc.noteId, plainText(withoutMoveLinks(task.text)));
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+}
+
+/** The note a task's "from" link points at, where a forwarded task started; null for one never moved. */
+export function fromOf(text: string): string | null {
+    return /\[from [^\]]*\]\(#root\/([^)]+)\)/.exec(text)?.[1] ?? null;
+}
+
+const SCHEDULED = /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/;
+
+/**
+ * A copy's key: the note it came from and its words without an estimate, which a moved source keeps
+ * in its text, or the reason a drop adds to it (`_not needed_`).
+ */
+export const copyKey = (from: string, text: string) => `${from}\n${text.replace(/\s+_[^_]+_$/, "").replace(/\s+~\d+(?:h\d*m?|m)\b/g, "").trim()}`;
 
 /**
  * What the wind-down's `next` step offers for `targetDay`, which `caius_winddown_apply` reads again:
@@ -838,15 +898,25 @@ export function workBlocks(plan: PlanView, day: { start: string; end: string; wo
 
 /**
  * The main list as the drawing and the picks read it: each live task's bar label, text, minutes,
- * keys and whether it is an evening task.
+ * keys, whether it is an evening task and whether it is work: not an evening or chore task, nor a
+ * task without a ticket under a personal heading (Home, Personal, Family, Errands).
  */
 export function listOf(plan: PlanView) {
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
-    return mainTasks(plan).map((task) => ({
-        label: workLabel(withoutMoveLinks(task.text)), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
-        evening: eveningSections.has(task.section), keys: keysOf(withoutMoveLinks(task.text))
-    }));
+    return mainTasks(plan).map((task) => {
+        const keys = keysOf(withoutMoveLinks(task.text));
+        const evening = eveningSections.has(task.section);
+        const heading = normName(task.section ?? "");
+        const personal = /chore/.test(heading) || (PERSONAL_SECTIONS.has(heading) && !keys.some((key) => JIRA_KEY.test(key)));
+        return {
+            label: workLabel(withoutMoveLinks(task.text)), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
+            evening, work: !evening && !personal, keys
+        };
+    });
 }
+
+/** Headings of his own life, under which a task without a ticket isn't work. */
+const PERSONAL_SECTIONS = new Set([ "home", "personal", "family", "errands", "house", "household" ]);
 
 /** The day's list as the steps show it, for an answer to name by `listItemId`: each live task's id, its plain text and whether it is an evening task. */
 export function listItems(plan: PlanView) {

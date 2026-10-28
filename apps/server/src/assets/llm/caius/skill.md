@@ -100,6 +100,8 @@ In these conversations only these tools are available; every other Caius tool an
 3. Take his reply and call `caius_plan_apply` **once**: `said` (his reply, word for word), `catchup` (`move_all`, `skip` or `review`), `accept` (his order, each with the place he names), `move`, `keep`, `finished`, `notToday`, `dismiss`, `evening`, `context`, `overlaps` (each overlap he answered: its `overlapId` and the meeting he takes), `forward`, and `brief` with the `headline` (14 words or fewer, naming the work; say so when the day is half booked or more), two `acts`, one sentence each, naming his work in the order of his list as this call leaves it, after the accepts, moves and forwards: the first half of it, then the rest, each task by its key or its own words, never a list of meetings. The tool takes each act's time from the drawing, keeps your words only when they name the work the drawing puts there, and writes the evening act and any extra `sections`. The tool writes the picks, the Follow up, the Heads-up, the drawing and the weather.
 4. After the apply, reply with the result's `say`, then the headline and the top pick, and nothing else.
 
+The headline names his work: never a chore, an evening task or a personal errand while his list has work. The tool puts his first work task at the top of the picks.
+
 `data.evening` is the evening: his evening tasks, the calendar's evening events and `suggestion`, the line the apply puts in Suggested while the evening has neither. Say the evening is covered only when `data.evening` has a task or an event. With neither, name the suggestion in one clause; never say no evening ask is needed.
 
 On a day already under way the step gives `data.planFrom`: the acts start there, never in the part of the day already past.
@@ -117,6 +119,8 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 3. Take his reply and call `caius_winddown_apply` **once**: `said` (his reply, word for word), `done`, `fates` (only the items he named; every other item keeps its proposed fate), `accept`, `move`, `keep`, `carry`, `finished`, `notToday`, `dismiss`, `evening`, `context` and `overlaps` (each overlap he answered: its `overlapId` and the meeting he takes).
 4. After the apply, reply with the result's `say` and nothing else. With a `planday`, go on as step 5 says; with only a `nextCall` (its steps couldn't run), call `caius_planday` for its `date` from `catchup` at once. At the end of a wind-down, never offer to run Plan my day for another day.
 5. When the apply answers with `planday`, a morning Review of an older day closed it against today, and Plan my day's `catchup` and `inputs` steps have already run for today, with the answers he gave here. Go straight on in the same reply: after the `say`, send Plan my day's one message (its step 2) from `planday.catchup` and `planday.inputs`, then take his reply to `caius_plan_apply` (its step 3). With nothing to ask in `planday`, call `caius_plan_apply` at once, as Plan my day's step 2 says, and reply with the wind-down's `say`, then the plan's `say`, headline and top pick. Never ask whether to plan or whether to write the brief, and never call those steps again.
+
+An item with `park` has been carried on three workdays or more, and the `open` question asks to park it in that month. Only his word parks it: pass its fate with `to` set to `park.month`. Without it, the item goes on as proposed.
 
 ### Rules
 

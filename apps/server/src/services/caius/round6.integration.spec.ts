@@ -227,3 +227,68 @@ describe("the evening", () => {
         delete calendars[MON];
     });
 });
+
+describe("a stale errand", () => {
+    const DAVE = "Message Dave if he knows anyone who will hang lights as a small job";
+    const textsOf = async (period: "day" | "month", date: string) => (await call("caius_plan", { period, date })).sections
+        .flatMap((s: any) => s.tasks).map((t: any) => ({ text: t.text.replace(/\s*(?:\[from [^\]]*\]\([^)]*\)|_scheduled \[[^\]]*\]\([^)]*\)_)/g, ""), state: t.state }));
+
+    it("'Message Dave' forwarded from Mon 26 Oct: from its third forward the open step asks to park it in the month; it never parks unasked", async () => {
+        const days = [ "2029-04-02", "2029-04-03", "2029-04-04", "2029-04-05", "2029-04-06" ];
+        const [ MON, TUE, WED, THU, FRI ] = days as [ string, string, string, string, string ];
+        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("s-dave", DAVE))}`);
+        const daveOf = (open: any) => open.data.items.find((item: any) => item.text.startsWith("Message Dave"));
+        for (const day of [ MON, TUE, WED ]) {
+            at(`${day}T17:30`);
+            const open = await call("caius_winddown", { date: day, step: "open" });
+            expect(daveOf(open).park).toBeUndefined();
+            expect(open.question).not.toContain("Park");
+            expect((await call("caius_winddown_apply", { date: day, said: "" })).skipped).toEqual([]);
+        }
+
+        // Thursday: forwarded on Mon, Tue and Wed. The park is asked; its fate stays the next workday.
+        at(`${THU}T17:30`);
+        const thu = await call("caius_winddown", { date: THU, step: "open" });
+        expect(daveOf(thu)).toMatchObject({ forwarded: 3, park: { month: "2029-04", monthLabel: "April 2029" }, fate: { forward: FRI } });
+        expect(thu.question).toContain(`'${DAVE}' has been carried 3 times. Park it in April?`);
+        expect((await call("caius_winddown_apply", { date: THU, said: "carry it" })).skipped).toEqual([]);
+        expect(await textsOf("day", FRI)).toEqual([ { text: DAVE, state: "open" } ]);
+
+        // Friday: "park it" without the fate is a check; a bare yes to the one question takes it.
+        at(`${FRI}T17:30`);
+        const fri = await call("caius_winddown", { date: FRI, step: "open" });
+        expect(daveOf(fri)).toMatchObject({ forwarded: 4, park: { month: "2029-04" } });
+        const checked = await call("caius_winddown_apply", { date: FRI, said: "park it" });
+        expect(checked.check).toEqual([ expect.objectContaining({ missing: "fate", item: DAVE }) ]);
+        expect(await textsOf("day", FRI)).toEqual([ { text: DAVE, state: "open" } ]);
+        const parked = await call("caius_winddown_apply", { date: FRI, said: "yes" });
+        expect(parked.skipped).toEqual([]);
+        expect(parked.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", detail: "2029-04" }) ]));
+        expect(await textsOf("month", "2029-04")).toEqual([ { text: DAVE, state: "open" } ]);
+        expect((await call("caius_plan", { period: "day", date: "2029-04-09" })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
+    });
+
+    it("the plan's top pick and headline are work when his list has work: a chore or a ticketless personal item never leads", async () => {
+        const DAY = "2029-05-07";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Home</h3>${ul(li("p-dave", "Message Dave about the lights"))}<h3>Chores</h3>${ul(li("p-bins", "Take the bins out"))}`
+            + `<h3>Work</h3>${ul(li("p-801", `${zap("ZAP-801", "Verify the export retry")} ~30m`), li("p-802", `${zap("ZAP-802", "Check the invoice export")} ~30m`))}`);
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Chase Dave about the lights, then the export retry.", acts: [
+            { range: "", text: "x" }, { range: "", text: "y" }
+        ] } });
+        expect(planned.skipped).toEqual([]);
+        expect(planned.topPick).toContain("ZAP-801");
+        expect(planned.headline).toBe("ZAP-801 first, then ZAP-802.");
+        const header = await contentOf(planned.headerNoteId);
+        expect(header).toContain("<h2>ZAP-801 first, then ZAP-802.</h2>");
+        expect(header).not.toContain("Chase Dave");
+        const brief = await contentOf(planned.briefNoteId);
+        expect(brief.indexOf("ZAP-801")).toBeLessThan(brief.indexOf("Message Dave"));
+
+        // A headline that names the work stays as he'd read it.
+        const kept = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Verify the export retry, then the invoice check.", acts: [
+            { range: "", text: "x" }, { range: "", text: "y" }
+        ] } });
+        expect(kept.headline).toBe("Verify the export retry, then the invoice check.");
+    });
+});

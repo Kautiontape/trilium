@@ -40,6 +40,7 @@ import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_L
 import {
     catchupOf,
     closingLines,
+    copyKey,
     closingPeriods,
     heldDays,
     heldValueOf,
@@ -47,6 +48,7 @@ import {
     dayLabels,
     declinedEvent,
     proposedForward,
+    staleItems,
     dayKey,
     type DayRead,
     EVENING_ID,
@@ -323,7 +325,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         else written.push({ kind: "brief", status: changed ? "written" : "unchanged" });
         return answer({
             date, written, skipped,
-            headline: prose.headline, topPick: brief.picks[0]?.text ?? null,
+            headline: brief.headline, topPick: brief.picks[0]?.text ?? null,
             briefNoteId: brief.briefNoteId, headerNoteId: brief.headerNoteId, attachmentId: brief.attachmentId,
             link: `#root/${brief.briefNoteId}`, plannedAt: brief.plannedAt
         });
@@ -385,9 +387,15 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const closingNote = await findPeriodNote(store, "day", date);
         const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
         pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
+        // An item carried on three workdays or more is offered a month; it goes there only on his word.
+        const stale = await staleItems(store, now, open.items, targetDay);
         // On a vague yes the answers are what was offered, unless a question of its own is pending.
-        const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0);
-        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && pending === 0);
+        // A bare yes to the park alone, as to the heavy day's move, takes the park and nothing more.
+        const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0) + stale.size;
+        const yes = vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && !asked.fates.length && !asked.done.length;
+        const parkOnly = !asked.asOffered && yes && stale.size > 0 && pending === stale.size;
+        const parking = asked.asOffered || parkOnly;
+        const vague = asked.asOffered || (yes && pending === 0);
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
         const answers: WindDownApplyInput = vague ? {
             ...asked,
@@ -399,7 +407,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
         const endOf = (id: string) => { const entry = byEntry.get(id); return entry ? chainEnd(entry, byEntry, copies)?.id ?? id : id; };
-        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
+        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...(parking ? [] : parkChecks(asked.said, stale, open.items, input)), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
             ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
@@ -460,7 +468,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const fates = [
             ...input.fates,
             ...open.items.filter((item) => item.listItemId && !given.has(item.listItemId) && "forward" in item.fate)
-                .map((item) => ({ listItemId: item.listItemId ?? "", to: (item.fate as { forward: string }).forward, proposed: true })),
+                .map((item) => ({ listItemId: item.listItemId ?? "", to: (parking && stale.get(item.listItemId ?? "")?.month) || (item.fate as { forward: string }).forward, proposed: true })),
             ...freed
         ];
         await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {
@@ -613,7 +621,7 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
             });
             // The acts he sent are kept where they name the drawing's work; the headline follows the new order.
             const given = (asked.acts ?? []).map((act) => typeof act === "string" ? { text: act } : act);
-            const header = { acts: (drawn: ReturnType<typeof headerOf>) => drawnActs(drawn, given, titlesOf(plan)), headline: (drawn: ReturnType<typeof headerOf>) => asked.headline ?? orderHeadline(drawn) };
+            const header = { acts: (drawn: ReturnType<typeof headerOf>) => drawnActs(drawn, given, titlesOf(plan)), headline: (drawn: ReturnType<typeof headerOf>) => workHeadline(asked.headline ?? orderHeadline(drawn), plan) };
             if (failedCalendar(read)) skipped.push({ kind: "header", id: date, reason: "calendar_unavailable" });
             else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, weather, written, skipped, header));
         }
@@ -639,7 +647,11 @@ async function contextOnly(deps: ApplyDeps, asked: PlanApplyInput) {
 
 /** The brief's "Get done today": the first work tasks of his list, in order, each with its candidate's reason when it had one. */
 function picksFor(plan: Awaited<ReturnType<typeof readPlan>>, reasons: Map<string, Candidate>): BriefPick[] {
-    return listOf(plan).filter((task) => !task.evening).slice(0, MAX_PICKS).map((task) => {
+    const day = listOf(plan).filter((task) => !task.evening);
+    // The top pick is work whenever his list has work: the first work task leads, the rest keep his order.
+    const lead = day.find((task) => task.work);
+    const ordered = lead && !day[0]?.work ? [ lead, ...day.filter((task) => task !== lead) ] : day;
+    return ordered.slice(0, MAX_PICKS).map((task) => {
         const reason = task.keys.map((key) => reasons.get(key)).find((candidate) => candidate && candidate.kind !== "week");
         return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
     });
@@ -714,6 +726,22 @@ function orderHeadline(header: ReturnType<typeof headerOf>): string | undefined 
     const labels = header.work.filter((block) => block.start < header.workEnd && block.label).map((block) => block.label);
     const [ first, ...rest ] = labels;
     if (!first || !rest.length) return undefined;
+    const tail = rest.at(-1) ?? "";
+    return t("caius.brief.order_headline", { first, rest: rest.length > 1 ? t("caius.daily.list_and", { head: rest.slice(0, -1).join(", "), last: tail }) : tail });
+}
+
+/**
+ * The headline as written: `headline`, unless it names a task of his list that isn't work while the
+ * list has work; then the work in his order, "ZAP-801 first, then ZAP-802." or "Start with ZAP-801.".
+ */
+function workHeadline(headline: string | undefined, plan: Awaited<ReturnType<typeof readPlan>>): string | undefined {
+    const tasks = listOf(plan);
+    const work = tasks.filter((task) => task.work).map((task) => task.label);
+    const labels = tasks.map((task) => task.label);
+    const titles = titlesOf(plan);
+    if (!headline || !work.length || !tasks.some((task) => !task.work && namesTask(headline, task.label, labels, titles))) return headline;
+    const [ first, ...rest ] = work;
+    if (!rest.length) return t("caius.brief.start_headline", { first });
     const tail = rest.at(-1) ?? "";
     return t("caius.brief.order_headline", { first, rest: rest.length > 1 ? t("caius.daily.list_and", { head: rest.slice(0, -1).join(", "), last: tail }) : tail });
 }
@@ -831,11 +859,6 @@ interface RefEntry {
 /** The live copies of moved items, by the note their back link points at and their words. */
 type Copies = Map<string, { id: string; period: string; text: string }>;
 
-/**
- * A copy's key: the note it came from and its words without an estimate, which a moved source keeps
- * in its text, or the reason a drop adds to it (`_not needed_`).
- */
-const copyKey = (from: string, text: string) => `${from}\n${text.replace(/\s+_[^_]+_$/, "").replace(/\s+~\d+(?:h\d*m?|m)\b/g, "").trim()}`;
 
 /**
  * Every item a step's ref could have named, by ref, whatever happened to it since: each list item
@@ -1238,6 +1261,24 @@ function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, poo
         const item = pool.find((entry) => entry.id === heard.id)?.text ?? heard.id;
         const key = given === null ? "caius.check.fate" : "caius.check.fate_other";
         return [ { item, said: heard.clause, missing: "fate" as const, message: t(key, { item, clause: heard.clause }) } ];
+    });
+}
+
+/**
+ * The parks his reply seems to ask for that the call leaves out: each clause with "park" in it names
+ * the stale items whose words it has, or, with one stale item, that one. A park needs the item's
+ * fate to its month in the call.
+ */
+function parkChecks(said: string, stale: Map<string, { month: string }>, items: { listItemId: string | null; text: string }[], input: { fates: { listItemId: string; to?: string }[]; done: string[] }): Check[] {
+    const offered = items.flatMap((item) => {
+        const park = item.listItemId ? stale.get(item.listItemId) : undefined;
+        return item.listItemId && park ? [ { id: item.listItemId, text: plainText(withoutMoveLinks(item.text)), month: park.month } ] : [];
+    });
+    return clausesNaming(said, [ "park" ]).flatMap((clause) => {
+        const named = offered.filter((item) => saidNames(clause, namesOf({ text: item.text })));
+        return (named.length ? named : offered.length === 1 ? offered : [])
+            .filter((item) => !input.done.includes(item.id) && !input.fates.some((fate) => fate.listItemId === item.id && fate.to === item.month))
+            .map((item) => ({ item: item.text, said: clause, missing: "fate" as const, message: t("caius.check.fate", { item: item.text, clause }) }));
     });
 }
 
@@ -1787,6 +1828,7 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
     const { store, now } = deps;
     const plan = await readPlan(store, "day", input.date, now);
     const picks = picksFor(plan, reasons);
+    const headline = workHeadline(input.brief.headline, plan) ?? input.brief.headline;
     const followUps = followUpsOf(jira);
     // Follow up and Heads-up are written from the step data, in place of anything the agent wrote under them.
     const followUpTitle = t("caius.daily.follow_up");
@@ -1804,12 +1846,12 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
         plannedAt: deps.plannedAt,
         ...(weather ? { weather } : {})
     }, {
-        date: input.date, headline: input.brief.headline, picks, sections, header,
+        date: input.date, headline, picks, sections, header,
         acts: withEveningAct(fromNow(drawnActs(header, input.brief.acts, titlesOf(plan)), planFromOf(input.date, now, read.rhythm.start).planFrom), plan, header),
         followUps: followUps.map(({ key, commentId }) => ({ key, commentId }))
     });
     if (result.error !== undefined) return { error: result.error, detail: result.detail };
     if (!("writes" in result) || !result.writes) return { error: "failed", detail: "the brief was not written" };
     const { briefNoteId, headerNoteId, attachmentId, plannedAt, writes } = result;
-    return { briefNoteId, headerNoteId, attachmentId, plannedAt, writes, picks };
+    return { briefNoteId, headerNoteId, attachmentId, plannedAt, writes, picks, headline };
 }

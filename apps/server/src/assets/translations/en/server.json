@@ -605,7 +605,8 @@
       "act_range": "{{start}} to {{end}}",
       "act_text": "{{- items}}.",
       "open_time": "Open time.",
-      "order_headline": "{{- first}} first, then {{- rest}}."
+      "order_headline": "{{- first}} first, then {{- rest}}.",
+      "start_headline": "Start with {{- first}}."
     },
     "check": {
       "fate": "His reply seems to give {{- item}} a place ('{{- clause}}') that this call leaves out. Pass it in fates, or call again with checked: true if he didn't mean that.",
@@ -628,6 +629,7 @@
       "because_week": "on the week's list",
       "open": "Here's what's left from today and what slipped. Which are done? The rest goes to {{- day}} unless you say otherwise.",
       "nothing_open": "Nothing is open: the day's list is closed and nothing has slipped.",
+      "park": "'{{- task}}' has been carried {{count}} times. Park it in {{- month}}?",
       "over": "{{- day}} is over by about {{hours}} h. Which of these can wait?",
       "overlap": "{{- first}} overlaps {{- second}} at {{time}}. Which one do you take?",
       "overlap_taken": "Taking {{- take}}, not {{- other}}, at {{time}}",
