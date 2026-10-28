@@ -200,7 +200,8 @@ function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): stri
   reset(top);
 
   const span = descriptionOf(top);
-  if (span) {
+  // A task forwarded again keeps the link to where it started, so the links don't chain.
+  if (span && !hasBackLink(span)) {
     // Before the trailing tokens (~30m, !, *date), so the parser still reads them.
     const at = spanEnd(snippet, span) - span.innerHTML.length + tokenZoneStartInHtml(span.innerHTML);
     edits.push({ start: at, end: at, text: ` ${noteLink(opts.sourceNoteId, `from ${opts.sourceLabel}`)}` });
@@ -222,12 +223,25 @@ export function insertCopy(targetHtml: string, sourceHtml: string, id: string, o
   return { ok: true, html: placeForwarded(targetHtml, item, section, inCriticalAside(found.li)), section };
 }
 
-/** True when the target already holds a copy made from this source note (a half-finished forward). */
+/**
+ * True when the target already holds a copy made from this source note (a half-finished forward):
+ * the source's text with a back link to the source, or, for a task that already carries a back
+ * link, the same text unchanged.
+ */
 export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sourceNoteId: string): boolean {
   const source = findItem(parse(sourceHtml, { comment: true }), id);
   const sourceSpan = source && descriptionOf(source);
   if (!sourceSpan) return false;
   const body = sourceSpan.innerHTML;
+  if (hasBackLink(sourceSpan)) {
+    const same = (html: string) => html.replace(/&nbsp;/g, ' ');
+    return parse(targetHtml, { comment: true })
+      .querySelectorAll('li')
+      .some((li) => {
+        const inner = descriptionOf(li)?.innerHTML;
+        return inner !== undefined && same(inner) === same(body);
+      });
+  }
   // A space or &nbsp;, then a link to the source note with any text: the copy's back link as
   // written, or as CKEditor saved it.
   const link = new RegExp(`(?:\\s|&nbsp;)<a [^>]*href="#root/${sourceNoteId}"[^>]*>[^<]*</a>`);
@@ -237,4 +251,9 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
       const inner = descriptionOf(li)?.innerHTML;
       return inner !== undefined && link.test(inner) && inner.replace(link, '') === body;
     });
+}
+
+/** Whether a task's text holds a "from …" link to the note it was forwarded from. */
+function hasBackLink(span: HTMLElement): boolean {
+  return span.querySelectorAll('a').some((a) => /^#root\/[^/?#]+$/.test(a.getAttribute('href') ?? '') && /^from\s/.test(a.text.trim()));
 }

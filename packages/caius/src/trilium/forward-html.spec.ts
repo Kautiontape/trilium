@@ -265,3 +265,23 @@ describe('trailing tokens stay trailing', () => {
     expect(hasCopy('<h3>Work</h3>', source, 'etok', SRC_ID)).toBe(false);
   });
 });
+
+describe('a task forwarded again', () => {
+  const monday = '<h3>Work</h3>' + ul(li('eone', 'Confirm the bucket ~30m'));
+  const toTuesday = insertCopy('<h3>Work</h3>', monday, 'eone', { ...copy, newId: () => 'etue' });
+  if (!toTuesday.ok) throw new Error('expected ok');
+  const again = { sourceNoteId: 'tuenote', sourceLabel: 'Tuesday 27', states: STATES, newId: () => 'ewed' };
+
+  it('keeps only the original "from" link, not a growing chain', () => {
+    const toWednesday = insertCopy('<h3>Work</h3>', toTuesday.html, 'etue', again);
+    if (!toWednesday.ok) throw new Error('expected ok');
+    expect(text(toWednesday.html, 'ewed')).toBe('Confirm the bucket <a href="#root/srcnote">from Monday 26</a> ~30m');
+  });
+
+  it('still recognises its copy, so a retried forward adds no second one', () => {
+    const toWednesday = insertCopy('<h3>Work</h3>', toTuesday.html, 'etue', again);
+    if (!toWednesday.ok) throw new Error('expected ok');
+    expect(hasCopy(toWednesday.html, toTuesday.html, 'etue', 'tuenote')).toBe(true);
+    expect(hasCopy('<h3>Work</h3>', toTuesday.html, 'etue', 'tuenote')).toBe(false);
+  });
+});
