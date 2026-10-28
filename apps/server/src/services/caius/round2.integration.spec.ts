@@ -141,3 +141,37 @@ describe("step data names every date and carries the ids the apply tools take", 
         expect(monday.data.carry).toEqual([ expect.objectContaining({ line: "Sam is out.", lineId: carry.lineId }) ]);
     });
 });
+
+describe("done means done everywhere in the step data", () => {
+    const ask = (key: string, commentId: string, created: string, author = "Riley Sample", excerpt = "Is the legacy report job gone from production?") =>
+        ({ ticket: ticket(key), author, created, commentId, excerpt });
+
+    it("Thu 5 Nov: a ticket done in Monday's note isn't in caius_inputs' review list, nor a Done ticket's ask in the follow-ups", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay(MON);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("m111", "<a href=\"https://example.atlassian.net/browse/ZAP-111\">ZAP-111</a> Check the export in QA ~30m"))}`);
+        });
+        jira.handoff.push({ ...ticket("ZAP-111", { status: "QA Testing" }), daysInStatus: 3 }, { ...ticket("ZAP-104"), daysInStatus: 9 });
+        jira.asks.push(ask("ZAP-104", "2", "2026-10-26T19:30:00.000Z"));
+        jira.done.push("ZAP-104");
+
+        at(`${MON}T17:30`);
+        const notes = await call("caius_plan", { period: "day", date: MON });
+        const done = await call("caius_set_state", { items: [ { noteId: notes.noteId, listItemId: "m111", state: "done" } ] });
+        expect(done.results[0]).toMatchObject({ status: "updated" });
+
+        at(`${WED}T09:40`);
+        const wednesday = await call("caius_planday", { date: WED, step: "brief", refresh: true });
+        expect(wednesday.data.followUps.map((f: any) => f.key)).not.toContain("ZAP-104");
+
+        at(`${THU}T09:30`);
+        const review = await call("caius_inputs", { date: THU, refresh: true });
+        expect(review.jira.handoff.map((t: any) => t.key)).toContain("ZAP-110");
+        expect(review.jira.handoff.map((t: any) => t.key)).not.toContain("ZAP-111");
+        expect(review.jira.handoff.map((t: any) => t.key)).not.toContain("ZAP-104");
+        expect(review.jira.asks.map((a: any) => a.ticket.key)).not.toContain("ZAP-104");
+        expect(review.jira.done).toContain("ZAP-104");
+        const inputs = await call("caius_planday", { date: THU, step: "inputs" });
+        expect(inputs.data.followUps.map((f: any) => f.key)).not.toContain("ZAP-104");
+    });
+});

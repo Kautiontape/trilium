@@ -159,10 +159,11 @@ export function createCaiusService(
      * notes are read under the lock, the sources outside it.
      */
     async function dayRead(date: string, refresh = false, extraKeys: string[] = []): Promise<DayRead> {
-        const { context, standing, week } = await withCaiusLock("caius_day_read", async () => ({
+        const { context, standing, week, closed } = await withCaiusLock("caius_day_read", async () => ({
             context: (await gatherContext(store, date)).context,
             standing: await readStanding(),
-            week: await weekTasks(isoWeekKey(new Date(`${date}T00:00:00Z`)))
+            week: await weekTasks(isoWeekKey(new Date(`${date}T00:00:00Z`))),
+            closed: await closedNow()
         }));
         const rhythm = readRhythm(standing.markdown);
         const lines = context.map((line) => line.text);
@@ -170,7 +171,13 @@ export function createCaiusService(
             .filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key))
             .sort();
         const input: InputsInput = { date, context: lines, keys, workStart: rhythm.start, workEnd: rhythm.workEnd };
-        return { inputs: await cachedInputs(input, refresh), context, standing, rhythm };
+        return { inputs: withoutClosed(await cachedInputs(input, refresh), closed), context, standing, rhythm };
+    }
+
+    /** The keys he closed lately (`closedKeys`); none without a Journal. The caller holds the lock. */
+    async function closedNow(): Promise<Set<string>> {
+        const docs = await journalDocs(store);
+        return docs ? closedKeys(store, docs, caiusNow()) : new Set();
     }
 
     /** The live tasks of a week note; none when it is protected or not a text note, which `gatherContext` skips too. The caller holds the lock. */
@@ -244,8 +251,14 @@ export function createCaiusService(
 
         context: ({ date }: ContextInput) => withCaiusLock("caius_context", () => gatherContext(store, date)),
 
-        /** `caius_inputs`, cached like the steps' reads; it reads no notes, so it takes no lock. */
-        inputs: ({ refresh, ...input }: InputsToolInput) => cachedInputs(input, refresh),
+        /**
+         * `caius_inputs`, cached like the steps' reads, without the tickets he closed. The sources
+         * are read outside the lock; only the closed keys are read under it.
+         */
+        inputs: async ({ refresh, ...input }: InputsToolInput) => {
+            const inputs = await cachedInputs(input, refresh);
+            return withoutClosed(inputs, await withCaiusLock("caius_inputs", closedNow));
+        },
 
         /**
          * Adds the items, except a Suggested item naming a key Shawn closed lately (`closedKeys`),
@@ -513,6 +526,18 @@ function laterDay(date: string) {
 function localIso(at: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
+
+/**
+ * `inputs` with the hand-offs and asks of a ticket that is closed taken out: one he closed lately
+ * (`closed`) or one Jira calls done. `jira.done` itself is kept.
+ */
+function withoutClosed(inputs: CaiusInputs, closed: Set<string>): CaiusInputs {
+    const out = (key: string) => closed.has(key) || inputs.jira.done.includes(key);
+    return {
+        ...inputs,
+        jira: { ...inputs.jira, handoff: inputs.jira.handoff.filter((t) => !out(t.key)), asks: inputs.jira.asks.filter((a) => !out(a.ticket.key)) }
+    };
 }
 
 /** Draws the day on a note as its `terrain.svg` attachment, created or updated. The caller holds the lock. */

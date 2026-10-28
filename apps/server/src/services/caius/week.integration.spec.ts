@@ -265,7 +265,6 @@ describe("follow-ups are raised once", () => {
     const followUps = (answer: any) => answer.data.followUps.map((f: any) => `${f.key}:${f.commentId}`);
 
     it("Mon 09:40: a brief with a Follow up records every ask it was given", async () => {
-        jira.done.push("ZAP-104");
         jira.asks.push(ask("ZAP-104", "2", "2026-10-26T19:30:00.000Z"), ask("ZAP-130", "20", "2026-10-30T14:00:00.000Z", "Jordan Placeholder"));
         at(`${MON}T09:40`);
         const brief = await call("caius_planday", { date: MON, step: "brief", refresh: true });
@@ -572,6 +571,7 @@ describe("what counts as raised", () => {
 describe("done in Jira", () => {
     it("flags the wind-down's open items whose ticket Jira calls done", async () => {
         const day = "2026-12-01";
+        jira.done.push("ZAP-104");
         await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("j1", `${jiraLink("ZAP-104")} — Remove the legacy job ~30m`), li("j2", "Plain thing ~30m"))}`));
         at(`${day}T17:30`);
         const answer = await call("caius_winddown", { date: day, step: "open" });

@@ -333,11 +333,10 @@ function unraised(jira: CaiusInputs["jira"], raised: Set<string>): CaiusInputs["
     return { ...jira, asks: jira.asks.filter((ask) => !quiet.has(ask.ticket.key)) };
 }
 
-/** What Follow up may raise: the latest ask per ticket, a done ticket's too, oldest first. */
+/** What Follow up may raise: the latest ask per ticket, oldest first. A closed ticket's asks never reach here (`withoutClosed`). */
 function followUpsOf(jira: CaiusInputs["jira"]) {
     return latestAsks(jira.asks).map((ask) => ({
-        key: ask.ticket.key, commentId: ask.commentId, author: ask.author, created: ask.created, excerpt: ask.excerpt,
-        url: ask.ticket.url, ...(jira.done.includes(ask.ticket.key) ? { done: true } : {})
+        key: ask.ticket.key, commentId: ask.commentId, author: ask.author, created: ask.created, excerpt: ask.excerpt, url: ask.ticket.url
     }));
 }
 
