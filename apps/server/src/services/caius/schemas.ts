@@ -158,11 +158,11 @@ const candidateRef = z.object({ candidateId: z.string().min(1).describe("A candi
 const lineRef = z.object({ lineId: z.string().min(1).describe("A keep or carry line's lineId, from the step data") });
 /** Where an item goes in his main list: first, or before or after an item of `data.list` or a candidate taken in the same call. */
 const place = {
-    first: z.literal(true).optional().describe("Put it at the top of his list"),
+    first: z.boolean().optional().describe("true puts it at the top of his list"),
     before: z.string().min(1).optional().describe("Put it just before this item: a listItemId from the step's data.list, or a candidateId taken in the same call"),
     after: z.string().min(1).optional().describe("Put it just after this item: a listItemId from the step's data.list, or a candidateId taken in the same call")
 };
-const placed = (item: { first?: true; before?: string; after?: string }) => [ item.first, item.before, item.after ].filter((v) => v !== undefined).length;
+const placed = (item: { first?: boolean; before?: string; after?: string }) => [ item.first || undefined, item.before, item.after ].filter((v) => v !== undefined).length;
 const acceptRef = candidateRef.extend(place).refine((item) => placed(item) <= 1, "Give at most one of first, before or after");
 const moveRef = z.object({ listItemId: z.string().min(1).describe("An item of his main list, from the step's data.list"), ...place })
     .refine((item) => placed(item) === 1, "Give exactly one of first, before or after");

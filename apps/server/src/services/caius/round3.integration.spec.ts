@@ -170,6 +170,25 @@ async function headerOf(applied: { headerNoteId: string; attachmentId: string })
     return { acts, svg };
 }
 
+describe("accept takes a position, whatever the item", () => {
+    it("Fri 17:20 'add dave, first': a week item without a ticket, with a back link, goes to the top; a stray first: false is no place", async () => {
+        const DAY = "2027-02-01";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("p1", "Write the runbook ~30m"))}`);
+            const week = await store.calendarWeek("2027-W05");
+            await store.putContent(week.noteId, `<h2>☑️ Tasks</h2>${ul(li("pdave", "Message Dave about the lights <a class=\"reference-link\" href=\"#root/abc\">from Monday 26</a>"), li("pfix", "Fix the gate ~30m"))}`);
+        });
+        at(`${DAY}T09:30`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        const dave = inputs.data.candidates.find((c: any) => c.text.startsWith("Message Dave"));
+        const gate = inputs.data.candidates.find((c: any) => c.text.startsWith("Fix the gate"));
+        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: dave.candidateId, first: true }, { candidateId: gate.candidateId, first: false } ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect(await listed(DAY)).toEqual([ "Message Dave about the lights", "Write the runbook", "Fix the gate" ]);
+    });
+});
+
 describe("the header is drawn from the note as it ends", () => {
     it("Wed 09:40 'laundry can go to tomorrow': the forward of his own evening item is made, and neither the drawing nor the Evening act has Laundry", async () => {
         const DAY = "2026-11-11";

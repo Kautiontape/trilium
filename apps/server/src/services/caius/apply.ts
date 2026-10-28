@@ -574,23 +574,29 @@ async function acceptAll(store: NoteStore, date: string, now: Date, input: Pick<
         const entry = { kind: "accept", id: candidateId };
         const before = skipped.length;
         await guarded(entry, skipped, () => accept(store, date, now, known.get(candidateId), candidateId, written, skipped));
-        if (skipped.length === before) await guarded({ kind: "place", id: candidateId }, skipped, () => placeOnList(store, date, now, { kind: "place", id: candidateId }, candidateId, place, written, skipped));
+        if (skipped.length === before) await guarded({ kind: "place", id: candidateId }, skipped, () => placeOnList(store, date, now, { kind: "place", id: candidateId }, candidateId, place, known, written, skipped));
     }
     for (const { listItemId, ...place } of input.move) {
-        await guarded({ kind: "move", id: listItemId }, skipped, () => placeOnList(store, date, now, { kind: "move", id: listItemId }, listItemId, place, written, skipped));
+        await guarded({ kind: "move", id: listItemId }, skipped, () => placeOnList(store, date, now, { kind: "move", id: listItemId }, listItemId, place, known, written, skipped));
     }
 }
 
 /**
  * Moves `item` in his main list of `date` to `place`. `item` and the item it is placed by are each
- * a listItemId of the list or a candidate's id, found on the list by its key.
+ * a listItemId of the list or a candidate's id, found on the list by its key or, for a week item
+ * whose copy has a new id, by its text without the forward links.
  */
-async function placeOnList(store: NoteStore, date: string, now: Date, entry: { kind: string; id: string }, item: string, place: { first?: true; before?: string; after?: string }, written: Written[], skipped: Skipped[]) {
+async function placeOnList(store: NoteStore, date: string, now: Date, entry: { kind: string; id: string }, item: string, place: { first?: boolean; before?: string; after?: string }, known: Map<string, Candidate>, written: Written[], skipped: Skipped[]) {
     const by = place.before ?? place.after;
     if (!place.first && by === undefined) return;
     const plan = await readPlan(store, "day", date, now);
     const tasks = mainTasks(plan);
-    const find = (ref: string) => tasks.find((task) => task.listItemId === ref) ?? tasks.find((task) => keysOf(withoutMoveLinks(task.text)).includes(ref));
+    const refsOf = (ref: string) => {
+        const candidate = known.get(ref);
+        return [ ref, ...(candidate ? keysOf(withoutMoveLinks(candidate.text)) : []) ];
+    };
+    const find = (ref: string) => tasks.find((task) => task.listItemId === ref)
+        ?? tasks.find((task) => keysOf(withoutMoveLinks(task.text)).some((key) => refsOf(ref).includes(key)));
     const task = find(item);
     const anchor = by === undefined ? undefined : find(by)?.listItemId ?? undefined;
     const noteId = task?.noteId ?? plan.noteId;
