@@ -604,7 +604,8 @@
       "image_alt": "The day: meetings on a line, planned work as bars under it",
       "act_range": "{{start}} to {{end}}",
       "act_text": "{{- items}}.",
-      "open_time": "Open time."
+      "open_time": "Open time.",
+      "order_headline": "{{- first}} first, then {{- rest}}."
     },
     "daily": {
       "standing_missing": "No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.",

@@ -480,8 +480,7 @@ describe("a refresh plans from now", () => {
             ...prose, acts: [ { range: "10:00 to 12:15", text: "Verify ZAP-101" }, { range: "10:30 to 11:00", text: "Message Dave" }, { range: "Evening", text: "z" } ]
         } });
         const header = await cls.init(() => store.content(refreshed.headerNoteId));
-        expect(header).toContain("<strong>11:15 to 12:15</strong>");
-        expect(header).toContain("<strong>11:15</strong>");
+        expect(header).toContain("<td><p><strong>11:15 to 11:45</strong></p><p>Verify ZAP-101</p></td><td><p><strong>11:45 to 12:00</strong></p><p>Message Dave</p></td>");
         expect(header).not.toContain("10:00 to");
         const brief = await call("caius_planday", { date: DAY, step: "brief" });
         expect(brief.data.header.work.map((block: any) => block.start)).toEqual([ "11:15", "11:45" ]);

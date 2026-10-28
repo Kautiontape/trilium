@@ -175,15 +175,16 @@ export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "
 /**
  * Draws the header of the brief of `date` again, when the day has one: the drawing with `draw`,
  * given the weather the brief was drawn with, or `fetched` for a brief that kept none, which is
- * kept on it then; and the header note with its date line and headline as written and the acts
- * `acts` makes of the written ones. Answers the header note's write, or null when the day has no
+ * kept on it then; and the header note with its date line as written, `headline` or the written
+ * one, and the acts `acts` makes of the written ones. Answers the header note's write, or null when the day has no
  * brief or no header to read.
  */
 export async function redrawHeader(
     store: NoteStore, date: string,
     draw: (noteId: string, weather: { code: number; label: string } | undefined) => string,
     acts: (written: BriefAct[]) => BriefAct[],
-    fetched?: { code: number; label: string }
+    fetched?: { code: number; label: string },
+    headline?: string
 ): Promise<NoteWrite | null> {
     const day = await findPeriodNote(store, "day", date);
     const brief = day && day.type === "text" && !day.isProtected ? await findBrief(store, day.noteId, date) : null;
@@ -197,7 +198,7 @@ export async function redrawHeader(
     const attachmentId = draw(header.noteId, weather);
     return replace(store, header.noteId, "header", () => headerHtml({
         dateLine: written.dateLine,
-        headline: written.headline,
+        headline: headline ?? written.headline,
         image: { src: `api/attachments/${attachmentId}/image/terrain.svg`, alt: t("caius.brief.image_alt") },
         acts: acts(written.acts)
     }));

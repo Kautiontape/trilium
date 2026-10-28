@@ -314,7 +314,7 @@ describe("the header is drawn from the note as it ends", () => {
         expect(wound.skipped).toEqual([]);
         expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: DAY, status: "written" }) ]));
         const { acts, svg } = await headerOf(planned);
-        expect(acts[0]).toEqual(prose.acts[0]);
+        expect(acts[0]).toEqual({ range: "10:00 to 10:30", text: "ZAP-140." });
         expect(acts[2]).toEqual({ range: "Evening", text: "Nothing planned." });
         expect(svg).not.toContain("Laundry");
         // The day keeps the work he did on it, focus block and all.

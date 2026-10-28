@@ -201,12 +201,15 @@ const planApply = z.object({
     })).optional().describe("Tasks the user moved, such as the heavy day's suggestion, each to one of the inputs step's data.days, data.weeks or data.months"),
     brief: z.object({
         headline: z.string().trim().min(1).describe("One sentence of 14 words or fewer that names the work"),
-        acts: z.array(z.object({ range: z.string(), text: z.string() })).length(3).describe("The day in three acts, the third the evening"),
+        acts: z.array(z.object({ range: z.string(), text: z.string() })).min(2).max(3)
+            .describe("The day's first two acts, each one sentence naming the work the drawing puts in it; the tool takes each range from the drawing and writes the third, the evening"),
         sections: z.array(z.object({ title: z.string().trim().min(1), markdown: z.string() })).default([])
             .describe("Sections after the picks, such as Heads-up; Follow up is written by the tool")
     }).optional().describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes. Left out only on a call that just moves items of his list or just adds Context lines"),
-    acts: z.array(z.union([ z.string(), z.object({ range: z.string(), text: z.string() }) ])).length(3).optional()
-        .describe("Only with a call that just moves: the header's three acts in the new order, sent when the move changes the first task, each a sentence or { range, text }; a sentence takes the drawing's range. The tool writes the third, the evening")
+    acts: z.array(z.union([ z.string(), z.object({ range: z.string(), text: z.string() }) ])).min(2).max(3).optional()
+        .describe("Only with a call that just moves: the header's first two acts in the new order, each a sentence or { range, text }; each takes the drawing's range. The tool writes the third, the evening"),
+    headline: z.string().trim().min(1).optional()
+        .describe("Only with a call that just moves: the headline for the new order. Without it, a move that changes the picks writes a plain one")
 }).refine((input) => input.brief !== undefined || onlyMoves(input) || onlyContext(input), "Give brief, unless the call only moves items of his list or only adds Context lines");
 
 type Answers = { move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; overlaps: unknown[]; forward?: unknown[] };

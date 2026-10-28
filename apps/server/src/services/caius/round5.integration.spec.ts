@@ -242,3 +242,76 @@ describe("the overlap answer", () => {
         delete calendars[THU];
     });
 });
+
+describe("the header follows the drawing", () => {
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+    const headerOf = (noteId: string) => cls.init(() => store.content(noteId));
+    const handoffs = () => jira.handoff.push(
+        { ...ticket("ZAP-310", { summary: "Review the import mapper change", status: "Code Review" }), daysInStatus: 2 },
+        { ...ticket("ZAP-311", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 },
+        { ...ticket("ZAP-301", { summary: "Verify the export retry on staging", status: "Dev Verify" }), daysInStatus: 6 }
+    );
+
+    it("Mon 09:40 'put 101 first': the headline is rewritten, and the acts group whole tasks, with no dangling ', then' and the drawing's times", async () => {
+        const MON = "2027-01-11";
+        calendars[MON] = [ event("10:00", "10:15", "Daily Standup"), event("11:00", "12:00", "Sprint Planning") ];
+        handoffs();
+        at(`${MON}T09:40`);
+        const planned = await call("caius_plan_apply", {
+            date: MON, said: "take 310, 311 and 301", accept: [ { candidateId: "310" }, { candidateId: "311" }, { candidateId: "301" } ],
+            brief: { headline: "Clear the review and QA check before verifying the export retry on staging.", acts: [
+                { range: "10:00 to 11:00", text: "Standup and Sprint Planning open the day." },
+                { range: "11:00 to 14:00", text: "Review the import mapper, check the invoice export in QA, then verify the export retry on staging." }
+            ], sections: [] }
+        });
+        expect(planned.skipped).toEqual([]);
+        at(`${MON}T09:41`);
+        const moved = await call("caius_plan_apply", { date: MON, said: "put 301 first", move: [ { listItemId: "301", first: true } ] });
+        expect(moved.skipped).toEqual([]);
+        const header = await headerOf(planned.headerNoteId);
+        expect(header).not.toContain("Clear the review");
+        expect(header).toContain("ZAP-301 first, then ZAP-310 and ZAP-311.");
+        expect(header).toContain("<td><p><strong>10:15 to 12:15</strong></p><p>ZAP-301, then ZAP-310.</p></td>");
+        expect(header).toContain("<td><p><strong>12:15 to 12:45</strong></p><p>ZAP-311.</p></td>");
+        expect(header).not.toContain("<p>, then");
+
+        // A headline sent with the move is written as sent.
+        await call("caius_plan_apply", { date: MON, said: "310 first", move: [ { listItemId: "310", first: true } ], headline: "Review the mapper, then the two export checks." });
+        expect(await headerOf(planned.headerNoteId)).toContain("Review the mapper, then the two export checks.");
+
+        // At the wind-down the closed day's header is drawn as worked: acts from the drawing, never the morning's.
+        at(`${MON}T17:30`);
+        const wound = await call("caius_winddown_apply", { date: MON, said: "310 is done", done: [ "310" ] });
+        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: MON, status: "written" }) ]));
+        expect(await headerOf(planned.headerNoteId)).toContain("<p>ZAP-310.</p>");
+        delete calendars[MON];
+    });
+
+    it("Tue 09:35: an act that names other work than the drawing puts in its span is written from the drawing; one that names its work keeps its words", async () => {
+        const TUE = "2027-01-19";
+        calendars[TUE] = [ event("09:30", "09:45", "Team Standup"), event("10:00", "10:30", "Weekly Planning Sync"), event("11:00", "11:30", "Customer Call") ];
+        await cls.init(async () => {
+            const day = await store.calendarDay(TUE);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-101", `${zap("ZAP-401", "Verify the export retry on staging")} ~30m`), li("t-dave", "Message Dave ~30m"))}`);
+        });
+        at(`${TUE}T09:35`);
+        // The agent's round-5 acts, with only two given.
+        const planned = await call("caius_plan_apply", { date: TUE, said: "", brief: { headline: "Verify the export retry and message Dave.", acts: [
+            { range: "09:30 to 12:00", text: "Standup, Weekly Planning Sync, then the Customer Call back to back." },
+            { range: "12:00 to 18:00", text: "Verify the ZAP-401 export retry on staging and message Dave about the lights." }
+        ], sections: [] } });
+        expect(planned.skipped).toEqual([]);
+        const header = await headerOf(planned.headerNoteId);
+        expect(header).toContain("<td><p><strong>10:30 to 11:00</strong></p><p>ZAP-401.</p></td>");
+        expect(header).toContain("<td><p><strong>11:30 to 12:00</strong></p><p>Message Dave.</p></td>");
+        expect(header).not.toContain("12:00 to 18:00");
+
+        const kept = await call("caius_plan_apply", { date: TUE, said: "", brief: { headline: "Verify the export retry and message Dave.", acts: [
+            { range: "10:00 to 12:00", text: "Verify the ZAP-401 export retry after the sync." },
+            { range: "12:00 to 18:00", text: "Message Dave about the lights after the Customer Call." }
+        ], sections: [] } });
+        expect(await headerOf(kept.headerNoteId)).toContain("<td><p><strong>10:30 to 11:00</strong></p><p>Verify the ZAP-401 export retry after the sync.</p></td>"
+            + "<td><p><strong>11:30 to 12:00</strong></p><p>Message Dave about the lights after the Customer Call.</p></td>");
+        delete calendars[TUE];
+    });
+});
