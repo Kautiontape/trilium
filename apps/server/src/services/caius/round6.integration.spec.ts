@@ -232,6 +232,45 @@ describe("a stale errand", () => {
     const DAVE = "Message Dave if he knows anyone who will hang lights as a small job";
     const textsOf = async (period: "day" | "month", date: string) => (await call("caius_plan", { period, date })).sections
         .flatMap((s: any) => s.tasks).map((t: any) => ({ text: t.text.replace(/\s*(?:\[from [^\]]*\]\([^)]*\)|_scheduled \[[^\]]*\]\([^)]*\)_)/g, ""), state: t.state }));
+    /** Dave on `days[0]`, forwarded by three wind-downs, so the fourth day's wind-down offers the park. */
+    const carriedThrice = async (days: string[]) => {
+        await dayWith(days[0] ?? "", `<h2>☑️ Tasks</h2>${ul(li(`d-${days[0]}`, DAVE))}`);
+        for (const day of days.slice(0, 3)) {
+            at(`${day}T17:30`);
+            expect((await call("caius_winddown_apply", { date: day, said: "" })).skipped).toEqual([]);
+        }
+    };
+    const fatesOf = (result: any) => result.written.filter((entry: any) => entry.kind === "fate").map((entry: any) => entry.detail);
+
+    it("a bare yes with a candidate on offer too doesn't park: the candidate is taken as offered and the item goes on", async () => {
+        const days = [ "2030-04-01", "2030-04-02", "2030-04-03", "2030-04-04", "2030-04-05" ];
+        const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
+        await carriedThrice(days);
+        jira.handoff.push({ ...ticket("ZAP-901", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
+        at(`${THU}T17:30`);
+        expect((await call("caius_winddown", { date: THU, step: "open" })).question).toContain("Park it in April?");
+        expect((await call("caius_winddown", { date: THU, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-901" ]);
+        const result = await call("caius_winddown_apply", { date: THU, said: "yes" });
+        expect(result.skipped).toEqual([]);
+        expect(fatesOf(result)).toEqual([ FRI ]);
+        expect(await textsOf("month", "2030-04")).toEqual([]);
+        expect((await textsOf("day", FRI)).map((task: any) => task.text)).toEqual([ DAVE, expect.stringContaining("ZAP-901") ]);
+        expect((await call("caius_plan", { period: "day", date: FRI })).suggested).toEqual([]);
+    });
+
+    it("a bare yes with an overlap asked too doesn't park", async () => {
+        const days = [ "2030-05-06", "2030-05-07", "2030-05-08", "2030-05-09", "2030-05-10" ];
+        const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
+        await carriedThrice(days);
+        calendars[FRI] = [ event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding") ];
+        at(`${THU}T17:30`);
+        expect((await call("caius_winddown", { date: THU, step: "next" })).question).toContain("Incident Review overlaps Vendor Onboarding");
+        const result = await call("caius_winddown_apply", { date: THU, said: "yes" });
+        expect(fatesOf(result)).toEqual([ FRI ]);
+        expect(await textsOf("month", "2030-05")).toEqual([]);
+        delete calendars[FRI];
+    });
+
 
     it("'Message Dave' forwarded from Mon 26 Oct: from its third forward the open step asks to park it in the month; it never parks unasked", async () => {
         const days = [ "2029-04-02", "2029-04-03", "2029-04-04", "2029-04-05", "2029-04-06" ];

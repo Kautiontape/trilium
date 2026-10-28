@@ -393,12 +393,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const heldOnes = await heldItems(store);
         const stale = await staleItems(store, now, open.items.filter((item) => !item.listItemId || !heldOnes.has(item.listItemId)), targetDay);
         // On a vague yes the answers are what was offered, unless a question of its own is pending.
-        // A bare yes to the park alone, as to the heavy day's move, takes the park and nothing more.
-        const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0) + stale.size;
+        // A bare yes takes the park only when the park is all there is to answer, the next workday's
+        // candidates included; with candidates on offer it takes them, and the item goes on.
+        const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0);
         const yes = vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && !asked.fates.length && !asked.done.length;
-        const parkOnly = !asked.asOffered && yes && stale.size > 0 && pending === stale.size;
+        const parkOnly = !asked.asOffered && yes && stale.size > 0 && pending === 0 && candidates.length === 0;
         const parking = asked.asOffered || parkOnly;
-        const vague = asked.asOffered || (yes && pending === 0);
+        const vague = asked.asOffered || (yes && pending === 0 && !parkOnly);
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
         const answers: WindDownApplyInput = vague ? {
             ...asked,
