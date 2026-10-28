@@ -1192,7 +1192,7 @@ function holdGroupOf(value: string): HoldGroup {
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
 /** One thing his reply seems to say that the call doesn't: the item, his clause, what is missing and a message for the agent. */
-interface Check {
+export interface Check {
     item: string;
     said: string;
     missing: "fate" | "dismiss" | "answered" | "overlap";
