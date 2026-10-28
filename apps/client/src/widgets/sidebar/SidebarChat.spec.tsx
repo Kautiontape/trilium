@@ -239,6 +239,39 @@ describe("openNewChat", () => {
         expect(vi.getTimerCount()).toBe(pending - 1);
     });
 
+    it("keeps a start that succeeds after 10 s from taking over the start that replaced it", async () => {
+        await mount();
+        vi.useFakeTimers({ toFake: [ "setTimeout", "clearTimeout" ] });
+        h.createLlmChat.mockReturnValueOnce(later(START_TIMEOUT_MS + 2000, { noteId: "first" })).mockResolvedValueOnce({ noteId: "second" });
+        openNewChat("First");
+        await flush();
+        await elapse(START_TIMEOUT_MS);
+        openNewChat("Second");
+        await flush();
+        expect(sent(0)).toMatchObject({ messages: [ expect.objectContaining({ content: "Second" }) ], config: expect.objectContaining({ chatNoteId: "second" }) });
+
+        await elapse(2000);
+        expect(h.streamChatCompletion).toHaveBeenCalledTimes(1);
+        expect(h.chat?.chatNoteId).toBe("second");
+    });
+
+    it("keeps a start that fails after 10 s from freeing the guard of the start in flight", async () => {
+        await mount();
+        vi.useFakeTimers({ toFake: [ "setTimeout", "clearTimeout" ] });
+        h.createLlmChat.mockReturnValueOnce(later(START_TIMEOUT_MS + 2000, null)).mockReturnValueOnce(new Promise(() => {}));
+        openNewChat("First");
+        await flush();
+        await elapse(START_TIMEOUT_MS);
+        openNewChat("Second");
+        await flush();
+        expect(h.createLlmChat).toHaveBeenCalledTimes(2);
+
+        await elapse(2000);
+        openNewChat("Third");
+        await flush();
+        expect(h.createLlmChat).toHaveBeenCalledTimes(2);
+    });
+
     it("starts one chat for two quick calls", async () => {
         await mount();
         openNewChat("Plan my day 2026-11-04");
@@ -266,6 +299,19 @@ describe("openNewChat", () => {
         expect(h.chat?.pendingAttachments).toEqual([]);
     });
 });
+
+/** A promise that resolves to `value` after `ms` on the (fake) timers. */
+function later<T>(ms: number, value: T) {
+    return new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
+}
+
+/** Advances the fake timers by `ms` and lets the renders settle. */
+async function elapse(ms: number) {
+    await act(async () => {
+        vi.advanceTimersByTime(ms);
+    });
+    await flush();
+}
 
 async function mount() {
     let container: HTMLElement | undefined;

@@ -106,10 +106,13 @@ export default function SidebarChat() {
     const openerStartedRef = useRef(false);
     // A start in flight, from openNewChat until its opener is sent; a second call meanwhile is ignored.
     // `endStart` ends it, and so does a timer after START_TIMEOUT_MS, so a start that never finishes
-    // can't block the next one.
+    // can't block the next one. Each start has a generation in `startGenerationRef`: a start that
+    // finishes after a newer one began changes nothing, and ends only its own generation.
     const startingRef = useRef(false);
     const startTimerRef = useRef<ReturnType<typeof setTimeout>>();
-    const endStart = useCallback(() => {
+    const startGenerationRef = useRef(0);
+    const endStart = useCallback((generation = startGenerationRef.current) => {
+        if (generation !== startGenerationRef.current) return;
         startingRef.current = false;
         clearTimeout(startTimerRef.current);
         startTimerRef.current = undefined;
@@ -223,23 +226,27 @@ export default function SidebarChat() {
     const startWithOpener = useCallback(async (text: string) => {
         if (startingRef.current) return;
         startingRef.current = true;
-        startTimerRef.current = setTimeout(endStart, START_TIMEOUT_MS);
+        const generation = ++startGenerationRef.current;
+        const stale = () => generation !== startGenerationRef.current;
+        startTimerRef.current = setTimeout(() => endStart(generation), START_TIMEOUT_MS);
 
         try {
             // A reply still streaming would land in the new chat, and the opener could not be sent.
             if (chatRef.current.isStreaming) {
                 chatRef.current.stopStreaming();
                 if (!(await untilIdle(idleWaitersRef.current))) {
+                    if (stale()) return;
                     toast.showMessage(t("sidebar_chat.opener_still_replying"), 5000, "bx bx-bot");
-                    endStart();
+                    endStart(generation);
                     return;
                 }
             }
             await spacedUpdate.updateNowIfNecessary();
 
             const note = await dateNoteService.createLlmChat();
+            if (stale()) return;
             if (!note) {
-                endStart();
+                endStart(generation);
                 return;
             }
             const current = chatRef.current;
@@ -253,7 +260,7 @@ export default function SidebarChat() {
             }
             setOpener(text);
         } catch (err) {
-            endStart();
+            endStart(generation);
             console.error("Failed to create new chat:", err);
         }
     }, [spacedUpdate, endStart]);
