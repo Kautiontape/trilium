@@ -43,17 +43,19 @@ export function replaceMeetings(html: string, lines: string[], ids: (string | un
  */
 function proseBlock(top: HTMLElement[], html: string, kind: ProseKind): { start: number; end: number; inside: HTMLElement[]; texts: string[]; ids: (string | undefined)[] } | null {
   const heading = top.findIndex((el) => isHeading(el) && proseKind(el.text) === kind);
-  if (heading < 0) return null;
-  const level = Number(top[heading]!.tagName[1]);
+  const headingEl = top[heading];
+  if (!headingEl) return null;
+  const level = Number(headingEl.tagName[1]);
   const other = kind === 'meetings' ? 'context' : 'meetings';
   const ends = (el: HTMLElement) => isCriticalAside(el)
     || (isHeading(el) && normName(el.text) !== '' && (Number(el.tagName[1]) <= level || proseKind(el.text) === other));
   const next = top.findIndex((el, i) => i > heading && ends(el));
+  const nextEl = top[next];
   const inside = top.slice(heading + 1, next < 0 ? undefined : next);
   const items = inside.flatMap((el) => el.querySelectorAll('li'));
   return {
-    start: top[heading]!.range[1],
-    end: next < 0 ? html.length : top[next]!.range[0],
+    start: headingEl.range[1],
+    end: nextEl ? nextEl.range[0] : html.length,
     inside,
     texts: items.map((li) => li.text.replace(/\s+/g, ' ').trim()),
     ids: items.map((li) => li.getAttribute('data-list-item-id')),
@@ -186,8 +188,8 @@ export async function addContext(
     // The copy in force ends sooner. In the note asked for, its `(until …)` is rewritten where it
     // stands. In another note, which can stop being read before the new date (an older day, last
     // week), the line is written to the note asked for instead, where it is the newer copy.
-    const where = 'noteId' in hit ? (hit as ContextEntry) : { period: 'week' as const, key, noteId: note!.noteId };
-    if (where.noteId === note?.noteId) {
+    const where = 'noteId' in hit ? (hit as ContextEntry) : note ? { period: 'week' as const, key, noteId: note.noteId } : null;
+    if (where && where.noteId === note?.noteId) {
       return extendUntil(api, where, hit.text, until, opts.dryRun);
     }
   }

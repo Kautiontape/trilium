@@ -26,8 +26,8 @@ export function parseContext(lines: string[], noteDate: string, planDate: string
   const expiredContext: ContextLine[] = [];
   for (const line of lines) {
     const match = UNTIL.exec(line);
-    const until = match ? resolveDate(match[1]!, noteDate) : null;
-    const entry: ContextLine = until ? { text: line.slice(0, match!.index).trim(), until } : { text: line.trim() };
+    const until = match?.[1] ? resolveDate(match[1], noteDate) : null;
+    const entry: ContextLine = match && until ? { text: line.slice(0, match.index).trim(), until } : { text: line.trim() };
     (until && until < planDate ? expiredContext : context).push(entry);
   }
   return { context, expiredContext };
@@ -43,7 +43,7 @@ function resolveDate(text: string, noteDate: string): string | null {
   if (iso) {
     [year, month, day] = [Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])] as [number, number, number];
   } else if (named) {
-    month = MONTHS.indexOf(named[2]!.slice(0, 3).toLowerCase());
+    month = MONTHS.indexOf((named[2] ?? '').slice(0, 3).toLowerCase());
     day = Number(named[1]);
     year = named[3] ? Number(named[3]) : null;
     if (month < 0) return null;

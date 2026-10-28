@@ -34,7 +34,8 @@ export function sectionOf(markdown: string | null, name: string): string | null 
   const lines = markdown.split('\n');
   const start = lines.findIndex((line) => normName(HEADING.exec(line)?.[2] ?? '') === normName(name) && HEADING.test(line));
   if (start < 0) return null;
-  const level = HEADING.exec(lines[start]!)![1]!.length;
+  const level = HEADING.exec(lines[start] ?? '')?.[1]?.length;
+  if (level === undefined) return null;
   const end = lines.findIndex((line, i) => i > start && (HEADING.exec(line)?.[1]?.length ?? 7) <= level);
   return lines.slice(start + 1, end < 0 ? undefined : end).join('\n').trim();
 }

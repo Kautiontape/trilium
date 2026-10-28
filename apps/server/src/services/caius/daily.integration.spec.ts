@@ -58,7 +58,8 @@ beforeAll(async () => {
     await cls.init(async () => {
         const [ root ] = await store.search("#calendarRoot");
         const calendarRoot = root ?? (await store.calendarDay(FRIDAY), (await store.search("#calendarRoot"))[0]);
-        await store.addLabel(calendarRoot!.noteId, "enableWeekNote", "");
+        if (!calendarRoot) throw new Error("no #calendarRoot note");
+        await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
         const friday = await store.calendarDay(FRIDAY);
         await store.putContent(friday.noteId, `<h3>Work</h3>${ul(li("f1", "Friday thing"))}`);
     });

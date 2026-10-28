@@ -84,7 +84,8 @@ beforeAll(async () => {
     await cls.init(async () => {
         const [ root ] = await store.search("#calendarRoot");
         const calendarRoot = root ?? (await store.calendarDay(FRIDAY), (await store.search("#calendarRoot"))[0]);
-        await store.addLabel(calendarRoot!.noteId, "enableWeekNote", "");
+        if (!calendarRoot) throw new Error("no #calendarRoot note");
+        await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
 
         notes.thursday = await dayNote(THURSDAY, `<h3>Work</h3>${ul(li("o1", "Slipped thing ~1h"), li("o2", "Fix <a href=\"https://example.atlassian.net/browse/ZAP-104\">ZAP-104</a>"))}`);
         notes.friday = await dayNote(FRIDAY, `<h3>Context</h3>${bullets("ZAP-2590 is open (until Fri 6 Nov)")}<h3>Work</h3>${ul(

@@ -39,7 +39,7 @@ export class ProseTracker {
 
   enter(name: string | null, level: number): void {
     if (normName(name ?? '') === '') return;
-    while (this.stack.length && this.stack[this.stack.length - 1]!.level >= level) this.stack.pop();
+    for (let last = this.stack.at(-1); last && last.level >= level; last = this.stack.at(-1)) this.stack.pop();
     this.stack.push({ level, kind: proseKind(name) });
   }
 
@@ -66,7 +66,7 @@ export function proseKinds(markdown: string): (ProseKind | null)[] {
   return markdown.split('\n').map((line) => {
     const m = HEADING.exec(line);
     if (m) {
-      tracker.enter(m[2] || null, m[1]!.length);
+      tracker.enter(m[2] || null, m[1]?.length ?? 0);
       return normName(m[2] ?? '') === '' ? tracker.kind : null;
     }
     return tracker.kind;

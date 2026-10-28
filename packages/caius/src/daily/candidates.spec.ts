@@ -29,7 +29,7 @@ describe('dayCandidates', () => {
     const candidates = dayCandidates({
       jira,
       week: { key: '2026-W45', tasks: [weekTask('w1', 'Write the spec', 60), weekTask('w2', 'Plan the release')] },
-      live: new Map([['ZAP-2', ['d/e1']], [keysOf('Write the spec')[0]!, ['w/w1']]]),
+      live: new Map([['ZAP-2', ['d/e1']], [onlyKey('Write the spec'), ['w/w1']]]),
       exclude: [],
     });
     expect(candidates.map((c) => [c.subject, c.reason, c.minutes, c.source])).toEqual([
@@ -47,7 +47,7 @@ describe('dayCandidates', () => {
     const candidates = dayCandidates({
       jira,
       week: { key: '2026-W45', tasks: [weekTask('w1', 'Write the spec')] },
-      live: new Map([['ZAP-1', ['d/e1']], [keysOf('Write the spec')[0]!, ['w/w1', 'd/e9']]]),
+      live: new Map([['ZAP-1', ['d/e1']], [onlyKey('Write the spec'), ['w/w1', 'd/e9']]]),
       exclude: ['ZAP-2', 'ZAP-3', 'ZAP-4'],
     });
     expect(candidates).toEqual([]);
@@ -83,3 +83,10 @@ describe('liveKeys', () => {
     expect(new Set([...keys.values()].flat())).toEqual(new Set(['d/e1']));
   });
 });
+
+/** The one key `keysOf` derives from `text`. */
+function onlyKey(text: string): string {
+  const [key] = keysOf(text);
+  if (!key) throw new Error(`no key for "${text}"`);
+  return key;
+}
