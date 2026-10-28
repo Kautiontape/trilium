@@ -285,3 +285,13 @@ describe('a task forwarded again', () => {
     expect(hasCopy('<h3>Work</h3>', toTuesday.html, 'etue', 'tuenote')).toBe(false);
   });
 });
+
+describe('hasCopy of a task with a back link', () => {
+  it('tells a recurring Laundry from Monday from one from Tuesday by where each link points', () => {
+    const fromMon = ul(li('wlau', 'Laundry <a href="#root/mon">from Mon 2 Nov</a>'));
+    const fromTue = ul(li('tlau', 'Laundry <a class="reference-link" href="#root/tue">from Tuesday 3</a>'));
+    expect(hasCopy(fromMon, fromTue, 'tlau', 'src')).toBe(false);
+    const same = ul(li('wlau', 'Laundry <a href="#root/tue">from Tue 3 Nov</a>'));
+    expect(hasCopy(same, fromTue, 'tlau', 'src')).toBe(true);
+  });
+});

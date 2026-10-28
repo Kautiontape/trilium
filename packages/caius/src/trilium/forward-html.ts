@@ -241,13 +241,15 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
   const sourceSpan = source && descriptionOf(source);
   if (!sourceSpan) return false;
   const body = sourceSpan.innerHTML;
-  if (hasBackLink(sourceSpan)) {
-    // The copy's back link is written again (`buildCopy`), so the rest of the text is compared.
+  const origin = backLinkOf(sourceSpan)?.getAttribute('href');
+  if (origin) {
+    // The copy's back link is written again (`buildCopy`), so the rest of the text is compared,
+    // and where the link points: a recurring task from another day is not this one's copy.
     return parse(targetHtml, { comment: true })
       .querySelectorAll('li')
       .some((li) => {
         const span = descriptionOf(li);
-        return !!span && hasBackLink(span) && withoutBackLink(span.innerHTML) === withoutBackLink(body);
+        return !!span && backLinkOf(span)?.getAttribute('href') === origin && withoutBackLink(span.innerHTML) === withoutBackLink(body);
       });
   }
   // A space or &nbsp;, then a link to the source note with any text: the copy's back link as
