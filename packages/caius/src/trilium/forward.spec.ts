@@ -79,9 +79,9 @@ describe('a back link from an older forward', () => {
     expect((await forwardTasks(half.api, [move], opts))[0]).toMatchObject({ status: 'failed' });
     expect(half.html.nov9).toContain('Message Dave <a href="#root/oct26">from Mon 26 Oct</a>');
     expect(half.html.nov9).not.toContain('reference-link');
-    const f = fakeTrilium({ ...seed(), nov9: [periodNote('nov9', 'dateNote', '2026-11-09'), half.html.nov9!] });
+    const f = fakeTrilium({ ...seed(), nov9: [periodNote('nov9', 'dateNote', '2026-11-09'), half.html.nov9 ?? ''] });
     expect((await forwardTasks(f.api, [move], opts))[0]).toMatchObject({ status: 'moved', detail: 'target already held the copy' });
-    expect(f.html.nov9!.match(/Message Dave/g)).toHaveLength(1);
+    expect((f.html.nov9 ?? '').match(/Message Dave/g)).toHaveLength(1);
   });
 });
 
