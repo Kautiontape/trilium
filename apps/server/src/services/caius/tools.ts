@@ -166,7 +166,7 @@ export function createCaiusTools(
         },
 
         caius_plan_apply: {
-            description: "Make every write of a Plan my day conversation in one call, after the user has answered the one question set: the catch-up, the candidates the user took in the user's order (each to the end of the list), the keep or carry lines, finished tickets, candidates put off for today (not a dismissal), evening tasks, Context lines, moves, the Meetings block, and the brief with its picks, Follow up, drawing and weather. Every id comes from caius_planday's step data. Write only the brief's headline, acts and extra sections. No dry run: the user has answered. Answers what was written and what was skipped, with a reason; a re-run with the same input changes nothing.",
+            description: "Make every write of a Plan my day conversation in one call, after the user has answered the one question set: the catch-up, the candidates the user took in the user's order (each to the end of the list, or first, before or after an item the user names), items of the list the user asked to reorder, the keep or carry lines, finished tickets, candidates put off for today (not a dismissal), evening tasks, Context lines, forwards, the Meetings block, and the brief with its picks, Follow up, drawing and weather. Every id comes from caius_planday's step data. Write only the brief's headline, acts and extra sections. No dry run: the user has answered. Answers what was written and what was skipped, with a reason; a re-run with the same input changes nothing.",
             inputSchema: toolInputs.planApply,
             async: true,
             mutates: true,
@@ -174,7 +174,7 @@ export function createCaiusTools(
         },
 
         caius_winddown_apply: {
-            description: "Make every write of a Wind down conversation in one call, after the user has answered the one question set: what is done, the fates the user named (a forward, or a drop only on the user's word drop, cancel or not doing, with the reason), the proposed fate for every open item not named, the next workday's candidates the user took in order, the keep and carry lines, finished tickets, candidates put off (not a dismissal), evening tasks and Context lines for the next workday. Every id comes from caius_winddown's step data. No dry run: the user has answered. Answers what was written and what was skipped, with a reason; a re-run changes nothing.",
+            description: "Make every write of a Wind down conversation in one call, after the user has answered the one question set: what is done, the fates the user named (a forward, or a drop only on the user's word drop, cancel or not doing, with the reason), the proposed fate for every open item not named, the next workday's candidates the user took in order (each to the end of the list, or first, before or after an item the user names), items of its list the user asked to reorder, the keep and carry lines, finished tickets, candidates put off (not a dismissal), evening tasks and Context lines for the next workday. Every id comes from caius_winddown's step data. No dry run: the user has answered. Answers what was written and what was skipped, with a reason; a re-run changes nothing.",
             inputSchema: toolInputs.windDownApply,
             async: true,
             mutates: true,

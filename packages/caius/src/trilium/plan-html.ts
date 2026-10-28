@@ -228,13 +228,45 @@ const EVENING_NAMES = new Set(['evening', 'recharge']);
 export function placeInMainList(html: string, item: string): string {
   const root = parse(html, { comment: true });
   const top = elements(root);
-  const i = top.findIndex((e) => e.tagName === 'H2' && !isSuggestedName(e.text) && !proseKind(e.text) && !EVENING_NAMES.has(normName(e.text)));
+  const i = mainHeadingIndex(top);
   const heading = top[i];
   if (!heading) return placeForwarded(html, item, null);
   const found = scanSection(top, i);
   if (found.list) return apply(html, [insertInList(html, found.list, item)]);
   if (found.placeholder) return apply(html, [{ start: found.placeholder.range[0], end: found.placeholder.range[1], text: newList(item) }]);
   return apply(html, [insertAt(heading.range[1], newList(item))]);
+}
+
+/** Where an item of his main list goes: first, or before or after another item of it. */
+export type MainListPlace = { first: true } | { before: string } | { after: string };
+
+/**
+ * `html` with the item `id` of his main list (the list `placeInMainList` adds to) moved to `place`,
+ * `unchanged` when it is there already. The item and the item it is placed by must both be in that
+ * list, as top-level items.
+ */
+export function moveInMainList(html: string, id: string, place: MainListPlace): { ok: true; html: string; unchanged: boolean } | { ok: false; reason: 'not_in_main_list' } {
+  const root = parse(html, { comment: true });
+  const top = elements(root);
+  const heading = mainHeadingIndex(top);
+  const list = heading >= 0 ? scanSection(top, heading).list : undefined;
+  const items = list ? elements(list).filter((c) => c.tagName === 'LI') : [];
+  const byId = (itemId: string) => items.find((c) => c.getAttribute('data-list-item-id') === itemId);
+  const li = byId(id);
+  const anchor = 'first' in place ? items[0] : byId('before' in place ? place.before : place.after);
+  if (!list || !li || !anchor) return { ok: false, reason: 'not_in_main_list' };
+  const others = items.filter((c) => c !== li);
+  const at = 'after' in place ? others.indexOf(anchor) + 1 : 'first' in place ? 0 : others.indexOf(anchor);
+  if (items.indexOf(li) === at) return { ok: true, html, unchanged: true };
+  const markup = html.slice(li.range[0], li.range[1]);
+  const next = others[at];
+  const edit = insertAt(next ? next.range[0] : (others.at(-1)?.range[1] ?? li.range[1]), markup);
+  return { ok: true, html: apply(html, [{ start: li.range[0], end: li.range[1], text: '' }, edit]), unchanged: false };
+}
+
+/** The index in `top` of the main Tasks heading: the first `h2` that is not Suggested, Meetings, Context or an evening heading. */
+function mainHeadingIndex(top: HTMLElement[]): number {
+  return top.findIndex((e) => e.tagName === 'H2' && !isSuggestedName(e.text) && !proseKind(e.text) && !EVENING_NAMES.has(normName(e.text)));
 }
 
 export type TakeProblem = 'not_found' | 'not_live' | 'not_suggested';

@@ -21,6 +21,7 @@ import {
   inspectSuggested,
   itemMarkup,
   inProseById,
+  moveInMainList,
   placeInMainList,
   placeTask,
   setTaskState,
@@ -65,8 +66,18 @@ export interface ItemRequest {
   reason?: string;
 }
 
+export interface MoveRequest {
+  noteId: string;
+  listItemId: string;
+  /** Exactly one of first, before or after: the place in his main list. */
+  first?: boolean;
+  before?: string;
+  after?: string;
+}
+
 export type PlanSkip =
   | 'not_found'
+  | 'not_in_main_list'
   | 'not_live'
   | 'not_suggested'
   | 'prose_section'
@@ -84,7 +95,7 @@ export type PlanSkip =
 export type PlanResult<R> = R &
   (
     | {
-        status: 'added' | 'accepted' | 'dismissed' | 'updated';
+        status: 'added' | 'accepted' | 'dismissed' | 'updated' | 'moved' | 'unchanged';
         detail?: string;
         dryRun?: boolean;
         /** The note written (add: the day, week or month note). */
@@ -281,7 +292,7 @@ async function loadNote(api: NoteStore, noteId: string): Promise<{ note: StoreNo
   return problem ? { problem } : { note };
 }
 
-const validItem = (r: ItemRequest | AcceptRequest) => !!r.noteId && !!r.listItemId;
+const validItem = (r: ItemRequest | AcceptRequest | MoveRequest) => !!r.noteId && !!r.listItemId;
 
 export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: PlanOptions = {}): Promise<Done<AcceptRequest>[]> {
   return eachSequentially(reqs, async (req) => {
@@ -308,6 +319,26 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     }
     if (!(await api.putContent(req.noteId, after, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
     return { ...req, status: 'accepted', listItemId: req.listItemId };
+  });
+}
+
+/** Moves items of his main list: first, or before or after another item of it. */
+export async function moveTasks(api: NoteStore, reqs: MoveRequest[], opts: PlanOptions = {}): Promise<Done<MoveRequest>[]> {
+  return eachSequentially(reqs, async (req) => {
+    if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
+    const place = req.first ? { first: true as const } : req.before !== undefined ? { before: req.before } : req.after !== undefined ? { after: req.after } : null;
+    const given = [!!req.first, req.before !== undefined, req.after !== undefined].filter(Boolean).length;
+    if (!place || given !== 1) return skip(req, 'bad_request', 'give exactly one of first, before or after');
+    if (req.before === req.listItemId || req.after === req.listItemId) return skip(req, 'bad_request', 'an item is placed by another item');
+    const loaded = await loadNote(api, req.noteId);
+    if ('problem' in loaded) return skip(req, 'unreadable', loaded.problem);
+    const html = await api.content(req.noteId);
+    const moved = moveInMainList(html, req.listItemId, place);
+    if (!moved.ok) return skip(req, moved.reason, 'the item and the one it is placed by must both be in his main list');
+    if (moved.unchanged) return { ...req, status: 'unchanged' };
+    if (opts.dryRun) return { ...req, status: 'moved', dryRun: true, changes: [{ noteId: req.noteId, role: 'target', before: html, after: moved.html }] };
+    if (!(await api.putContent(req.noteId, moved.html, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
+    return { ...req, status: 'moved' };
   });
 }
 

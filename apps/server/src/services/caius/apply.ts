@@ -17,6 +17,7 @@ import {
     isoWeekKey,
     loadStateSymbols,
     meetingLines,
+    moveTasks,
     nextWorkday,
     normName,
     type NoteStore,
@@ -42,6 +43,7 @@ import {
     HEAVY_ID,
     lineIdOf,
     listOf,
+    mainTasks,
     namedDays,
     plainText,
     localDay,
@@ -53,6 +55,7 @@ import {
     weekdayName,
     windDownTarget,
     withDateLabels,
+    withoutMoveLinks,
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
@@ -128,9 +131,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
 
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
-        for (const { candidateId } of input.accept) {
-            await guarded({ kind: "accept", id: candidateId }, skipped, () => accept(store, date, now, known.get(candidateId), candidateId, written, skipped));
-        }
+        await acceptAll(store, date, now, input, known, written, skipped);
 
         await guarded({ kind: "keep" }, skipped, async () => { for (const { lineId } of input.keep) {
             const line = offer.carry.find((c) => c.lineId === lineId);
@@ -285,9 +286,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         await labelDay(store, date, NOT_TODAY_LABEL, putOffWeek);
         });
 
-        for (const { candidateId } of input.accept) {
-            await guarded({ kind: "accept", id: candidateId }, skipped, () => accept(store, targetDay, now, known.get(candidateId), candidateId, written, skipped));
-        }
+        await acceptAll(store, targetDay, now, input, known, written, skipped);
         await guarded({ kind: "keep" }, skipped, async () => { for (const [ kind, refs ] of [ [ "keep", input.keep ], [ "carry", input.carry ] ] as const) {
             for (const { lineId } of refs) {
                 const line = [ ...lines.keep, ...lines.carry ].find((l) => l.lineId === lineId);
@@ -520,6 +519,44 @@ async function accept(store: NoteStore, date: string, now: Date, candidate: Cand
         return;
     }
     const [ result ] = await acceptTasks(store, [ { noteId, listItemId: item.listItemId } ]);
+    record(written, skipped, entry, result);
+}
+
+/**
+ * The candidates he took, in his order, each put where he said (`first`, `before` or `after`), then
+ * the items of his list he asked to move.
+ */
+async function acceptAll(store: NoteStore, date: string, now: Date, input: Pick<PlanApplyInput, "accept" | "move">, known: Map<string, Candidate>, written: Written[], skipped: Skipped[]) {
+    for (const { candidateId, ...place } of input.accept) {
+        const entry = { kind: "accept", id: candidateId };
+        const before = skipped.length;
+        await guarded(entry, skipped, () => accept(store, date, now, known.get(candidateId), candidateId, written, skipped));
+        if (skipped.length === before) await guarded({ kind: "place", id: candidateId }, skipped, () => placeOnList(store, date, now, { kind: "place", id: candidateId }, candidateId, place, written, skipped));
+    }
+    for (const { listItemId, ...place } of input.move) {
+        await guarded({ kind: "move", id: listItemId }, skipped, () => placeOnList(store, date, now, { kind: "move", id: listItemId }, listItemId, place, written, skipped));
+    }
+}
+
+/**
+ * Moves `item` in his main list of `date` to `place`. `item` and the item it is placed by are each
+ * a listItemId of the list or a candidate's id, found on the list by its key.
+ */
+async function placeOnList(store: NoteStore, date: string, now: Date, entry: { kind: string; id: string }, item: string, place: { first?: true; before?: string; after?: string }, written: Written[], skipped: Skipped[]) {
+    const by = place.before ?? place.after;
+    if (!place.first && by === undefined) return;
+    const plan = await readPlan(store, "day", date, now);
+    const tasks = mainTasks(plan);
+    const find = (ref: string) => tasks.find((task) => task.listItemId === ref) ?? tasks.find((task) => keysOf(withoutMoveLinks(task.text)).includes(ref));
+    const task = find(item);
+    const anchor = by === undefined ? undefined : find(by);
+    const noteId = task?.noteId ?? plan.noteId;
+    if (!task?.listItemId || !noteId || (by !== undefined && !anchor?.listItemId)) {
+        skipped.push({ ...entry, reason: "not_on_list" });
+        return;
+    }
+    const where = place.first ? { first: true } : place.before !== undefined ? { before: anchor?.listItemId } : { after: anchor?.listItemId };
+    const [ result ] = await moveTasks(store, [ { noteId, listItemId: task.listItemId, ...where } ]);
     record(written, skipped, entry, result);
 }
 

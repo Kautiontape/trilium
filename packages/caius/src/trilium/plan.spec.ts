@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptTasks, addTasks, dismissTasks, setStates } from './plan.js';
+import { acceptTasks, addTasks, dismissTasks, moveTasks, setStates } from './plan.js';
 import { parseSource, taskKeys, textHash } from './keys.js';
 import { readPlan } from './plan-read.js';
 import { fakeTrilium, li, periodNote, STATES, TEMPLATE, ul } from './helpers.js';
@@ -172,6 +172,34 @@ describe('addTasks', () => {
     const out = await addTasks(f.api, bad, base);
     expect(out.map((o) => (o.status === 'skipped' ? o.reason : o.status))).toEqual(['bad_request', 'bad_request', 'bad_request']);
     expect(puts(f.log)).toEqual([]);
+  });
+});
+
+describe('moveTasks', () => {
+  const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One'), li('e2', 'Two'), li('e3', 'Three')) + '<h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es1', 'Maybe'));
+  const order = (html: string | undefined) => [...(html ?? '').matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1]);
+
+  it('puts an item of his main list first, before or after another one, in the order named', async () => {
+    const f = fakeTrilium(seed(day));
+    const out = await moveTasks(f.api, [{ noteId: 'd', listItemId: 'e3', first: true }, { noteId: 'd', listItemId: 'e1', after: 'e2' }], base);
+    expect(out.map((r) => r.status)).toEqual(['moved', 'moved']);
+    expect(order(f.html.d)).toEqual(['e3', 'e2', 'e1', 'ev1', 'es1']);
+    await moveTasks(f.api, [{ noteId: 'd', listItemId: 'e1', before: 'e3' }], base);
+    expect(order(f.html.d)).toEqual(['e1', 'e3', 'e2', 'ev1', 'es1']);
+  });
+  it('is unchanged when the item is already there, and skips an item or an anchor outside his main list', async () => {
+    const f = fakeTrilium(seed(day));
+    const out = await moveTasks(f.api, [
+      { noteId: 'd', listItemId: 'e1', first: true },
+      { noteId: 'd', listItemId: 'ev1', first: true },
+      { noteId: 'd', listItemId: 'e2', before: 'es1' },
+      { noteId: 'd', listItemId: 'e2', after: 'e2' },
+      { noteId: 'd', listItemId: 'e2' },
+    ], base);
+    expect(out.map((r) => [r.status, 'reason' in r ? r.reason : undefined])).toEqual([
+      ['unchanged', undefined], ['skipped', 'not_in_main_list'], ['skipped', 'not_in_main_list'], ['skipped', 'bad_request'], ['skipped', 'bad_request'],
+    ]);
+    expect(f.html.d).toBe(day);
   });
 });
 

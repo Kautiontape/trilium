@@ -124,6 +124,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
                 summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), focus: formatHours(targetMinutes) })
             };
         return reply(read.standing, {
+            list: listItems(facts.plan),
             candidates,
             capacity: { plannedMinutes, eveningMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
             overlaps, evening, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
@@ -245,7 +246,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
         ];
         return reply(read.standing, {
-            plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity, ...namedDays(date, nextDay),
+            plannedAt, list: listItems(facts.plan), candidates, meetings, overlaps, capacity: read.inputs.capacity, ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry,
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
@@ -563,6 +564,14 @@ export function listOf(plan: PlanView) {
         label: workLabel(task.text), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
         evening: eveningSections.has(task.section), keys: keysOf(withoutMoveLinks(task.text))
     }));
+}
+
+/** The day's list as the steps show it, for an answer to name by `listItemId`: each live task's id, its plain text and whether it is an evening task. */
+export function listItems(plan: PlanView) {
+    const evening = listOf(plan);
+    return mainTasks(plan).flatMap((task, i) => task.listItemId
+        ? [ { listItemId: task.listItemId, text: plainText(withoutMoveLinks(task.text)), evening: evening[i]?.evening ?? false } ]
+        : []);
 }
 
 /**

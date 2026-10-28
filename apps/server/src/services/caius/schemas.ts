@@ -156,12 +156,24 @@ const briefWrite = z.object({
 const jiraKey = z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase());
 const candidateRef = z.object({ candidateId: z.string().min(1).describe("A candidate's candidateId, from the step data") });
 const lineRef = z.object({ lineId: z.string().min(1).describe("A keep or carry line's lineId, from the step data") });
+/** Where an item goes in his main list: first, or before or after an item of `data.list` or a candidate taken in the same call. */
+const place = {
+    first: z.literal(true).optional().describe("Put it at the top of his list"),
+    before: z.string().min(1).optional().describe("Put it just before this item: a listItemId from the step's data.list, or a candidateId taken in the same call"),
+    after: z.string().min(1).optional().describe("Put it just after this item: a listItemId from the step's data.list, or a candidateId taken in the same call")
+};
+const placed = (item: { first?: true; before?: string; after?: string }) => [ item.first, item.before, item.after ].filter((v) => v !== undefined).length;
+const acceptRef = candidateRef.extend(place).refine((item) => placed(item) <= 1, "Give at most one of first, before or after");
+const moveRef = z.object({ listItemId: z.string().min(1).describe("An item of his main list, from the step's data.list"), ...place })
+    .refine((item) => placed(item) === 1, "Give exactly one of first, before or after");
+const moves = z.array(moveRef).default([]).describe("Only when the user asks to reorder: items of his main list moved first, before or after another");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
 
 const planApply = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
     catchup: z.enum([ "move_all", "skip", "review" ]).optional().describe("The answer to the catch-up question, when one was asked"),
-    accept: z.array(candidateRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list"),
+    accept: z.array(acceptRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after)"),
+    move: moves,
     keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
     finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): offered again on the next workday. Not a dismissal"),
@@ -190,7 +202,8 @@ const windDownApply = z.object({
         drop: z.string().trim().min(1).optional().describe("Only when the user says drop, cancel or not doing: the user's reason")
     }).refine((fate) => (fate.to === undefined) !== (fate.drop === undefined), "Give exactly one of to or drop")).default([])
         .describe("Fates the user named. Every open item not named keeps the fate the open step proposed"),
-    accept: z.array(candidateRef).default([]).describe("Candidates the user took for the next workday, in the user's order"),
+    accept: z.array(acceptRef).default([]).describe("Candidates the user took for the next workday, in the user's order; each goes to the end of the list unless the user names a place (first, before or after)"),
+    move: moves,
     keep: z.array(lineRef).default([]).describe("Keep lines the user said yes to"),
     carry: z.array(lineRef).default([]).describe("Carry lines the user said yes to"),
     finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),

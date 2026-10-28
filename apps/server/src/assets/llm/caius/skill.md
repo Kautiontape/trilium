@@ -47,7 +47,7 @@ Most write tools take an `items` list, `dryRun`, and `html: true` on a dry run t
 | `caius_skip_catchup` | Skip Plan my day's catch-up for a day: the last workday's open tasks stay where they are. | `{ "date": "2026-11-09" }` |
 | `caius_winddown` | One step of Wind down: `open`, `next`, `context`. Returns the data and the question to ask. | `{ "date": "2026-11-06", "step": "open" }` |
 | `caius_planday` | One step of Plan my day: `catchup`, `inputs`, `brief`. Returns the data and the question to ask. | `{ "date": "2026-11-09", "step": "catchup" }` |
-| `caius_plan_apply` | Every write of Plan my day in one call, from his answers mapped to the step data's ids. | `{ "date": "2026-11-09", "accept": [{ "candidateId": "ZAP-111" }], "brief": { "headline": "…", "acts": […], "sections": [] } }` |
+| `caius_plan_apply` | Every write of Plan my day in one call, from his answers mapped to the step data's ids. | `{ "date": "2026-11-09", "accept": [{ "candidateId": "ZAP-111", "after": "e105" }], "brief": { "headline": "…", "acts": […], "sections": [] } }` |
 | `caius_winddown_apply` | Every write of Wind down in one call, from his answers mapped to the step data's ids. | `{ "date": "2026-11-06", "done": ["e123"], "fates": [{ "listItemId": "e456", "to": "2026-W46" }] }` |
 | `caius_header` | Draw the day as terrain, from standup to bedtime, and attach it to a note as `terrain.svg`. A second call updates the same attachment. Returns `attachmentId` and the `<img>` `snippet` to put in the note; the note's text is not changed. Give `latitude` and `longitude` to add the weather. | `{ "noteId": "…", "start": "10:00", "end": "23:00", "events": [{ "start": "10:00", "end": "10:15", "title": "Standup" }], "work": [{ "start": "13:00", "end": "14:00", "label": "ZAP-1", "focus": true }] }` |
 
@@ -87,7 +87,7 @@ For `Wind down` and `Plan my day` openers, follow only this section. The Daily p
 
 1. Call `caius_planday` steps `catchup`, then `inputs`.
 2. Send **one message**: the catch-up question (if any), the candidates with their `because` and size, the carry question (only when `data.carry` has a line), the overlap question (if any), the heavy-day move question (if any), and "Anything for the evening?".
-3. Take his reply, map it to the ids in the step data, and call `caius_plan_apply` **once**: `catchup` (`move_all`, `skip` or `review`), `accept` (his order), `keep`, `finished`, `notToday`, `dismiss`, `evening`, `context`, `forward`, and `brief` with the `headline` (14 words or fewer, naming the work; say so when the day is over 60% booked), three `acts` (grouped by what fits around the meetings; the third is the evening) and any extra `sections`. The tool writes the picks, the Follow up, the Heads-up, the drawing and the weather.
+3. Take his reply, map it to the ids in the step data, and call `caius_plan_apply` **once**: `catchup` (`move_all`, `skip` or `review`), `accept` (his order, each with the place he names), `move`, `keep`, `finished`, `notToday`, `dismiss`, `evening`, `context`, `forward`, and `brief` with the `headline` (14 words or fewer, naming the work; say so when the day is over 60% booked), three `acts` (grouped by what fits around the meetings; the third is the evening) and any extra `sections`. The tool writes the picks, the Follow up, the Heads-up, the drawing and the weather.
 4. Reply with two lines, the headline and the top pick, and the link from the result.
 
 On `catchup: "review"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day: call `catchup` again and go on from there.
@@ -98,7 +98,7 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 
 1. Call `caius_winddown` steps `open`, `next`, then `context`.
 2. Send **one message**: what's left (`data.items`) with the `open` question, the next workday's candidates, the keep or carry question (only when `data.noticed` has a line), and the `next` and `context` questions. Say which items Jira calls done (`jiraDone`). Mention `olderCount` only when the step data has it, in one line.
-3. Take his reply and call `caius_winddown_apply` **once**: `done`, `fates` (only the items he named; every other item keeps its proposed fate), `accept`, `keep`, `carry`, `finished`, `notToday`, `dismiss`, `evening` and `context`.
+3. Take his reply and call `caius_winddown_apply` **once**: `done`, `fates` (only the items he named; every other item keeps its proposed fate), `accept`, `move`, `keep`, `carry`, `finished`, `notToday`, `dismiss`, `evening` and `context`.
 4. Reply with what was written, in two or three plain lines.
 
 ### Rules
@@ -110,6 +110,8 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 - Never say something was done unless the apply result says so.
 - Never narrate tools, ids, protocol or data quality.
 - On a skipped item, say it in one plain clause.
+- Map "first", "after 105" or "before the report" onto the accept's `first`, `before` or `after`. Name the other item by its `listItemId` in `data.list`, or by the `candidateId` of a candidate taken in the same call. Without a place, an accepted item joins the end of his list.
+- Never refuse a reorder he asks for: an item already on his list moves with `move` (`listItemId` and `first`, `before` or `after`), within his main list. Use `move` only when he asks for an order.
 - A vague reply ("fine", "yeah") accepts the proposals as offered: the candidates in the order shown, keeps yes, and the heavy-day move as suggested, and everything else as proposed.
 - Only "drop", "cancel" or "not doing" drops a task or dismisses a candidate; anything vaguer ("skip that", "not now") is `notToday` for a candidate, and the proposed fate for an open item. A drop takes his reason.
 - Never offer to drop a Context line.

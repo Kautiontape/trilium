@@ -74,6 +74,9 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Ask about a Context line only when the step data returns it in `data.carry` (Plan my day) or `data.noticed` (Wind down)",
         "never ask whether it still holds, whether to keep it or whether to carry it",
         "Once he says to stop, never ask about it again",
+        "Map \"first\", \"after 105\" or \"before the report\" onto the accept's `first`, `before` or `after`",
+        "Never refuse a reorder he asks for",
+        "Use `move` only when he asks for an order",
         "never use the generic note tools",
         "If a Caius tool fails, say so in one clause and stop that item.",
         "Never run Plan my day for a future day."

@@ -105,3 +105,59 @@ describe("a Context line he gave is settled until the week boundary", () => {
         expect(friday.question).toContain("Carry 'ZAP-2590 is open' into next week?");
     });
 });
+
+const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+/** The day's main list and evening, as the plan reads them. */
+async function listed(date: string) {
+    const plan = await call("caius_plan", { period: "day", date });
+    return plan.sections.flatMap((s: any) => s.tasks).filter((t: any) => t.state === "open").map((t: any) => t.text.replace(/ \[from [^\]]*\]\([^)]*\)/, ""));
+}
+
+describe("accept takes a position", () => {
+    it("Wed 09:40 'yes, 101 first': the week's ZAP-101 goes to the top of his list, not the end", async () => {
+        await cls.init(async () => {
+            const wednesday = await store.calendarDay(WED);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("w105", `${zap("ZAP-105", "Confirm the staging bucket name")} ~30m`), li("w111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`
+                + `<h3>Evening</h3>${ul(li("wlau", "Laundry"))}`);
+            const week = await store.calendarWeek("2026-W45");
+            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("k101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`))}`);
+        });
+        at(`${WED}T09:40`);
+        const inputs = await call("caius_planday", { date: WED, step: "inputs", refresh: true });
+        expect(inputs.data.candidates).toEqual([ expect.objectContaining({ candidateId: "ZAP-101", kind: "week" }) ]);
+        expect(inputs.data.list).toEqual([
+            { listItemId: "w105", text: "ZAP-105 Confirm the staging bucket name", evening: false },
+            { listItemId: "w111", text: "ZAP-111 Check the invoice export in QA", evening: false },
+            { listItemId: "wlau", text: "Laundry", evening: true }
+        ]);
+        const applied = await call("caius_plan_apply", { date: WED, accept: [ { candidateId: "ZAP-101", first: true } ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect(await listed(WED)).toEqual([
+            "[ZAP-101](https://example.atlassian.net/browse/ZAP-101) Verify the export retry on staging",
+            "[ZAP-105](https://example.atlassian.net/browse/ZAP-105) Confirm the staging bucket name",
+            "[ZAP-111](https://example.atlassian.net/browse/ZAP-111) Check the invoice export in QA",
+            "Laundry"
+        ]);
+    });
+
+    it("Tue 'add 120 after 105', then 'runbook first': a Suggested ticket goes after the task he names, and his own task moves to the top", async () => {
+        const DAY = "2026-11-10";
+        jira.handoff.push({ ...ticket("ZAP-120", { status: "QA Testing" }), daysInStatus: 3 });
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t105", `${zap("ZAP-105", "Confirm the staging bucket name")} ~30m`), li("trun", "Write the runbook ~30m"))}`
+                + `<h3>Evening</h3>${ul(li("tlau", "Laundry"))}<h2>Suggested</h2>${ul(li("ts120", `Get ${zap("ZAP-120", "Check the invoice export in QA")} done: because sitting in QA Testing for 3 days (~30m)`))}`);
+        });
+        at(`${DAY}T09:35`);
+        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "ZAP-120", after: "t105" } ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect(await listed(DAY)).toEqual([ expect.stringContaining("ZAP-105"), expect.stringContaining("ZAP-120"), "Write the runbook", "Laundry" ]);
+
+        const moved = await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "trun", first: true } ], brief: prose });
+        expect(moved.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "move", id: "trun", status: "written" }) ]));
+        expect(await listed(DAY)).toEqual([ "Write the runbook", expect.stringContaining("ZAP-105"), expect.stringContaining("ZAP-120"), "Laundry" ]);
+
+        const refused = await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "tlau", first: true } ], brief: prose });
+        expect(refused.skipped).toEqual([ expect.objectContaining({ kind: "move", id: "tlau", reason: "not_in_main_list" }) ]);
+    });
+});
