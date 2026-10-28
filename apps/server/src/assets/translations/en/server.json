@@ -627,6 +627,8 @@
       "catchup_review": "The last workday's tasks stay where they are; its wind-down goes through them.",
       "catchup_other": "{{- weekday}} has {{count}} open tasks. Move all to today, review them, or skip?",
       "heavy": "The day is {{percent}}% booked. Move '{{- task}}' to {{- day}}?",
+      "heavy_fits_one": "{{- tasks}} fits; that's the day.",
+      "heavy_fits_other": "{{- tasks}} fit; that's the day.",
       "follow_up": "Follow up",
       "follow_up_line": "{{- author}} asked on {{- weekday}}: \"{{- excerpt}}\" ({{key}}). If you already answered in Chat, dismiss this.",
       "heads_up": "Heads-up",

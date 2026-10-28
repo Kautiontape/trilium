@@ -104,8 +104,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
         const { facts, candidates, jira } = await deps.locked("caius_winddown", () => nextOffer(deps.store, targetDay, deps.now, read));
-        const { eveningMinutes } = facts;
-        const plannedMinutes = facts.plan.capacity.totalMinutes - eveningMinutes;
+        const plannedMinutes = workMinutes(facts);
         const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
         const targetMinutes = read.inputs.capacity.targetMinutes;
         const overlaps = overlapPairs(read.inputs.calendar);
@@ -126,7 +125,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         return reply(read.standing, {
             list: listItems(facts.plan),
             candidates,
-            capacity: { plannedMinutes, eveningMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
+            capacity: capacityOf(read, plannedMinutes),
             overlaps, evening, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
     }
@@ -199,8 +198,8 @@ export function namedDays(date: string, first: string): { days: { date: string }
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";
 
-/** Share of the work window booked by meetings above which Plan my day offers to move a task. */
-const HEAVY_RATIO = 0.6;
+/** Share of the work window booked by meetings from which a day is heavy: Plan my day weighs its work against the focus target. */
+const HEAVY_RATIO = 0.5;
 /** Longest work-bar label before it is cut. */
 const LABEL_LENGTH = 24;
 
@@ -231,7 +230,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
-        const { day: facts, plannedAt, candidates, carry, jira, headsUp, overlaps, forwardSuggestion } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
+        const { day: facts, plannedAt, candidates, carry, jira, headsUp, overlaps, forwardSuggestion, fits } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines
             ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
@@ -246,9 +245,9 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
         ];
         return reply(read.standing, {
-            plannedAt, list: listItems(facts.plan), candidates, meetings, overlaps, capacity: read.inputs.capacity, ...namedDays(date, nextDay),
+            plannedAt, list: listItems(facts.plan), candidates, meetings, overlaps, capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry,
-            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors
+            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors, ...(fits ? { summary: fits } : {})
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
@@ -303,17 +302,42 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     // An overlap or the heavy day's move is asked once on its own day: a refresh asks only what's new.
     const askedToday = new Set(await dayLabels(store, date, ASKED_LABEL));
     const overlaps = overlapPairs(read.inputs.calendar).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) })).filter((pair) => !askedToday.has(pair.overlapId));
-    const last = mainTasks(day.plan).filter((task) => !task.critical).at(-1);
-    const heavy = read.inputs.capacity.bookedRatio > HEAVY_RATIO && last?.listItemId && !askedToday.has(HEAVY_ID);
-    const forwardSuggestion = heavy && last ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: dayKey(nextWorkday(localDay(date))) } : null;
+    // On a heavy day the work is weighed against the focus target: over it, the last work task is
+    // offered to move; within it, the day is said to fit. Neither asks for more work.
+    const list = listOf(day.plan);
+    const work = mainTasks(day.plan).filter((_task, i) => !list[i]?.evening);
+    const last = work.filter((task) => !task.critical).at(-1);
+    const heavy = read.inputs.capacity.bookedRatio >= HEAVY_RATIO;
+    const over = workMinutes(day) > read.inputs.capacity.targetMinutes;
+    const forwardSuggestion = heavy && over && last?.listItemId && !askedToday.has(HEAVY_ID)
+        ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: dayKey(nextWorkday(localDay(date))) }
+        : null;
+    const labels = list.filter((task) => !task.evening).map((task) => task.label);
+    const fits = heavy && !over && labels.length
+        ? t("caius.daily.heavy_fits", { tasks: labels.length > 1 ? t("caius.daily.list_and", { head: labels.slice(0, -1).join(", "), last: labels.at(-1) }) : labels[0], count: labels.length })
+        : null;
     const headsUp = [
         ...headsUpOf(day.plan.meetings, failedCalendar(read) ? null : meetingLines(read.inputs.calendar)),
         ...read.context.filter((line) => line.from === date).map((line) => line.text)
     ];
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
-        overlaps, forwardSuggestion
+        overlaps, forwardSuggestion, fits
     };
+}
+
+/**
+ * The day's one capacity block, which the steps show and their questions weigh: the work window,
+ * what the meetings book of it and leave open, the focus target and the work planned.
+ */
+function capacityOf(read: DayRead, plannedMinutes: number) {
+    const { windowMinutes, bookedMinutes, openMinutes, targetMinutes, bookedRatio } = read.inputs.capacity;
+    return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes, bookedRatio };
+}
+
+/** The minutes of work on a day's list: the plan's capacity total without the evening. */
+function workMinutes(facts: { plan: PlanView; eveningMinutes: number }): number {
+    return facts.plan.capacity.totalMinutes - facts.eveningMinutes;
 }
 
 /** The `#caiusAsked` value of the heavy day's question. */

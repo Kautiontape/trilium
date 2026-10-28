@@ -234,3 +234,42 @@ describe("the header is drawn from the note as it ends", () => {
         expect(svg).not.toContain("Laundry");
     });
 });
+
+describe("capacity is one honest number", () => {
+    const DAY = "2026-11-19";
+    const heavy = [
+        event("10:00", "10:15", "Daily Standup"), event("11:00", "12:00", "Vendor Onboarding"), event("12:00", "13:00", "Roadmap Review"),
+        event("13:30", "15:00", "Design Workshop"), event("15:00", "16:00", "Interview Panel")
+    ];
+
+    it("Thu 09:30, 5 h of meetings: the step's one capacity block, no push for more work, and 'ZAP-150 fits; that's the day.'", async () => {
+        calendars[DAY] = heavy;
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${zap("ZAP-150", "Verify the export retry on staging")} ~30m`))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
+        });
+        at(`${DAY}T09:30`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(inputs.data.capacity).toEqual({ windowMinutes: 480, bookedMinutes: 285, openMinutes: 195, targetMinutes: 127, plannedMinutes: 30, bookedRatio: 0.59375 });
+        expect(inputs.data.forwardSuggestion).toBeNull();
+        expect(inputs.question).toBeNull();
+        expect(inputs.data.summary).toBe("ZAP-150 fits; that's the day.");
+
+        at(`${DAY}T09:00`);
+        const before = await call("caius_winddown", { date: "2026-11-18", step: "next" });
+        expect(before.data.capacity).toEqual({ windowMinutes: 480, bookedMinutes: 285, openMinutes: 195, targetMinutes: 127, plannedMinutes: 30, bookedRatio: 0.59375 });
+    });
+
+    it("Thu 09:30, over the focus target on a heavy day: the move question, and no summary", async () => {
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${zap("ZAP-150", "Verify the export retry on staging")} ~1h`), li("c102", "Write the runbook ~1h30m"))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
+        });
+        at(`${DAY}T09:30`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(inputs.data.capacity).toMatchObject({ targetMinutes: 127, plannedMinutes: 150 });
+        expect(inputs.data.forwardSuggestion).toMatchObject({ listItemId: "c102" });
+        expect(inputs.question).toBe("The day is 59% booked. Move 'Write the runbook' to Friday?");
+        expect(inputs.data).not.toHaveProperty("summary");
+    });
+});

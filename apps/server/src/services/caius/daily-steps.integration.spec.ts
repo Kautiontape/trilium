@@ -180,7 +180,7 @@ describe("caius_winddown", () => {
         ]);
         // A Context override keeps a ticket Jira calls Done on offer.
         expect(answer.data.candidates[2]).toMatchObject({ overridden: true });
-        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 60, candidateMinutes: 135 });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 60 });
         expect(answer.data.overlaps).toEqual([ { first: "Release call", second: "Review", at: "12:30" } ]);
         expect(answer.data.evening).toEqual({ hasTask: false });
         expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Anything for the evening?");
@@ -198,7 +198,7 @@ describe("caius_winddown", () => {
     it("next: asks which tasks can wait on an over-capacity day", async () => {
         const answer = await call("caius_winddown", { date: MONDAY, step: "next" });
         expect(answer.targetDay).toBe(TUESDAY);
-        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 240, eveningMinutes: 45, candidateMinutes: 45, targetMinutes: 234 });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 240, targetMinutes: 234 });
         expect(answer.data.evening).toEqual({ hasTask: true });
         expect(answer.question).toBe("Tuesday is over by about 1 h. Which of these can wait?");
     });
@@ -223,7 +223,7 @@ describe("caius_winddown", () => {
     it("next: leaves the evening's tasks out of the work it weighs against the target", async () => {
         await cls.init(() => dayNote("2026-11-12", `<h3>Work</h3>${ul(li("th1", "Spec ~1h30m"), li("th2", "Review ~1h"), li("th3", "Fix ~30m"))}<h3>Evening</h3>${ul(li("th4", "Walk ~45m"))}`));
         const answer = await call("caius_winddown", { date: WEDNESDAY, step: "next" });
-        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180, eveningMinutes: 45, candidateMinutes: 45, targetMinutes: 240 });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180, targetMinutes: 240 });
         expect(answer.question).toBeNull();
         expect(answer.data.summary).toBe("Thursday holds 3 h 45 m of work against about 4 h of focus time. Fits.");
     });
@@ -233,7 +233,7 @@ describe("caius_winddown", () => {
         await cls.init(() => dayNote("2026-11-12", `${work}<h3>Evening</h3>${ul(
             li("th4", "Walk ~45m"), li("th5", ""), li("th6", "Stretch ~15m", { sub: ul(li("th7", "")) }))}`));
         const answer = await call("caius_winddown", { date: WEDNESDAY, step: "next" });
-        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180, eveningMinutes: 60 });
+        expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180 });
         await cls.init(() => dayNote("2026-11-12", `${work}<h3>Evening</h3>${ul(li("th4", "Walk ~45m"))}`));
     });
 
@@ -345,11 +345,12 @@ describe("caius_planday", () => {
         expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Keep 'Sam is out' and 'Release branch is cut' going?");
     });
 
-    it("inputs: on a day over 60% booked, offers to move the last task of the list to the next workday", async () => {
+    it("inputs: on a day half booked or more whose work fits the focus target, says so and offers no move, least of all an evening task's", async () => {
         calendars[WEDNESDAY] = [ event("10:00", "15:30", "Offsite") ];
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
-        expect(answer.data.forwardSuggestion).toMatchObject({ noteId: notes.wednesday, listItemId: "we2", text: "Read", to: "2026-11-12" });
-        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor demo prep' going?");
+        expect(answer.data.forwardSuggestion).toBeNull();
+        expect(answer.data.summary).toBe("Small thing fits; that's the day.");
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going?");
     });
 
     it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
@@ -440,7 +441,7 @@ describe("carrying Context", () => {
     it("Plan my day offers Thursday's line on Wednesday after a missed Tuesday, after the step's other questions", async () => {
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
         expect(plain(answer.data.carry)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13" } ]);
-        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor demo prep' going?");
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going?");
     });
 
     it("neither conversation offers a line already carried into a note the day reads", async () => {
