@@ -629,7 +629,9 @@ function picksFor(plan: Awaited<ReturnType<typeof readPlan>>, reasons: Map<strin
 /**
  * The header's first two acts from the drawing: its tasks before the end of work, whole (a task split
  * around a meeting is one), in two groups, each with its span ("10:15 to 12:15") and plain words
- * ("ZAP-101, then ZAP-110."), or open time without tasks. An act in `given` keeps its words, with the
+ * ("ZAP-101, then ZAP-110."), or open time without tasks (one act for a day with none), each inside
+ * the work window: an act that would start once work is over is left to the evening. An act in
+ * `given` for a group with tasks keeps its words, with the
  * drawing's span, when it names every task of its group, none of the other's and no other ticket.
  * A task is named by its key or by a word no other task's words have (`titles`, his list by bar
  * label). The third act, the evening, `withEveningAct` writes.
@@ -642,20 +644,26 @@ function drawnActs(header: ReturnType<typeof headerOf>, given: { text: string }[
         else tasks.push({ label: block.label, start: block.start, end: block.end });
     }
     const half = Math.ceil(tasks.length / 2);
-    const groups = [ tasks.slice(0, half), tasks.slice(half) ];
-    const acts = groups.map((group, i) => {
+    // With no tasks the day before the evening is one open act, not two the same.
+    const groups = tasks.length ? [ tasks.slice(0, half), tasks.slice(half) ] : [ [] ];
+    /** A span inside the work window: its end no later than the end of work. */
+    const span = (start: string, end: string) => ({ start, end: end > header.workEnd ? header.workEnd : end });
+    const acts = groups.flatMap((group, i) => {
         const [ first ] = group;
         const last = group.at(-1);
         const from = i === 0 ? header.start : groups[0]?.at(-1)?.end ?? header.start;
+        const { start, end } = first && last ? span(first.start, last.end) : span(from, header.workEnd);
+        // An act that would start once work is over has no span: the evening act covers that time.
+        if (start >= end) return [];
         const plain = first && last
-            ? { range: t("caius.brief.act_range", { start: first.start, end: last.end }), text: t("caius.brief.act_text", { items: group.map((task) => task.label).join(t("caius.brief.evening_then")) }) }
-            : { range: t("caius.brief.act_range", { start: from, end: header.workEnd }), text: t("caius.brief.open_time") };
+            ? { range: t("caius.brief.act_range", { start, end }), text: t("caius.brief.act_text", { items: group.map((task) => task.label).join(t("caius.brief.evening_then")) }) }
+            : { range: t("caius.brief.act_range", { start, end }), text: t("caius.brief.open_time") };
         const other = groups[1 - i] ?? [];
         const words = given[i]?.text.trim();
         const keys = new Set(group.map((task) => task.label));
         const names = (task: { label: string }) => !!words && namesTask(words, task.label, tasks.map((each) => each.label), titles);
-        const fits = words && group.every(names) && !other.some(names) && keysOf(words).filter((key) => JIRA_KEY.test(key)).every((key) => keys.has(key));
-        return fits ? { range: plain.range, text: words } : plain;
+        const fits = words && group.length > 0 && group.every(names) && !other.some(names) && keysOf(words).filter((key) => JIRA_KEY.test(key)).every((key) => keys.has(key));
+        return [ fits ? { range: plain.range, text: words } : plain ];
     });
     return [ ...acts, { range: "", text: "" } ];
 }
@@ -1633,10 +1641,11 @@ function withEveningAct(acts: Prose["acts"], plan: Awaited<ReturnType<typeof rea
         named.add(same);
         return true;
     });
-    const [ first, second ] = acts;
-    if (!first || !second) return acts;
+    // The work acts are those before the evening's: the last act, or an empty one, is the evening's place.
+    const work = acts.slice(0, -1).filter((act) => act.range !== "" && act.range !== t("caius.brief.evening_range"));
+    if (!work.length) return acts;
     const text = items.length ? t("caius.brief.evening_act", { items: items.join(t("caius.brief.evening_then")) }) : t("caius.brief.evening_empty");
-    return [ first, second, { range: t("caius.brief.evening_range"), text } ];
+    return [ ...work, { range: t("caius.brief.evening_range"), text } ];
 }
 
 /**

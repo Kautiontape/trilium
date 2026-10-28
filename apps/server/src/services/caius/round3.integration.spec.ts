@@ -297,7 +297,7 @@ describe("the header is drawn from the note as it ends", () => {
         calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("18:00", "18:30", "Call Mom") ];
         at(`${DAY}T09:40`);
         const applied = await call("caius_plan_apply", { date: DAY, evening: [ "Call Mom" ], brief: { ...prose, acts: [ prose.acts[0], prose.acts[1], { range: "14:00 to 18:00", text: "Call Mom." } ] } });
-        expect((await headerOf(applied)).acts[2]).toEqual({ range: "Evening", text: "Call Mom." });
+        expect((await headerOf(applied)).acts.at(-1)).toEqual({ range: "Evening", text: "Call Mom." });
     });
 
     it("Wed 17:45: a wind-down that moves tonight's Laundry on draws today's header again without it", async () => {
@@ -531,7 +531,7 @@ describe("an evening calendar event is not a task", () => {
         const applied = await call("caius_plan_apply", { date: DAY, evening: [ "mom" ], brief: prose });
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "mom", reason: "calendar_event" }) ]);
         expect((await call("caius_plan", { period: "day", date: DAY })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
-        expect((await headerOf(applied)).acts[2]).toEqual({ range: "Evening", text: "Call Mom." });
+        expect((await headerOf(applied)).acts.at(-1)).toEqual({ range: "Evening", text: "Call Mom." });
     });
 
     it("matches only when every word he said, past the filler, is in an event's title; a longer line is a task", async () => {

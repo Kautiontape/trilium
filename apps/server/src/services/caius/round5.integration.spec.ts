@@ -459,6 +459,43 @@ describe("the header follows the drawing", () => {
     });
 });
 
+describe("acts stay inside the work window", () => {
+    const cells = async (noteId: string) => [ ...(await cls.init(() => store.content(noteId))).matchAll(/<td><p><strong>([^<]*)<\/strong><\/p><p>([^<]*)<\/p><\/td>/g) ].map((m) => [ m[1], m[2] ]);
+    const day = async (date: string, tasks: string[]) => cls.init(async () => {
+        const note = await store.calendarDay(date);
+        await store.putContent(note.noteId, `<h2>☑️ Tasks</h2>${ul(...tasks.map((text, i) => li(`${date}-a${i}`, text)))}`);
+    });
+    const given = { headline: "A day", acts: [ { range: "10:00 to 12:00", text: "Alpha task first." }, { range: "12:00 to 18:00", text: "Beta and Gamma." } ], sections: [] };
+
+    it("17:20 with three hour-long tasks: no act runs backwards or past the end of work, and no act keeps words for work the drawing doesn't put there", async () => {
+        const DAY = "2027-08-02";
+        await day(DAY, [ "Alpha task ~1h", "Beta task ~1h", "Gamma task ~1h" ]);
+        at(`${DAY}T17:20`);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: given });
+        const acts = await cells(planned.headerNoteId);
+        for (const [ range ] of acts) {
+            const m = /^(\d\d:\d\d) to (\d\d:\d\d)$/.exec(range ?? "");
+            if (m) expect(m[1] && m[2] && m[1] < m[2] && m[2] <= "18:00", range).toBe(true);
+        }
+        expect(acts.map(([ , text ]) => text)).not.toContain("Beta and Gamma.");
+        expect(acts.at(-1)?.[0]).toBe("Evening");
+    });
+
+    it("no tasks: one open-time act and the evening, never the agent's two texts; one task: the empty second act is open time", async () => {
+        const EMPTY = "2027-08-03";
+        await day(EMPTY, []);
+        at(`${EMPTY}T09:40`);
+        const none = await call("caius_plan_apply", { date: EMPTY, said: "", brief: given });
+        expect(await cells(none.headerNoteId)).toEqual([ [ "10:00 to 18:00", "Open time." ], [ "Evening", "Nothing planned." ] ]);
+
+        const ONE = "2027-08-04";
+        await day(ONE, [ "Alpha task ~1h" ]);
+        at(`${ONE}T09:40`);
+        const one = await call("caius_plan_apply", { date: ONE, said: "", brief: given });
+        expect(await cells(one.headerNoteId)).toEqual([ [ "10:00 to 11:00", "Alpha task first." ], [ "11:00 to 18:00", "Open time." ], [ "Evening", "Nothing planned." ] ]);
+    });
+});
+
 describe("one capacity figure", () => {
     const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
 
