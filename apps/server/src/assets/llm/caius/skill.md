@@ -103,6 +103,7 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 
 - Call him "you", never "Shawn".
 - Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.
+- Map a day he names to one of `data.days` (or a week to `data.weeks`); never compute a date. An answer may name only ids the steps showed.
 - Never ask permission for anything the apply tool does.
 - Never say something was done unless the apply result says so.
 - Never narrate tools, ids, protocol or data quality.

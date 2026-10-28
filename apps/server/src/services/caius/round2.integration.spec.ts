@@ -529,3 +529,36 @@ describe("re-accepting a week item", () => {
         expect(again.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", id: tidy.candidateId, status: "unchanged" }) ]));
     });
 });
+
+describe("only days and ids the step showed", () => {
+    it("Thu 25 Feb: the steps list the days he can name; an unknown day, an id not shown or an unknown candidate is refused", async () => {
+        await cls.init(async () => {
+            const thu = await store.calendarDay("2027-02-25");
+            await store.putContent(thu.noteId, `<h2>☑️ Tasks</h2>${ul(li("sd1", "Draft the memo"), li("sd2", "File the receipts"))}`);
+            const old = await store.calendarDay("2027-02-10");
+            await store.putContent(old.noteId, `<h2>☑️ Tasks</h2>${ul(li("sd9", "Not on offer"))}`);
+        });
+        at("2027-02-25T17:30");
+        const open = await call("caius_winddown", { date: "2027-02-25", step: "open" });
+        expect(open.data.days).toEqual([
+            { date: "2027-02-26", dateLabel: "Fri 26 Feb" }, { date: "2027-03-01", dateLabel: "Mon 1 Mar" }, { date: "2027-03-02", dateLabel: "Tue 2 Mar" },
+            { date: "2027-03-03", dateLabel: "Wed 3 Mar" }, { date: "2027-03-04", dateLabel: "Thu 4 Mar" }, { date: "2027-03-05", dateLabel: "Fri 5 Mar" }
+        ]);
+        expect(open.data.weeks).toEqual([ { week: "2027-W08", weekLabel: "the week of Mon 22 Feb" }, { week: "2027-W09", weekLabel: "the week of Mon 1 Mar" } ]);
+        const applied = await call("caius_winddown_apply", {
+            date: "2027-02-25", done: [ "sd9" ], fates: [ { listItemId: "sd1", to: "2027-03-12" }, { listItemId: "sd2", to: "2027-W09" } ], notToday: [ { candidateId: "ZAP-404" } ]
+        });
+        expect(applied.skipped).toEqual([
+            expect.objectContaining({ kind: "done", id: "sd9", reason: "not_offered" }),
+            expect.objectContaining({ kind: "fate", id: "sd1", reason: "not_a_listed_day" }),
+            expect.objectContaining({ kind: "not_today", id: "ZAP-404", reason: "not_offered" })
+        ]);
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", id: "sd2", status: "written" }) ]));
+
+        at("2027-03-01T09:40");
+        const inputs = await call("caius_planday", { date: "2027-03-01", step: "inputs" });
+        expect(inputs.data.days.map((d: any) => d.date)).toEqual([ "2027-03-02", "2027-03-03", "2027-03-04", "2027-03-05", "2027-03-08", "2027-03-09", "2027-03-10", "2027-03-11", "2027-03-12" ]);
+        const planned = await call("caius_plan_apply", { date: "2027-03-01", forward: [ { listItemId: "sd9", to: "2027-03-02" } ], brief: prose });
+        expect(planned.skipped).toEqual([ expect.objectContaining({ kind: "forward", id: "sd9", reason: "not_offered" }) ]);
+    });
+});

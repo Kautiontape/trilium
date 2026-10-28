@@ -200,7 +200,7 @@ describe("caius_plan_apply", () => {
         });
         expect(result.skipped).toEqual([
             expect.objectContaining({ kind: "accept", id: "ZAP-999", reason: "not_offered" }),
-            expect.objectContaining({ kind: "forward", id: "nope", reason: "not_found" })
+            expect.objectContaining({ kind: "forward", id: "nope", reason: "not_offered" })
         ]);
         expect(result.written.find((w: any) => w.kind === "brief")).toBeDefined();
     });

@@ -20,11 +20,14 @@ import {
     nextWorkday,
     normName,
     type NoteStore,
+    openTasks,
     PERIODS,
     readPlan,
+    scanDocs,
     setMeetings,
     setStates,
-    takeSuggested
+    takeSuggested,
+    TRILIUM_CONFIG
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
@@ -39,6 +42,7 @@ import {
     HEAVY_ID,
     lineIdOf,
     listOf,
+    namedDays,
     plainText,
     localDay,
     nextOffer,
@@ -113,6 +117,12 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         await labelDay(store, date, ASKED_LABEL, [
             ...offer.carry.map((line) => line.lineId), ...offer.overlaps.map((pair) => pair.overlapId), ...(offer.forwardSuggestion ? [ HEAVY_ID ] : [])
         ]);
+        // A forward may name only a task the steps showed, and only a day or week they listed.
+        const shown = new Set([
+            offer.forwardSuggestion?.listItemId, ...offer.candidates.map((c) => c.listItemId), ...(await catchupOf(store, date, now)).tasks.map((t) => t.listItemId)
+        ].filter((id): id is string => !!id));
+        const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
+        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week) ]);
 
         await catchup(store, date, now, input.catchup, written, skipped);
 
@@ -133,12 +143,20 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
 
         await finish(store, date, now, input.finished, written, skipped);
 
-        await putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written);
+        await putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped);
         await dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
         await shelve(store, date, now, offer.candidates, input, written, skipped);
         await eveningAndContext(store, date, now, input, written, skipped);
 
         for (const { listItemId, to } of input.forward ?? []) {
+            if (!shown.has(listItemId)) {
+                await notShown(store, now, { kind: "forward", id: listItemId }, written, skipped);
+                continue;
+            }
+            if (!listedTo.has(to)) {
+                skipped.push({ kind: "forward", id: listItemId, reason: "not_a_listed_day", detail: NOT_LISTED });
+                continue;
+            }
             const noteId = await noteOf(store, listItemId);
             if (!noteId) {
                 skipped.push({ kind: "forward", id: listItemId, reason: "not_found" });
@@ -200,9 +218,17 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         ].map((candidate) => [ candidate.candidateId, candidate ]));
 
         const states = await loadStateSymbols(store);
+        // An answer may name only an item the open step showed, and only a day or week it listed.
+        const shownItems = new Set(open.items.map((item) => item.listItemId).filter((id): id is string => !!id));
+        const listed = namedDays(date, targetDay);
+        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week) ]);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
         for (const listItemId of input.done) {
+            if (!shownItems.has(listItemId)) {
+                await notShown(store, now, { kind: "done", id: listItemId }, written, skipped);
+                continue;
+            }
             const noteId = await noteFor(listItemId);
             if (!noteId) {
                 skipped.push({ kind: "done", id: listItemId, reason: "not_found" });
@@ -223,6 +249,14 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         for (const fate of fates) {
             const noteId = await noteFor(fate.listItemId);
             const entry = { kind: "fate", id: fate.listItemId, ...("drop" in fate && fate.drop ? { detail: "dropped" } : { detail: fate.to }) };
+            if (!shownItems.has(fate.listItemId)) {
+                await notShown(store, now, entry, written, skipped);
+                continue;
+            }
+            if (!("proposed" in fate) && fate.to !== undefined && !listedTo.has(fate.to)) {
+                skipped.push({ ...entry, reason: "not_a_listed_day", detail: NOT_LISTED });
+                continue;
+            }
             if (!noteId) {
                 skipped.push({ ...entry, reason: "not_found" });
                 continue;
@@ -262,7 +296,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
             }
         }
         await finish(store, targetDay, now, input.finished, written, skipped);
-        await putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written);
+        await putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped);
         await dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
         await shelve(store, targetDay, now, candidates, input, written, skipped);
         await eveningAndContext(store, targetDay, now, input, written, skipped);
@@ -273,6 +307,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
 }
 
 const EVENING = "Evening";
+const NOT_LISTED = "Name a day from the step's data.days or a week from data.weeks";
 
 /**
  * The day note's evening heading, Evening or Recharge with or without an emoji, given a
@@ -315,8 +350,12 @@ async function finish(store: NoteStore, date: string, now: Date, keys: string[],
  * Puts candidates off for `date`: `#caiusNotToday` on its note, and off its Suggested without a
  * dismissal, so they come back on the next workday.
  */
-async function putOff(store: NoteStore, date: string, now: Date, ids: string[], known: Map<string, Candidate>, written: Written[]) {
+async function putOff(store: NoteStore, date: string, now: Date, ids: string[], known: Map<string, Candidate>, written: Written[], skipped: Skipped[]) {
     for (const candidateId of ids) {
+        if (!known.has(candidateId)) {
+            skipped.push({ kind: "not_today", id: candidateId, reason: "not_offered" });
+            continue;
+        }
         const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
         const labelled = note.attributes.some((a) => a.type === "label" && a.name === NOT_TODAY_LABEL && a.value === candidateId);
         if (!labelled) await store.addLabel(note.noteId, NOT_TODAY_LABEL, candidateId);
@@ -467,6 +506,18 @@ async function unsuggest(store: NoteStore, date: string, now: Date, key: string)
     const before = await store.content(plan.noteId);
     const taken = takeSuggested(before, item.listItemId);
     return taken.ok && await store.putContent(plan.noteId, taken.html, before);
+}
+
+/**
+ * An answer naming a task the step didn't show: unchanged when the task is in the Journal and
+ * already closed (a re-run, after the first run moved or finished it), else not offered.
+ */
+async function notShown(store: NoteStore, now: Date, entry: Omit<Written, "status">, written: Written[], skipped: Skipped[]) {
+    const { docs } = await loadJournal(store);
+    const exists = docs.some((doc) => [ ...doc.itemIds.values() ].includes(entry.id ?? ""));
+    const live = openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, now)).some((task) => task.listItemId === entry.id);
+    if (exists && !live) written.push({ ...entry, status: "unchanged" });
+    else skipped.push({ ...entry, reason: "not_offered" });
 }
 
 /** The note holding the list item `listItemId`, anywhere in the Journal. */

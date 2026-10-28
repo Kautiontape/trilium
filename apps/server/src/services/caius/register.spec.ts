@@ -59,6 +59,7 @@ it("offers the caius skill only while it is registered, and names every tool the
     for (const rule of [
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
+        "Map a day he names to one of `data.days` (or a week to `data.weeks`); never compute a date.",
         "Never ask permission for anything the apply tool does.",
         "Never say something was done unless the apply result says so.",
         "Never narrate tools, ids, protocol or data quality.",

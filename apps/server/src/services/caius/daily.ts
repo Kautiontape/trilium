@@ -98,7 +98,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
-        return reply(standing, { ...rest, ...backlog, items, ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay), items, ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
     }
 
     const read = await deps.dayRead(targetDay, refresh);
@@ -178,6 +178,20 @@ export function windDownTarget(date: string, now: Date): string {
     return next < today ? today : next;
 }
 
+/**
+ * The days and weeks he can name in an answer, so a day he says maps to a date without the agent
+ * working one out: the workdays from `first` to the end of the week after `date`'s, and those two
+ * ISO weeks. Each gets its display string from `withDateLabels`.
+ */
+export function namedDays(date: string, first: string): { days: { date: string }[]; weeks: { week: string }[] } {
+    const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(date))).start);
+    const end = dayKey(new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 11));
+    const days: { date: string }[] = [];
+    for (let at = localDay(first); dayKey(at) <= end; at = nextWorkday(at)) days.push({ date: dayKey(at) });
+    const weeks = [ 0, 7 ].map((offset) => ({ week: isoWeekKey(new Date(monday.getTime() + offset * 86_400_000)) }));
+    return { days, weeks };
+}
+
 export type PlanDayStep = "catchup" | "inputs" | "brief";
 
 /** Share of the work window booked by meetings above which Plan my day offers to move a task. */
@@ -227,7 +241,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
         ];
         return reply(read.standing, {
-            plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
+            plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity, ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry,
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
