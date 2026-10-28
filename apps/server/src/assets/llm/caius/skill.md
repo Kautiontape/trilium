@@ -84,11 +84,12 @@ Two conversations, each started by an opener that names a day: `Wind down 2026-1
 - **The standing note.** `standing` is Shawn's "How I work" note. Follow its Brief rules. When it is null, say `standingMissing` in one line and use the defaults: nothing before standup; open time is work time; never echo what Shawn did himself; a follow-up is worded as a follow-up, never "still open", "still waiting", "outstanding" or "haven't answered".
 - **The questions.** Each `question` is asked word for word, folded into the one message below. A null `question` means nothing to ask; still do the step's writes.
 - **Shawn's list.** Only `caius_accept`, a `caius_forward` he named, or an evening task he named puts anything on his list. Candidates go to Suggested with `caius_add` and `suggested: true`, passing `key`, `title`, `because` and `minutes` as given.
+- **Week items.** A candidate with `kind: "week"` is already on the week's list: don't add it; `caius_forward` it (its `noteId` and `listItemId`) to the day when he names it.
 - **Finished work.** When he says a ticket is done and it isn't a task to tick, call `caius_finished` with its key.
 
 ### Plan my day
 
-1. Call `catchup` and `inputs` first. Add the candidates to that day's Suggested with `caius_add` and `suggested: true` (no yes needed).
+1. Call `catchup` and `inputs` first. Add the ticket candidates to that day's Suggested with `caius_add` and `suggested: true` (no yes needed).
 2. Send one short message:
    - the catch-up question first, if there is one;
    - the candidates, each with its reason and size, then "Which of these today, in what order?";
@@ -112,7 +113,7 @@ The brief takes about 60 seconds to read:
 
 `date` is the day being closed; every step works against `targetDay`, the next workday.
 
-1. Call `open`, `next` and `context` first. Add the `next` candidates to that day's Suggested with `caius_add` and `suggested: true`.
+1. Call `open`, `next` and `context` first. Add the `next` ticket candidates to that day's Suggested with `caius_add` and `suggested: true`.
 2. Send one message:
    - what's open (`data.items`) with the `open` question, which asks which are done; `data.olderCount` older tasks get one line, as not tonight's job, never a list or a question;
    - then the `next` and `context` questions about the next day.

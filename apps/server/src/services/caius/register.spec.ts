@@ -66,7 +66,8 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(sheet).toContain("`caius_add` it as a task under an `Evening` heading, on his word.");
     expect(sheet).toContain("End with the headline and the top pick in two lines");
     expect(sheet).toContain("with `caius_context_keep` and `date: data.keepDate`");
-    expect(sheet).toContain("Add the candidates to that day's Suggested with `caius_add` and `suggested: true`");
+    expect(sheet).toContain("Add the ticket candidates to that day's Suggested with `caius_add` and `suggested: true`");
+    expect(sheet).toContain("is already on the week's list: don't add it; `caius_forward` it");
     expect(sheet).toContain("Never \"no reply\", \"unanswered\", \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
     expect(sheet).toContain("a follow-up is worded as a follow-up, never \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
     expect(sheet).not.toContain("Every write is a dry run first, shown to Shawn in two lines, then applied on his yes");

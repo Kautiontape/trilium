@@ -435,3 +435,26 @@ describe("an accepted suggestion reads like his own task", () => {
         expect(written.work.map((block: any) => block.label)).toEqual([ "His own first thing", "ZAP-111", "Book the venue" ]);
     });
 });
+
+describe("week items", () => {
+    it("are marked as week items, and one he names reaches his day once, through a forward", async () => {
+        const day = "2026-11-18";
+        const weekId = await cls.init(async () => {
+            const week = await store.calendarWeek("2026-W47");
+            await store.putContent(week.noteId, `<h3>Work</h3>${ul(li("wk1", "Order the banners ~30m"))}`);
+            return week.noteId;
+        });
+        at(`${day}T09:30`);
+        const inputs = await call("caius_planday", { date: day, step: "inputs" });
+        const item = inputs.data.candidates.find((c: any) => c.text === "Order the banners");
+        expect(item).toMatchObject({ kind: "week", noteId: weekId, listItemId: "wk1", source: "2026-W47" });
+        expect(item.key).toBeUndefined();
+        expect(inputs.data.candidates.filter((c: any) => c.kind !== "week").every((c: any) => c.kind === "handoff" || c.kind === "ask")).toBe(true);
+
+        const moved = await call("caius_forward", { items: [ { noteId: item.noteId, listItemId: item.listItemId, to: day } ] });
+        expect(moved.results[0]).toMatchObject({ status: "moved" });
+        const open = await call("caius_open", { limit: 500 });
+        expect(open.tasks.filter((task: any) => task.text.startsWith("Order the banners")).map((task: any) => task.period)).toEqual([ day ]);
+        expect((await call("caius_planday", { date: day, step: "inputs" })).data.candidates.map((c: any) => c.text)).not.toContain("Order the banners");
+    });
+});
