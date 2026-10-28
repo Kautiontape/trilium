@@ -46,6 +46,7 @@ import {
     type StepDeps,
     stillOpen,
     weekdayName,
+    windDownTarget,
     withDateLabels,
     workBlocks
 } from "./daily.js";
@@ -182,7 +183,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
  */
 export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) {
     const { date } = input;
-    const targetDay = dayKey(nextWorkday(localDay(date)));
+    const targetDay = windDownTarget(date, deps.now);
     const read = await deps.dayRead(targetDay);
     return deps.locked("caius_winddown_apply", async () => {
         const { store, now } = deps;

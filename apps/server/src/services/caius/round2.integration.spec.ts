@@ -408,3 +408,23 @@ describe("the catch-up covers every day since the last closed one", () => {
         expect((await call("caius_planday", { date: "2026-12-21", step: "catchup" })).data.days).toEqual([ "2026-12-14", "2026-12-15", "2026-12-16", "2026-12-17", "2026-12-18" ]);
     });
 });
+
+describe("a wind-down of an older day works against today", () => {
+    it("Wed 13 Jan, Review of Monday's catch-up: Monday's leftovers go to today, not to the missed Tuesday", async () => {
+        await cls.init(async () => {
+            const note = await store.calendarDay("2027-01-11");
+            await store.putContent(note.noteId, `<h2>☑️ Tasks</h2>${ul(li("j11", "Renew the domain"))}`);
+        });
+        at("2027-01-11T17:30");
+        expect(await call("caius_winddown", { date: "2027-01-11", step: "open" })).toMatchObject({ targetDay: "2027-01-12" });
+
+        at("2027-01-13T09:30");
+        const open = await call("caius_winddown", { date: "2027-01-11", step: "open" });
+        expect(open).toMatchObject({ targetDay: "2027-01-13", targetDayLabel: "Wed 13 Jan" });
+        expect(open.data.items.find((i: any) => i.listItemId === "j11")?.fate).toMatchObject({ forward: "2027-01-13" });
+        const applied = await call("caius_winddown_apply", { date: "2027-01-11", evening: [ "Laundry" ] });
+        expect(applied).toMatchObject({ targetDay: "2027-01-13" });
+        const today = await call("caius_plan", { period: "day", date: "2027-01-13" });
+        expect(today.sections.flatMap((s: any) => s.tasks).map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Renew the domain", "Laundry" ]);
+    });
+});

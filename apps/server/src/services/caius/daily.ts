@@ -79,7 +79,7 @@ const FRIDAY = 5;
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
 export async function windDown(deps: StepDeps, { date, step, refresh, older }: { date: string; step: WindDownStep; refresh?: boolean; older?: boolean }) {
-    const targetDay = dayKey(nextWorkday(localDay(date)));
+    const targetDay = windDownTarget(date, deps.now);
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: WindDownStep | null) => fitted({
         ...withDateLabels({ step, date, targetDay, targetDayName: weekdayName(targetDay), data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
@@ -165,6 +165,17 @@ export async function closingLines(store: NoteStore, date: string, targetDay: st
         .filter((line) => line.keys.length && !asked.has(line.lineId))
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
     return { keep, carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
+}
+
+/**
+ * The day a wind-down of `date` works against: the next workday after it, or today when that has
+ * already passed (a catch-up's Review of an older day), the next workday when today is a weekend.
+ */
+export function windDownTarget(date: string, now: Date): string {
+    const next = dayKey(nextWorkday(localDay(date)));
+    const weekend = now.getDay() === 0 || now.getDay() === 6;
+    const today = weekend ? dayKey(nextWorkday(now)) : dayKey(now);
+    return next < today ? today : next;
 }
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";

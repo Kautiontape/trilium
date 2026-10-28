@@ -156,7 +156,7 @@ Every field in a step's answer that holds a day or an ISO week has a display str
 
 Nothing is kept between calls except what the notes hold, so calling a step again reads them again and a conversation that stopped can pick up where it was. The steps only read. Each conversation is one question set, then one apply call that makes every write from your answers; nothing goes into your main list except what you took, the catch-up you moved and the evening tasks you named.
 
-**Wind down** closes `date` and works against the next workday after it (Friday → Monday):
+**Wind down** closes `date` and works against the next workday after it (Friday → Monday), or against today when that day has already passed, as when the catch-up's Review winds down the oldest of several missed days:
 
 1. **`open`.** One list of every live task in the day's note, the overdue ones and those in the day's week note. Each item has a proposed fate: the next workday for the day's and the overdue tasks. A week task stays in its week, or moves to the next week's note when the next workday is in another week (Friday → Monday). A sub-item goes with its parent. The older overdue tasks are counted (`olderCount`, from `oldestDate`) only on a Friday, or when the call passes `older: true` because you asked about them.
 2. **`next`.** Candidates for the next workday's Suggested, each as "Get X done" with a `because`, `minutes` and `source`:
