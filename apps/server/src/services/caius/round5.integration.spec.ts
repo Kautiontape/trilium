@@ -351,3 +351,20 @@ describe("the wind-down's last question", () => {
         expect(context.question).toBe("Anything to add for Tuesday?");
     });
 });
+
+describe("a Review goes straight on", () => {
+    it("Wed 11 09:45 'carry it', 'nothing': the Review's apply returns today's plan steps already run, with the evening it heard not asked again", async () => {
+        const MON = "2027-02-15";
+        const WED = "2027-02-17";
+        await cls.init(async () => {
+            const day = await store.calendarDay(MON);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("r5-dave", "Message Dave about the lights"))}`);
+        });
+        at(`${WED}T09:45`);
+        const wound = await call("caius_winddown_apply", { date: MON, said: "nothing", evening: [] });
+        expect(wound.next).toBe("planday");
+        expect(wound.planday.catchup).toMatchObject({ step: "catchup", date: WED, question: null });
+        expect(wound.planday.inputs).toMatchObject({ step: "inputs", date: WED, question: null });
+        expect(wound.planday.inputs.data.list.map((item: any) => item.text)).toEqual([ "Message Dave about the lights" ]);
+    });
+});

@@ -66,6 +66,7 @@ import {
     localDay,
     nextOffer,
     overlapIdOf,
+    planDay,
     planOffer,
     present,
     type StepDeps,
@@ -322,7 +323,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const fetched = place && label(brief, WEATHER_LABEL) === undefined ? await deps.weatherOf(place.latitude, place.longitude, day) : undefined;
         briefed.set(day, { read: day === targetDay ? read : await deps.dayRead(day), ...(fetched ? { fetched } : {}) });
     }
-    return deps.locked("caius_winddown_apply", async () => {
+    const result = await deps.locked("caius_winddown_apply", async () => {
         const { store, now } = deps;
         const unreadable = await unreadableDay(store, [ date, targetDay ]);
         if (unreadable) return unreadable;
@@ -525,6 +526,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...(morning ? { nextCall: { tool: "caius_planday", date: targetDay } } : {})
         };
     });
+    if (!("nextCall" in result) || !result.nextCall) return result;
+    // A morning Review goes straight on to today's plan: its steps run here, with what he already
+    // answered, so the reply asks the plan's questions and never whether to plan.
+    const answered = { evening: asked.evening, keep: [ ...asked.keep, ...asked.carry ].map((line) => line.lineId) };
+    const catchup = await planDay(deps, { date: targetDay, step: "catchup" });
+    const inputs = await planDay(deps, { date: targetDay, step: "inputs", answered });
+    return { ...result, planday: { catchup, inputs } };
 }
 
 /**
