@@ -3,17 +3,32 @@ import { describe, expect, it } from "vitest";
 import { inHisVoice, sayOf } from "./say.js";
 
 describe("inHisVoice", () => {
-    it("rewrites a line that starts 'Shawn <verb>s' as the verb's -ing form, and leaves a line without his name alone", () => {
-        expect(inHisVoice("Shawn takes Incident Review over Vendor Onboarding at 11:00")).toEqual({ text: "Taking Incident Review over Vendor Onboarding at 11:00" });
-        expect(inHisVoice("Shawn covers the release")).toEqual({ text: "Covering the release" });
-        expect(inHisVoice("shawn runs standup")).toEqual({ text: "Running standup" });
-        expect(inHisVoice("Shawn goes to the dentist at 3")).toEqual({ text: "Going to the dentist at 3" });
-        expect(inHisVoice("ZAP-2590 is open")).toEqual({ text: "ZAP-2590 is open" });
-        expect(inHisVoice("Shawnee office is closed")).toEqual({ text: "Shawnee office is closed" });
+    it("rewrites 'Shawn' and one verb of its short list, and leaves a line without his name alone", () => {
+        const cases: [string, string][] = [
+            [ "Shawn takes Incident Review over Vendor Onboarding at 11:00", "Taking Incident Review over Vendor Onboarding at 11:00" ],
+            [ "Shawn covers the release", "Covering the release" ],
+            [ "Shawn joins the 2pm call", "Joining the 2pm call" ],
+            [ "Shawn leaves at 4", "Leaving at 4" ],
+            [ "Shawn has the demo", "Having the demo" ],
+            [ "Shawn is out Friday", "Out Friday" ],
+            [ "Shawn was at the dentist", "Was at the dentist" ],
+            [ "Shawn owns the rollout", "Owning the rollout" ],
+            [ "shawn runs standup", "Running standup" ],
+            [ "Shawn handles the vendor call", "Handling the vendor call" ],
+            [ "Shawn picks up the keys", "Picking up the keys" ],
+            [ "Shawn works from home", "Working from home" ],
+            [ "ZAP-2590 is open", "ZAP-2590 is open" ],
+            [ "Shawnee office is closed", "Shawnee office is closed" ]
+        ];
+        for (const [ said, written ] of cases) expect(inHisVoice(said), said).toEqual({ text: written });
     });
 
-    it("refuses any other line that names him, so the agent rewords it", () => {
-        for (const text of [ "Riley plans the release with Shawn", "Shawn is out Friday", "Shawn has the demo", "Shawn's call moved", "Shawn takes the call; Shawn presents" ]) {
+    it("refuses any other line that names him, never writing a mangled word", () => {
+        for (const text of [
+            "Shawn always takes standup", "Shawn Michaels joins the 2pm call", "Shawn flies to Denver Tuesday", "Shawn replies to Dana's thread",
+            "Shawn tries the new build", "Shawn prefers mornings", "Shawn begins the audit", "Shawn goes to the dentist at 3",
+            "Riley plans the release with Shawn", "Shawn's call moved", "Shawn takes the call; Shawn presents", "Shawn takes"
+        ]) {
             expect(inHisVoice(text), text).toEqual({ error: expect.stringContaining("his voice") });
         }
     });

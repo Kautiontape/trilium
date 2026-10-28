@@ -100,32 +100,32 @@ function skipClause(entry: Skipped): string[] {
 }
 
 /**
- * A line for his notes in his voice: one that starts "Shawn takes X" becomes "Taking X"; one that
- * names him any other way is refused with the message the agent rewords it from. A line without his
- * name comes back as it is.
+ * A line for his notes in his voice: one that is exactly "Shawn", one verb of `HIS_VERBS` and the
+ * rest is written with that verb's form ("Shawn takes X" becomes "Taking X"); any other line that
+ * names him is refused with the message the agent rewords it from. A line without his name comes
+ * back as it is.
  */
 export function inHisVoice(text: string): { text: string } | { error: string } {
-    const name = new RegExp(`\\b${HIS_NAME}\\b`, "gi");
-    const mentions = text.match(name)?.length ?? 0;
+    const mentions = text.match(new RegExp(`\\b${HIS_NAME}\\b`, "gi"))?.length ?? 0;
     if (!mentions) return { text };
-    const simple = new RegExp(`^${HIS_NAME}\\s+([a-z]{2,})s\\s+(\\S.*)$`, "i").exec(text.trim());
-    const verb = simple?.[1]?.toLowerCase();
-    if (mentions === 1 && simple?.[2] && verb && !NOT_SIMPLE.has(verb)) return { text: `${capitalized(ingOf(verb))} ${simple[2]}` };
+    const line = text.trim();
+    if (mentions === 1) {
+        for (const [ verb, form ] of HIS_VERBS) {
+            const m = new RegExp(`^${HIS_NAME}\\s+${verb}\\s+(\\S.*)$`, "i").exec(line);
+            if (m?.[1]) return { text: form ? `${form} ${m[1]}` : capitalized(m[1]) };
+        }
+    }
     return { error: t("caius.say.third_person", { name: HIS_NAME }) };
 }
 
 /** The name a line in his notes never uses for him. */
 const HIS_NAME = "Shawn";
 
-/** Verbs whose -ing form isn't their stem plus "ing" in his voice: "Shawn is out", "Shawn has the demo". */
-const NOT_SIMPLE = new Set([ "i", "ha", "wa" ]);
-
-/** The -ing form of a verb's stem: take → taking, see → seeing, run → running, cover → covering. */
-function ingOf(stem: string): string {
-    if (stem.endsWith("e") && !stem.endsWith("ee")) return `${stem.slice(0, -1)}ing`;
-    if (/^[^aeiou]*[aeiou][bdgklmnprt]$/.test(stem)) return `${stem}${stem.at(-1)}ing`;
-    return `${stem}ing`;
-}
+/** The only verbs `inHisVoice` rewrites, each with its form in his voice; "is" drops away ("Shawn is out" is "Out"). */
+const HIS_VERBS: [string, string][] = [
+    [ "takes", "Taking" ], [ "covers", "Covering" ], [ "joins", "Joining" ], [ "leaves", "Leaving" ], [ "has", "Having" ], [ "is", "" ],
+    [ "was", "Was" ], [ "owns", "Owning" ], [ "runs", "Running" ], [ "handles", "Handling" ], [ "picks up", "Picking up" ], [ "works", "Working" ]
+];
 
 /** A task's words as `labelOf` reads them, without its ticket key `key` at the start. */
 function labelWords(text: string, key: string | null): string {
