@@ -79,6 +79,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "name his work in the order of his list as this call leaves it",
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
         "No recap after an apply",
+        "An evening calendar event is not a task",
         "State capacity only from the step's `data.capacity`",
         "When the apply answers `next: \"planday\"`",
         "go straight on to Plan my day for `targetDay` in this conversation",

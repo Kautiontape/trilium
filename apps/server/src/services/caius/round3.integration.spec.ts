@@ -348,3 +348,24 @@ describe("a meeting-free day has no Meetings heading", () => {
         expect(await content()).toMatch(/^<section class="include-note"/);
     });
 });
+
+describe("an evening calendar event is not a task", () => {
+    it("Mon 09:40 'evening is just mom': nothing is written for the 18:00 Call Mom, and the Evening act names it", async () => {
+        const DAY = "2027-01-25";
+        calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("18:00", "18:30", "Call Mom") ];
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", { date: DAY, evening: [ "mom" ], brief: prose });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "mom", reason: "calendar_event" }) ]);
+        expect((await call("caius_plan", { period: "day", date: DAY })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
+        expect((await headerOf(applied)).acts[2]).toEqual({ range: "Evening", text: "Call Mom." });
+    });
+
+    it("Mon 17:30 'mom is the 6pm call': the wind-down writes no Call Mom task for a next workday that has the call, and still writes the plants", async () => {
+        const DAY = "2027-01-26";
+        calendars["2027-01-27"] = [ event("18:00", "18:30", "Call Mom") ];
+        at(`${DAY}T17:30`);
+        const wound = await call("caius_winddown_apply", { date: DAY, evening: [ "Call Mom", "Water the plants" ] });
+        expect(wound.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "Call Mom", reason: "calendar_event" }) ]);
+        expect(await listed("2027-01-27")).toEqual([ "Water the plants" ]);
+    });
+});

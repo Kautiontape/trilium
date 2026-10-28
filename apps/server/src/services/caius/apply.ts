@@ -151,7 +151,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
-        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true }));
+        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEvents(read) }));
 
         await guarded({ kind: "forward" }, skipped, async () => { for (const { listItemId, to } of input.forward ?? []) {
             if (!shown.has(listItemId)) {
@@ -313,7 +313,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
-        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped));
+        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
         if (!skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
@@ -451,9 +451,18 @@ async function shelve(store: NoteStore, date: string, now: Date, offered: Candid
     }
 }
 
-/** His evening tasks under the day's Evening heading, and his Context lines placed by `contextAddOn` (with `tomorrow` in Plan my day). */
-async function eveningAndContext(store: NoteStore, date: string, now: Date, input: { evening: string[]; context: string[] }, written: Written[], skipped: Skipped[], opts: { tomorrow?: boolean } = {}) {
+/**
+ * His evening tasks under the day's Evening heading, and his Context lines placed by `contextAddOn`
+ * (with `tomorrow` in Plan my day). An evening thing that names one of the day's evening calendar
+ * `events` is not a task: it is skipped as `calendar_event`, and the Evening act names the event.
+ */
+async function eveningAndContext(store: NoteStore, date: string, now: Date, input: { evening: string[]; context: string[] }, written: Written[], skipped: Skipped[], opts: { tomorrow?: boolean; events?: string[] } = {}) {
     for (const text of input.evening) {
+        const event = opts.events?.find((title) => namesEvent(text, title));
+        if (event) {
+            skipped.push({ kind: "evening", text, reason: "calendar_event", detail: event });
+            continue;
+        }
         // An evening task forwarded to the day carries a "from Monday 2" link, so the same words there count as written.
         const same = (words: string) => plainText(words).toLowerCase();
         if (listOf(await readPlan(store, "day", date, now)).some((task) => task.evening && same(task.text) === same(text))) {
@@ -473,6 +482,19 @@ async function eveningAndContext(store: NoteStore, date: string, now: Date, inpu
 }
 
 type Candidate = ReturnType<typeof present>;
+
+/** The titles of the day's timed calendar events that start at or after the end of work. */
+function eveningEvents(read: DayRead): string[] {
+    return read.inputs.calendar.filter((e) => !e.allDay && !e.declined && e.start >= read.rhythm.workEnd).map((e) => e.title);
+}
+
+/** Whether `text` names the event `title`: every word of one is a word of the other ("mom" and "Call Mom"). */
+function namesEvent(text: string, title: string): boolean {
+    const words = (s: string) => new Set(s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+    const [ said, event ] = [ words(plainText(text)), words(title) ];
+    const within = (a: Set<string>, b: Set<string>) => a.size > 0 && [ ...a ].every((word) => b.has(word));
+    return within(said, event) || within(event, said);
+}
 
 /** The catch-up as he answered it: every live task of the last workday forwarded to `date`, a skip, or nothing on "review". */
 async function catchup(store: NoteStore, date: string, now: Date, answer: PlanApplyInput["catchup"], written: Written[], skipped: Skipped[]) {
