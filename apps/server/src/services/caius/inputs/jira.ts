@@ -61,6 +61,7 @@ interface RawIssue {
 }
 
 interface RawComment {
+    id?: string;
     created: string;
     author?: { accountId?: string; displayName?: string };
     body?: unknown;
@@ -260,6 +261,7 @@ export function asksIn(ticket: JiraTicket, comments: RawComment[], myAccountId: 
             ticket,
             author: comment.author?.displayName ?? "unknown",
             created: new Date(created).toISOString(),
+            commentId: comment.id ?? "",
             excerpt: excerpt(text)
         });
     }

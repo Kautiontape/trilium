@@ -110,8 +110,8 @@ beforeAll(async () => {
     jiraByDate[MONDAY] = {
         handoff: [ { ...ticket("ZAP-101"), daysInStatus: 3 }, { ...ticket("ZAP-103"), daysInStatus: 9 }, { ...ticket("ZAP-104"), daysInStatus: 2 }, { ...ticket("ZAP-105"), daysInStatus: 2 } ],
         asks: [
-            { ticket: ticket("ZAP-102"), author: "Sam Example", created: "2026-11-04T09:00:00.000-0500", excerpt: "Can you look?" },
-            { ticket: ticket("ZAP-2600"), author: "Riley Sample", created: "2026-11-05T09:00:00.000-0500", excerpt: "Still open?" }
+            { ticket: ticket("ZAP-102"), author: "Sam Example", created: "2026-11-04T09:00:00.000-0500", commentId: "1", excerpt: "Can you look?" },
+            { ticket: ticket("ZAP-2600"), author: "Riley Sample", created: "2026-11-05T09:00:00.000-0500", commentId: "2", excerpt: "Still open?" }
         ],
         done: [ "ZAP-2590", "ZAP-2600" ]
     };
@@ -357,7 +357,7 @@ describe("caius_planday", () => {
         const shape = (await call("caius_planday", { date: MONDAY, step: "brief" })).data.shape;
         expect((await call("caius_brief_write", { ...shape, headline: "Monday" })).plannedAt).toBe(`${FRIDAY}T17:30:00`);
 
-        jiraByDate[MONDAY]?.asks.push({ ticket: ticket("ZAP-106"), author: "Sam Example", created: "2026-11-08T12:00:00Z", excerpt: "One more?" });
+        jiraByDate[MONDAY]?.asks.push({ ticket: ticket("ZAP-106"), author: "Sam Example", created: "2026-11-08T12:00:00Z", commentId: "3", excerpt: "One more?" });
         const answer = await call("caius_planday", { date: MONDAY, step: "inputs", refresh: true });
         expect(answer.data.plannedAt).toBe(`${FRIDAY}T17:30:00`);
         expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-106" ]);

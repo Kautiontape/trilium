@@ -40,7 +40,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, findBrief } from "./brief.js";
+import { BRIEF_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, findBrief } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -93,7 +93,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
         const facts = await deps.locked("caius_winddown", () => dayFacts(deps.store, targetDay, deps.now));
-        const candidates = dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present);
+        const jira = unraised(read.inputs.jira, facts.raised);
+        const candidates = dayCandidates({ jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present);
         const { eveningMinutes } = facts;
         const plannedMinutes = facts.plan.capacity.totalMinutes - eveningMinutes;
         const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
@@ -116,7 +117,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         return reply(read.standing, {
             candidates,
             capacity: { plannedMinutes, eveningMinutes, candidateMinutes, targetMinutes, bookedRatio: read.inputs.capacity.bookedRatio },
-            overlaps, evening, errors: read.inputs.errors, ...summary
+            overlaps, evening, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
     }
 
@@ -172,7 +173,8 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             return { ...day, plannedAt: brief ? label(brief, PLANNED_AT_LABEL) ?? null : null, lastContext: lastContext.context };
         });
         const since = facts.plannedAt ? localMoment(facts.plannedAt) : undefined;
-        const candidates = dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude, since }).map(present);
+        const jira = unraised(read.inputs.jira, facts.raised);
+        const candidates = dayCandidates({ jira, week: facts.week, live: facts.live, exclude: facts.exclude, since }).map(present);
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines
             ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
@@ -195,11 +197,15 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         return reply(read.standing, {
             plannedAt: facts.plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry,
-            context: read.context, forwardSuggestion, errors: read.inputs.errors
+            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
-    const plan = await deps.locked("caius_planday", () => readPlan(deps.store, "day", date, deps.now));
+    const { plan, raised } = await deps.locked("caius_planday", async () => ({
+        plan: await readPlan(deps.store, "day", date, deps.now),
+        raised: await raisedAsks(deps.store, deps.now)
+    }));
+    const followUps = followUpsOf(unraised(read.inputs.jira, raised));
     const { start, end, workEnd, from } = read.rhythm;
     // The drawing takes whatever the feeds returned; only the Meetings block refuses a partial calendar.
     const events = read.inputs.calendar
@@ -216,12 +222,14 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         header,
         unplaced,
         briefRules: sectionOf(read.standing.markdown, "Brief rules"),
+        followUps,
         shape: {
             date, headline: "",
             acts: [ { range: "", text: "" }, { range: "", text: "" }, { range: "", text: "" } ],
             picks: [],
             sections: [ { title: t("caius.daily.follow_up"), markdown: "" }, { title: t("caius.daily.heads_up"), markdown: "" } ],
             header,
+            followUps: followUps.map(({ key, commentId }) => ({ key, commentId })),
             ...coordinates
         },
         errors: read.inputs.errors
@@ -286,6 +294,44 @@ export function fitted<R extends { data: Record<string, unknown> }>(reply: R): R
         size = JSON.stringify({ ...reply, data }).length;
     }
     return { ...reply, data };
+}
+
+/** Days a raised ask stays out of the follow-ups and candidates, unless a newer comment comes. */
+const RAISED_DAYS = 7;
+
+/** The asks briefs dated in the last `RAISED_DAYS` days raised, as `KEY:commentId`. The caller holds the lock. */
+async function raisedAsks(store: NoteStore, now: Date): Promise<Set<string>> {
+    const since = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - RAISED_DAYS));
+    const raised = new Set<string>();
+    for (const note of await store.search(`#${RAISED_LABEL}`)) {
+        const date = label(note, BRIEF_LABEL);
+        if (!date || date < since) continue;
+        for (const a of note.attributes) if (a.type === "label" && a.name === RAISED_LABEL) raised.add(a.value);
+    }
+    return raised;
+}
+
+/** `jira` without the asks of a ticket whose latest ask is in `raised`: one with a newer comment stays. */
+function unraised(jira: CaiusInputs["jira"], raised: Set<string>): CaiusInputs["jira"] {
+    const quiet = new Set(latestAsks(jira.asks).filter((ask) => raised.has(`${ask.ticket.key}:${ask.commentId}`)).map((ask) => ask.ticket.key));
+    return { ...jira, asks: jira.asks.filter((ask) => !quiet.has(ask.ticket.key)) };
+}
+
+/** What Follow up may raise: the latest ask per ticket, a done ticket's too, oldest first. */
+function followUpsOf(jira: CaiusInputs["jira"]) {
+    return latestAsks(jira.asks).map((ask) => ({
+        key: ask.ticket.key, commentId: ask.commentId, author: ask.author, created: ask.created, excerpt: ask.excerpt,
+        url: ask.ticket.url, ...(jira.done.includes(ask.ticket.key) ? { done: true } : {})
+    }));
+}
+
+function latestAsks(asks: CaiusInputs["jira"]["asks"]) {
+    const latest = new Map<string, CaiusInputs["jira"]["asks"][number]>();
+    for (const ask of asks) {
+        const seen = latest.get(ask.ticket.key);
+        if (!seen || Date.parse(ask.created) > Date.parse(seen.created)) latest.set(ask.ticket.key, ask);
+    }
+    return [ ...latest.values() ].sort((a, b) => Date.parse(a.created) - Date.parse(b.created));
 }
 
 /** Whether the day's calendar could not be read: an error that is not a warning. */
@@ -390,7 +436,10 @@ async function dayFacts(store: NoteStore, date: string, now: Date) {
     // empty to-do is not a task.
     const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
     const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
-    return { plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, evening: eveningTasks.length > 0, eveningMinutes };
+    return {
+        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, raised: await raisedAsks(store, now),
+        evening: eveningTasks.length > 0, eveningMinutes
+    };
 }
 
 /** The live top-level tasks of a plan, the Important block first, then in his order. */

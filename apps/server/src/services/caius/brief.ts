@@ -27,8 +27,10 @@ import { createChildNote, setLabel } from "./store.js";
 export const BRIEF_TITLE = "🌅 Morning Brief";
 export const HEADER_TITLE = "Header";
 const CSS_CLASS = "briefdemo";
-const BRIEF_LABEL = "morningBrief";
+export const BRIEF_LABEL = "morningBrief";
 export const PLANNED_AT_LABEL = "caiusPlannedAt";
+/** On a brief: an ask its Follow up raised, as `#caiusRaised=ZAP-104:10` (the ticket and the comment). */
+export const RAISED_LABEL = "caiusRaised";
 /** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */
 export const SKIP_CATCHUP_LABEL = "caiusSkipCatchup";
 /** Children of a brief that the old push script labels; they are pages of a brief, never the brief. */
@@ -123,6 +125,15 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
     // The planned time marks a finished plan, so a write that lost its compare-and-swap leaves the old one.
     const complete = writes.every((write) => write.status !== "skipped");
     if (complete) setLabel(brief.noteId, PLANNED_AT_LABEL, deps.plannedAt);
+    // An ask counts as raised when a section names its ticket.
+    const sectionText = input.sections.map(({ markdown }) => markdown).join("\n");
+    const raised = new Set(brief.attributes.filter((a) => a.type === "label" && a.name === RAISED_LABEL).map((a) => a.value));
+    for (const { key, commentId } of complete ? input.followUps ?? [] : []) {
+        const value = `${key}:${commentId}`;
+        if (raised.has(value) || !new RegExp(`\\b${key}\\b`).test(sectionText)) continue;
+        await store.addLabel(brief.noteId, RAISED_LABEL, value);
+        raised.add(value);
+    }
     return {
         date, dayNoteId: day.noteId, briefNoteId: brief.noteId, headerNoteId: header.noteId, attachmentId,
         plannedAt: complete ? deps.plannedAt : null, created,

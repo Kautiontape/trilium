@@ -81,7 +81,7 @@ For `Wind down` and `Plan my day` openers, follow only this section. The Daily p
 
 Two conversations, each started by a short opener that names a day: `Wind down 2026-11-06` closes that day, and `Plan my day 2026-11-09` plans it. The steps live in `caius_winddown` and `caius_planday`. Each answer is `{ step, data, question, next, standing }`:
 
-- **The standing note first.** `standing` is Shawn's "How I work" note as markdown. Read it before anything else and follow its Brief rules. When it is null, say `standingMissing` in one line and carry on with the defaults.
+- **The standing note first.** `standing` is Shawn's "How I work" note as markdown. Read it before anything else and follow its Brief rules. When it is null, say `standingMissing` in one line and carry on with the defaults. The default Brief rules: nothing before standup; open time is work time; never echo what Shawn did himself; a follow-up is worded as a follow-up, never "no reply", "unanswered", "still open", "still waiting", "outstanding" or "haven't answered".
 - **The steps in order.** Call the first step, then the one `next` names, until `next` is null.
 - **The questions.** Ask each `question` word for word. A null `question` means nothing to ask; still do the step's writes (dry run first), such as putting the candidates in Suggested, then go on to the next step. Say `data.summary` when there is one.
 - **The writes.** Every write is a dry run first, shown to Shawn in two lines, then applied on his yes (`caius_skip_catchup` has none: his "skip" is the yes). Only `caius_accept`, or a `caius_forward` of a task Shawn names, puts anything into his main list. Everything else he wants goes to Suggested with `caius_add` (`suggested: true`) and stays there.
@@ -117,7 +117,7 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
    - `headline`: 14 words or fewer, naming the work. When the day is over 60% booked, say so.
    - `acts`: three, one sentence each, grouped by what fits around the meetings rather than listing them. The third is the evening. Their times come from `data.day` and `data.header`.
    - `picks`: 3 to 5, each "Get X done" with its `because` and `minutes`, from the main list and the candidates.
-   - `sections`: Follow up, worded as the Brief rules say. Heads-up only when there is an outside event; drop it otherwise.
+   - `sections`: Follow up, only from `data.followUps`: each ask once, as who asked what and when, ending "if you already answered in Chat, dismiss this". Never "no reply", "unanswered", "still open", "still waiting", "outstanding" or "haven't answered". Keep `followUps` in the shape as given: the tool records the asks the Follow up names, and the steps leave them out for 7 days unless a newer comment comes. Heads-up only when there is an outside event; drop it otherwise.
    - Keep `header` as given. It draws the day from standup to bedtime.
 4. **In the chat**, end with the headline and the top pick in two lines, and the link to the brief (`#root/<briefNoteId>`).
 

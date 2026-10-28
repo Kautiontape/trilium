@@ -59,6 +59,7 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(sheet).toContain("Add the candidates to that day's Suggested with `caius_add` and `suggested: true`");
     expect(sheet).toContain("Lines about the state of things go to the week note; a day note only for a line about that day.");
     expect(sheet).not.toContain("When the next workday is in another week, `noticed` also holds");
+    expect(sheet).toContain("Never \"no reply\", \"unanswered\", \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
 
     unregister();
     expect(readSkill("caius")).toBeNull();

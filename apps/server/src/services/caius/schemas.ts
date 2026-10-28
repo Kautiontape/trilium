@@ -144,6 +144,8 @@ const briefWrite = z.object({
         markdown: z.string().describe("The section's body as markdown")
     })).describe("The sections after the picks, in order"),
     header: headerDay.describe("The drawing, as caius_header takes it without noteId"),
+    followUps: z.array(z.object({ key: z.string(), commentId: z.string() })).optional()
+        .describe("The asks the brief step offered, as given; those a section names are recorded so they aren't raised again for 7 days"),
     ...coordinates,
     dryRun
 }).refine(bothOrNeither, "Give latitude and longitude together, or neither");

@@ -27,6 +27,8 @@ export interface JiraAsk {
     ticket: JiraTicket;
     author: string;
     created: string;
+    /** The Jira comment's id, which `#caiusRaised` records once a brief has raised it. */
+    commentId: string;
     excerpt: string;
 }
 

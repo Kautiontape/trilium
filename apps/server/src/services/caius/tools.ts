@@ -128,7 +128,7 @@ export function createCaiusTools(
         },
 
         caius_brief_write: {
-            description: "Write the day's Morning Brief: a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there. A re-run updates the same notes. Dry run first.",
+            description: "Write the day's Morning Brief: a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there, and records each ask in followUps that a section names (#caiusRaised), so it isn't raised again for 7 days. A re-run updates the same notes. Dry run first.",
             inputSchema: toolInputs.briefWrite,
             async: true,
             mutates: true,

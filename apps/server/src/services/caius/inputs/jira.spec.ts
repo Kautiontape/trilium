@@ -78,10 +78,10 @@ describe("caius_inputs Jira", () => {
 
         // ZAP-105: the 13 Oct question is old, the 22 Oct comment is the user's own, the 25 Oct
         // update neither asks nor mentions. ZAP-106's question came before the user's reply.
-        expect(jira.asks.map((a) => [ a.ticket.key, a.author, a.created ])).toEqual([
-            [ "ZAP-105", "Riley Sample", "2026-10-24T15:20:00.000Z" ],
-            [ "ZAP-105", "Jordan Placeholder", "2026-10-25T18:00:00.000Z" ],
-            [ "ZAP-104", "Riley Sample", "2026-10-26T19:30:00.000Z" ]
+        expect(jira.asks.map((a) => [ a.ticket.key, a.author, a.created, a.commentId ])).toEqual([
+            [ "ZAP-105", "Riley Sample", "2026-10-24T15:20:00.000Z", "3" ],
+            [ "ZAP-105", "Jordan Placeholder", "2026-10-25T18:00:00.000Z", "4" ],
+            [ "ZAP-104", "Riley Sample", "2026-10-26T19:30:00.000Z", "2" ]
         ]);
         expect(jira.asks[0].excerpt.length).toBeGreaterThan(190);
         expect(jira.asks[0].excerpt.length).toBeLessThanOrEqual(200);

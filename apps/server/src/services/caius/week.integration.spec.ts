@@ -254,3 +254,51 @@ describe("Suggested lines have one format, built by the tool", () => {
         expect(shaped.results[0]).toMatchObject({ status: "added" });
     });
 });
+
+describe("follow-ups are raised once", () => {
+    const ask = (key: string, commentId: string, created: string, author = "Riley Sample") =>
+        ({ ticket: ticket(key), author, created, commentId, excerpt: "Is the legacy report job gone from production?" });
+    const followUps = (answer: any) => answer.data.followUps.map((f: any) => `${f.key}:${f.commentId}`);
+
+    it("Mon 09:40: the brief records the asks its Follow up names", async () => {
+        jira.done.push("ZAP-104");
+        jira.asks.push(ask("ZAP-104", "2", "2026-10-26T19:30:00.000Z"), ask("ZAP-130", "20", "2026-10-30T14:00:00.000Z", "Jordan Placeholder"));
+        at(`${MON}T09:40`);
+        const brief = await call("caius_planday", { date: MON, step: "brief", refresh: true });
+        expect(followUps(brief)).toEqual([ "ZAP-104:2", "ZAP-130:20" ]);
+        expect(brief.data.shape.followUps).toEqual([ { key: "ZAP-104", commentId: "2" }, { key: "ZAP-130", commentId: "20" } ]);
+
+        const written = await call("caius_brief_write", {
+            ...brief.data.shape, headline: "Sprint planning, then the handoffs",
+            sections: [ { title: "Follow up", markdown: "Riley asked on ZAP-104 whether the legacy report job is gone. If you already answered in Chat, dismiss this." } ]
+        });
+        const note = await cls.init(() => store.note(written.briefNoteId));
+        expect(note.attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value)).toEqual([ "ZAP-104:2" ]);
+    });
+
+    it("Thu 09:30: Plan my day and Wind down drop an ask raised on Monday until a newer comment comes", async () => {
+        await cls.init(async () => {
+            const monday = await store.note(notes.mon);
+            const [ briefId ] = monday.childNoteIds;
+            if (!briefId) throw new Error("no brief");
+            await store.addLabel(briefId, "caiusRaised", "ZAP-130:20");
+        });
+        at(`${THU}T09:30`);
+        const quiet = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
+        expect(followUps(quiet)).toEqual([]);
+        expect(sources(quiet)).not.toContain("ZAP-130");
+        expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([]);
+
+        jira.asks.push(ask("ZAP-130", "21", "2026-11-04T15:00:00.000Z", "Jordan Placeholder"));
+        const newer = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
+        expect(followUps(newer)).toEqual([ "ZAP-130:21" ]);
+        expect(sources(newer)).toContain("ZAP-130");
+        expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([ "ZAP-130:21" ]);
+        expect(followUps(await call("caius_winddown", { date: THU, step: "next" }))).toEqual([ "ZAP-130:21" ]);
+    });
+
+    it("Tue 10 Nov: an ask raised more than 7 days ago can come back", async () => {
+        at("2026-11-10T09:30");
+        expect(followUps(await call("caius_planday", { date: "2026-11-10", step: "brief", refresh: true }))).toContain("ZAP-104:2");
+    });
+});
