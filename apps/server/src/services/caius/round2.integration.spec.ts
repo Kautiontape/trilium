@@ -590,3 +590,15 @@ describe("a write that throws", () => {
         }
     });
 });
+
+describe("Context placement in Plan my day looks forward", () => {
+    it("Wed 10 Mar: 'Sam is out Mon–Tue' means next week, and 'tomorrow' is Thursday", async () => {
+        at("2027-03-10T09:40");
+        const applied = await call("caius_plan_apply", { date: "2027-03-10", context: [ "Sam is out Mon–Tue", "Riley is off tomorrow" ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        const nextWeek = await call("caius_plan", { period: "week", date: "2027-W11" });
+        expect([ ...nextWeek.context, ...nextWeek.pendingContext ]).toEqual([ { text: "Sam is out Mon–Tue", from: "2027-03-15", until: "2027-03-16" } ]);
+        expect((await call("caius_context", { date: "2027-03-11" })).context.map((c: any) => c.text)).toContain("Riley is off Thu 11 Mar");
+        expect((await call("caius_context", { date: "2027-03-10" })).context.map((c: any) => c.text)).not.toContain("Riley is off Thu 11 Mar");
+    });
+});

@@ -148,7 +148,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
-        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped));
+        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true }));
 
         await guarded({ kind: "forward" }, skipped, async () => { for (const { listItemId, to } of input.forward ?? []) {
             if (!shown.has(listItemId)) {
@@ -431,8 +431,8 @@ async function shelve(store: NoteStore, date: string, now: Date, offered: Candid
     }
 }
 
-/** His evening tasks under the day's Evening heading, and his Context lines placed by `contextAddOn`. */
-async function eveningAndContext(store: NoteStore, date: string, now: Date, input: { evening: string[]; context: string[] }, written: Written[], skipped: Skipped[]) {
+/** His evening tasks under the day's Evening heading, and his Context lines placed by `contextAddOn` (with `tomorrow` in Plan my day). */
+async function eveningAndContext(store: NoteStore, date: string, now: Date, input: { evening: string[]; context: string[] }, written: Written[], skipped: Skipped[], opts: { tomorrow?: boolean } = {}) {
     for (const text of input.evening) {
         // An evening task forwarded to the day carries a "from Monday 2" link, so the same words there count as written.
         const same = (words: string) => plainText(words).toLowerCase();
@@ -447,7 +447,7 @@ async function eveningAndContext(store: NoteStore, date: string, now: Date, inpu
         else record(written, skipped, { kind: "evening", text }, result);
     }
     for (const text of input.context) {
-        const { result } = await contextAddOn(store, { date, text }, now);
+        const { result } = await contextAddOn(store, { date, text }, now, opts);
         record(written, skipped, { kind: "context", text }, result);
     }
 }
