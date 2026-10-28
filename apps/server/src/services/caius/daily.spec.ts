@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, fitted, MAX_REPLY_CHARS } from "./daily.js";
+import { carryQuestion, fitted, MAX_REPLY_CHARS, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -19,5 +19,13 @@ describe("fitted", () => {
         expect((fit.data as Record<string, unknown>).omitted).toEqual({ candidates: 400 - fit.data.candidates.length });
         expect(fit.data.overlaps).toEqual(reply.data.overlaps);
         expect(fitted({ step: "next", data: { candidates: [] } })).toEqual({ step: "next", data: { candidates: [] } });
+    });
+});
+
+describe("withoutMoveLinks", () => {
+    it("takes off only the links a forward adds, never his own words or links", () => {
+        expect(withoutMoveLinks("Message Dave [from Friday 30](#root/abc) _scheduled [Tuesday 3](#root/def)_")).toBe("Message Dave");
+        expect(withoutMoveLinks("Get a quote from Acme 2")).toBe("Get a quote from Acme 2");
+        expect(withoutMoveLinks("See [Plan](#root/zz) scheduled Tuesday 3")).toBe("See [Plan](#root/zz) scheduled Tuesday 3");
     });
 });

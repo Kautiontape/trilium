@@ -458,7 +458,7 @@ export function workBlocks(plan: PlanView, day: { start: string; end: string; wo
 export function listOf(plan: PlanView) {
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
     return mainTasks(plan).map((task) => ({
-        label: workLabel(task.text), text: plainText(task.text), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
+        label: workLabel(task.text), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
         evening: eveningSections.has(task.section), keys: keysOf(task.text)
     }));
 }
@@ -477,6 +477,11 @@ export function listPicks<P extends { text: string }>(plan: PlanView, picks: P[]
         kept: placed.filter(({ at }) => at >= 0).sort((a, b) => a.at - b.at).map(({ pick }) => pick),
         dropped: placed.filter(({ at }) => at < 0).map(({ pick }) => pick)
     };
+}
+
+/** A task's markdown without the `[from Friday 30](#root/…)` and `_scheduled [Tuesday 3](#root/…)_` links a forward adds. */
+export function withoutMoveLinks(text: string): string {
+    return text.replace(/\s*(?:\[from [^\]]*\]\(#root\/[^)]*\)|_scheduled \[[^\]]*\]\(#root\/[^)]*\)_)/g, "").trim();
 }
 
 /** A task's text without its links' markup. */

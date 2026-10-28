@@ -193,8 +193,10 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         ].map((candidate) => [ candidate.candidateId, candidate ]));
 
         const states = await loadStateSymbols(store);
+        // The open items carry their note; only an id from elsewhere needs the Journal searched.
+        const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
         for (const listItemId of input.done) {
-            const noteId = await noteOf(store, listItemId);
+            const noteId = await noteFor(listItemId);
             if (!noteId) {
                 skipped.push({ kind: "done", id: listItemId, reason: "not_found" });
                 continue;
@@ -212,7 +214,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
                 .map((item) => ({ listItemId: item.listItemId ?? "", to: (item.fate as { forward: string }).forward, proposed: true }))
         ];
         for (const fate of fates) {
-            const noteId = await noteOf(store, fate.listItemId);
+            const noteId = await noteFor(fate.listItemId);
             const entry = { kind: "fate", id: fate.listItemId, ...("drop" in fate && fate.drop ? { detail: "dropped" } : { detail: fate.to }) };
             if (!noteId) {
                 skipped.push({ ...entry, reason: "not_found" });
@@ -308,7 +310,7 @@ async function shelve(store: NoteStore, date: string, now: Date, offered: Candid
 async function eveningAndContext(store: NoteStore, date: string, now: Date, input: { evening: string[]; context: string[] }, written: Written[], skipped: Skipped[]) {
     for (const text of input.evening) {
         // A task forwarded to the day carries a "from Monday 2" link, so the same words already there count as written.
-        const same = (words: string) => withoutMoveLinks(plainText(words)).toLowerCase();
+        const same = (words: string) => plainText(words).toLowerCase();
         if (listOf(await readPlan(store, "day", date, now)).some((task) => same(task.text) === same(text))) {
             written.push({ kind: "evening", text, status: "unchanged" });
             continue;
@@ -407,11 +409,6 @@ async function noteOf(store: NoteStore, listItemId: string): Promise<string | nu
     return null;
 }
 
-/** A task's text without the `from Friday 30` or `scheduled Tuesday 3` link a forward adds. */
-function withoutMoveLinks(text: string): string {
-    return text.replace(/\s*(?:from|scheduled) [^\s,]+ \d{1,2}(?=\s|$)/g, "").trim();
-}
-
 /** A ticket candidate as its Suggested line, the one shape `caius_add` writes. */
 function suggestedLine(candidate: Candidate): string {
     return `Get ${candidate.key ? `${candidate.key} ` : ""}${candidate.title ?? candidate.text} done: because ${candidate.because} (~${candidate.minutes}m)`;
@@ -438,7 +435,7 @@ async function briefOf(deps: ApplyDeps, input: PlanApplyInput, read: DayRead, re
     const plan = await readPlan(store, "day", input.date, now);
     const picks: BriefPick[] = listOf(plan).filter((task) => !task.evening).slice(0, MAX_PICKS).map((task) => {
         const reason = task.keys.map((key) => reasons.get(key)).find((candidate) => candidate && candidate.kind !== "week");
-        return { text: withoutMoveLinks(task.text), minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
+        return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
     });
     const followUps = followUpsOf(jira);
     const followUpTitle = t("caius.daily.follow_up");
