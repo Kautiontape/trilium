@@ -64,12 +64,12 @@ describe("caius tools", () => {
         }
     });
 
-    it("tells the agent that a null question still leaves the step's writes to do", () => {
-        for (const name of [ "caius_winddown", "caius_planday" ]) {
-            const description = toolNamed(name).description;
-            expect(description).toContain("a null question means nothing to ask; still do the step's writes.");
-            expect(description).not.toContain("dry run first");
-            expect(description).not.toContain("skip the step");
+    it("sends the agent from the steps to one apply call, and never names Shawn", () => {
+        expect(toolNamed("caius_planday").description).toContain("then call caius_plan_apply once with the user's answers");
+        expect(toolNamed("caius_winddown").description).toContain("then call caius_winddown_apply once with the user's answers");
+        for (const [ name, def ] of caiusTools) {
+            expect(def.description, name).not.toContain("Shawn");
+            expect(def.description, name).not.toContain("still do the step's writes");
         }
     });
 

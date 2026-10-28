@@ -70,7 +70,7 @@ const addItem = z.object({
 
 const acceptItem = z.object({
     ...taskRef,
-    section: z.string().optional().describe("Heading to move the task under, only when Shawn names one. Without section or critical, the task joins the end of his main list."),
+    section: z.string().optional().describe("Heading to move the task under, only when the user names one. Without section or critical, the task joins the end of the main list."),
     critical: z.boolean().optional().describe("Move the task into the Important block"),
     position: z.number().int().positive().optional().describe("With section or critical: 1-based place in the destination list; default the end")
 }).refine(
@@ -251,7 +251,7 @@ const contextKeep = z.object({
     lines: z.array(z.object({
         text: z.string().trim().min(1).describe("The line, such as \"ZAP-2590 is open\""),
         until: periodKey("day").optional().describe("The last day the line holds, YYYY-MM-DD")
-    })).min(1).describe("The lines Shawn wants kept"),
+    })).min(1).describe("The lines the user wants kept"),
     dryRun
 });
 

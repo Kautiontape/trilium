@@ -51,29 +51,30 @@ it("offers the caius skill only while it is registered, and names every tool the
         expect(sheet, `the sheet should mention ${name}`).toContain(`\`${name}\``);
     }
     expect(sheet.split("\n").length).toBeGreaterThanOrEqual(80);
-    // The openers follow only their own section: one message, then every write in one go.
+    // Each conversation is one question set, then one apply call that makes every write.
     expect(sheet).toContain("For `Wind down` and `Plan my day` openers, follow only this section.");
-    expect(sheet).not.toContain("until the day fits its capacity");
-    expect(sheet).toContain("A null `question` means nothing to ask; still do the step's writes.");
-    expect(sheet).toContain("then \"Which of these today, in what order?\"");
-    expect(sheet).toContain("After his answer, do everything in one go, with no further yes:");
-    expect(sheet).toContain("After his answer, apply everything in one go:");
-    expect(sheet).toContain("Dry run first, and wait for a yes, only for forwards and drops of his own tasks that he hasn't already answered.");
-    expect(sheet).toContain("Never narrate tool calls or internals, and never mention files, shell or fetching. Never retry a tool with another tool.");
-    expect(sheet).toContain("On a tool error, say one plain sentence and carry on with the rest.");
-    expect(sheet).toContain("Never guess pronouns, and never say Jira \"confirms\" something it didn't return.");
-    expect(sheet).toContain("Never run Plan my day for a future day.");
-    expect(sheet).toContain("`caius_add` it as a task under an `Evening` heading, on his word.");
-    expect(sheet).toContain("End with the headline and the top pick in two lines");
-    expect(sheet).toContain("with `caius_context_keep` and `date: data.keepDate`");
-    expect(sheet).toContain("Add the ticket candidates to that day's Suggested with `caius_add` and `suggested: true`");
-    expect(sheet).toContain("is already on the week's list: don't add it; `caius_forward` it");
-    expect(sheet).toContain("Never \"no reply\", \"unanswered\", \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
-    expect(sheet).toContain("a follow-up is worded as a follow-up, never \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
-    expect(sheet).toContain("anything new he says with `caius_context_add` and `date: targetDay`");
-    expect(sheet).toContain("up to 5 of his list; fewer is fine");
-    expect(sheet).toContain("Never mention `droppedPicks` to him.");
-    expect(sheet).not.toContain("Every write is a dry run first, shown to Shawn in two lines, then applied on his yes");
+    expect(sheet).toContain("call `caius_plan_apply` **once**");
+    expect(sheet).toContain("call `caius_winddown_apply` **once**");
+    expect(sheet).toContain("Send **one message**");
+    for (const rule of [
+        "Call him \"you\", never \"Shawn\".",
+        "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
+        "Never ask permission for anything the apply tool does.",
+        "Never say something was done unless the apply result says so.",
+        "Never narrate tools, ids, protocol or data quality.",
+        "On a skipped item, say it in one plain clause.",
+        "A vague reply (\"fine\", \"yeah\") accepts the proposals as offered",
+        "Never write \"still\", \"outstanding\", \"unanswered\", \"waiting\", \"no reply\" or \"haven't answered\".",
+        "Only \"drop\", \"cancel\" or \"not doing\" drops a task or dismisses a candidate; anything vaguer (\"skip that\", \"not now\") is `notToday`",
+        "Never offer to drop a Context line.",
+        "never use the generic note tools",
+        "If a Caius tool fails, say so in one clause and stop that item.",
+        "Never run Plan my day for a future day."
+    ]) expect(sheet, rule).toContain(rule);
+    for (const old of [ "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
+        expect(sheet, old).not.toContain(old);
+    }
+    expect(sheet).not.toMatch(/Shawn(?!\")/);
 
     unregister();
     expect(readSkill("caius")).toBeNull();
