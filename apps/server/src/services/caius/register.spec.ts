@@ -80,6 +80,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
         "No recap after an apply",
         "An evening calendar event is not a task",
+        "say the skip in one clause (\"Call Mom is already on the calendar\")",
         "In these conversations only these tools are available",
         "| `caius_planday` | Plan my day's steps: `catchup`, `inputs`. |",
         "| `caius_winddown_apply` | Wind down's one write. |",

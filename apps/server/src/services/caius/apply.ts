@@ -499,13 +499,20 @@ function eveningEvents(read: DayRead): string[] {
     return read.inputs.calendar.filter((e) => !e.allDay && !e.declined && e.start >= read.rhythm.workEnd).map((e) => e.title);
 }
 
-/** Whether `text` names the event `title`: every word of one is a word of the other ("mom" and "Call Mom"). */
+/**
+ * Whether `text` names the event `title`: every word he said, past the filler, is a word of the
+ * title ("just mom" and "Call Mom"). A line with words beyond the title ("Call Mom about the
+ * flights") is a task of its own.
+ */
 function namesEvent(text: string, title: string): boolean {
-    const words = (s: string) => new Set(s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
-    const [ said, event ] = [ words(plainText(text)), words(title) ];
-    const within = (a: Set<string>, b: Set<string>) => a.size > 0 && [ ...a ].every((word) => b.has(word));
-    return within(said, event) || within(event, said);
+    const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+    const said = words(plainText(text)).filter((word) => !FILLER.has(word));
+    const event = new Set(words(title));
+    return said.length > 0 && said.every((word) => event.has(word));
 }
+
+/** Words that don't name anything in what he says about the evening. */
+const FILLER = new Set([ "the", "a", "just", "is", "evening" ]);
 
 /** The catch-up as he answered it: every live task of the last workday forwarded to `date`, a skip, or nothing on "review". */
 async function catchup(store: NoteStore, date: string, now: Date, answer: PlanApplyInput["catchup"], written: Written[], skipped: Skipped[]) {

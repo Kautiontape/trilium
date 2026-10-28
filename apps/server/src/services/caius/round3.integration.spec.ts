@@ -421,6 +421,19 @@ describe("an evening calendar event is not a task", () => {
         expect((await headerOf(applied)).acts[2]).toEqual({ range: "Evening", text: "Call Mom." });
     });
 
+    it("matches only when every word he said, past the filler, is in an event's title; a longer line is a task", async () => {
+        const DAY = "2027-02-15";
+        calendars[DAY] = [ event("18:00", "18:30", "Call Mom"), event("19:00", "20:30", "Climbing gym"), event("20:30", "21:30", "Dinner"), event("21:30", "22:00", "Mom") ];
+        at(`${DAY}T09:40`);
+        const said = [
+            "mom", "just mom", "call mom", "climbing gym",
+            "call the plumber", "Call Mom about the flights", "buy mom's birthday card", "pack the climbing gym bag", "book dinner for Friday"
+        ];
+        const applied = await call("caius_plan_apply", { date: DAY, evening: said, brief: prose });
+        expect(applied.skipped.filter((s: any) => s.reason === "calendar_event").map((s: any) => s.text)).toEqual([ "mom", "just mom", "call mom", "climbing gym" ]);
+        expect(await listed(DAY)).toEqual([ "call the plumber", "Call Mom about the flights", "buy mom's birthday card", "pack the climbing gym bag", "book dinner for Friday" ]);
+    });
+
     it("Mon 17:30 'mom is the 6pm call': the wind-down writes no Call Mom task for a next workday that has the call, and still writes the plants", async () => {
         const DAY = "2027-01-26";
         calendars["2027-01-27"] = [ event("18:00", "18:30", "Call Mom") ];
