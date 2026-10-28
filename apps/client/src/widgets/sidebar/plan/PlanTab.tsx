@@ -12,6 +12,7 @@ import {
     isCaiusEnabled, RELOAD_TIMEOUT_MS, startCaiusConversation, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
+import type LoadResults from "../../../services/load_results";
 import { t } from "../../../services/i18n";
 import ActionButton from "../../react/ActionButton";
 import { Badge } from "../../react/Badge";
@@ -292,16 +293,28 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
     useEffect(() => () => clearTimeout(timer.current), []);
 
     useTriliumEvent("entitiesReloaded", useCallback(({ loadResults }) => {
-        const changesJournal = loadResults.getNoteIds().some((noteId) => {
-            const changed = froca.notes[noteId];
-            return !!changed && isJournalNote(changed);
-        });
-        if (changesJournal) {
+        if (touchesJournal(loadResults)) {
             refresh();
         }
     }, [ refresh ]));
 
     return { data, error, reload: () => void reload(), refresh };
+}
+
+/**
+ * Whether the changes touch a Journal note the client holds: the note itself, one of its labels (a
+ * Caius write such as `#caiusFocus` changes no note row) or a child added under it (a brief, a new
+ * day note under its week).
+ */
+function touchesJournal(loadResults: LoadResults) {
+    const journal = (noteId: string | undefined) => {
+        const note = noteId ? froca.notes[noteId] : undefined;
+        return !!note && isJournalNote(note);
+    };
+
+    return loadResults.getNoteIds().some(journal)
+        || loadResults.getAttributeRows().some((row) => journal(row.noteId))
+        || loadResults.getBranchRows().some((row) => journal(row.parentNoteId));
 }
 
 /**

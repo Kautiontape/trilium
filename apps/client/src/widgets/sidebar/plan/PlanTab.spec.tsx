@@ -191,6 +191,28 @@ describe("PlanTab", () => {
         expect(container.querySelector("#plan-capacity")).not.toBeNull();
     });
 
+    it("refreshes after a Caius write that changes only a label of a Journal note or adds a child under one", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const { caiusWrote } = mountInPane(true);
+        await flush();
+        expect(api.plan).toHaveBeenCalledTimes(1);
+
+        // `#caiusFocus` on today's note, as a plan's apply records it: no note row changes.
+        await caiusWrote([ { entityName: "attributes", entityId: "a1", entity: { attributeId: "a1", noteId: "today", type: "label", name: "caiusFocus", value: "120-120" } } ]);
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(api.plan).toHaveBeenCalledTimes(2);
+
+        // The brief, a new child of today's note that the client doesn't hold.
+        await caiusWrote([ { entityName: "branches", entityId: "b1", entity: { branchId: "b1", noteId: "brief", parentNoteId: "today" } } ]);
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(api.plan).toHaveBeenCalledTimes(3);
+
+        // A label of a note outside the Journal reads nothing again.
+        await caiusWrote([ { entityName: "attributes", entityId: "a2", entity: { attributeId: "a2", noteId: "elsewhere", type: "label", name: "color", value: "red" } } ]);
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(api.plan).toHaveBeenCalledTimes(3);
+    });
+
     it("starts no refresh while one is in flight, and runs at most one more after it", async () => {
         api.plan.mockResolvedValue(dayPlan());
         const { journalChanged } = mountInPane(true);
@@ -642,6 +664,17 @@ function mountInPane(visible: boolean) {
         async setVisible(shown: boolean) {
             draw(shown);
             await flush();
+        },
+        /** Rows a Caius tool wrote over MCP, as the WebSocket delivers them: attributes and branches only. */
+        async caiusWrote(rows: { entityName: "attributes" | "branches"; entityId: string; entity: object }[]) {
+            const loadResults = new LoadResults(rows as unknown as ConstructorParameters<typeof LoadResults>[0]);
+            for (const row of rows) {
+                if (row.entityName === "attributes") loadResults.addAttribute(row.entityId, "mcp");
+                else loadResults.addBranch(row.entityId, "mcp");
+            }
+            await act(async () => {
+                await parent.handleEvent("entitiesReloaded", { loadResults });
+            });
         },
         /** An edit to today's note, a Journal note, as the WebSocket delivers it. */
         async journalChanged() {
