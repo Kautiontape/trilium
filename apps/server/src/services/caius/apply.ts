@@ -712,7 +712,7 @@ function actText(items: string): string {
  * more from its words (`titles`, else the label) that no other task of `labels` has.
  */
 function namesTask(text: string, label: string, labels: string[], titles: Map<string, string>): boolean {
-    if (JIRA_KEY.test(label) && text.toUpperCase().includes(label)) return true;
+    if (JIRA_KEY.test(label) && new RegExp(`(?<![A-Z0-9-])${label}(?![0-9])`).test(text.toUpperCase())) return true;
     const wordsOf = (of: string) => (titles.get(of) ?? of).replace(/\S*…$/, "").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
     const said = new Set(text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
     const others = new Set(labels.filter((other) => other !== label).flatMap(wordsOf));

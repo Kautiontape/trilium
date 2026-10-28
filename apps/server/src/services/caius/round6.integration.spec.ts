@@ -106,6 +106,21 @@ describe("the header's acts", () => {
     });
 });
 
+describe("an act names a ticket by its whole key", () => {
+    it("an act naming ZAP-811 doesn't name ZAP-81, so it keeps its words", async () => {
+        const DAY = "2030-06-10";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("k-811", `${zap("ZAP-811", "Verify the export retry")} ~30m`), li("k-81", `${zap("ZAP-81", "Tidy the board")} ~30m`))}`);
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "The export retry, then the board.", acts: [
+            { range: "", text: "Verify the ZAP-811 export retry." }, { range: "", text: "Tidy the board on ZAP-81." }
+        ] } });
+        expect(planned.skipped).toEqual([]);
+        const header = await contentOf(planned.headerNoteId);
+        expect(header).toContain("<p>Verify the ZAP-811 export retry.</p>");
+        expect(header).toContain("<p>Tidy the board on ZAP-81.</p>");
+    });
+});
+
 describe("a closed day's header", () => {
     it("Mon 2 Nov 17:30: the wind-down leaves the header as planned, so the headline names the tasks the drawing shows", async () => {
         const MON = "2028-11-06";
