@@ -61,7 +61,7 @@ describe("sayOf", () => {
             ]
         }, { day: "2026-11-02" });
         expect(say).toBe("ZAP-110 and ZAP-101 are on your list, ZAP-101 is first, ZAP-110 is after ZAP-101, ZAP-105 is in Suggested and the brief is written. "
-            + "Call Mom is already on the calendar, 'the export' is unchanged since it could be ZAP-111 or ZAP-101 and one task wasn't found.");
+            + "Call Mom is already on the calendar and one task wasn't found. Which export: ZAP-111 or ZAP-101?");
         expect(say).not.toMatch(ID);
     });
 

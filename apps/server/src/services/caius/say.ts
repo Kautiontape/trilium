@@ -9,8 +9,12 @@ import { t } from "i18next";
 import type { Skipped, Written } from "./apply.js";
 import { dateLabel, plainText, weekdayName, withoutMoveLinks } from "./daily.js";
 
-/** `say` for an apply's result; `day` is the day its evening tasks and Context lines went to. */
-export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day }: { day: string }): string {
+/**
+ * `say` for an apply's result; `day` is the day its evening tasks and Context lines went to. It ends
+ * with one plain question when an answer held items for being ambiguous, or `held` holds the texts
+ * of items an earlier call held.
+ */
+export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [] }: { day: string; held?: string[] }): string {
     const made = written.filter((entry) => entry.status === "written");
     const of = (...kinds: string[]) => made.filter((entry) => kinds.includes(entry.kind));
     const labels = (entries: { text?: string; id?: string }[]) => unique(entries.map((entry) => labelOf(entry.text ?? entry.id ?? "")));
@@ -47,13 +51,28 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         ...(of("brief").length ? [ t("caius.say.brief") ] : [])
     ];
     const unnamed = skipped.filter((entry) => !entry.text && UNKNOWN.has(entry.reason)).length;
+    const holding = skipped.filter((entry) => entry.reason === "ambiguous" && HOLDING.has(entry.kind));
     const missed = unique([
-        ...skipped.flatMap((entry) => skipClause(entry)),
+        ...skipped.filter((entry) => !holding.includes(entry)).flatMap((entry) => skipClause(entry)),
         ...(unnamed ? [ t("caius.say.unnamed", { count: unnamed }) ] : [])
     ]);
+    const questions = holding.length
+        ? unique(holding.map((entry) => {
+            const noun = (entry.text ?? "").toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => !QUESTION_FILLER.has(word)).join(" ");
+            const matches = orList(unique((entry.detail ?? "").split("; ").map(labelOf)));
+            return noun ? t("caius.say.which", { noun, matches }) : t("caius.say.which_held", { matches });
+        }))
+        : held.length ? [ t("caius.say.which_held", { matches: orList(unique(held.map(labelOf))) }) ] : [];
     const sentences = [ wrote, missed ].filter((clauses) => clauses.length).map((clauses) => `${capitalized(andList(clauses))}.`);
-    return sentences.length ? sentences.join(" ") : t("caius.say.nothing");
+    if (!sentences.length && !questions.length) return t("caius.say.nothing");
+    return [ ...sentences, ...questions ].join(" ");
 }
+
+/** Answers whose ambiguous items are held until he says which, so `say` asks. */
+const HOLDING = new Set([ "done", "fate", "move" ]);
+
+/** Words a which-question leaves out of what he said: "the export is done" asks "Which export". */
+const QUESTION_FILLER = new Set([ "the", "a", "an", "my", "is", "are", "was", "done", "finished", "first", "it", "that", "this" ]);
 
 /** Reasons that mean the answer named nothing the steps showed. */
 const UNKNOWN = new Set([ "not_offered", "not_found", "not_on_list", "not_a_listed_day" ]);

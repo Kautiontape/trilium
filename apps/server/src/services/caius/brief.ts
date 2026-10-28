@@ -35,6 +35,8 @@ export const PLANNED_AT_LABEL = "caiusPlannedAt";
 export const RAISED_LABEL = "caiusRaised";
 /** On a day note: a question asked about that day, so it is asked once: a keep or carry line by its lineId, an overlap by its overlapId, `heavy` or `evening`. */
 export const ASKED_LABEL = "caiusAsked";
+/** On a day note being wound down: an open item an ambiguous answer matched, by its listItemId; it gets no fate until he names it. */
+export const HELD_LABEL = "caiusHeld";
 /** On a day note: an ask offered as a candidate for that day, as `ZAP-105:10`; on later days it is a Follow up. */
 export const ASK_SEEN_LABEL = "caiusAskSeen";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */

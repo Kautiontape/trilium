@@ -160,6 +160,14 @@ export function setLabel(noteId: string, name: string, value: string): void {
     sql.transactional(() => note.setLabel(name, value));
 }
 
+/** Takes each label `name` with `value` off a note. The caller provides the `cls.init()` context. */
+export function removeLabel(noteId: string, name: string, value: string): void {
+    const note = getNote(noteId);
+    sql.transactional(() => {
+        for (const attribute of note.getOwnedLabels(name)) if (attribute.value === value) attribute.markAsDeleted();
+    });
+}
+
 let lockTail: Promise<void> = Promise.resolve();
 
 /** How long a call can hold the lock before `withCaiusLock` warns that it is blocking the others. */

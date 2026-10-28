@@ -34,7 +34,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_LABEL, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -72,7 +72,7 @@ import { isInputWarning } from "./inputs/index.js";
 import { isRef, type Named, refOf, resolveIn, resolveName, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
-import { readAttachment } from "./store.js";
+import { readAttachment, removeLabel } from "./store.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
 import type { DayWeather } from "./weather.js";
 
@@ -321,9 +321,17 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             record(written, skipped, { kind: "done", id: listItemId }, result);
         } });
 
-        // A fate he named, then the proposed one for every item he didn't name.
-        // An item an ambiguous answer matched stays where it is: he named it, but which one is unclear.
-        const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.held ]);
+        // An item an ambiguous answer matched stays where it is, on this call and later ones, until a
+        // call names it: he named it, but which one is unclear.
+        const closingNote = await findPeriodNote(store, "day", date);
+        const heldBefore = closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === HELD_LABEL).map((a) => a.value) : [];
+        const namedNow = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.move.map((ref) => ref.listItemId) ]);
+        const openIds = new Set(open.items.map((item) => item.listItemId));
+        const held = [ ...new Set([ ...heldBefore.filter((id) => !namedNow.has(id)), ...input.held ]) ].filter((id) => openIds.has(id));
+        for (const id of heldBefore.filter((id) => !held.includes(id))) if (closingNote) removeLabel(closingNote.noteId, HELD_LABEL, id);
+        await labelDay(store, date, HELD_LABEL, held);
+        // A fate he named, then the proposed one for every item he didn't name and isn't held.
+        const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...held ]);
         const putOffWeek: string[] = [];
         const fates = [
             ...input.fates,
@@ -392,7 +400,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
-        if (!skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
+        if (!held.length && !skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
             const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
             if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
         }
@@ -407,7 +415,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
         withTexts([ ...written, ...skipped ], pools, known);
-        const say = sayOf({ written, skipped }, { day: targetDay });
+        const heldTexts = held.map((id) => open.items.find((item) => item.listItemId === id)?.text ?? "");
+        const say = sayOf({ written, skipped }, { day: targetDay, held: heldTexts });
         return {
             ...withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null, say: morning ? `${say} ${t("caius.say.next_planday")}` : say }),
             ...(morning ? { nextCall: { tool: "caius_planday", date: targetDay } } : {})
@@ -559,12 +568,12 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
 /**
  * Reads the names of one answer: the id each names, its own value when it names nothing the steps
  * showed (the write then says why), or null when it names several, skipped as ambiguous, or a ref
- * whose item left its pool since the step, skipped as stale. `held` collects the ids an ambiguous
- * answer matched, which nothing may write for.
+ * whose item left its pool since the step, skipped as stale. With `hold`, `held` collects the ids an
+ * ambiguous answer matched, which nothing may write for.
  */
 function nameReader(skipped: Skipped[], table: Map<string, RefEntry>) {
     const held = new Set<string>();
-    const read = (kind: string, value: string, pools: Named[][], fallback: Named[][] = []): string | null => {
+    const read = (kind: string, value: string, pools: Named[][], fallback: Named[][] = [], hold = false): string | null => {
         // A ref that isn't in its pool any more names a settled item, which the write finds in place,
         // or one the step showed and that has left since: never another item.
         const ref = value.trim().toLowerCase();
@@ -578,7 +587,7 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>) {
         const found = resolveIn(pools, value) ?? resolveIn(fallback, value);
         if (found && "ambiguous" in found) {
             skipped.push({ kind, text: value, reason: "ambiguous", detail: found.ambiguous.join("; ") });
-            for (const id of found.ids) held.add(id);
+            if (hold) for (const id of found.ids) held.add(id);
             return null;
         }
         return found?.id ?? value;
@@ -650,12 +659,13 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         return id === null ? [] : [ { lineId: id } ];
     };
     const { done, finished } = doneOf(input.done, input.finished, [ pools.open ], [ pools.settled ], read);
+    const open = new Set(pools.open.map((item) => item.id));
     return {
         ...input,
         done,
         finished,
         fates: input.fates.flatMap((fate) => {
-            const id = read("fate", fate.listItemId, [ pools.open ], [ pools.settled ]);
+            const id = read("fate", fate.listItemId, [ pools.open ], [ pools.settled ], true);
             const to = fate.to === undefined ? undefined : read("fate", fate.to, [ pools.days ]);
             return id === null || to === null ? [] : [ { ...fate, listItemId: id, ...(to === undefined ? {} : { to }) } ];
         }),
@@ -665,7 +675,7 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
             return id === null || at === null ? [] : [ { ...at, candidateId: id } ];
         }),
         move: input.move.flatMap((ref) => {
-            const id = read("move", ref.listItemId, onList);
+            const id = read("move", ref.listItemId, onList, [], true);
             const at = place("move", ref, onList);
             return id === null || at === null ? [] : [ { ...at, listItemId: id } ];
         }),
@@ -673,7 +683,7 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         carry: input.carry.flatMap(line("carry")),
         notToday: input.notToday.flatMap(candidate("not_today")),
         dismiss: input.dismiss.flatMap(candidate("dismiss")),
-        held: [ ...held ]
+        held: [ ...held ].filter((id) => open.has(id))
     };
 }
 
@@ -682,9 +692,9 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
  * is not a Jira key, and the item each finished key names in `pools`, once. `finished` keeps only
  * the keys, which are recorded as finished whether or not they name an item.
  */
-function doneOf(said: string[], finished: string[], pools: Named[][], settled: Named[][], read: (kind: string, value: string, pools: Named[][], fallback?: Named[][]) => string | null) {
+function doneOf(said: string[], finished: string[], pools: Named[][], settled: Named[][], read: (kind: string, value: string, pools: Named[][], fallback?: Named[][], hold?: boolean) => string | null) {
     const keys = finished.filter((value) => JIRA_KEY.test(value));
-    const done = new Set([ ...said, ...finished.filter((value) => !JIRA_KEY.test(value)) ].flatMap((value) => read("done", value, pools, settled) ?? []));
+    const done = new Set([ ...said, ...finished.filter((value) => !JIRA_KEY.test(value)) ].flatMap((value) => read("done", value, pools, settled, true) ?? []));
     for (const key of keys) {
         const found = pools.map((pool) => resolveName(pool, key)).find((r) => r !== null);
         if (found && "id" in found) done.add(found.id);

@@ -62,6 +62,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
         "\"Later this week\" is the week ref `w1` in `data.days`, and \"next week\" is `w2`: never a date.",
         "Name each item in an answer by its `ref` from the step data (such as `o3fa9c` or `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
+        "When `say` ends with a which-question, the items it names stay open until he answers; his answer is one more apply call naming them.",
         "A ref names the same item for the whole conversation. One whose item changed since the step is skipped as `stale`: ask him about that item in one clause.",
         "the heavy-day move question (if any)",
         "Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.",

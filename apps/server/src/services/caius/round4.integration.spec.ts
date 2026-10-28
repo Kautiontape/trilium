@@ -198,7 +198,7 @@ describe("short references", () => {
         ]);
         expect((await tasksOf("2026-11-19")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
         expect(applied.say).toBe("Message Dave if he knows anyone who will hang lights as a small job and Pack the climbing gym bag moved to Thu 19 Nov. "
-            + "'the export' is unchanged since it could be ZAP-111 or ZAP-101.");
+            + "Which export: ZAP-111 or ZAP-101?");
     });
 
     it("Plan my day takes refs and names anywhere it takes an id: a candidate, a place on his list and a move", async () => {
@@ -611,5 +611,42 @@ describe("fix round 1: a re-run by his words finds what the first run did", () =
         const second = await call("caius_winddown_apply", { date: DAY, done: [ "111", "the bag" ] });
         expect(second.skipped).toEqual([]);
         expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+    });
+});
+
+describe("fix round 1: an item held by an ambiguous answer stays held", () => {
+    it("P5: 'the export is done' is ambiguous; the third-person retry forwards neither export, and naming them settles both and closes the day", async () => {
+        const DAY = "2027-06-16";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const first = await call("caius_winddown_apply", { date: DAY, done: [ "the export" ], context: [ "Riley covers for Shawn on Friday" ] });
+        expect(first.skipped.map((s: any) => s.reason)).toEqual([ "ambiguous", "third_person" ]);
+        expect(first.say).toMatch(/Which export: ZAP-111 or ZAP-101\?$/);
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([ `${DAY}-111`, `${DAY}-101` ]);
+
+        const retry = await call("caius_winddown_apply", { date: DAY, context: [ "Riley covers for me on Friday" ] });
+        expect(retry.skipped).toEqual([]);
+        expect((await tasksOf(DAY)).slice(0, 2).map((task: any) => task.state)).toEqual([ "open", "open" ]);
+        expect((await tasksOf("2027-06-17")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
+        expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
+        expect(retry.say).toMatch(/Which do you mean: ZAP-111 or ZAP-101\?$/);
+
+        const settled = await call("caius_winddown_apply", { date: DAY, done: [ "111" ], fates: [ { listItemId: "101", to: "d1" } ] });
+        expect(settled.skipped).toEqual([]);
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+        expect((await tasksOf("2027-06-17")).map((task: any) => task.text)).toEqual(expect.arrayContaining([ "ZAP-101 Verify the export retry on staging" ]));
+    });
+
+    it("P6: an ambiguous move holds both exports open, and the day isn't marked wound down while they are held", async () => {
+        const DAY = "2027-06-09";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const applied = await call("caius_winddown_apply", { date: DAY, move: [ { listItemId: "the export", first: true } ] });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "move", reason: "ambiguous" }) ]);
+        expect((await tasksOf(DAY)).slice(0, 2).map((task: any) => task.state)).toEqual([ "open", "open" ]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
+        // Dave and the bag, which he didn't name, take their proposed fate.
+        expect((await tasksOf("2027-06-10")).map((task: any) => task.text)).toEqual([ expect.stringContaining("Message Dave"), "Pack the climbing gym bag" ]);
     });
 });
