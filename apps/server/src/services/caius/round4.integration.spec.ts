@@ -1046,3 +1046,23 @@ describe("fix round 3: a hold that spans two days", () => {
         await clearHolds("2027-11-03");
     });
 });
+
+describe("fix round 3: a three-way hold narrowed by one", () => {
+    it("F5 (S2): 'the export is done' holds 111, 101 and 120; '111' answers it, so 101 and 120 are released and nothing is asked", async () => {
+        const DAY = "2027-11-10";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
+                li("t3-111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`), li("t3-101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`),
+                li("t3-120", `${zap("ZAP-120", "Fix the export columns")} ~30m`)
+            )}`);
+        });
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "the export" ] });
+        const answered = await call("caius_winddown_apply", { date: DAY, done: [ "111" ] });
+        expect(answered.say).not.toMatch(/\?$/);
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+        expect((await tasksOf("2027-11-11")).map((task: any) => task.text)).toEqual([ "ZAP-101 Verify the export retry on staging", "ZAP-120 Fix the export columns" ]);
+    });
+});

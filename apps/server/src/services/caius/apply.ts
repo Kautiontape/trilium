@@ -948,8 +948,9 @@ const ID_SHAPED = /^(?:[a-z]?[0-9a-f]{8,}|[oclx][0-9a-f]{5}|[dw]\d+|[lo][0-9a-f]
 
 /**
  * The items held on the day note of `date` after a call that named `named` and held `added`: the
- * earlier holds he didn't name and the new ones, among `live`, less the one item left of an earlier
- * group that narrowed to it, which is released. Rewrites the note's hold labels to match.
+ * earlier holds he didn't name and the new ones, among `live`, less the rest of an earlier group
+ * once he named one of its items or it narrowed to one, which are released. Rewrites the note's
+ * hold labels to match.
  */
 async function settleHolds(store: NoteStore, date: string, live: Set<string>, named: Set<string>, added: string[][]): Promise<string[]> {
     const note = await findPeriodNote(store, "day", date);
@@ -960,8 +961,9 @@ async function settleHolds(store: NoteStore, date: string, live: Set<string>, na
     let held = [ ...new Set([ ...heldBefore.filter((id) => !named.has(id)), ...fresh ]) ].filter((id) => live.has(id));
     for (const value of groupsBefore) {
         const group = value.split(" ");
-        const left = group.filter((id) => held.includes(id));
-        if (group.length > 1 && left.length === 1 && !fresh.has(left[0] ?? "")) held = held.filter((id) => id !== left[0]);
+        const left = group.filter((id) => held.includes(id) && !fresh.has(id));
+        // Naming one member answers the which-question, and a group left with one item has nothing to ask: the rest are released.
+        if (group.length > 1 && (group.some((id) => named.has(id)) || left.length === 1)) held = held.filter((id) => !left.includes(id));
     }
     const groups = [ ...groupsBefore, ...added.map((group) => group.join(" ")) ].filter((value) => value.split(" ").some((id) => held.includes(id)));
     if (note) {
