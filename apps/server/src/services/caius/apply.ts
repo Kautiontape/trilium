@@ -153,7 +153,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         // A pick's reason is its candidate's, live or not, so a re-run words the brief the same.
         const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
-        const brief = await briefOf(deps, input, read, reasons, offer.jira, weather);
+        const brief = await briefOf(deps, input, read, reasons, offer.jira, offer.headsUp, weather);
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
             return withDateLabels({ date, written, skipped });
@@ -491,9 +491,10 @@ function record(written: Written[], skipped: Skipped[], entry: Omit<Written, "st
 
 /**
  * Writes the brief: his prose, the picks from his list in its order (evening tasks apart), the
- * Follow up from the step's sentences in place of any the agent wrote, the drawing and the weather.
+ * Follow up and Heads-up from the step data in place of any the agent wrote, the drawing and the
+ * weather.
  */
-async function briefOf(deps: ApplyDeps, input: PlanApplyInput, read: DayRead, reasons: Map<string, Candidate>, jira: DayRead["inputs"]["jira"], weather: DayWeather | undefined) {
+async function briefOf(deps: ApplyDeps, input: PlanApplyInput, read: DayRead, reasons: Map<string, Candidate>, jira: DayRead["inputs"]["jira"], headsUp: string[], weather: DayWeather | undefined) {
     const { store, now } = deps;
     const plan = await readPlan(store, "day", input.date, now);
     const picks: BriefPick[] = listOf(plan).filter((task) => !task.evening).slice(0, MAX_PICKS).map((task) => {
@@ -501,10 +502,13 @@ async function briefOf(deps: ApplyDeps, input: PlanApplyInput, read: DayRead, re
         return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
     });
     const followUps = followUpsOf(jira);
+    // Follow up and Heads-up are written from the step data, in place of anything the agent wrote under them.
     const followUpTitle = t("caius.daily.follow_up");
+    const headsUpTitle = t("caius.daily.heads_up");
     const sections = [
         ...(followUps.length ? [ { title: followUpTitle, markdown: followUps.map((f) => `- ${f.sentence}`).join("\n") } ] : []),
-        ...input.brief.sections.filter((section) => sameTitle(section.title) !== sameTitle(followUpTitle))
+        ...(headsUp.length ? [ { title: headsUpTitle, markdown: headsUp.map((line) => `- ${line}`).join("\n") } ] : []),
+        ...input.brief.sections.filter((section) => ![ followUpTitle, headsUpTitle ].some((title) => sameTitle(section.title) === sameTitle(title)))
     ];
     const { start, end, workEnd } = read.rhythm;
     const events = drawnEvents(read);

@@ -119,7 +119,7 @@ describe("caius_plan_apply", () => {
             brief: {
                 headline: "Two hand-offs around Sprint Planning",
                 acts: [ { range: "10:00 to 12:00", text: "Standup, then ZAP-111 before planning." }, { range: "12:00 to 18:00", text: "ZAP-101 after lunch." }, { range: "Evening", text: "Something away from screens." } ],
-                sections: [ { title: "Heads-up", markdown: "Sprint Planning runs long." }, { title: "Follow up", markdown: "Jordan said something about a runbook." } ]
+                sections: [ { title: "Heads-up", markdown: "Sprint Planning runs long." }, { title: "Follow up", markdown: "Jordan said something about a runbook." }, { title: "Notes", markdown: "Quiet afternoon." } ]
             }
         };
         weatherCalls.length = 0;
@@ -160,7 +160,10 @@ describe("caius_plan_apply", () => {
         expect(brief).not.toContain("Laundry");
         expect(brief).toContain("Jordan Placeholder asked on Sunday: \"The rollout note is now in the runbook.\" (ZAP-105). If you already answered in Chat, dismiss this.");
         expect(brief).not.toContain("something about a runbook");
-        expect(brief).toContain("Sprint Planning runs long.");
+        // Heads-up comes only from outside events; nothing changed, so there is none. Another section is kept.
+        expect(brief).not.toContain("Sprint Planning runs long.");
+        expect(brief).not.toContain("Heads-up");
+        expect(brief).toContain("Quiet afternoon.");
         const header = await cls.init(() => store.content(result.headerNoteId));
         expect(header).toContain("Two hand-offs around Sprint Planning");
         // The Evening act names the evening's own items, not a generic line.

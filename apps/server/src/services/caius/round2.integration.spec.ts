@@ -295,3 +295,27 @@ describe("only his explicit words drop, cancel or dismiss", () => {
         await expect(async () => call("caius_winddown_apply", { date: "2026-11-23", fates: [ { listItemId: "dave23", drop: "" } ] })).rejects.toThrow(/too_small|>=1/);
     });
 });
+
+describe("Heads-up comes only from outside events", () => {
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+    const DAY = "2026-11-17";
+
+    it("Tue 11:05 (round 2): the moved Customer Call is the Heads-up, never a line from the standing note", async () => {
+        calendars[DAY] = [ event("09:30", "09:45", "Team Standup"), event("11:00", "11:30", "Customer Call") ];
+        at(`${DAY}T09:35`);
+        const morning = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(morning.data.headsUp).toEqual([]);
+        const sections = [ { title: "Heads-up", markdown: "Jaco is out on PTO this week." } ];
+        expect((await call("caius_plan_apply", { date: DAY, brief: { ...prose, sections } })).skipped).toEqual([]);
+
+        calendars[DAY] = [ event("09:30", "09:45", "Team Standup"), event("15:00", "15:30", "Customer Call"), event("16:00", "16:30", "Vendor sync") ];
+        at(`${DAY}T11:05`);
+        const refresh = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(refresh.data.headsUp).toEqual([ "Customer Call moved to 15:00.", "New on the calendar: 16:00 Vendor sync." ]);
+        const applied = await call("caius_plan_apply", { date: DAY, brief: { ...prose, sections } });
+        const brief = await cls.init(() => store.content(applied.briefNoteId));
+        expect(brief).toContain("<h2>Heads-up</h2><ul><li");
+        expect(brief).toContain("Customer Call moved to 15:00.");
+        expect(brief).not.toContain("Jaco");
+    });
+});

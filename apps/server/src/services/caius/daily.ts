@@ -200,7 +200,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
-        const { day: facts, plannedAt, candidates, carry, jira } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
+        const { day: facts, plannedAt, candidates, carry, jira, headsUp } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines
             ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
@@ -221,7 +221,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         return reply(read.standing, {
             plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry,
-            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), errors: read.inputs.errors
+            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
@@ -273,7 +273,34 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const jira = unraised(read.inputs.jira, day.raised);
     const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
     const asked = await askedAbout(store, date);
-    return { day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira };
+    const headsUp = headsUpOf(day.plan.meetings, failedCalendar(read) ? null : meetingLines(read.inputs.calendar));
+    return { day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp };
+}
+
+/**
+ * The Heads-up lines: what changed outside since the day's Meetings block was written, a meeting
+ * moved, added or gone. Nothing on the first plan of a day, when there is no block to compare.
+ */
+export function headsUpOf(current: string[], lines: string[] | null): string[] {
+    if (!lines || !current.length) return [];
+    const parse = (line: string) => {
+        const m = /^(\d{2}:\d{2}) (.*)$/.exec(line);
+        return m?.[1] && m[2] ? { at: m[1], title: m[2].replace(/(\s*\([^)]*\))+$/, ""), line } : null;
+    };
+    const was = current.map(parse).filter((m) => m !== null);
+    const now = lines.map(parse).filter((m) => m !== null);
+    const out: string[] = [];
+    for (const meeting of now) {
+        const before = was.find((m) => m.title === meeting.title);
+        if (!before) out.push(t("caius.daily.heads_up_new", { line: meeting.line }));
+        else if (before.at !== meeting.at && !was.some((m) => m.title === meeting.title && m.at === meeting.at)) {
+            out.push(t("caius.daily.heads_up_moved", { title: meeting.title, time: meeting.at }));
+        }
+    }
+    for (const meeting of was) {
+        if (!now.some((m) => m.title === meeting.title)) out.push(t("caius.daily.heads_up_gone", { line: meeting.line }));
+    }
+    return out;
 }
 
 /**
