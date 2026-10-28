@@ -32,6 +32,7 @@ const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
 
 const jira: JiraInputs = { handoff: [], asks: [], done: [] };
 const calendars: Record<string, CalendarEvent[]> = {};
+const errorsByDate: Record<string, CaiusInputs["errors"]> = {};
 const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
 
 async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
@@ -39,7 +40,7 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
     return {
         date: input.date, jira, calendar,
         capacity: dayCapacity(calendar, { workStart: input.workStart, workEnd: input.workEnd }),
-        errors: []
+        errors: errorsByDate[input.date] ?? []
     };
 }
 
@@ -272,6 +273,23 @@ describe("the header is drawn from the note as it ends", () => {
         expect(svg).not.toContain("ZAP-161");
         expect(svg).not.toContain("Iron shirts");
         expect(svg).toContain('fill-opacity="0.9"');
+    });
+
+    it("a wind-down leaves a briefed day's header alone when that day's calendar can't be read", async () => {
+        const DAY = "2027-02-10";
+        errorsByDate[DAY] = [ { source: "calendar", error: "feed_0_timeout" } ];
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("u1", `${zap("ZAP-170", "Ship it")} ~30m`))}`);
+        });
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
+        const before = await headerOf(planned);
+        at(`${DAY}T17:45`);
+        const wound = await call("caius_winddown_apply", { date: DAY, done: [ "u1" ] });
+        expect(wound.skipped).toEqual([ expect.objectContaining({ kind: "header", id: DAY, reason: "calendar_unavailable" }) ]);
+        expect(await headerOf(planned)).toEqual(before);
+        delete errorsByDate[DAY];
     });
 });
 

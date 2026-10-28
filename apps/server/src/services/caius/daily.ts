@@ -555,7 +555,7 @@ function latestAsks(asks: CaiusInputs["jira"]["asks"]) {
 }
 
 /** Whether the day's calendar could not be read: an error that is not a warning. */
-function failedCalendar(read: DayRead): boolean {
+export function failedCalendar(read: DayRead): boolean {
     return read.inputs.errors.some((e) => e.source === "calendar" && !isInputWarning(e.error));
 }
 

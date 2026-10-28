@@ -39,6 +39,7 @@ import {
     dayKey,
     type DayRead,
     drawnEvents,
+    failedCalendar,
     followUpsOf,
     HEAVY_ID,
     lineIdOf,
@@ -322,6 +323,10 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         }
         // The closed day is drawn as it was worked, its done tasks included; the next workday as it stands.
         for (const [ day, dayRead ] of briefed) {
+            if (failedCalendar(dayRead)) {
+                skipped.push({ kind: "header", id: day, reason: "calendar_unavailable" });
+                continue;
+            }
             await guarded({ kind: "header", id: day }, skipped, async () => {
                 const plan = await readPlan(store, "day", day, now);
                 const worked = { worked: day === date };
