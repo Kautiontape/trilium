@@ -650,3 +650,21 @@ describe("fix round 1: an item held by an ambiguous answer stays held", () => {
         expect((await tasksOf("2027-06-10")).map((task: any) => task.text)).toEqual([ expect.stringContaining("Message Dave"), "Pack the climbing gym bag" ]);
     });
 });
+
+describe("fix round 1: a held item isn't among what the wind-down moved", () => {
+    it("M5: 'after the plants' names a held item, which stayed behind; the place isn't taken from Thursday's own plants", async () => {
+        await cls.init(async () => {
+            const wednesday = await store.calendarDay("2027-06-23");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("h-wat", "Water the plants"), li("h-lawn", "Water the lawn"), li("h-oth", "Call the plumber"))}`);
+            const thursday = await store.calendarDay("2027-06-24");
+            await store.putContent(thursday.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-wat", "Water the plants"), li("t-tidy", "Tidy"))}`);
+        });
+        at("2027-06-23T17:45");
+        const applied = await call("caius_winddown_apply", { date: "2027-06-23", done: [ "water" ], move: [ { listItemId: "plumber", after: "h-wat" } ] });
+        expect(applied.skipped).toEqual([
+            expect.objectContaining({ kind: "done", reason: "ambiguous" }),
+            expect.objectContaining({ kind: "move", id: "h-oth", reason: "not_on_list" })
+        ]);
+        expect((await tasksOf("2027-06-24")).map((task: any) => task.text)).toEqual([ "Water the plants", "Tidy", "Call the plumber" ]);
+    });
+});

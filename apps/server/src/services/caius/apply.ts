@@ -371,9 +371,10 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await labelDay(store, date, NOT_TODAY_LABEL, putOffWeek);
         });
 
-        // What the fates move to the next workday can be placed by the id it had here; nothing else can.
+        // What the fates move to the next workday can be placed by the id it had here; nothing else
+        // can, a held item least of all, since it stays here.
         const toTarget = (item: (typeof open.items)[number]) => {
-            if (!item.listItemId || input.done.includes(item.listItemId)) return false;
+            if (!item.listItemId || input.done.includes(item.listItemId) || held.includes(item.listItemId)) return false;
             const fate = input.fates.find((f) => f.listItemId === item.listItemId);
             return fate ? fate.to === targetDay : "forward" in item.fate && item.fate.forward === targetDay;
         };
