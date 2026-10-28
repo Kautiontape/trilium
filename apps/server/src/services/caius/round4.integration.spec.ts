@@ -668,3 +668,36 @@ describe("fix round 1: a held item isn't among what the wind-down moved", () => 
         expect((await tasksOf("2027-06-24")).map((task: any) => task.text)).toEqual([ "Water the plants", "Tidy", "Call the plumber" ]);
     });
 });
+
+describe("fix round 1: a finished key that two open items carry", () => {
+    it("P2: 'ZAP-105 is finished' ticks the work item and the Answer task, since finishing the ticket settles its question", async () => {
+        const DAY = "2027-06-30";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
+                li("f-105", `${zap("ZAP-105", "Confirm the bucket")} ~30m`),
+                li("f-ask", `Answer Jordan Placeholder's question on ${zap("ZAP-105", "")} ~15m`),
+                li("f-oth", "Other thing")
+            )}`);
+        });
+        at(`${DAY}T17:45`);
+        const applied = await call("caius_winddown_apply", { date: DAY, finished: [ "ZAP-105" ] });
+        expect(applied.skipped).toEqual([]);
+        expect((await tasksOf(DAY)).map((task: any) => task.state)).toEqual([ "done", "done", "done" ]);
+        expect((await tasksOf("2027-07-01")).map((task: any) => task.text)).toEqual([ "Other thing" ]);
+    });
+
+    it("any other pair is held and reported as ambiguous, never ticked or forwarded in silence", async () => {
+        const DAY = "2027-07-07";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g-a", `${zap("ZAP-106", "Confirm the bucket")} ~30m`), li("g-b", `${zap("ZAP-106", "Write the rollout note")} ~30m`))}`);
+        });
+        at(`${DAY}T17:45`);
+        const applied = await call("caius_winddown_apply", { date: DAY, finished: [ "ZAP-106" ] });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "done", text: "ZAP-106", reason: "ambiguous" }) ]);
+        expect((await tasksOf(DAY)).map((task: any) => task.state)).toEqual([ "open", "open" ]);
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([ "g-a", "g-b" ]);
+        expect(applied.say).toMatch(/Which ZAP-106: Confirm the bucket or Write the rollout note\?$/);
+    });
+});

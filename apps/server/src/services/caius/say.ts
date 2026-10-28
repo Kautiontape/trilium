@@ -58,8 +58,13 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
     ]);
     const questions = holding.length
         ? unique(holding.map((entry) => {
-            const noun = (entry.text ?? "").toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => !QUESTION_FILLER.has(word)).join(" ");
-            const matches = orList(unique((entry.detail ?? "").split("; ").map(labelOf)));
+            const said = (entry.text ?? "").trim();
+            const key = /^[A-Za-z][A-Za-z0-9]+-\d+$/.test(said) ? said.toUpperCase() : null;
+            const noun = key ?? said.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => !QUESTION_FILLER.has(word)).join(" ");
+            const texts = (entry.detail ?? "").split("; ");
+            // Matches that share a key are told apart by their words.
+            const labels = unique(texts.map(labelOf));
+            const matches = orList(labels.length < texts.length ? texts.map((text) => labelWords(text, key)) : labels);
             return noun ? t("caius.say.which", { noun, matches }) : t("caius.say.which_held", { matches });
         }))
         : held.length ? [ t("caius.say.which_held", { matches: orList(unique(held.map(labelOf))) }) ] : [];
@@ -120,6 +125,12 @@ function ingOf(stem: string): string {
     if (stem.endsWith("e") && !stem.endsWith("ee")) return `${stem.slice(0, -1)}ing`;
     if (/^[^aeiou]*[aeiou][bdgklmnprt]$/.test(stem)) return `${stem}${stem.at(-1)}ing`;
     return `${stem}ing`;
+}
+
+/** A task's words as `labelOf` reads them, without its ticket key `key` at the start. */
+function labelWords(text: string, key: string | null): string {
+    const words = plainText(withoutMoveLinks(text)).replace(/\s+~\d+(?:h\d*m?|m)$/, "").trim();
+    return key && words.toUpperCase().startsWith(`${key} `) ? words.slice(key.length + 1) : words;
 }
 
 /** A task as `say` names it: its first ticket key, else its words without links, estimate or the Suggested wording. */

@@ -690,20 +690,34 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
 
 /**
  * What he called done, read from `done` and `finished`: each done answer, each finished answer that
- * is not a Jira key, and the item each finished key names in `pools`, once. `finished` keeps only
- * the keys, which are recorded as finished whether or not they name an item.
+ * is not a Jira key, and the items each finished key names in `pools`, once: one item, or a work
+ * item with its Answer task. `finished` keeps only the keys, which are recorded as finished whether
+ * or not they name an item.
  */
 function doneOf(said: string[], finished: string[], pools: Named[][], settled: Named[][], read: (kind: string, value: string, pools: Named[][], fallback?: Named[][], hold?: boolean) => string | null) {
     const keys = finished.filter((value) => JIRA_KEY.test(value));
     const done = new Set([ ...said, ...finished.filter((value) => !JIRA_KEY.test(value)) ].flatMap((value) => read("done", value, pools, settled, true) ?? []));
     for (const key of keys) {
-        const found = pools.map((pool) => resolveName(pool, key)).find((r) => r !== null);
-        if (found && "id" in found) done.add(found.id);
+        const pool = pools.find((candidates) => resolveName(candidates, key) !== null);
+        const found = pool ? resolveName(pool, key) : null;
+        if (!pool || !found) continue;
+        if ("id" in found) {
+            done.add(found.id);
+            continue;
+        }
+        // The work item and the Answer task of the same ticket: finishing the ticket settles its
+        // question too. Any other pair is held and reported, as an ambiguous done answer is.
+        const work = found.ambiguous.filter((text) => !ANSWER_TASK.test(text));
+        if (work.length <= 1) for (const id of found.ids) done.add(id);
+        else read("done", key, [ pool ], [], true);
     }
     return { done: [ ...done ], finished: keys };
 }
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
+
+/** The task an accepted ask becomes: "Answer Jordan's question on ZAP-105". */
+const ANSWER_TASK = /^Answer .+'s question on [A-Z][A-Z0-9]+-\d+/;
 
 /**
  * Gives each entry without a text the text of the item its id names in `pools` or `known`, or his
