@@ -262,7 +262,7 @@ describe("caius tools", () => {
 
             const result = await run({ noteId: noteIds.today, ...day, latitude: 47.6, longitude: -122.3 });
 
-            expect(weather).toHaveBeenCalledWith(47.6, -122.3);
+            expect(weather).toHaveBeenCalledWith(47.6, -122.3, TODAY);
             const attachments = becca.notes[noteIds.today].getAttachments();
             expect(attachments).toHaveLength(1);
             const [attachment] = attachments;

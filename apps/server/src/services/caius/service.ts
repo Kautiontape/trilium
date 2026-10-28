@@ -107,7 +107,7 @@ const STATE_ACTION: Record<"done" | "doing" | "cancelled", StateAction> = {
 
 export function createCaiusService(
     baseStore: NoteStore = createBeccaStore(),
-    weatherOf: (latitude: number, longitude: number) => Promise<DayWeather | undefined> = fetchDayWeather,
+    weatherOf: (latitude: number, longitude: number, date: string) => Promise<DayWeather | undefined> = fetchDayWeather,
     inputsOf: InputsReader = (input) => readInputs(input),
     clockMs: () => number = Date.now
 ) {
@@ -393,8 +393,8 @@ export function createCaiusService(
         }),
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
-            // The forecast can take 3 s, so it is fetched before the lock is taken.
-            const weather = latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude);
+            // The forecast can take 3 s, so it is fetched before the lock is taken. The drawing is today's.
+            const weather = latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude, currentKey("day", caiusNow()));
             return withCaiusLock("caius_header", async () => {
                 const note = await store.note(noteId).catch(() => undefined);
                 if (!note) {
@@ -413,7 +413,7 @@ export function createCaiusService(
          * include-note at the top of the day note. The weather is fetched before the lock.
          */
         briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
-            const weather = input.dryRun || latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude);
+            const weather = input.dryRun || latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude, input.date);
             return withCaiusLock("caius_brief_write", () => writeBrief({
                 store,
                 draw: (noteId) => drawHeader(noteId, input.header, weather).attachmentId,

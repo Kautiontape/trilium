@@ -14,7 +14,7 @@ import type { DayWeather } from "./weather.js";
 
 export function createCaiusTools(
     store?: NoteStore,
-    weatherOf?: (latitude: number, longitude: number) => Promise<DayWeather | undefined>,
+    weatherOf?: (latitude: number, longitude: number, date: string) => Promise<DayWeather | undefined>,
     inputsOf?: InputsReader
 ) {
     const service = createCaiusService(store, weatherOf, inputsOf);
@@ -166,7 +166,7 @@ export function createCaiusTools(
         },
 
         caius_header: {
-            description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add the day's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
+            description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add today's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,
             async: true,
             mutates: true,

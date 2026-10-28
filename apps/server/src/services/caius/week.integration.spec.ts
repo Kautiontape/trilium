@@ -49,7 +49,11 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
     };
 }
 
-const tools = createCaiusTools(undefined, async () => undefined, stubInputs);
+const weatherCalls: unknown[][] = [];
+const tools = createCaiusTools(undefined, async (...args: unknown[]) => {
+    weatherCalls.push(args);
+    return undefined;
+}, stubInputs);
 
 function call(name: string, args: object): Promise<any> {
     const def = [ ...tools ].find(([ n ]) => n === name)?.[1];
@@ -329,5 +333,15 @@ describe("the work layout starts at now", () => {
         at(`${WED}T09:40`);
         const missed = await call("caius_planday", { date: TUE, step: "brief" });
         expect(missed.data.header.work[0]).toMatchObject({ start: "10:30" });
+    });
+});
+
+describe("weather by date", () => {
+    it("Wed 17:45: a brief written ahead for Thursday asks for Thursday's weather, and goes on without one", async () => {
+        at(`${WED}T17:45`);
+        const shape = (await call("caius_planday", { date: WED, step: "brief" })).data.shape;
+        const written = await call("caius_brief_write", { ...shape, date: THU, headline: "Thursday", latitude: 39.95, longitude: -75.17 });
+        expect(written.plannedAt).toBe(`${WED}T17:45:00`);
+        expect(weatherCalls.at(-1)).toEqual([ 39.95, -75.17, THU ]);
     });
 });
