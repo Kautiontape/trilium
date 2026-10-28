@@ -135,6 +135,17 @@ interface CaiusStatus {
     now?: string;
 }
 
+/** A Context line in force for a day, as `/api/caius/context` lists it. */
+export interface CaiusContextLine {
+    text: string;
+    /** `YYYY-MM-DD`: the last day the line is in force. */
+    until?: string;
+    /** The kind and key of the note the line is in. */
+    period: "day" | "week";
+    key: string;
+    noteId: string;
+}
+
 /** The nudge bar's state for a day: the catch-up first, then whether the day has a brief. */
 export type CaiusNudge = { date: string; lastWorkday: string } & (
     | { state: "catchup"; tasks: { noteId: string; listItemId: string | null; text: string }[] }
@@ -212,6 +223,8 @@ export const caiusApi = {
     explain,
     /** The state of the nudge bar on the day note of `date`. */
     nudge: (date: string) => server.get<CaiusNudge>(`caius/nudge?${new URLSearchParams({ date }).toString()}`),
+    /** The Context lines in force on `date`, newest first. */
+    context: (date: string) => server.get<{ date: string; context: CaiusContextLine[] }>(`caius/context?${new URLSearchParams({ date }).toString()}`),
     /** Lets Plan my day leave the last workday's open tasks where they are, for `date`. */
     skipCatchup: (date: string) => server.post<object>("caius/skip-catchup", { date })
 };

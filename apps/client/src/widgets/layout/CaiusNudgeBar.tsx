@@ -67,15 +67,20 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
         }
     };
 
+    // A plan made on an earlier day was made before today began, so today still has none.
+    const shown: CaiusNudge = nudge.state === "planned" && !!nudge.plannedAt && nudge.plannedAt.slice(0, 10) < date
+        ? { date: nudge.date, lastWorkday: nudge.lastWorkday, state: "unplanned" }
+        : nudge;
+
     let text: string;
     let actions: { label: string; onClick: () => void }[];
-    switch (nudge.state) {
+    switch (shown.state) {
         case "catchup": {
-            const movable = nudge.tasks.filter((task): task is MovableTask => !!task.listItemId);
-            text = t("caius.nudge.catchup", { weekday: weekdayName(nudge.lastWorkday), count: nudge.tasks.length });
+            const movable = shown.tasks.filter((task): task is MovableTask => !!task.listItemId);
+            text = t("caius.nudge.catchup", { weekday: weekdayName(shown.lastWorkday), count: shown.tasks.length });
             actions = [
                 ...(movable.length ? [ { label: t("caius.nudge.move_all"), onClick: () => void moveAll(movable) } ] : []),
-                { label: t("caius.nudge.review"), onClick: () => start(caiusOpener("winddown", nudge.lastWorkday)) },
+                { label: t("caius.nudge.review"), onClick: () => start(caiusOpener("winddown", shown.lastWorkday)) },
                 { label: t("caius.nudge.skip"), onClick: () => void skip() }
             ];
             break;
@@ -85,9 +90,7 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
             actions = [ { label: t("caius.plan_my_day"), onClick: () => start(caiusOpener("plan", date)) } ];
             break;
         case "planned":
-            text = nudge.plannedAt
-                ? t("caius.nudge.planned", { time: nudge.plannedAt.slice(11, 16) })
-                : t("caius.nudge.planned_untimed");
+            text = plannedText(shown.plannedAt, date);
             actions = [ { label: t("caius.nudge.refresh"), onClick: () => start(caiusOpener("plan", date)) } ];
             break;
     }
@@ -108,6 +111,19 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
 }
 
 type MovableTask = { noteId: string; listItemId: string; text: string };
+
+/** "Planned 09:40." for a plan made on `date`, else with the weekday it was made: "Planned Fri 17:20." */
+function plannedText(plannedAt: string | null, date: string) {
+    if (!plannedAt) {
+        return t("caius.nudge.planned_untimed");
+    }
+
+    const plannedOn = plannedAt.slice(0, 10);
+    const time = plannedAt.slice(11, 16);
+    return plannedOn === date
+        ? t("caius.nudge.planned", { time })
+        : t("caius.nudge.planned_on", { weekday: shortWeekday(plannedOn), time });
+}
 
 /**
  * Reads the bar's state for `date` (none for `null`): at once, and debounced after a change that
@@ -197,8 +213,17 @@ const WEEKDAYS = [ "sunday", "monday", "tuesday", "wednesday", "thursday", "frid
 
 /** The weekday of a `YYYY-MM-DD` in the UI's language: "Tuesday". */
 function weekdayName(date: string) {
+    return t(`i18n.${WEEKDAYS[weekdayOf(date)]}`);
+}
+
+/** The short weekday of a `YYYY-MM-DD` in the UI's language: "Tue". */
+function shortWeekday(date: string) {
+    return t(`calendar.${WEEKDAYS[weekdayOf(date)].slice(0, 3)}`);
+}
+
+function weekdayOf(date: string) {
     const [ year, month, day ] = date.split("-").map(Number);
-    return t(`i18n.${WEEKDAYS[new Date(year, month - 1, day).getDay()]}`);
+    return new Date(year, month - 1, day).getDay();
 }
 
 /**

@@ -19,7 +19,8 @@ vi.mock("../../../services/content_renderer", () => ({
 import content_renderer from "../../../services/content_renderer";
 import froca from "../../../services/froca";
 import link from "../../../services/link";
-import { loadIncludedNote, setDataKeepingSelection } from "./utils";
+import LoadResults from "../../../services/load_results";
+import { loadIncludedNote, refreshChangedIncludes, setDataKeepingSelection } from "./utils";
 
 const note = { noteId: "noteY" } as unknown as FNote;
 
@@ -73,6 +74,66 @@ describe("loadIncludedNote", () => {
         await loadIncludedNote("noteY", $el, "small");
 
         expect(content_renderer.disposeInteractiveContent).toHaveBeenCalledWith($el);
+    });
+
+    it("keeps an expanded include open, and a collapsed one closed, when it is rendered again", async () => {
+        const $el = $('<div class="include-note-wrapper">');
+        await loadIncludedNote("noteY", $el, "expandable");
+        $el.find(".include-note-toggle").attr("aria-expanded", "true").addClass("expanded");
+
+        await loadIncludedNote("noteY", $el, "expandable");
+        const toggle = $el.children(".include-note-title-row").children(".include-note-toggle");
+        expect(toggle.attr("aria-expanded")).toBe("true");
+        expect(toggle.hasClass("expanded")).toBe(true);
+        expect($el.children(".include-note-content").css("display")).not.toBe("none");
+
+        toggle.attr("aria-expanded", "false").removeClass("expanded");
+        await loadIncludedNote("noteY", $el, "expandable");
+        expect($el.children(".include-note-title-row").children(".include-note-toggle").attr("aria-expanded")).toBe("false");
+        expect($el.children(".include-note-content").css("display")).toBe("none");
+    });
+});
+
+describe("refreshChangedIncludes", () => {
+    beforeEach(() => {
+        vi.mocked(froca.getNote).mockReset().mockResolvedValue(note);
+        vi.mocked(link.createLink).mockResolvedValue($('<span class="link"><a href="#">noteY</a></span>'));
+        vi.mocked(content_renderer.getRenderedContent).mockImplementation(async () => ({
+            $renderedContent: $(`<div><p>new body</p><img src="api/attachments/att/image/terrain.svg"><img src="api/attachments/other/image/a.png"></div>`),
+            type: "text"
+        }) as never);
+    });
+
+    it("re-renders the includes whose note's content or attachments changed, in place", async () => {
+        const container = document.createElement("div");
+        container.innerHTML = `
+            <section class="include-note" data-note-id="contentChanged" data-box-size="full"><div class="include-note-wrapper"><p>old body</p></div><div class="ck-widget__selection-handle"></div></section>
+            <section class="include-note" data-note-id="attachmentChanged" data-box-size="full"><div class="include-note-wrapper"></div></section>
+            <section class="include-note" data-note-id="unchanged" data-box-size="full"><div class="include-note-wrapper"><p>old body</p></div></section>`;
+        // An include inside an included collection belongs to that include's render.
+        container.querySelector("section[data-note-id=unchanged] .include-note-wrapper")?.insertAdjacentHTML("beforeend",
+            `<div class="include-note-content"><section class="include-note" data-note-id="contentChanged"><div class="include-note-wrapper"><p>nested body</p></div></section></div>`);
+        const loadResults = new LoadResults([]);
+        loadResults.addNoteContent("contentChanged", "NA");
+        loadResults.addAttachmentRow({ attachmentId: "att", ownerId: "attachmentChanged" } as never);
+
+        await refreshChangedIncludes(container, loadResults);
+
+        expect(vi.mocked(froca.getNote).mock.calls.map(([ noteId ]) => noteId)).toEqual([ "contentChanged", "attachmentChanged" ]);
+        const changed = container.querySelector("section[data-note-id=contentChanged]");
+        expect(changed?.querySelector(".include-note-wrapper .include-note-content")?.textContent).toBe("new body");
+        expect(changed?.querySelector(".ck-widget__selection-handle")).not.toBeNull();
+        expect(container.querySelector("section[data-note-id=unchanged]")?.textContent).toBe("old bodynested body");
+
+        // The changed attachment keeps its URL, so its image is asked for anew.
+        const images = [ ...container.querySelectorAll("section[data-note-id=attachmentChanged] img") ].map((img) => img.getAttribute("src"));
+        expect(images[0]).toMatch(/^api\/attachments\/att\/image\/terrain\.svg\?timestamp=\d+$/);
+        expect(images[1]).toBe("api/attachments/other/image/a.png");
+
+        // A later render of the include, such as the editor reloading the including note, keeps it.
+        const $later = $('<div class="include-note-wrapper">');
+        await loadIncludedNote("attachmentChanged", $later, "full");
+        expect($later.find("img").first().attr("src")).toBe(images[0]);
     });
 });
 

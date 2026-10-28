@@ -4527,7 +4527,11 @@
       "closed_one": "Closed {{count}} task.",
       "closed_other": "Closed {{count}} tasks.",
       "result": "{{- text}}: {{- message}}",
-      "not_applied": "Not applied: the batch stopped before this task."
+      "not_applied": "Not applied: the batch stopped before this task.",
+      "context": "Context",
+      "no_context": "No Context in force.",
+      "context_until": "until {{date}}",
+      "context_ends_soon": "ends soon"
     },
     "chat_off": "Caius plans in the AI chat, which is off. Turn on AI features in Options to use it.",
     "plan_my_day": "Plan my day",
@@ -4544,7 +4548,8 @@
       "hide": "Hide for today",
       "moved_one": "Moved {{count}} task to today.",
       "moved_other": "Moved {{count}} tasks to today.",
-      "planned_untimed": "Planned."
+      "planned_untimed": "Planned.",
+      "planned_on": "Planned {{weekday}} {{time}}."
     },
     "chat_unavailable": "Open the sidebar chat from a regular note to start Caius."
   }

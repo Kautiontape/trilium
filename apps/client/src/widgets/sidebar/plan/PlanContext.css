@@ -1,0 +1,22 @@
+.plan-tab .plan-context {
+    > li {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        column-gap: 6px;
+    }
+
+    .plan-context-text {
+        flex: 1 1 100%;
+    }
+
+    .plan-context-until,
+    .plan-context-ends-soon {
+        font-size: 0.85em;
+        color: var(--muted-text-color);
+    }
+
+    .plan-context-ends-soon {
+        font-style: italic;
+    }
+}

@@ -47,7 +47,8 @@ On desktop, the right pane has a **Plan** tab. It follows the active note: a day
 When the viewed period is a day, two buttons sit under the period bar: **Plan my day** and **Wind down**. Each opens the sidebar chat, starts a new conversation with note tools on, and sends the opener for that day by itself: `Plan my day 2026-11-04` or `Wind down 2026-11-04`. The chat that was open is left as it is, in the chat history. With AI features off there is no chat, and a toast says so; with no AI provider set up, the chat shows its "No AI provider configured" prompt and nothing is sent.
 
 - **Capacity.** Time planned against the target, in hours and minutes ("3 h 40 m planned of 3–4 h"): 3–4 h for a day, 12–15 h for a week, none for a month. "N unestimated, counted at 30 m" opens a list of those tasks; click one to jump to it and add an estimate. An empty to-do item is not a task and is not counted. The `caius_plan` tool still returns capacity as numbers of minutes.
-- **Suggested.** The Suggested items of the period, each with Accept (pick a heading, or Critical) and Dismiss.
+- **Context.** For a day only: the Context lines in force on it, as `caius_context` gathers them (`GET /api/caius/context?date=YYYY-MM-DD`), newest first. A line with an end reads "until Fri 13 Nov", and one that lapses before the next workday is marked "ends soon".
+- **Suggested.** The Suggested items of the period, each with Accept (pick a heading, or Critical) and Dismiss. An item written as "Get X done: because Y (~30m)" shows "Get X done (~30m)" with "because Y" on a softer line under it.
 - **Pull in.** Three lanes: Overdue, This week and This month, 20 rows each. A row's text opens the task in its note. Each row has an **Actions** menu. **Pull in** forwards the task into the period you are viewing; an editor open on that note is locked and reloaded along with the task's own note. **Done** marks the task done. **Drop…** asks why, then cancels the task with that reason. A finished row leaves the card when it reloads. Tasks already in this note are left out. A past period has no Pull in card, since nothing should be pulled into a closed note.
 - **Close.** Offered for a past period, today from 15:00, and the current week or month. Every open task gets one fate. A past period offers Today first (This week or This month when closing a week or month), then Tomorrow, Next week, Next month and Drop (with a reason). Fates count from now, not from the period being closed, and the picker names the target note, such as "Today → 2026-10-27". The card counts "N of M decided". **Apply** writes them all in one go, and lists any task that was skipped. Apply is one request (`POST /api/caius/apply`): the forwards, then the drops. A task with open sub-items carries them along, so the sub-items are not listed on their own; a sub-item is told from its parent by the parent's list item id, so two tasks with the same text are not confused. Pushing a task to its project note is not offered yet.
 
@@ -58,8 +59,8 @@ Today's day note (today by the Caius clock) shows a slim bar under its journal n
 | State | When | Bar | Actions |
 |---|---|---|---|
 | Catch-up | The last workday (Friday on a Monday) still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks." | **Move all to today**, **Review**, **Skip** |
-| Not planned | No catch-up is due, and today has no Morning Brief | "No plan yet." | **Plan my day** |
-| Planned | Today has a Morning Brief | "Planned 08:40." | **Refresh** |
+| Not planned | No catch-up is due, and today has no Morning Brief, or its brief was planned on an earlier day | "No plan yet." | **Plan my day** |
+| Planned | Today has a Morning Brief planned today | "Planned 08:40." ("Planned Fri 17:20." for a plan made on another day) | **Refresh** |
 
 - **Move all to today** forwards those tasks to today in one request, with no chat, the way the Plan tab's Close does: today's note is locked and reloaded if it is open. A task without a list item id is counted but not moved; run the id backfill.
 - **Review** starts `Wind down <last workday>` in the sidebar chat.

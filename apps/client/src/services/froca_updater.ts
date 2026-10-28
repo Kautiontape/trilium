@@ -104,7 +104,9 @@ function processNoteChange(loadResults: LoadResults, ec: EntityChange) {
     if (ec.isErased || ec.entity?.isDeleted) {
         delete froca.notes[ec.entityId];
     } else {
-        if (note.blobId !== (ec.entity as FNoteRow).blobId) {
+        // A tree load can bring the new blobId into froca before this change arrives.
+        const blobIdTakenEarlier = froca.unreportedContentNoteIds.delete(note.noteId);
+        if (note.blobId !== (ec.entity as FNoteRow).blobId || blobIdTakenEarlier) {
             for (const key of Object.keys(froca.blobPromises)) {
                 if (key.includes(note.noteId)) {
                     delete froca.blobPromises[key];

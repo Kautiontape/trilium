@@ -36,6 +36,7 @@ export default {
     assignIds: caiusRoute((caius, req) => caius.caiusService.assignIds(parse(caius.routeInputs.assignIds, req.body))),
     apply: caiusRoute((caius, req) => caius.caiusService.apply(parse(caius.routeInputs.apply, req.body))),
     nudge: caiusRoute((caius, req) => caius.caiusService.nudge(parse(caius.routeInputs.nudge, { date: req.query.date }))),
+    context: caiusRoute((caius, req) => caius.caiusService.context(parse(caius.routeInputs.context, { date: req.query.date }))),
     skipCatchup: caiusRoute((caius, req) => caius.caiusService.skipCatchup(parse(caius.routeInputs.skipCatchup, req.body)))
 };
 

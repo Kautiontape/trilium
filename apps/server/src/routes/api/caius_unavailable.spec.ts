@@ -20,7 +20,7 @@ describe("Caius routes when the service fails to load", () => {
         expect(status.body).toEqual({ enabled: false, detail: expect.any(String) });
 
         const requests = [
-            ...["plan?period=day", "open", "explain?noteId=root&listItemId=x", "nudge?date=2031-05-06"].map((path) => ({ path, send: () => ctx.agent.get(`/api/caius/${path}`) })),
+            ...["plan?period=day", "open", "explain?noteId=root&listItemId=x", "nudge?date=2031-05-06", "context?date=2031-05-06"].map((path) => ({ path, send: () => ctx.agent.get(`/api/caius/${path}`) })),
             ...["add", "accept", "dismiss", "set-state", "forward", "assign-ids", "apply", "skip-catchup"].map((path) => ({
                 path,
                 send: () => ctx.agent.post(`/api/caius/${path}`).set("x-csrf-token", ctx.csrfToken).send({ items: [] })

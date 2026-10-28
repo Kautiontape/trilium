@@ -155,6 +155,18 @@ describe("CaiusNudgeBar", () => {
         expect(h.startCaiusConversation).toHaveBeenLastCalledWith("Plan my day 2026-11-04");
     });
 
+    it("offers Plan my day for a plan made on an earlier day, and names the weekday of one made on another", async () => {
+        h.nudge.mockResolvedValue({ date: TODAY, lastWorkday: "2026-11-03", state: "planned", plannedAt: "2026-10-30T17:20:05" });
+        const earlier = await mount(today);
+        expect(text(earlier)).toBe("No plan yet.");
+        expect(buttons(earlier)).toEqual([ "Plan my day" ]);
+
+        h.nudge.mockResolvedValue({ date: TODAY, lastWorkday: "2026-11-03", state: "planned", plannedAt: "2026-11-06T17:20:05" });
+        const other = await mount(today);
+        expect(text(other)).toBe("Planned Fri 17:20.");
+        expect(buttons(other)).toEqual([ "Refresh" ]);
+    });
+
     it("hides for the rest of the day on that note once dismissed, without skipping the catch-up", async () => {
         h.nudge.mockResolvedValue(CATCHUP);
         // A note of its own, since a dismissal outlives the test.
