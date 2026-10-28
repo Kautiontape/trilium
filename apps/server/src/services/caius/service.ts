@@ -174,6 +174,16 @@ export function createCaiusService(
         return { inputs: withoutClosed(await cachedInputs(input, refresh), closed), context, standing, rhythm };
     }
 
+    /**
+     * Where the weather is read for: the standing note's Rhythm coordinates, else `given`, else
+     * none. Reads the standing note under its own lock, so the forecast is fetched outside it.
+     */
+    async function placeOf(given: { latitude?: number; longitude?: number } = {}): Promise<{ latitude: number; longitude: number } | null> {
+        const rhythm = readRhythm((await withCaiusLock("caius_standing", readStanding)).markdown);
+        if (rhythm.latitude !== undefined && rhythm.longitude !== undefined) return { latitude: rhythm.latitude, longitude: rhythm.longitude };
+        return given.latitude !== undefined && given.longitude !== undefined ? { latitude: given.latitude, longitude: given.longitude } : null;
+    }
+
     /** The keys he closed lately (`closedKeys`); none without a Journal. The caller holds the lock. */
     async function closedNow(): Promise<Set<string>> {
         const docs = await journalDocs(store);
@@ -455,7 +465,8 @@ export function createCaiusService(
         briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
             const later = laterDay(input.date);
             if (later) return later;
-            const weather = input.dryRun || latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude, input.date);
+            const place = await placeOf({ latitude, longitude });
+            const weather = input.dryRun || !place ? undefined : await weatherOf(place.latitude, place.longitude, input.date);
             return withCaiusLock("caius_brief_write", async () => {
                 // The picks and the work bars follow the main list as it stands, whatever the input says.
                 const now = caiusNow();

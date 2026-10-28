@@ -9,7 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, createChildNote } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -44,7 +44,14 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
     };
 }
 
-const tools = createCaiusTools(undefined, async () => undefined, stubInputs);
+const weatherCalls: unknown[][] = [];
+const tools = createCaiusTools(undefined, async (...args: unknown[]) => {
+    weatherCalls.push(args);
+    return { code: 61, label: "Rain" };
+}, stubInputs);
+
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Location for the weather: 39.95, -75.17</li></ul>"
+    + "<h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
 
 function call(name: string, args: object): Promise<any> {
     const def = [ ...tools ].find(([ n ]) => n === name)?.[1];
@@ -64,6 +71,7 @@ beforeAll(async () => {
         await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
         const w44 = await store.calendarWeek("2026-W44");
         await store.putContent(w44.noteId, `<h3>Context</h3>${bullets("ZAP-2590 is open; Jira&#39;s Done is a mistake.")}`);
+        await store.addLabel(createChildNote("root", "🧭 How I work", STANDING), "assistantContext", "");
     });
 });
 
@@ -204,5 +212,19 @@ describe("the overdue backlog is not a nightly line", () => {
         }
         at(`${FRI}T17:20`);
         expect((await call("caius_winddown", { date: FRI, step: "open" })).data).toMatchObject({ olderCount: 1, oldestDate: "2026-07-01", oldestDateLabel: "Wed 1 Jul" });
+    });
+});
+
+describe("the weather never depends on the agent", () => {
+    it("Thu 5 Nov: a brief written without coordinates still gets the day's weather, from the standing note", async () => {
+        at(`${THU}T09:30`);
+        const shape = (await call("caius_planday", { date: THU, step: "brief" })).data.shape;
+        const { latitude: _latitude, longitude: _longitude, ...withoutCoordinates } = shape;
+        weatherCalls.length = 0;
+        const written = await call("caius_brief_write", { ...withoutCoordinates, headline: "A heavy day of meetings" });
+        expect(written).toMatchObject({ date: THU, plannedAt: expect.any(String) });
+        expect(weatherCalls).toEqual([ [ 39.95, -75.17, THU ] ]);
+        const svg = await cls.init(async () => (await store.note(written.headerNoteId)) && (await import("@triliumnext/core")).becca.getAttachmentOrThrow(written.attachmentId).getContent());
+        expect(String(svg)).toContain("data-part=\"weather\"");
     });
 });
