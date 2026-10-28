@@ -416,6 +416,23 @@ describe("no third person in his notes", () => {
     });
 });
 
+describe("an emptied Suggested goes", () => {
+    it("Wed 09:40 'I answered Jordan in chat': dismissing the only suggestion takes the Suggested heading with it", async () => {
+        const DAY = "2027-03-31";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("s-dave", "Message Dave about the lights"))}<h2>Suggested</h2>${ul(
+                li("s-105", `Get ${zap("ZAP-105", "Confirm the staging bucket name")} done: because Jordan Placeholder asked on Sunday (~30m)`)
+            )}`);
+        });
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", { date: DAY, dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", status: "written" }) ]));
+        const plan = await call("caius_plan", { period: "day", date: DAY });
+        expect(await cls.init(() => store.content(plan.noteId))).not.toContain("Suggested");
+    });
+});
+
 describe("'later this week' is the week", () => {
     it("Mon 17:30 '111 later this week': the days carry week refs, and the fate goes to the week note, not a day", async () => {
         await wednesday("2027-03-15");

@@ -76,9 +76,17 @@ describe('takeSuggested', () => {
     expect(ids(r.html)).toEqual(['e1', 'es2']);
     expect(r.html).toContain('<h2>Suggested</h2>');
   });
-  it('removes the whole list when it was the last item', () => {
-    const r = takeSuggested('<h2>Suggested</h2>' + ul(li('es1', 'Only')), 'es1');
-    expect(r.ok && r.html).toBe('<h2>Suggested</h2>');
+  it('removes the whole list and the emptied Suggested heading when it was the last item', () => {
+    const r = takeSuggested('<h3>Work</h3>' + ul(li('e1', 'One')) + '<h2>💡 Suggested</h2>' + ul(li('es1', 'Only')), 'es1');
+    expect(r.ok && r.html).toBe('<h3>Work</h3>' + ul(li('e1', 'One')));
+    const before = takeSuggested('<h2>Suggested</h2>' + ul(li('es1', 'Only')) + '<h2>Notes</h2><p>x</p>', 'es1');
+    expect(before.ok && before.html).toBe('<h2>Notes</h2><p>x</p>');
+  });
+  it('keeps the heading when something else is still under it', () => {
+    const prose = takeSuggested('<h2>Suggested</h2><p>From the brief</p>' + ul(li('es1', 'Only')), 'es1');
+    expect(prose.ok && prose.html).toBe('<h2>Suggested</h2><p>From the brief</p>');
+    const sub = takeSuggested('<h2>Suggested</h2>' + ul(li('es1', 'Only')) + '<h3>Ideas</h3>' + ul(li('es2', 'Later')), 'es1');
+    expect(sub.ok && sub.html).toBe('<h2>Suggested</h2><h3>Ideas</h3>' + ul(li('es2', 'Later')));
   });
   it('refuses items outside Suggested and unknown ids', () => {
     expect(takeSuggested(html, 'e1')).toEqual({ ok: false, reason: 'not_suggested' });

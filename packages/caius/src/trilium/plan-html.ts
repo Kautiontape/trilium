@@ -323,7 +323,7 @@ export function asListTask(markup: string): string {
     : markup;
 }
 
-/** Remove a Suggested item (and its list, if it was the last one). */
+/** Remove a Suggested item (and its list, if it was the last one, and the heading, if nothing else is under it). */
 export function takeSuggested(html: string, id: string): ({ ok: true; html: string } & SuggestedItem) | { ok: false; reason: TakeProblem } {
   const root = parse(html, { comment: true });
   const found = suggestedLi(root, id);
@@ -331,8 +331,26 @@ export function takeSuggested(html: string, id: string): ({ ok: true; html: stri
   const { li } = found;
   const list = li.parentNode as HTMLElement;
   const only = elements(list).filter((c) => c.tagName === 'LI').length === 1;
-  const [start, end] = only ? list.range : li.range;
+  const heading = only ? loneHeading(html, root, list) : null;
+  const [start, end] = heading ? [heading.range[0], list.range[1]] : only ? list.range : li.range;
   return { ok: true, html: apply(html, [{ start, end, text: '' }]), ...itemFacts(html, li) };
+}
+
+/**
+ * The Suggested heading right above `list` when the list is all its section holds: nothing but
+ * spaces between them, and nothing after the list before a heading of the same level or higher.
+ */
+function loneHeading(html: string, root: HTMLElement, list: HTMLElement): HTMLElement | null {
+  if (list.parentNode !== root) return null;
+  const top = elements(root);
+  const at = top.indexOf(list);
+  const heading = top[at - 1];
+  const next = top[at + 1];
+  if (!heading || !isHeading(heading) || !isSuggestedName(heading.text)) return null;
+  if (html.slice(heading.range[1], list.range[0]).trim()) return null;
+  if (next && !(isHeading(next) && levelOf(next) <= levelOf(heading))) return null;
+  if (html.slice(list.range[1], next?.range[0] ?? html.length).trim()) return null;
+  return heading;
 }
 
 export type StateAction = 'done' | 'start' | 'drop';

@@ -211,7 +211,8 @@ describe('acceptTasks', () => {
     await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'Work' }, { noteId: 'd', listItemId: 'es2', section: 'Work', position: 1 }], base);
     const order = [...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1]);
     expect(order).toEqual(['es2', 'e1', 'e2', 'es1']);
-    expect(f.html.d).toContain('<h2>Suggested</h2>');
+    // The last accept empties Suggested, so its heading goes too.
+    expect(f.html.d).not.toContain('Suggested');
     const g = fakeTrilium(seed(html));
     await acceptTasks(g.api, [{ noteId: 'd', listItemId: 'es1', critical: true }], base);
     expect(g.html.d!.startsWith('<aside class="admonition important">')).toBe(true);
@@ -223,7 +224,7 @@ describe('acceptTasks', () => {
     const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es2' }, { noteId: 'd', listItemId: 'es1' }], base);
     expect(out.map((r) => r.status)).toEqual(['accepted', 'accepted']);
     expect([...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1])).toEqual(['e1', 'e2', 'es2', 'es1']);
-    expect(f.html.d!.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks', '<h2>Suggested']);
+    expect(f.html.d!.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks']);
   });
   it('without a section, skips an Evening list and goes straight under the Tasks heading, creating its list', async () => {
     const day = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es9', 'Get ZAP-9 Fix it done: because x (~45m)'));
