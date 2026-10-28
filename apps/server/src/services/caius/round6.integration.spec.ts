@@ -258,6 +258,18 @@ describe("a stale errand", () => {
         expect((await call("caius_plan", { period: "day", date: FRI })).suggested).toEqual([]);
     });
 
+    it("asOffered doesn't park: a park needs his month fate, or a bare yes with nothing else on offer", async () => {
+        const days = [ "2030-06-03", "2030-06-04", "2030-06-05", "2030-06-06", "2030-06-07" ];
+        const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
+        await carriedThrice(days);
+        at(`${THU}T17:30`);
+        expect((await call("caius_winddown", { date: THU, step: "open" })).question).toContain("Park it in June?");
+        const result = await call("caius_winddown_apply", { date: THU, said: "fine", asOffered: true });
+        expect(result.skipped).toEqual([]);
+        expect(fatesOf(result)).toEqual([ FRI ]);
+        expect(await textsOf("month", "2030-06")).toEqual([]);
+    });
+
     it("a bare yes with an overlap asked too doesn't park", async () => {
         const days = [ "2030-05-06", "2030-05-07", "2030-05-08", "2030-05-09", "2030-05-10" ];
         const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];

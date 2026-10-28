@@ -398,7 +398,6 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0);
         const yes = vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && !asked.fates.length && !asked.done.length;
         const parkOnly = !asked.asOffered && yes && stale.size > 0 && pending === 0 && candidates.length === 0;
-        const parking = asked.asOffered || parkOnly;
         const vague = asked.asOffered || (yes && pending === 0 && !parkOnly);
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
         const answers: WindDownApplyInput = vague ? {
@@ -411,7 +410,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
         const endOf = (id: string) => { const entry = byEntry.get(id); return entry ? chainEnd(entry, byEntry, copies)?.id ?? id : id; };
-        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...(parking ? [] : parkChecks(asked.said, stale, open.items, input)), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
+        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...(parkOnly ? [] : parkChecks(asked.said, stale, open.items, input)), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
             ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
@@ -472,7 +471,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const fates = [
             ...input.fates,
             ...open.items.filter((item) => item.listItemId && !given.has(item.listItemId) && "forward" in item.fate)
-                .map((item) => ({ listItemId: item.listItemId ?? "", to: (parking && stale.get(item.listItemId ?? "")?.month) || (item.fate as { forward: string }).forward, proposed: true })),
+                .map((item) => ({ listItemId: item.listItemId ?? "", to: (parkOnly && stale.get(item.listItemId ?? "")?.month) || (item.fate as { forward: string }).forward, proposed: true })),
             ...freed
         ];
         await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {
