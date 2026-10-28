@@ -431,11 +431,6 @@ describe("the header follows the drawing", () => {
         await call("caius_plan_apply", { date: MON, said: "310 first", move: [ { listItemId: "310", first: true } ], headline: "Review the mapper, then the two export checks." });
         expect(await headerOf(planned.headerNoteId)).toContain("Review the mapper, then the two export checks.");
 
-        // At the wind-down the closed day's header is drawn as worked: acts from the drawing, never the morning's.
-        at(`${MON}T17:30`);
-        const wound = await call("caius_winddown_apply", { date: MON, said: "310 is done", done: [ "310" ] });
-        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: MON, status: "written" }) ]));
-        expect(await headerOf(planned.headerNoteId)).toContain("<p>ZAP-310.</p>");
         delete calendars[MON];
     });
 

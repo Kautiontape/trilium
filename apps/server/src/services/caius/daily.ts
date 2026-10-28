@@ -792,21 +792,20 @@ export function carryQuestion(lines: string[], sameWeek: boolean): string {
 
 /**
  * The day's work bars: the main list in his order, laid out between `events` from standup, or from
- * the time now when `date` is today. With `worked` (a day being closed), the list keeps its done
- * tasks and is laid out from standup, so the drawing shows the day as it was worked.
+ * the time now when `date` is today.
  */
-export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date, opts: { worked?: boolean } = {}) {
-    const notBefore = date === dayKey(now) && !opts.worked ? quarterAfter(now) : undefined;
-    return layoutWork({ ...day, notBefore }, events, listOf(plan, opts).map(({ label: bar, minutes, evening }) => ({ label: bar, minutes, evening })));
+export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date) {
+    const notBefore = date === dayKey(now) ? quarterAfter(now) : undefined;
+    return layoutWork({ ...day, notBefore }, events, listOf(plan).map(({ label: bar, minutes, evening }) => ({ label: bar, minutes, evening })));
 }
 
 /**
  * The main list as the drawing and the picks read it: each live task's bar label, text, minutes,
- * keys and whether it is an evening task. With `worked`, its done tasks too.
+ * keys and whether it is an evening task.
  */
-export function listOf(plan: PlanView, opts: { worked?: boolean } = {}) {
+export function listOf(plan: PlanView) {
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
-    return (opts.worked ? workedTasks(plan) : mainTasks(plan)).map((task) => ({
+    return mainTasks(plan).map((task) => ({
         label: workLabel(withoutMoveLinks(task.text)), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
         evening: eveningSections.has(task.section), keys: keysOf(withoutMoveLinks(task.text))
     }));
@@ -970,17 +969,6 @@ function onOffer<C extends { candidateId: string; kind: string }>(candidates: C[
     return candidates.filter((candidate) => !facts.notToday.has(candidate.candidateId)
         && !(candidate.kind === "week" && facts.putOffBefore.has(candidate.candidateId)));
 }
-
-/**
- * The top-level tasks of a plan that were worked or are still to do: live or done, not moved on
- * or dropped. A moved task is told by its "scheduled" link too, since its checked box reads as done
- * where the Rescheduled state isn't known.
- */
-function workedTasks(plan: PlanView): PlanTask[] {
-    return topLevel(plan).filter((task) => isLive(task) || (task.state === "done" && !SCHEDULED_LINK.test(task.text)));
-}
-
-const SCHEDULED_LINK = /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/;
 
 /** The live top-level tasks of a plan, the Important block first, then in his order. */
 export function mainTasks(plan: PlanView): PlanTask[] {

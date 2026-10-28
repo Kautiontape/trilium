@@ -300,7 +300,7 @@ describe("the header is drawn from the note as it ends", () => {
         expect((await headerOf(applied)).acts.at(-1)).toEqual({ range: "Evening", text: "Call Mom." });
     });
 
-    it("Wed 17:45: a wind-down that moves tonight's Laundry on draws today's header again without it", async () => {
+    it("Wed 17:45: a wind-down that moves tonight's Laundry on leaves today's header as it was planned", async () => {
         const DAY = "2026-11-18";
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
@@ -308,50 +308,28 @@ describe("the header is drawn from the note as it ends", () => {
         });
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
-        expect((await headerOf(planned)).acts[2]).toEqual({ range: "Evening", text: "Laundry." });
+        const before = await headerOf(planned);
+        expect(before.acts[2]).toEqual({ range: "Evening", text: "Laundry." });
         at(`${DAY}T17:45`);
         const wound = await call("caius_winddown_apply", { date: DAY, done: [ "g140" ] });
         expect(wound.skipped).toEqual([]);
-        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: DAY, status: "written" }) ]));
-        const { acts, svg } = await headerOf(planned);
-        expect(acts[0]).toEqual({ range: "10:00 to 10:30", text: "ZAP-140." });
-        expect(acts[2]).toEqual({ range: "Evening", text: "Nothing planned." });
-        expect(svg).not.toContain("Laundry");
-        // The day keeps the work he did on it, focus block and all.
-        expect(svg).toMatch(/Planned work: ZAP-140 10a to 10:30a\./);
-        expect(svg).toContain('fill-opacity="0.9"');
+        expect(wound.written).not.toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: DAY }) ]));
+        expect(await headerOf(planned)).toEqual(before);
     });
 
-    it("Wed 17:45 (review): the closed day's header keeps its done work where it was done, without the work moved on, laid out from standup", async () => {
-        const DAY = "2027-02-03";
+    it("a morning Review leaves today's header alone when today's calendar can't be read", async () => {
+        const OLD = "2027-02-10";
+        const DAY = "2027-02-11";
         await cls.init(async () => {
-            const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("q160", `${zap("ZAP-160", "Ship the fix")} ~1h`), li("q161", `${zap("ZAP-161", "Write the note")} ~30m`))}<h3>Evening</h3>${ul(li("qiron", "Iron shirts"))}`);
+            await store.putContent((await store.calendarDay(OLD)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u1", `${zap("ZAP-170", "Ship it")} ~30m`))}`);
+            await store.putContent((await store.calendarDay(DAY)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u2", `${zap("ZAP-171", "Ship that")} ~30m`))}`);
         });
-        at(`${DAY}T09:40`);
-        const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
-        at(`${DAY}T17:45`);
-        const wound = await call("caius_winddown_apply", { date: DAY, done: [ "q160" ] });
-        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: DAY, status: "written" }) ]));
-        const { svg } = await headerOf(planned);
-        expect(svg).toMatch(/Planned work: ZAP-160 10a to 11a\./);
-        expect(svg).not.toContain("ZAP-161");
-        expect(svg).not.toContain("Iron shirts");
-        expect(svg).toContain('fill-opacity="0.9"');
-    });
-
-    it("a wind-down leaves a briefed day's header alone when that day's calendar can't be read", async () => {
-        const DAY = "2027-02-10";
         errorsByDate[DAY] = [ { source: "calendar", error: "feed_0_timeout" } ];
-        await cls.init(async () => {
-            const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("u1", `${zap("ZAP-170", "Ship it")} ~30m`))}`);
-        });
-        at(`${DAY}T09:40`);
+        at(`${DAY}T09:00`);
         const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
         const before = await headerOf(planned);
-        at(`${DAY}T17:45`);
-        const wound = await call("caius_winddown_apply", { date: DAY, done: [ "u1" ] });
+        at(`${DAY}T09:45`);
+        const wound = await call("caius_winddown_apply", { date: OLD, said: "", done: [ "u1" ] });
         expect(wound.skipped).toEqual([ expect.objectContaining({ kind: "header", id: DAY, reason: "calendar_unavailable" }) ]);
         expect(await headerOf(planned)).toEqual(before);
         delete errorsByDate[DAY];
@@ -362,37 +340,40 @@ describe("a redrawn header keeps its weather", () => {
     const weatherOf = async (briefNoteId: string) => cls.init(async () => (await store.note(briefNoteId)).attributes.filter((a) => a.name === "caiusWeather").map((a) => a.value));
 
     it("a brief drawn without a forecast gets the day's forecast on the redraw, and keeps it", async () => {
-        const DAY = "2027-03-08";
+        const OLD = "2027-03-08";
+        const DAY = "2027-03-09";
         await cls.init(async () => {
-            const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("wx1", "Rake the leaves ~30m"))}`);
+            await store.putContent((await store.calendarDay(OLD)).noteId, `<h2>☑️ Tasks</h2>${ul(li("wx1", "Rake the leaves ~30m"))}`);
+            await store.putContent((await store.calendarDay(DAY)).noteId, `<h2>☑️ Tasks</h2>${ul(li("wx1b", "Bag the leaves ~30m"))}`);
         });
         forecast = undefined;
-        at(`${DAY}T09:40`);
+        at(`${DAY}T09:00`);
         const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
         expect((await headerOf(planned)).svg).not.toContain('data-part="weather"');
         forecast = { code: 61, label: "Rain" };
-        at(`${DAY}T17:45`);
-        await call("caius_winddown_apply", { date: DAY, done: [ "wx1" ] });
+        // A morning Review of the day before closes it against today, and draws today's header again.
+        at(`${DAY}T09:45`);
+        await call("caius_winddown_apply", { date: OLD, said: "", done: [ "wx1" ] });
         expect((await headerOf(planned)).svg).toContain('data-part="weather" data-icon="rain"');
         expect(await weatherOf(planned.briefNoteId)).toEqual([ "61 Rain" ]);
         forecast = { code: 3, label: "Overcast" };
     });
 
     it("an icon already drawn stays when no weather can be had", async () => {
-        const DAY = "2027-03-10";
+        const OLD = "2027-03-10";
+        const DAY = "2027-03-11";
         await cls.init(async () => {
-            const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("wx2", "Sweep the yard ~30m"))}`);
+            await store.putContent((await store.calendarDay(OLD)).noteId, `<h2>☑️ Tasks</h2>${ul(li("wx2", "Sweep the yard ~30m"))}`);
+            await store.putContent((await store.calendarDay(DAY)).noteId, `<h2>☑️ Tasks</h2>${ul(li("wx2b", "Sweep the porch ~30m"))}`);
         });
-        at(`${DAY}T09:40`);
+        at(`${DAY}T09:00`);
         const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
         expect((await headerOf(planned)).svg).toContain('data-part="weather" data-icon="cloud"');
         // A brief from before the weather was kept on it.
         cls.init(() => becca.getNoteOrThrow(planned.briefNoteId).getOwnedLabel("caiusWeather")?.markAsDeleted());
         forecast = undefined;
-        at(`${DAY}T17:45`);
-        await call("caius_winddown_apply", { date: DAY, done: [ "wx2" ] });
+        at(`${DAY}T09:45`);
+        await call("caius_winddown_apply", { date: OLD, said: "", done: [ "wx2" ] });
         const { svg } = await headerOf(planned);
         expect(svg).toContain('data-part="weather" data-icon="cloud"');
         expect(svg).toContain(">Overcast</text>");

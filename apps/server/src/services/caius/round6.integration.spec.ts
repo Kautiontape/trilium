@@ -105,3 +105,33 @@ describe("the header's acts", () => {
         delete calendars[WED];
     });
 });
+
+describe("a closed day's header", () => {
+    it("Mon 2 Nov 17:30: the wind-down leaves the header as planned, so the headline names the tasks the drawing shows", async () => {
+        const MON = "2028-11-06";
+        calendars[MON] = [ event("10:00", "10:15", "Daily Standup"), event("11:00", "12:00", "Sprint Planning") ];
+        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(
+            li("m-101", `${zap("ZAP-601", "Verify the export retry on staging")} ~30m`),
+            li("m-110", `${zap("ZAP-610", "Review the import mapper change")} ~30m`),
+            li("m-111", `${zap("ZAP-611", "Check the invoice export in QA")} ~30m`)
+        )}`);
+        at(`${MON}T09:40`);
+        const planned = await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "ZAP-601 first, then ZAP-610 and ZAP-611.", acts: [
+            { range: "", text: "ZAP-601, then ZAP-610." }, { range: "", text: "ZAP-611." }
+        ], sections: [] } });
+        expect(planned.skipped).toEqual([]);
+        const header = await contentOf(planned.headerNoteId);
+        const drawing = () => becca.getNote(planned.headerNoteId)?.getAttachments().find((a) => a.role === "image")?.getContent();
+        const drawn = drawing();
+
+        at(`${MON}T17:30`);
+        const wound = await call("caius_winddown_apply", { date: MON, said: "610 is done", done: [ "610" ] });
+        expect(wound.skipped).toEqual([]);
+        expect(wound.written).not.toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: MON }) ]));
+        expect(await contentOf(planned.headerNoteId)).toBe(header);
+        expect(drawing()).toEqual(drawn);
+        expect(header).toContain("ZAP-601 first, then ZAP-610 and ZAP-611.");
+        for (const key of [ "ZAP-601", "ZAP-610", "ZAP-611" ]) expect(String(drawn)).toContain(key);
+        delete calendars[MON];
+    });
+});

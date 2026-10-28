@@ -338,16 +338,16 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
     const { date } = asked;
     const targetDay = windDownTarget(date, deps.now);
     const read = await deps.dayRead(targetDay);
-    // A day with a brief has its header drawn again after the writes, from its calendar, with the
-    // day's forecast fetched for a brief that kept no weather.
+    // The next workday, when it has a brief, has its header drawn again after the writes, from its
+    // calendar, with the day's forecast fetched for a brief that kept no weather. The closed day's
+    // header stays as it was planned: its headline, drawing and acts were written together.
     const briefed = new Map<string, { read: DayRead; fetched?: DayWeather }>();
     const place = await deps.place();
-    for (const day of new Set([ date, targetDay ])) {
-        const note = await findPeriodNote(deps.store, "day", day);
-        const brief = note ? await findBrief(deps.store, note.noteId, day) : null;
-        if (!brief) continue;
-        const fetched = place && label(brief, WEATHER_LABEL) === undefined ? await deps.weatherOf(place.latitude, place.longitude, day) : undefined;
-        briefed.set(day, { read: day === targetDay ? read : await deps.dayRead(day), ...(fetched ? { fetched } : {}) });
+    const targetNote = await findPeriodNote(deps.store, "day", targetDay);
+    const targetBrief = targetNote ? await findBrief(deps.store, targetNote.noteId, targetDay) : null;
+    if (targetBrief) {
+        const fetched = place && label(targetBrief, WEATHER_LABEL) === undefined ? await deps.weatherOf(place.latitude, place.longitude, targetDay) : undefined;
+        briefed.set(targetDay, { read, ...(fetched ? { fetched } : {}) });
     }
     const result = await deps.locked("caius_winddown_apply", async () => {
         const { store, now } = deps;
@@ -540,13 +540,12 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
         }
         await pruneSettled(store, date, dayKey(now), closed);
-        // The closed day is drawn as it was worked, its done tasks included; the next workday as it stands.
         for (const [ day, { read: dayRead, fetched } ] of briefed) {
             if (failedCalendar(dayRead)) {
                 skipped.push({ kind: "header", id: day, reason: "calendar_unavailable" });
                 continue;
             }
-            await guarded({ kind: "header", id: day }, skipped, () => redraw(store, day, dayRead, now, { worked: day === date }, fetched, written, skipped));
+            await guarded({ kind: "header", id: day }, skipped, () => redraw(store, day, dayRead, now, fetched, written, skipped));
         }
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
@@ -614,7 +613,7 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
             const given = (asked.acts ?? []).map((act) => typeof act === "string" ? { text: act } : act);
             const header = { acts: (drawn: ReturnType<typeof headerOf>) => drawnActs(drawn, given, titlesOf(plan)), headline: (drawn: ReturnType<typeof headerOf>) => asked.headline ?? orderHeadline(drawn) };
             if (failedCalendar(read)) skipped.push({ kind: "header", id: date, reason: "calendar_unavailable" });
-            else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, {}, weather, written, skipped, header));
+            else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, weather, written, skipped, header));
         }
         withTexts([ ...written, ...skipped ], pools, known);
         return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date, already: input.already }) });
@@ -704,8 +703,8 @@ function namesTask(text: string, label: string, labels: string[], titles: Map<st
 }
 
 /** His list's words by bar label, which `drawnActs` reads an act's words against. */
-function titlesOf(plan: Awaited<ReturnType<typeof readPlan>>, worked: { worked?: boolean } = {}): Map<string, string> {
-    return new Map(listOf(plan, worked).map((task) => [ task.label, task.text ]));
+function titlesOf(plan: Awaited<ReturnType<typeof readPlan>>): Map<string, string> {
+    return new Map(listOf(plan).map((task) => [ task.label, task.text ]));
 }
 
 /** A headline for a new order of the picks, from the drawing's labels: "ZAP-101 first, then ZAP-110 and ZAP-111." */
@@ -725,14 +724,14 @@ function picksOf(plan: Awaited<ReturnType<typeof readPlan>>): string {
 /**
  * Draws the header of `day`'s brief again from its note: the drawing, and the acts checked against
  * it (`drawnActs`, from those `opts.acts` gives, else the ones written) with the Evening act as the
- * note now has it, and `opts.headline`'s headline when it gives one. With `worked`, as the day was
- * worked. A weather icon already drawn stays when no weather can be had.
+ * note now has it, and `opts.headline`'s headline when it gives one. A weather icon already drawn
+ * stays when no weather can be had.
  */
-async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, worked: { worked?: boolean }, fetched: DayWeather | undefined, written: Written[], skipped: Skipped[], opts: { acts?: (header: ReturnType<typeof headerOf>) => Prose["acts"]; headline?: (header: ReturnType<typeof headerOf>) => string | undefined } = {}) {
+async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, fetched: DayWeather | undefined, written: Written[], skipped: Skipped[], opts: { acts?: (header: ReturnType<typeof headerOf>) => Prose["acts"]; headline?: (header: ReturnType<typeof headerOf>) => string | undefined } = {}) {
     const plan = await readPlan(store, "day", day, now);
-    const header = headerOf(plan, read, day, now, worked);
+    const header = headerOf(plan, read, day, now);
     const draw = (noteId: string, weather: DayWeather | undefined) => drawHeader(noteId, header, weather ?? weatherOfSvg(readAttachment(noteId, "image", TERRAIN_TITLE) ?? "") ?? undefined).attachmentId;
-    const acts = (kept: Prose["acts"]) => withEveningAct(opts.acts ? opts.acts(header) : drawnActs(header, kept, titlesOf(plan, worked)), plan, header, worked);
+    const acts = (kept: Prose["acts"]) => withEveningAct(opts.acts ? opts.acts(header) : drawnActs(header, kept, titlesOf(plan)), plan, header);
     const write = await redrawHeader(store, day, draw, acts, fetched, opts.headline?.(header));
     if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
 }
@@ -1655,8 +1654,8 @@ async function noteOf(store: NoteStore, listItemId: string): Promise<string | nu
  * The acts with the third as the evening's own act: the evening's calendar events and his evening
  * tasks in time order, each name once ("Call Mom, then Laundry."), or "Nothing planned." without any.
  */
-function withEveningAct(acts: Prose["acts"], plan: Awaited<ReturnType<typeof readPlan>>, header: { workEnd: string; events: { start: string; title: string }[]; work: { start: string; label: string }[] }, opts: { worked?: boolean } = {}) {
-    const tasks = listOf(plan, opts).filter((task) => task.evening)
+function withEveningAct(acts: Prose["acts"], plan: Awaited<ReturnType<typeof readPlan>>, header: { workEnd: string; events: { start: string; title: string }[]; work: { start: string; label: string }[] }) {
+    const tasks = listOf(plan).filter((task) => task.evening)
         .map((task) => ({ at: header.work.find((block) => block.label === task.label)?.start ?? "99:99", name: task.text }));
     const events = header.events.filter((event) => event.start >= header.workEnd).map((event) => ({ at: event.start, name: event.title }));
     const named = new Set<string>();
@@ -1690,10 +1689,10 @@ function fromNow(acts: Prose["acts"], from: string | undefined): Prose["acts"] {
 }
 
 /** The day's drawing: its span from the rhythm, the calendar's events and his list laid out between them. */
-function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date, opts: { worked?: boolean } = {}) {
+function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date) {
     const { start, end, workEnd } = read.rhythm;
     const events = drawnEvents(read);
-    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now, opts).work };
+    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now).work };
 }
 
 /** A ticket candidate as its Suggested line: the shape `caius_add` writes, or an ask's "Answer X's question on KEY: because Y (~15m)". */
