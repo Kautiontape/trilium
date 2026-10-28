@@ -4,7 +4,7 @@
  */
 
 import { dayCapacity } from "@triliumnext/caius";
-import { cls, sql_init } from "@triliumnext/core";
+import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
@@ -560,5 +560,33 @@ describe("only days and ids the step showed", () => {
         expect(inputs.data.days.map((d: any) => d.date)).toEqual([ "2027-03-02", "2027-03-03", "2027-03-04", "2027-03-05", "2027-03-08", "2027-03-09", "2027-03-10", "2027-03-11", "2027-03-12" ]);
         const planned = await call("caius_plan_apply", { date: "2027-03-01", forward: [ { listItemId: "sd9", to: "2027-03-02" } ], brief: prose });
         expect(planned.skipped).toEqual([ expect.objectContaining({ kind: "forward", id: "sd9", reason: "not_offered" }) ]);
+    });
+});
+
+describe("a write that throws", () => {
+    it("is one skipped entry, the rest of the answer still comes back, and a protected day is refused up front", async () => {
+        const throwing = createBeccaStore();
+        const addLabel = throwing.addLabel.bind(throwing);
+        throwing.addLabel = async (noteId, name, value) => {
+            if (name === "caiusNotToday") throw new Error("boom");
+            return addLabel(noteId, name, value);
+        };
+        const fragile = createCaiusTools(throwing, async () => undefined, stubInputs);
+        const run = (args: object) => cls.init(() => [ ...fragile ].find(([ n ]) => n === "caius_plan_apply")?.[1].execute(args)) as Promise<any>;
+        jira.handoff.push({ ...ticket("ZAP-150"), daysInStatus: 1 });
+        at("2027-03-08T09:40");
+        const applied = await run({ date: "2027-03-08", notToday: [ { candidateId: "ZAP-150" } ], evening: [ "Water the plants" ], brief: prose });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "not_today", reason: "failed", detail: "boom" }) ]);
+        expect(applied.written.map((w: any) => w.kind)).toEqual(expect.arrayContaining([ "evening", "brief" ]));
+
+        const noteId = (await call("caius_plan", { period: "day", date: "2027-03-08" })).noteId;
+        becca.getNoteOrThrow(noteId).isProtected = true;
+        try {
+            expect(await call("caius_plan_apply", { date: "2027-03-08", brief: prose })).toMatchObject({ date: "2027-03-08", error: "bad_request" });
+            at("2027-03-05T17:30");
+            expect(await call("caius_winddown_apply", { date: "2027-03-05" })).toMatchObject({ date: "2027-03-05", error: "bad_request" });
+        } finally {
+            becca.getNoteOrThrow(noteId).isProtected = false;
+        }
     });
 });

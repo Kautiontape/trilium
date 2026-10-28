@@ -103,6 +103,8 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
 
     return deps.locked("caius_plan_apply", async () => {
         const { store, now } = deps;
+        const unreadable = await unreadableDay(store, [ date ]);
+        if (unreadable) return unreadable;
         const written: Written[] = [];
         const skipped: Skipped[] = [];
         const offer = await planOffer(store, date, now, read);
@@ -124,13 +126,13 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
         const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week) ]);
 
-        await catchup(store, date, now, input.catchup, written, skipped);
+        await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
         for (const { candidateId } of input.accept) {
-            await accept(store, date, now, known.get(candidateId), candidateId, written, skipped);
+            await guarded({ kind: "accept", id: candidateId }, skipped, () => accept(store, date, now, known.get(candidateId), candidateId, written, skipped));
         }
 
-        for (const { lineId } of input.keep) {
+        await guarded({ kind: "keep" }, skipped, async () => { for (const { lineId } of input.keep) {
             const line = offer.carry.find((c) => c.lineId === lineId);
             if (!line) {
                 if (read.context.some((c) => lineIdOf(c.text) === lineId)) written.push({ kind: "keep", id: lineId, status: "unchanged" });
@@ -139,16 +141,16 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
             }
             const [ result ] = await contextKeepOn(store, date, [ { text: line.line, ...(line.until ? { until: line.until } : {}) } ], { now });
             record(written, skipped, { kind: "keep", id: lineId, text: line.line }, result);
-        }
+        } });
 
-        await finish(store, date, now, input.finished, written, skipped);
+        await guarded({ kind: "finished" }, skipped, () => finish(store, date, now, input.finished, written, skipped));
 
-        await putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped);
-        await dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
-        await shelve(store, date, now, offer.candidates, input, written, skipped);
-        await eveningAndContext(store, date, now, input, written, skipped);
+        await guarded({ kind: "not_today" }, skipped, () => putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
+        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, written, skipped));
+        await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
+        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped));
 
-        for (const { listItemId, to } of input.forward ?? []) {
+        await guarded({ kind: "forward" }, skipped, async () => { for (const { listItemId, to } of input.forward ?? []) {
             if (!shown.has(listItemId)) {
                 await notShown(store, now, { kind: "forward", id: listItemId }, written, skipped);
                 continue;
@@ -164,19 +166,21 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
             }
             const [ result ] = await forwardTasks(store, [ { noteId, listItemId, to } ], {});
             record(written, skipped, { kind: "forward", id: listItemId, detail: to }, result);
-        }
+        } });
 
         if (read.inputs.errors.some((e) => e.source === "calendar" && !isInputWarning(e.error))) {
             skipped.push({ kind: "meetings", reason: "calendar_unavailable" });
         } else {
-            const result = await setMeetings(store, { date, lines: meetingLines(read.inputs.calendar) }, {});
-            record(written, skipped, { kind: "meetings" }, result);
+            await guarded({ kind: "meetings" }, skipped, async () => {
+                record(written, skipped, { kind: "meetings" }, await setMeetings(store, { date, lines: meetingLines(read.inputs.calendar) }, {}));
+            });
         }
 
         // A pick's reason is its candidate's, live or not, so a re-run words the brief the same.
         const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
-        const brief = await briefOf(deps, input, read, reasons, offer.jira, offer.headsUp, weather);
+        const brief = await briefOf(deps, input, read, reasons, offer.jira, offer.headsUp, weather)
+            .catch((e: unknown) => ({ error: "failed", detail: e instanceof Error ? e.message : String(e) }));
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
             return withDateLabels({ date, written, skipped });
@@ -206,6 +210,8 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
     const read = await deps.dayRead(targetDay);
     return deps.locked("caius_winddown_apply", async () => {
         const { store, now } = deps;
+        const unreadable = await unreadableDay(store, [ date, targetDay ]);
+        if (unreadable) return unreadable;
         const written: Written[] = [];
         const skipped: Skipped[] = [];
         const open = await stillOpen(store, date, targetDay);
@@ -224,7 +230,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week) ]);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
-        for (const listItemId of input.done) {
+        await guarded({ kind: "done" }, skipped, async () => { for (const listItemId of input.done) {
             if (!shownItems.has(listItemId)) {
                 await notShown(store, now, { kind: "done", id: listItemId }, written, skipped);
                 continue;
@@ -236,7 +242,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
             }
             const [ result ] = await setStates(store, "done", [ { noteId, listItemId } ], { states });
             record(written, skipped, { kind: "done", id: listItemId }, result);
-        }
+        } });
 
         // A fate he named, then the proposed one for every item he didn't name.
         const named = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId) ]);
@@ -246,7 +252,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
             ...open.items.filter((item) => item.listItemId && !named.has(item.listItemId) && "forward" in item.fate)
                 .map((item) => ({ listItemId: item.listItemId ?? "", to: (item.fate as { forward: string }).forward, proposed: true }))
         ];
-        for (const fate of fates) {
+        await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {
             const noteId = await noteFor(fate.listItemId);
             const entry = { kind: "fate", id: fate.listItemId, ...("drop" in fate && fate.drop ? { detail: "dropped" } : { detail: fate.to }) };
             if (!shownItems.has(fate.listItemId)) {
@@ -277,11 +283,12 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
             record(written, skipped, entry, result);
         }
         await labelDay(store, date, NOT_TODAY_LABEL, putOffWeek);
+        });
 
         for (const { candidateId } of input.accept) {
-            await accept(store, targetDay, now, known.get(candidateId), candidateId, written, skipped);
+            await guarded({ kind: "accept", id: candidateId }, skipped, () => accept(store, targetDay, now, known.get(candidateId), candidateId, written, skipped));
         }
-        for (const [ kind, refs ] of [ [ "keep", input.keep ], [ "carry", input.carry ] ] as const) {
+        await guarded({ kind: "keep" }, skipped, async () => { for (const [ kind, refs ] of [ [ "keep", input.keep ], [ "carry", input.carry ] ] as const) {
             for (const { lineId } of refs) {
                 const line = [ ...lines.keep, ...lines.carry ].find((l) => l.lineId === lineId);
                 if (!line) {
@@ -294,12 +301,12 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
                 const [ result ] = await contextKeepOn(store, targetDay, [ { text: line.line, ...(until ? { until } : {}) } ], { now });
                 record(written, skipped, { kind, id: lineId, text: line.line }, result);
             }
-        }
-        await finish(store, targetDay, now, input.finished, written, skipped);
-        await putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped);
-        await dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
-        await shelve(store, targetDay, now, candidates, input, written, skipped);
-        await eveningAndContext(store, targetDay, now, input, written, skipped);
+        } });
+        await guarded({ kind: "finished" }, skipped, () => finish(store, targetDay, now, input.finished, written, skipped));
+        await guarded({ kind: "not_today" }, skipped, () => putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
+        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped));
+        await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
+        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         if (!skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) await labelDay(store, date, WOUND_DOWN_LABEL, [ date ]);
         return withDateLabels({ date, targetDay, written, skipped });
@@ -307,6 +314,24 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
 }
 
 const EVENING = "Evening";
+
+/** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
+async function guarded(entry: { kind: string; id?: string }, skipped: Skipped[], work: () => Promise<unknown>) {
+    try {
+        await work();
+    } catch (e) {
+        skipped.push({ ...entry, reason: "failed", detail: e instanceof Error ? e.message : String(e) });
+    }
+}
+
+/** `error: "bad_request"` when the day note of one of `dates` is protected or not a text note, which Caius cannot read. */
+async function unreadableDay(store: NoteStore, dates: string[]) {
+    for (const date of dates) {
+        const note = await findPeriodNote(store, "day", date);
+        if (note && (note.type !== "text" || note.isProtected)) return { date: dates[0], error: "bad_request", detail: `The day note for ${date} is protected or not a text note` };
+    }
+    return null;
+}
 const NOT_LISTED = "Name a day from the step's data.days or a week from data.weeks";
 
 /**
