@@ -10,6 +10,7 @@ import {
     addTasks,
     dayCandidates,
     dismissTasks,
+    EVENING_REASON,
     findPeriodNote,
     forwardTasks,
     keysOf,
@@ -1507,7 +1508,7 @@ type Prose = NonNullable<PlanApplyInput["brief"]>;
 async function suggestEvening(store: NoteStore, date: string, now: Date, line: string | null, written: Written[], skipped: Skipped[]) {
     if (!line || listOf(await readPlan(store, "day", date, now)).some((task) => task.evening)) return;
     const [ result ] = await addTasks(store, [ { date, suggested: true, text: line } ], { now });
-    record(written, skipped, { kind: "suggested", text: line }, result);
+    record(written, skipped, { kind: "suggested", text: line.slice(0, line.indexOf(`: because ${EVENING_REASON}`)) }, result);
 }
 
 /**

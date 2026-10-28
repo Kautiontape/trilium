@@ -159,8 +159,8 @@ describe("the evening", () => {
             { range: "10:00-14:00", text: "Message Dave about the lights." }, { range: "14:00-15:00", text: "Design Sync with Jordan." }
         ] } });
         expect(planned.skipped).toEqual([]);
-        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "suggested", status: "written", text: SUGGESTION }) ]));
-        expect(planned.say).toContain("Something away from screens");
+        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "suggested", status: "written", text: "Something away from screens, a chore or a Recharge item" }) ]));
+        expect(planned.say).toBe("Something away from screens, a chore or a Recharge item is in Suggested, the meetings are updated and the brief is written.");
         expect(await suggestedOf(WED)).toEqual([ SUGGESTION ]);
 
         // A refresh doesn't offer it again, and the step says so.
