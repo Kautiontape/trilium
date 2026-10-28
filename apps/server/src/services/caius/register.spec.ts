@@ -93,10 +93,18 @@ it("offers the caius skill only while it is registered, and names every tool the
         "The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it",
         "Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral",
         "Use `move` only when he asks for an order",
-        "never use the generic note tools",
+        "On an `edited` skip, run the same apply call once more with the same answers",
         "If a Caius tool fails, say so in one clause and stop that item.",
         "Never run Plan my day for a future day."
     ]) expect(sheet, rule).toContain(rule);
+    // The opener conversations have only the step and apply tools, so their section names no other.
+    const openers = sheet.slice(sheet.indexOf("## Wind down and Plan my day"), sheet.indexOf("## Reading results"));
+    for (const name of [
+        "caius_plan", "caius_open", "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
+        "caius_set_state", "caius_forward", "caius_assign_ids", "caius_context_add", "caius_context_keep", "caius_meetings",
+        "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
+    ]) expect(openers, name).not.toMatch(new RegExp(`${name}(?![a-z_])`));
+    expect(openers).not.toContain("generic note tools");
     for (const old of [ "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
     }
