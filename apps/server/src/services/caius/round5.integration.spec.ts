@@ -140,19 +140,50 @@ describe("a correction after the apply", () => {
 });
 
 describe("his words decide", () => {
-    it("Mon 17:30: the agent's round-5 call left out '111 later this week'; with his reply in said, 111 goes to the week as he named it", async () => {
+    it("Mon 17:30: the agent's round-5 call left out '111 later this week'; the apply writes nothing and asks for a check, and the call with the fate writes it", async () => {
         const MON = "2026-11-16";
         await monday(MON);
         at(`${MON}T17:30`);
-        const applied = await call("caius_winddown_apply", {
-            date: MON, said: "110 is done. 111 later this week. evening laundry", done: [ "ZAP-110" ], evening: [ "Laundry" ]
-        });
+        const said = "110 is done. 111 later this week. evening laundry";
+        const before = await journal();
+        const checked = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ], evening: [ "Laundry" ] });
+        expect(checked.written).toEqual([]);
+        expect(checked.check).toEqual([ expect.objectContaining({ item: "ZAP-111 Check the invoice export in QA", said: "111 later this week", missing: "fate" }) ]);
+        expect(checked.check[0].message).toContain("later this week");
+        expect(await journal()).toEqual(before);
+
+        const applied = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ], fates: [ { listItemId: "111", to: "w1" } ], evening: [ "Laundry" ] });
+        expect(applied.check).toBeUndefined();
         expect(applied.skipped).toEqual([]);
         expect(applied.written).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: "fate", id: `${MON}-111`, detail: "2026-W47", status: "written" }),
             expect.objectContaining({ kind: "fate", id: `${MON}-101`, detail: "2026-11-17", status: "written" })
         ]));
         expect((await tasksOf("week", "2026-W47")).map((task: any) => task.text)).toEqual([ "ZAP-111 Check the invoice export in QA" ]);
+    });
+
+    it("his words never move an item: negations, questions and another item's words give a check or nothing, and checked: true writes only the proposed fates", async () => {
+        const replies = [ "111 not this week", "can't do 101 friday", "should 111 go thursday?", "call mom friday", "message mom tuesday", "ZAP-111 later this week" ];
+        for (const [ i, said ] of replies.entries()) {
+            const MON = [ "2027-04-05", "2027-04-12", "2027-04-19", "2027-04-26", "2027-05-03", "2027-05-10" ][i] ?? "";
+            const TUE = `${MON.slice(0, 8)}${String(Number(MON.slice(8)) + 1).padStart(2, "0")}`;
+            await cls.init(async () => {
+                const day = await store.calendarDay(MON);
+                await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
+                    li(`${MON}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`),
+                    li(`${MON}-111`, `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`),
+                    li(`${MON}-dave`, "Message Dave about the lights"),
+                    li(`${MON}-plumber`, "Call the plumber")
+                )}`);
+            });
+            at(`${MON}T17:30`);
+            const first = await call("caius_winddown_apply", { date: MON, said });
+            expect(first.check?.length, said).toBeGreaterThan(0);
+            expect(first.written, said).toEqual([]);
+            const second = await call("caius_winddown_apply", { date: MON, said, checked: true });
+            expect(second.check, said).toBeUndefined();
+            expect(second.written.filter((entry: any) => entry.kind === "fate").map((entry: any) => entry.detail), said).toEqual([ TUE, TUE, TUE, TUE ]);
+        }
     });
 
     it("nothing is dismissed without his word: 'don't dismiss 105' or 'fine' leaves Jordan's ask on the shelf; 'answered jordan in chat' dismisses it", async () => {

@@ -607,6 +607,10 @@
       "open_time": "Open time.",
       "order_headline": "{{- first}} first, then {{- rest}}."
     },
+    "check": {
+      "fate": "His reply seems to give {{- item}} a place ('{{- clause}}') that this call leaves out. Pass it in fates, or call again with checked: true if he didn't mean that.",
+      "fate_other": "His reply seems to give {{- item}} a place ('{{- clause}}') other than the one this call sends it to. Fix the fate, or call again with checked: true if he didn't mean that."
+    },
     "daily": {
       "standing_missing": "No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.",
       "standing_unreadable": "The standing note is protected or not a text note, so the rhythm and the brief rules are the defaults.",

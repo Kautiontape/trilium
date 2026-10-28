@@ -89,36 +89,90 @@ export function resolveIn(pools: Named[][], said: string): Resolved {
     return null;
 }
 
+/** A clause of his reply that seems to give an item something: the item's id, the clause as he wrote it, and the place it names. */
+export interface Heard {
+    id: string;
+    clause: string;
+    to?: string;
+}
+
 /**
- * The fates `said`, his reply word for word, gives open items: in each clause with one place, a day
- * (by weekday, the first listed) or a week (`later this week`, `next week`) from `days`, and one item
- * of `open` named by its other words. A clause that starts with a negation, names two places or a
- * name that fits two items gives none.
+ * The items `said`, his reply word for word, seems to give a place: in each clause that names a day
+ * (by weekday, the first listed) or a week (`later this week`, `next week`) from `days`, every item
+ * of `pool` one of its other words names. It reads for recall, not to act on: a negated clause, a
+ * question or another item's word counts too, so the apply asks the agent to check rather than write.
  */
-export function saidFates(said: string, open: Named[], days: Named[]): { listItemId: string; to: string }[] {
+export function saidPlaces(said: string, pool: Named[], days: Named[]): Heard[] {
     const places = [
         ...days.flatMap((day) => (day.aliases ?? []).map((phrase) => ({ phrase, id: day.id }))),
         ...days.filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day.id)).map((day) => ({ phrase: weekdayOf(day.id), id: day.id }))
     ].sort((a, b) => b.phrase.length - a.phrase.length);
-    const fates: { listItemId: string; to: string }[] = [];
-    for (const clause of said.toLowerCase().split(/[.;,\n]|\band\b|\balso\b/)) {
-        if (NEGATION.test(clause)) continue;
-        let rest = ` ${words(clause).join(" ")} `;
-        const found = new Set<string>();
+    const heard: Heard[] = [];
+    for (const clause of clausesOf(said)) {
+        let rest = ` ${tokens(clause).join(" ")} `;
+        let to: string | undefined;
         for (const { phrase, id } of places) {
             if (!rest.includes(` ${phrase} `)) continue;
-            found.add(id);
+            to ??= id;
             rest = rest.replace(` ${phrase} `, " ");
         }
-        const [ to ] = found;
-        if (found.size !== 1 || !to) continue;
-        const named = rest.split(" ").filter((word) => word && !FILLER.has(word) && !FATE_WORDS.has(word)).map((word) => resolveName(open, word));
-        if (named.some((found) => found && "ambiguous" in found)) continue;
-        const ids = new Set(named.flatMap((found) => found && "id" in found ? [ found.id ] : []));
-        const [ listItemId ] = ids;
-        if (ids.size === 1 && listItemId) fates.push({ listItemId, to });
+        if (!to) continue;
+        for (const id of namedIn(rest, pool)) if (!heard.some((entry) => entry.id === id)) heard.push({ id, clause, to });
     }
-    return fates;
+    return heard;
+}
+
+/**
+ * The items `said` seems to close: in each clause with a word to dismiss or drop something, or to
+ * say he answered it, every item whose `names` (a key, its number, an author's name) is in it, with
+ * `answered` for the second. It reads for recall: a negated clause counts too.
+ */
+export function saidCloses(said: string, items: { id: string; names: string[] }[]): (Heard & { answered: boolean })[] {
+    const heard: (Heard & { answered: boolean })[] = [];
+    for (const clause of clausesOf(said)) {
+        const text = clause.toLowerCase();
+        const answered = ANSWERING.test(text);
+        if (!answered && !CLOSING.test(text)) continue;
+        const said = new Set(tokens(clause));
+        for (const item of items) {
+            if (item.names.some((name) => said.has(name)) && !heard.some((entry) => entry.id === item.id)) heard.push({ id: item.id, clause, answered });
+        }
+    }
+    return heard;
+}
+
+/** Whether `said` names an item by one of its `names`: a key, its number, an author's name or a distinctive word. */
+export function saidNames(said: string, names: string[]): boolean {
+    const heard = new Set(tokens(said));
+    return names.some((name) => heard.has(name));
+}
+
+/**
+ * The words an answer can name a candidate or follow-up by, lower case: its Jira key and number, its
+ * author's names, and the longer words of its text.
+ */
+export function namesOf(item: { key?: string; author?: string; text: string }): string[] {
+    const key = item.key?.toLowerCase();
+    return [
+        ...(key ? [ key, key.split("-")[1] ?? "" ] : []),
+        ...words(item.author ?? "").filter((name) => name.length > 2),
+        ...words(item.text).filter((word) => word.length >= 5 && !COMMON.has(word))
+    ].filter((name) => name !== "");
+}
+
+/** The clauses of his reply, at sentence and list breaks, as he wrote them. */
+function clausesOf(said: string): string[] {
+    return said.split(/[.;,\n?!]|\band\b|\balso\b|\bbut\b/i).map((clause) => clause.trim()).filter((clause) => clause !== "");
+}
+
+/** The ids of `pool` the content words of `text` name, each word on its own; a word that fits several names them all. */
+function namedIn(text: string, pool: Named[]): string[] {
+    const ids: string[] = [];
+    for (const word of text.split(" ").filter((each) => each && !FILLER.has(each) && !FATE_WORDS.has(each))) {
+        const found = resolveName(pool, word);
+        for (const id of !found ? [] : "id" in found ? [ found.id ] : found.ids) if (!ids.includes(id)) ids.push(id);
+    }
+    return ids;
 }
 
 /**
@@ -158,8 +212,14 @@ export function vagueYes(said: string): boolean {
     return /^\s*(?:fine|ok|okay|sure|yes|yeah|yep|yup|good|great|perfect|sounds good|that works|go ahead|do it)[\s.!]*$/i.test(said);
 }
 
-/** A clause that says where something doesn't go. */
-const NEGATION = /^\s*(?:not|no|never|don'?t)\b/;
+/** Words that close something: dismiss, drop, kill, forget, remove, scrap, cancel, not doing, take it off, for good. */
+const CLOSING = /\b(?:dismiss\w*|drop\w*|kill\w*|forget|remove\w*|scrap\w*|nuke\w*|cancel\w*|not doing|won'?t do|take (?:it |that |this )?off|for good)\b/;
+
+/** Words that say he answered something: answered, replied, responded, got back to, took care of, dealt with, handled. */
+const ANSWERING = /\b(?:answer\w*|repl\w*|respond\w*|got back|took care|dealt with|handled)\b/;
+
+/** Words of a candidate's text too common to name it: "Get ZAP-1 Check the report done: because …". */
+const COMMON = new Set([ "because", "answer", "question", "check", "about", "their", "there", "which" ]);
 
 /** Words around a fate that name no item: "dave can go to monday". */
 const FATE_WORDS = new Set([ "can", "go", "goes", "move", "moved", "push", "put", "off", "for", "later", "until", "till", "on", "in", "be", "should" ]);
@@ -176,6 +236,11 @@ const FILLER = new Set([ "the", "a", "an", "my", "is", "are", "was", "and", "don
 
 function jiraKeys(text: string): string[] {
     return [ ...text.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g) ].map((m) => m[0]);
+}
+
+/** The words of `text` in lower case, a Jira key kept whole ("zap-111"). */
+function tokens(text: string): string[] {
+    return text.toLowerCase().match(/[a-z][a-z0-9]+-\d+|[\p{L}\p{N}']+/gu)?.map((token) => token.replace(/'s$/, "").replace(/'/g, "")) ?? [];
 }
 
 function words(text: string): string[] {

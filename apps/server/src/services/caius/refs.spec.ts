@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hisWord, isRef, numbered, refOf, resolveIn, resolveName, saidAnswered, saidFates, vagueYes, withRefs } from "./refs.js";
+import { hisWord, isRef, numbered, refOf, resolveIn, resolveName, saidAnswered, saidPlaces, vagueYes, withRefs } from "./refs.js";
 
 const open = withRefs([
     { id: "e111", text: "ZAP-111 Check the invoice export in QA" },
@@ -59,7 +59,7 @@ describe("resolveIn", () => {
     });
 });
 
-describe("saidFates", () => {
+describe("saidPlaces", () => {
     const days = [
         { id: "2026-11-03", ref: "d1", text: "Tue 3 Nov" },
         { id: "2026-11-09", ref: "d5", text: "Mon 9 Nov" },
@@ -67,21 +67,22 @@ describe("saidFates", () => {
         { id: "2026-W45", ref: "w1", text: "later this week", aliases: [ "later this week", "this week" ] },
         { id: "2026-W46", ref: "w2", text: "next week", aliases: [ "next week" ] }
     ];
+    const heard = (said: string) => saidPlaces(said, open, days).map(({ id, to }) => [ id, to ]);
 
-    it("reads the fate of each item he sent somewhere in his own words, the round-5 replies among them", () => {
-        expect(saidFates("110 is done. 111 later this week. evening pack the climbing gym bag", open, days)).toEqual([ { listItemId: "e111", to: "2026-W45" } ]);
-        expect(saidFates("111 was later this week, not tomorrow. and don't dismiss 105. also ZAP-2590 is open, Jira's Done is wrong", open, days))
-            .toEqual([ { listItemId: "e111", to: "2026-W45" } ]);
-        expect(saidFates("laundry's done, dave can go to monday. yes keep the 2590 line. nothing else", open, days)).toEqual([ { listItemId: "edave", to: "2026-11-09" } ]);
-        expect(saidFates("101 next week and the bag tuesday", open, days)).toEqual([ { listItemId: "e101", to: "2026-W46" }, { listItemId: "ebag", to: "2026-11-03" } ]);
+    it("hears every item a clause with a place names, the round-5 replies among them, a full key too", () => {
+        expect(heard("110 is done. 111 later this week. evening pack the climbing gym bag")).toEqual([ [ "e111", "2026-W45" ] ]);
+        expect(saidPlaces("111 was later this week, not tomorrow", open, days)).toEqual([ { id: "e111", clause: "111 was later this week", to: "2026-W45" } ]);
+        expect(heard("laundry's done, dave can go to monday")).toEqual([ [ "edave", "2026-11-09" ] ]);
+        expect(heard("101 next week and the bag tuesday")).toEqual([ [ "e101", "2026-W46" ], [ "ebag", "2026-11-03" ] ]);
+        expect(heard("ZAP-111 later this week")).toEqual([ [ "e111", "2026-W45" ] ]);
     });
 
-    it("reads nothing from a clause with no place, two places, a negation or a name that fits two items", () => {
-        expect(saidFates("111, 101 and the bag are done. incident review. evening laundry", open, days)).toEqual([]);
-        expect(saidFates("not 111 this week", open, days)).toEqual([]);
-        expect(saidFates("111 this week or next week", open, days)).toEqual([]);
-        expect(saidFates("the export later this week", open, days)).toEqual([]);
-        expect(saidFates("", open, days)).toEqual([]);
+    it("reads for recall: a negation, a question or a shared word is heard too, for the apply to check, never to write", () => {
+        expect(heard("111 not this week")).toEqual([ [ "e111", "2026-W45" ] ]);
+        expect(heard("should 111 go tuesday?")).toEqual([ [ "e111", "2026-11-03" ] ]);
+        expect(heard("the export later this week")).toEqual([ [ "e111", "2026-W45" ], [ "e101", "2026-W45" ] ]);
+        expect(heard("111, 101 and the bag are done. incident review. evening laundry")).toEqual([]);
+        expect(heard("")).toEqual([]);
     });
 });
 

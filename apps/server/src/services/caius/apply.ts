@@ -79,7 +79,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidAnswered, saidFates, saysPhrase, vagueYes, withRefs } from "./refs.js";
+import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidAnswered, saidPlaces, saysPhrase, vagueYes, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment, removeLabel } from "./store.js";
@@ -341,10 +341,6 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const open = await stillOpen(store, date, targetDay);
         const { facts, candidates, asks, offeredAsks, jira } = await nextOffer(store, targetDay, now, read);
         const lines = await closingLines(store, date, targetDay, read);
-        await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
-        // The next step's questions are about the next workday, so they are answered on its note.
-        await labelDay(store, targetDay, ASKED_LABEL, nextAsked(asks));
-        await labelDay(store, targetDay, ASK_SEEN_LABEL, offeredAsks);
         const known = new Map([
             ...dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: [ ...facts.plan.dismissed, ...facts.closed ] }).map(present),
             ...candidates
@@ -380,9 +376,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             carry: asked.carry.length ? asked.carry : lines.carry.map((line) => ({ lineId: line.lineId }))
         } : asked;
         const input = windDownAnswers(answers, pools, skipped, table, copies, collided);
-        // A fate he named in his own words that the call left out is applied as he named it.
-        const answered = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.held ]);
-        input.fates.push(...saidFates(asked.said, pools.open, pools.days).filter((fate) => !answered.has(fate.listItemId)));
+        // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
+        const check = asked.checked ? [] : fateChecks(asked.said, input, pools);
+        if (check.length) return checkAnswer({ date, targetDay }, check);
+        await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
+        // The next step's questions are about the next workday, so they are answered on its note.
+        await labelDay(store, targetDay, ASKED_LABEL, nextAsked(asks));
+        await labelDay(store, targetDay, ASK_SEEN_LABEL, offeredAsks);
         input.dismiss = withHisWord(asked.said, [ ...input.dismiss, ...answeredIn(asked.said, jira, input.dismiss) ], skipped);
         // The ref table covers the Journal, so a held item that lives outside the window is read from it.
         const journalItem = (id: string) => items.find((item) => item.id === id);
@@ -1149,6 +1149,39 @@ function holdGroupOf(value: string): HoldGroup {
 }
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
+/** One thing his reply seems to say that the call doesn't: the item, his clause, what is missing and a message for the agent. */
+interface Check {
+    item: string;
+    said: string;
+    missing: "fate" | "dismiss" | "answered" | "overlap";
+    message: string;
+}
+
+/** An apply's answer when its call needs a check: nothing written, and what to check. */
+function checkAnswer<T extends object>(head: T, check: Check[]) {
+    return withDateLabels({ ...head, written: [] as Written[], skipped: [] as Skipped[], next: "check", check });
+}
+
+/**
+ * The items his reply seems to give a place (`saidPlaces`, over the open and settled items) that the
+ * call leaves out, or sends somewhere else: an item done, held or given a fate to that place is answered.
+ */
+function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, pools: Pools): Check[] {
+    const answered = new Map<string, string | undefined>();
+    for (const id of [ ...input.done, ...input.held ]) answered.set(id, undefined);
+    for (const fate of input.fates) answered.set(fate.listItemId, fate.to ?? "dropped");
+    // A moved item named in the call answers for the item it was moved from too.
+    for (const [ copy, { source } ] of input.follows) if (answered.has(copy)) answered.set(source, answered.get(copy));
+    const pool = [ ...pools.open, ...pools.settled ];
+    return saidPlaces(said, pool, pools.days).flatMap((heard) => {
+        const given = answered.has(heard.id) ? answered.get(heard.id) : null;
+        if (given === undefined || given === heard.to || (given !== null && !PERIODS.day.pattern.test(given) && !PERIODS.week.pattern.test(given) && !PERIODS.month.pattern.test(given))) return [];
+        const item = pool.find((entry) => entry.id === heard.id)?.text ?? heard.id;
+        const key = given === null ? "caius.check.fate" : "caius.check.fate_other";
+        return [ { item, said: heard.clause, missing: "fate" as const, message: t(key, { item, clause: heard.clause }) } ];
+    });
+}
+
 /** The follow-ups of `jira` he says in `said` he answered, as dismissals, but those `dismiss` already names. */
 function answeredIn(said: string, jira: DayRead["inputs"]["jira"], dismiss: { candidateId: string }[]): { candidateId: string }[] {
     return saidAnswered(said, followUpsOf(jira)).filter((key) => !dismiss.some((c) => c.candidateId === key)).map((candidateId) => ({ candidateId }));

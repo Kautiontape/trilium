@@ -174,8 +174,11 @@ const moveRef = z.object({ listItemId: z.string().min(1).describe(`An item of hi
     .refine((item) => placed(item) === 1, "Give exactly one of first, before or after");
 const moves = z.array(moveRef).default([]).describe("Only when the user asks to reorder: items of his main list moved first, before or after another");
 /** His reply word for word, which the apply reads the fates he named from and checks a dismissal against. */
-const said = z.string().describe("His reply this call answers, word for word, such as \"110 is done. 111 later this week\": a fate he named there that the call leaves out is applied as he named it, and a dismissal needs his word (dismiss, drop, cancel, not doing, answered) in it. \"\" only for a call no reply of his asked for, such as a refresh");
+const said = z.string().describe("His reply this call answers, word for word, such as \"110 is done. 111 later this week\". It never writes anything: when it seems to give an item something the call leaves out, nothing is written and the answer is a `check` to resolve. \"\" only for a call no reply of his asked for, such as a refresh");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
+
+/** The agent's word that it checked what the last call's `check` asked about. */
+const checked = z.boolean().optional().describe("true when the last call answered `check` and he didn't mean what his words seemed to say: the call is applied as given, without the check");
 
 /** His vague yes, which takes the proposals as offered. */
 const asOffered = z.boolean().optional().describe("true on his vague yes (\"fine\", \"ok\", \"sounds good\"): every candidate taken in the order shown, every keep or carry line kept and the heavy-day move made, everything else as proposed. A said that is only such a word reads the same");
@@ -188,6 +191,7 @@ const overlapAnswers = z.array(z.object({
 const planApply = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
     said,
+    checked,
     asOffered,
     catchup: z.enum([ "move_all", "skip", "review" ]).optional().describe("The answer to the catch-up question, when one was asked"),
     accept: z.array(acceptRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after)"),
@@ -233,6 +237,7 @@ export function onlyContext(input: Answers): boolean {
 const windDownApply = z.object({
     date: periodKey("day").describe("The day being closed, YYYY-MM-DD; the rest works against the next workday"),
     said,
+    checked,
     asOffered,
     done: z.array(z.string().min(1)).default([]).describe(`The open items the user says are done, each by ${NAMED}`),
     fates: z.array(z.object({
