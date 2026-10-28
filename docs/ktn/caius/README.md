@@ -58,8 +58,8 @@ Today's day note (today by the Caius clock) shows a slim bar under its journal n
 | State | When | Bar | Actions |
 |---|---|---|---|
 | Catch-up | The last workday (Friday on a Monday) still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks." | **Move all to today**, **Review**, **Skip** |
-| Not planned | No catch-up is due, and today has no Morning Brief | "No plan yet." | **Plan my day** |
-| Planned | Today has a Morning Brief | "Planned 08:40." | **Refresh** |
+| Not planned | No catch-up is due, and today has no Morning Brief, or its brief was planned on an earlier day | "No plan yet." | **Plan my day** |
+| Planned | Today has a Morning Brief planned today | "Planned 08:40." ("Planned Fri 17:20." for a plan made on another day) | **Refresh** |
 
 - **Move all to today** forwards those tasks to today in one request, with no chat, the way the Plan tab's Close does: today's note is locked and reloaded if it is open. A task without a list item id is counted but not moved; run the id backfill.
 - **Review** starts `Wind down <last workday>` in the sidebar chat.

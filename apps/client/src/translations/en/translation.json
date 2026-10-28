@@ -4544,7 +4544,8 @@
       "hide": "Hide for today",
       "moved_one": "Moved {{count}} task to today.",
       "moved_other": "Moved {{count}} tasks to today.",
-      "planned_untimed": "Planned."
+      "planned_untimed": "Planned.",
+      "planned_on": "Planned {{weekday}} {{time}}."
     },
     "chat_unavailable": "Open the sidebar chat from a regular note to start Caius."
   }
