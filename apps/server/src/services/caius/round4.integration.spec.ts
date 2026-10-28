@@ -197,3 +197,25 @@ describe("'done' means done", () => {
         expect(applied.topPick).toBe("Message Dave about the lights");
     });
 });
+
+describe("the result is the recap", () => {
+    it("Wed 17:45: say tells what was ticked, moved and added, with no ids, and names a skip in a clause", async () => {
+        await wednesday("2026-12-16");
+        at("2026-12-16T17:45");
+        const applied = await call("caius_winddown_apply", {
+            date: "2026-12-16", done: [ "111", "101", "the bag", "groceries" ], fates: [ { listItemId: "dave", to: "d1" } ], evening: [ "Water the plants" ]
+        });
+        expect(applied.say).toBe("ZAP-111, ZAP-101 and Pack the climbing gym bag are done, "
+            + "Message Dave if he knows anyone who will hang lights as a small job moved to Thu 17 Dec and Water the plants is on Thursday evening. "
+            + "'groceries' wasn't found.");
+        expect(applied.say).not.toMatch(/2026-12-16-|\b[ocl]\d\b|\d{4}-\d{2}-\d{2}/);
+    });
+
+    it("Plan my day: say names what the plan wrote", async () => {
+        const DAY = "2026-12-21";
+        jira.handoff.push({ ...ticket("ZAP-160", { summary: "Check the report" }), daysInStatus: 2 }, { ...ticket("ZAP-161", { summary: "Fix the gate" }), daysInStatus: 2 });
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "161" } ], brief: prose });
+        expect(applied.say).toBe("ZAP-161 is on your list, ZAP-160 is in Suggested and the brief is written.");
+    });
+});

@@ -64,9 +64,10 @@ it("offers the caius skill only while it is registered, and names every tool the
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
         "and the heavy-day move as suggested",
         "Never ask permission for anything the apply tool does.",
-        "Never say something was done unless the apply result says so.",
+        "Never claim a write that isn't in the result: its `say` is the whole recap.",
+        "After the apply, reply with the result's `say`, then the headline and the top pick, and nothing else.",
+        "After the apply, reply with the result's `say` and nothing else.",
         "Never narrate tools, ids, protocol or data quality.",
-        "On a skipped item, say it in one plain clause about the item",
         "A vague reply (\"fine\", \"yeah\") accepts the proposals as offered",
         "Never write \"still\", \"outstanding\", \"unanswered\", \"waiting\", \"no reply\" or \"haven't answered\".",
         "Only \"drop\", \"cancel\" or \"not doing\" drops a task or dismisses a candidate; anything vaguer (\"skip that\", \"not now\") is `notToday`",
@@ -78,9 +79,8 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Never refuse a reorder he asks for",
         "name his work in the order of his list as this call leaves it",
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
-        "No recap after an apply",
         "An evening calendar event is not a task",
-        "say the skip in one clause (\"Call Mom is already on the calendar\")",
+        "`say` names the skip (\"Call Mom is already on the calendar\")",
         "In these conversations only these tools are available",
         "| `caius_planday` | Plan my day's steps: `catchup`, `inputs`. |",
         "| `caius_winddown_apply` | Wind down's one write. |",
@@ -89,7 +89,6 @@ it("offers the caius skill only while it is registered, and names every tool the
         "go straight on to Plan my day for `targetDay` in this conversation",
         "Never ask what else to do when the step returns no candidates",
         "say so when the day is half booked or more",
-        "Add one more short line only when something he asked for was skipped.",
         "The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it",
         "Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral",
         "Use `move` only when he asks for an order",
@@ -105,7 +104,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
     ]) expect(openers, name).not.toMatch(new RegExp(`${name}(?![a-z_])`));
     expect(openers).not.toContain("generic note tools");
-    for (const old of [ "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
+    for (const old of [ "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
     }
     expect(sheet).not.toMatch(/Shawn(?!\")/);

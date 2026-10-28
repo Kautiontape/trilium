@@ -65,6 +65,7 @@ import {
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
 import { type Named, resolveIn, resolveName, withRefs } from "./refs.js";
+import { sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment } from "./store.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
@@ -87,6 +88,8 @@ export interface Written {
     text?: string;
     status: "written" | "unchanged";
     detail?: string;
+    /** A move's other item, by its text: what it went before or after. */
+    anchor?: string;
 }
 
 /** One answer the apply could not act on, and why. */
@@ -138,13 +141,19 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
         const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
         // Every ref and name is read against the step data as it stands before the first write.
-        const input = planAnswers(asked, {
+        const pools: Pools = {
             open: named(withRefs(catchupTasks, "o"), (task) => task.listItemId, (task) => task.text),
             candidates: named(withRefs(offer.candidates, "c"), (c) => c.candidateId, (c) => c.text),
             list: named(withRefs(listItems(offer.day.plan), "l"), (item) => item.listItemId, (item) => item.text),
             lines: named(withRefs(offer.carry, "x"), (line) => line.lineId, (line) => line.line),
             days: named(listed.days, (day) => day.date, (day) => dateLabel(day.date) ?? day.date)
-        }, skipped);
+        };
+        const input = planAnswers(asked, pools, skipped);
+        /** The result with `say`, its entries named by their text first. */
+        const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
+            withTexts([ ...result.written, ...result.skipped ], pools, known);
+            return withDateLabels({ ...result, say: sayOf(result, { day: date }) });
+        };
 
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
@@ -217,13 +226,13 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             .catch((e: unknown) => ({ error: "failed", detail: e instanceof Error ? e.message : String(e) }));
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
-            return withDateLabels({ date, written, skipped });
+            return answer({ date, written, skipped });
         }
         const changed = brief.writes.some((w) => w.status === "updated");
         const lost = brief.writes.find((w) => w.status === "skipped");
         if (lost) skipped.push({ kind: "brief", reason: lost.reason ?? "edited" });
         else written.push({ kind: "brief", status: changed ? "written" : "unchanged" });
-        return withDateLabels({
+        return answer({
             date, written, skipped,
             headline: input.brief.headline, topPick: brief.picks[0]?.text ?? null,
             briefNoteId: brief.briefNoteId, headerNoteId: brief.headerNoteId, attachmentId: brief.attachmentId,
@@ -274,13 +283,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const listed = namedDays(date, targetDay);
         const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
         // Every ref and name is read against the step data as it stands before the first write.
-        const input = windDownAnswers(asked, {
+        const pools: Pools = {
             open: named(withRefs(open.items, "o"), (item) => item.listItemId, (item) => item.text),
             candidates: named(withRefs(candidates, "c"), (c) => c.candidateId, (c) => c.text),
             list: named(withRefs(listItems(facts.plan), "l"), (item) => item.listItemId, (item) => item.text),
             lines: named(withRefs([ ...lines.keep, ...lines.carry ], "x"), (line) => line.lineId, (line) => line.line),
             days: named(listed.days, (day) => day.date, (day) => dateLabel(day.date) ?? day.date)
-        }, skipped);
+        };
+        const input = windDownAnswers(asked, pools, skipped);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
         await guarded({ kind: "done" }, skipped, async () => { for (const listItemId of input.done) {
@@ -384,7 +394,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         }
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
-        return withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null });
+        withTexts([ ...written, ...skipped ], pools, known);
+        return withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null, say: sayOf({ written, skipped }, { day: targetDay }) });
     });
 }
 
@@ -529,6 +540,24 @@ function doneOf(said: string[], finished: string[], pools: Named[][], read: (kin
 }
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
+
+/**
+ * Gives each entry without a text the text of the item its id names in `pools` or `known`, or his
+ * own words when the id is an answer that named nothing, so `say` can name it. An id-shaped value
+ * that named nothing stays unnamed.
+ */
+function withTexts(entries: (Written | Skipped)[], pools: Pools, known: Map<string, Candidate>) {
+    const texts = new Map<string, string>([ ...known ].map(([ id, candidate ]) => [ id, candidate.text ]));
+    for (const item of Object.values(pools).flat()) texts.set(item.id, item.text);
+    for (const entry of entries) {
+        if (entry.text !== undefined || entry.id === undefined) continue;
+        const text = texts.get(entry.id) ?? (ID_SHAPED.test(entry.id) || JIRA_KEY.test(entry.id) ? undefined : entry.id);
+        if (text !== undefined) entry.text = text;
+    }
+}
+
+/** A value that looks like a list item id, a ref, or a line or overlap id rather than his words. */
+const ID_SHAPED = /^(?:[a-z]?[0-9a-f]{8,}|[oclxdw]\d+|[lo][0-9a-f]{10})$/i;
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
 async function guarded(entry: { kind: string; id?: string }, skipped: Skipped[], work: () => Promise<unknown>) {
@@ -827,7 +856,8 @@ async function placeOnList(store: NoteStore, date: string, now: Date, entry: { k
     }
     const where = place.first ? { first: true } : place.before !== undefined ? { before: anchor } : { after: anchor };
     const [ result ] = await moveTasks(store, [ { noteId, listItemId: task.listItemId, ...where } ]);
-    record(written, skipped, entry, result);
+    const other = tasks.find((t) => t.listItemId === anchor)?.text;
+    record(written, skipped, { ...entry, text: task.text, detail: place.first ? "first" : place.before !== undefined ? "before" : "after", ...(other ? { anchor: other } : {}) }, result);
 }
 
 /** Takes the day's Suggested item for `key` out without recording a dismissal. Answers whether one was there. */

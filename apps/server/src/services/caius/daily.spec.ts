@@ -32,10 +32,10 @@ describe("withoutMoveLinks", () => {
 });
 
 describe("the words Caius writes", () => {
-    it("never say still, outstanding, unanswered or waiting, in any caius.daily or caius.brief string", () => {
+    it("never say still, outstanding, unanswered or waiting, in any caius.daily, caius.brief or caius.say string", () => {
         const catalogue = JSON.parse(readFileSync(new URL("../../assets/translations/en/server.json", import.meta.url), "utf8")) as { caius: Record<string, Record<string, unknown>> };
         const strings = (value: unknown): string[] => typeof value === "string" ? [ value ] : Object.values(value as object).flatMap(strings);
-        for (const group of [ "daily", "brief" ] as const) {
+        for (const group of [ "daily", "brief", "say" ] as const) {
             for (const text of strings(catalogue.caius[group])) expect(text, group).not.toMatch(/\b(?:still|outstanding|unanswered|waiting)\b/i);
         }
     });
