@@ -168,6 +168,7 @@ function nextAsks(read: DayRead, facts: { plan: PlanView; evening: boolean }, ca
 
 /** The `#caiusAsked` values of what the wind-down's `next` step asks, answered once the apply runs. */
 export function nextAsked(asks: ReturnType<typeof nextAsks>): string[] {
+    // Recorded as `heavy` on purpose: the next morning doesn't ask about the day's load a second time.
     return [ ...asks.overlaps.map((pair) => pair.overlapId), ...(asks.over > 0 ? [ HEAVY_ID ] : []), ...(asks.askEvening ? [ EVENING_ID ] : []) ];
 }
 
