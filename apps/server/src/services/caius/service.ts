@@ -154,10 +154,10 @@ export function createCaiusService(
 
     /**
      * `caius_inputs` for a day, cached, with the Context in force passed along, the ticket keys its
-     * week items and Context lines name, and the work window from the standing note's Rhythm. The
+     * week items and Context lines name and `extraKeys`, and the work window from the standing note's Rhythm. The
      * notes are read under the lock, the sources outside it.
      */
-    async function dayRead(date: string, refresh = false): Promise<DayRead> {
+    async function dayRead(date: string, refresh = false, extraKeys: string[] = []): Promise<DayRead> {
         const { context, standing, week } = await withCaiusLock("caius_day_read", async () => ({
             context: (await gatherContext(store, date)).context,
             standing: await readStanding(),
@@ -165,7 +165,7 @@ export function createCaiusService(
         }));
         const rhythm = readRhythm(standing.markdown);
         const lines = context.map((line) => line.text);
-        const keys = [ ...new Set([ ...week.flatMap((task) => keysOf(task.text)), ...lines.flatMap((line) => keysOf(line)) ]) ]
+        const keys = [ ...new Set([ ...week.flatMap((task) => keysOf(task.text)), ...lines.flatMap((line) => keysOf(line)), ...extraKeys ]) ]
             .filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key))
             .sort();
         const input: InputsInput = { date, context: lines, keys, workStart: rhythm.start, workEnd: rhythm.workEnd };

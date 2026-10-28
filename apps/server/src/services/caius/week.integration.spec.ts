@@ -572,3 +572,13 @@ describe("what counts as raised", () => {
         expect(schema?.safeParse({ ...shape, followUps: [ { key: "ZAP.*", commentId: "1" } ] }).success).toBe(false);
     });
 });
+
+describe("done in Jira", () => {
+    it("flags the wind-down's open items whose ticket Jira calls done", async () => {
+        const day = "2026-12-01";
+        await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("j1", `${jiraLink("ZAP-104")} — Remove the legacy job ~30m`), li("j2", "Plain thing ~30m"))}`));
+        at(`${day}T17:30`);
+        const answer = await call("caius_winddown", { date: day, step: "open" });
+        expect(answer.data.items.filter((item: any) => item.group === "today").map((item: any) => [ item.listItemId, item.jiraDone ?? false ])).toEqual([ [ "j1", true ], [ "j2", false ] ]);
+    });
+});

@@ -115,7 +115,7 @@ The brief takes about 60 seconds to read:
 
 1. Call `open`, `next` and `context` first. Add the `next` ticket candidates to that day's Suggested with `caius_add` and `suggested: true`.
 2. Send one message:
-   - what's open (`data.items`) with the `open` question, which asks which are done; `data.olderCount` older tasks get one line, as not tonight's job, never a list or a question;
+   - what's open (`data.items`) with the `open` question, which asks which are done; say which ones Jira calls done (`jiraDone: true`); `data.olderCount` older tasks get one line, as not tonight's job, never a list or a question;
    - then the `next` and `context` questions about the next day.
 3. After his answer, apply everything in one go: `caius_set_state` for what he calls done, `caius_forward` the rest to their `fate`, the Context he kept with `caius_context_keep` and `date: data.keepDate`, anything new he says with `caius_context_add`.
 

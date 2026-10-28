@@ -65,7 +65,7 @@ export interface StepDeps {
     /** Runs `fn` under the Caius lock. */
     locked: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
     /** The day's inputs, cached, with the Context in force and the standing note. */
-    dayRead: (date: string, refresh?: boolean) => Promise<DayRead>;
+    dayRead: (date: string, refresh?: boolean, extraKeys?: string[]) => Promise<DayRead>;
     /** The standing note, read under the lock. */
     standing: () => Promise<Standing>;
 }
@@ -73,6 +73,7 @@ export interface StepDeps {
 export type WindDownStep = "open" | "next" | "context";
 
 const EVENING_SECTIONS = new Set([ "evening", "recharge" ]);
+const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
 export async function windDown(deps: StepDeps, { date, step, refresh }: { date: string; step: WindDownStep; refresh?: boolean }) {
     const targetDay = dayKey(nextWorkday(localDay(date)));
@@ -86,8 +87,12 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
             standing: await deps.standing(),
             open: await stillOpen(deps.store, date, targetDay)
         }));
-        const question = open.items.length ? t("caius.daily.open", { day: weekdayName(targetDay) }) : null;
-        return reply(standing, { ...open, ...(open.items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        // Jira is asked about the items' own tickets, so an item it calls done can be named as such.
+        const keys = open.items.map((item) => keysOf(item.text)[0]).filter((key): key is string => !!key && JIRA_KEY.test(key));
+        const done = keys.length ? new Set((await deps.dayRead(targetDay, refresh, keys)).inputs.jira.done) : new Set<string>();
+        const items = open.items.map((item) => done.has(keysOf(item.text)[0] ?? "") ? { ...item, jiraDone: true } : item);
+        const question = items.length ? t("caius.daily.open", { day: weekdayName(targetDay) }) : null;
+        return reply(standing, { ...open, items, ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
     }
 
     const read = await deps.dayRead(targetDay, refresh);
