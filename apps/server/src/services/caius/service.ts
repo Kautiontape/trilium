@@ -350,7 +350,8 @@ export function createCaiusService(
 
         /**
          * Labels a day or week note `#caiusFinished=<key>` for each key not on it yet: `note`, else
-         * today's day note, created if missing.
+         * today's day note, created if missing. Dismisses the Suggested items naming a key on day
+         * notes from today on.
          */
         finished: ({ keys, note: noteId }: FinishedInput) => withCaiusLock("caius_finished", async () => {
             const today = currentKey("day", caiusNow());
@@ -368,7 +369,13 @@ export function createCaiusService(
             }
             const fresh = [ ...new Set(keys) ].filter((key) => !note.attributes.some((a) => a.type === "label" && a.name === FINISHED_LABEL && a.value === key));
             for (const key of fresh) await store.addLabel(note.noteId, FINISHED_LABEL, key);
-            return { noteId: note.noteId, keys, status: fresh.length ? "updated" : "unchanged" };
+            // The Plan tab offers what is in Suggested, so the key's items there go too, from today on.
+            const docs = await journalDocs(store);
+            const offered = (docs ? suggestedTasks(docs, caiusNow()) : [])
+                .filter((task) => PERIODS.day.pattern.test(task.period) && task.period >= today && keysOf(task.text).some((key) => keys.includes(key)))
+                .flatMap((task) => task.listItemId ? [ { noteId: task.noteId, listItemId: task.listItemId } ] : []);
+            const dismissed = offered.length ? await dismissTasks(store, offered) : [];
+            return { noteId: note.noteId, keys, status: fresh.length ? "updated" : "unchanged", dismissed };
         }),
 
         winddown: (input: WindDownInput) => windDown(stepDeps(), input),

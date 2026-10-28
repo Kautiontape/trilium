@@ -144,7 +144,7 @@ export function createCaiusTools(
         },
 
         caius_finished: {
-            description: "Record that Shawn says tickets are finished when they are not tasks to tick: labels today's day note #caiusFinished=<key>, so Wind down and Plan my day leave them out of the candidates for 30 days, and caius_add won't suggest them. Use it whenever he says a ticket is done that isn't on his list. No dry run: his word is the yes.",
+            description: "Record that Shawn says tickets are finished when they are not tasks to tick: labels today's day note #caiusFinished=<key>, so Wind down and Plan my day leave them out of the candidates for 30 days, and caius_add won't suggest them. Also dismisses their Suggested items on day notes from today on. Use it whenever he says a ticket is done that isn't on his list. No dry run: his word is the yes.",
             inputSchema: toolInputs.finished,
             async: true,
             mutates: true,

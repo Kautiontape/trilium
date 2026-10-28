@@ -458,3 +458,22 @@ describe("week items", () => {
         expect((await call("caius_planday", { date: day, step: "inputs" })).data.candidates.map((c: any) => c.text)).not.toContain("Order the banners");
     });
 });
+
+describe("finished clears Suggested", () => {
+    it("dismisses the key's Suggested items from today on, and leaves earlier days alone", async () => {
+        const suggestion = (id: string) => `<h3>Suggested</h3>${ul(li(id, `Get ${jiraLink("ZAP-170")} Check the export done: because it waits (~30m)`))}`;
+        await cls.init(async () => {
+            for (const [ date, id ] of [ [ "2026-11-18", "f18" ], [ "2026-11-19", "f19" ], [ "2026-11-20", "f20" ] ]) {
+                const note = await store.calendarDay(date);
+                await store.putContent(note.noteId, (await store.content(note.noteId)) + suggestion(id));
+            }
+        });
+        at("2026-11-19T09:30");
+        const finished = await call("caius_finished", { keys: [ "ZAP-170" ] });
+        expect(finished.dismissed.map((d: any) => [ d.listItemId, d.status ])).toEqual([ [ "f19", "dismissed" ], [ "f20", "dismissed" ] ]);
+        const suggested = async (date: string) => (await call("caius_plan", { period: "day", date })).suggested.map((task: any) => task.listItemId);
+        expect(await suggested("2026-11-18")).toContain("f18");
+        expect(await suggested("2026-11-19")).not.toContain("f19");
+        expect(await suggested("2026-11-20")).not.toContain("f20");
+    });
+});
