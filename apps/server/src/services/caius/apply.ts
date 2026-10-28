@@ -188,7 +188,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         ];
         // His words only check the call: when they seem to say something the call doesn't, nothing is written.
         const check = asked.checked ? [] : [
-            ...yesChecks(asked.said, hasAnswer, offered),
+            ...yesChecks(asked.said, hasAnswer, offered), ...finishedChecks(input.unmatched),
             ...dismissChecks(asked.said, input.dismiss, known, [ ...offer.candidates, ...followUpsOf(offer.jira) ], offer.day.plan.suggested),
             ...overlapChecks(asked.said, offer.overlaps, input.overlaps)
         ];
@@ -424,7 +424,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
             ...open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)))
         ];
-        const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
+        const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...finishedChecks(input.unmatched), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
             ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
@@ -1020,9 +1020,9 @@ interface Already {
  * skipped. `done` holds the items of his list or the catch-up that `finished` names: by a ticket
  * key, or by anything else he called done.
  */
-function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): PlanApplyInput & { done: string[]; follows: Follows; already: Already[] } {
+function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): PlanApplyInput & { done: string[]; unmatched: string[]; follows: Follows; already: Already[] } {
     const { read, place, follows, already } = nameReader(skipped, table, copies, collided);
-    const { done, finished } = doneOf([], input.finished, [ pools.list, pools.open ], [ pools.settled ], read);
+    const { done, finished, unmatched } = doneOf([], input.finished, [ pools.list, pools.open ], [ pools.settled ], pools.candidates, read);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
@@ -1032,6 +1032,7 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
         ...input,
         done,
         finished,
+        unmatched,
         follows,
         already,
         accept: input.accept.flatMap((ref) => {
@@ -1062,7 +1063,7 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
  * Wind down's answers with every name read as the id it names; an ambiguous one is left out,
  * skipped, and the open items it matched are `held`: they keep no proposed fate either.
  */
-function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): WindDownApplyInput & { held: string[]; heldGroups: HoldGroup[]; follows: Follows; already: Already[] } {
+function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): WindDownApplyInput & { held: string[]; heldGroups: HoldGroup[]; unmatched: string[]; follows: Follows; already: Already[] } {
     const { read, place, held, groups, follows, already } = nameReader(skipped, table, copies, collided);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
@@ -1073,12 +1074,13 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         const id = read(kind, ref.lineId, [ pools.lines ]);
         return id === null ? [] : [ { lineId: id } ];
     };
-    const { done, finished } = doneOf(input.done, input.finished, [ pools.open ], [ pools.settled ], read);
+    const { done, finished, unmatched } = doneOf(input.done, input.finished, [ pools.open ], [ pools.settled ], pools.candidates, read);
     const open = new Set(pools.open.map((item) => item.id));
     return {
         ...input,
         done,
         finished,
+        unmatched,
         fates: input.fates.flatMap((fate) => {
             const id = read("fate", fate.listItemId, [ pools.open ], [ pools.settled ], true, fate.drop ? "drop" : "fate");
             const to = fate.to === undefined ? undefined : read("fate", fate.to, [ pools.days ]);
@@ -1122,11 +1124,22 @@ type Follows = Map<string, { source: string; period: string; text: string }>;
  * What he called done, read from `done` and `finished`: each done answer, each finished answer that
  * is not a Jira key, and the items each finished key names in `pools`, once: one item, or a work
  * item with its Answer task. `finished` keeps only the keys, which are recorded as finished whether
- * or not they name an item.
+ * or not they name an item. A bare number that names nothing in `pools` is the key of the candidate
+ * it names; `unmatched` holds one that names no candidate either.
  */
-function doneOf(said: string[], finished: string[], pools: Named[][], settled: Named[][], read: (kind: string, value: string, pools: Named[][], fallback?: Named[][], hold?: boolean) => string | null) {
-    const keys = finished.filter((value) => JIRA_KEY.test(value));
-    const done = new Set([ ...said, ...finished.filter((value) => !JIRA_KEY.test(value)) ].flatMap((value) => read("done", value, pools, settled, true) ?? []));
+function doneOf(said: string[], finished: string[], pools: Named[][], settled: Named[][], candidates: Named[], read: (kind: string, value: string, pools: Named[][], fallback?: Named[][], hold?: boolean) => string | null) {
+    const unmatched: string[] = [];
+    const keyOf = (value: string) => {
+        if (JIRA_KEY.test(value)) return value;
+        if (!/^\d+$/.test(value.trim()) || [ ...pools, ...settled ].some((pool) => resolveName(pool, value) !== null)) return null;
+        const [ id ] = candidatesNamed(candidates, [ value ]);
+        if (id && JIRA_KEY.test(id)) return id;
+        unmatched.push(value);
+        return null;
+    };
+    const answers = finished.map((value) => ({ value, key: keyOf(value) }));
+    const keys = answers.flatMap(({ key }) => key ?? []);
+    const done = new Set([ ...said, ...answers.filter(({ key }) => key === null).map(({ value }) => value) ].flatMap((value) => read("done", value, pools, settled, true) ?? []));
     for (const key of keys) {
         const pool = pools.find((candidates) => resolveName(candidates, key) !== null);
         const found = pool ? resolveName(pool, key) : null;
@@ -1141,7 +1154,7 @@ function doneOf(said: string[], finished: string[], pools: Named[][], settled: N
         if (work.length <= 1) for (const id of found.ids) done.add(id);
         else read("done", key, [ pool ], [], true);
     }
-    return { done: [ ...done ], finished: keys };
+    return { done: [ ...done ], finished: keys, unmatched };
 }
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
@@ -1231,7 +1244,7 @@ function holdGroupOf(value: string): HoldGroup {
 export interface Check {
     item: string;
     said: string;
-    missing: "fate" | "dismiss" | "answered" | "overlap" | "asOffered";
+    missing: "fate" | "dismiss" | "answered" | "overlap" | "asOffered" | "finished";
     message: string;
 }
 
@@ -1272,6 +1285,11 @@ function candidatesNamed(pool: Named[], values: string[]): string[] {
         const found = resolveName(pool, value);
         return found && "id" in found ? [ found.id ] : [];
     });
+}
+
+/** The bare numbers in the call's `finished` that name nothing on offer (`unmatched`, from `doneOf`). */
+function finishedChecks(unmatched: string[]): Check[] {
+    return unmatched.map((value) => ({ item: value, said: value, missing: "finished", message: t("caius.check.finished", { item: value }) }));
 }
 
 /**

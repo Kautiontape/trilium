@@ -615,7 +615,8 @@
       "dismiss": "His reply seems to dismiss {{- item}} ('{{- clause}}'), which this call leaves out. Pass it in dismiss, or call again with checked: true if he didn't mean that.",
       "answered": "His reply seems to say he answered {{- item}} in Chat ('{{- clause}}'), which this call doesn't record. Pass it in dismiss with answered: true, or call again with checked: true if he didn't mean that.",
       "overlap": "His reply seems to answer {{- item}}, which this call leaves out. Pass it in overlaps, or call again with checked: true if he didn't mean that.",
-      "as_offered": "His reply reads as a yes to what was offered. Pass `asOffered: true`, or the specific fields."
+      "as_offered": "His reply reads as a yes to what was offered. Pass `asOffered: true`, or the specific fields.",
+      "finished": "This call calls {{- item}} finished, but nothing on offer has that number. Pass the ticket's key, or call again with checked: true if he didn't mean that."
     },
     "daily": {
       "standing_missing": "No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.",

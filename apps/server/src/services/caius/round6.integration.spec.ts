@@ -512,4 +512,40 @@ describe("a candidate the call itself names", () => {
         expect(open).toEqual([ "Write the runbook", expect.stringContaining("ZAP-976") ]);
         expect(open.some((text: string) => text.includes("ZAP-975"))).toBe(false);
     });
+    it("a bare number in finished is the offered ticket's key, in either apply; a number nothing on offer has is a check", async () => {
+        const MON = "2031-06-09";
+        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("q8-1", "Write the runbook ~30m"))}`);
+        jira.handoff.push(
+            { ...ticket("ZAP-981", { summary: "Ship the fix", status: "QA Testing" }), daysInStatus: 2 },
+            { ...ticket("ZAP-982", { summary: "Check the gate", status: "QA Testing" }), daysInStatus: 2 }
+        );
+        at(`${MON}T17:30`);
+        await call("caius_winddown", { date: MON, step: "open" });
+        expect((await call("caius_winddown", { date: MON, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-981", "ZAP-982" ]);
+        const unmatched = await call("caius_winddown_apply", { date: MON, said: "989 is finished, the rest is fine", asOffered: true, finished: [ "989" ] });
+        expect(unmatched.check).toEqual([ expect.objectContaining({ item: "989", missing: "finished" }) ]);
+        expect(unmatched.written).toEqual([]);
+        const wound = await call("caius_winddown_apply", { date: MON, said: "981 is finished, the rest is fine", asOffered: true, finished: [ "981" ] });
+        expect(wound.check).toBeUndefined();
+        expect(kindsOf(wound, "finished")).toEqual([ "ZAP-981" ]);
+        expect(kindsOf(wound, "accept")).toEqual([ "ZAP-982" ]);
+        expect((await call("caius_plan", { period: "day", date: "2031-06-10" })).suggested).toEqual([]);
+
+        const DAY = "2031-06-16";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q8-2", "Write the runbook ~30m"))}`);
+        jira.handoff.length = 0;
+        jira.handoff.push(
+            { ...ticket("ZAP-983", { summary: "Ship the patch", status: "QA Testing" }), daysInStatus: 2 },
+            { ...ticket("ZAP-984", { summary: "Check the door", status: "QA Testing" }), daysInStatus: 2 }
+        );
+        at(`${DAY}T09:40`);
+        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-983", "ZAP-984" ]);
+        const missed = await call("caius_plan_apply", { date: DAY, said: "988 is done, rest fine", asOffered: true, finished: [ "988" ], brief });
+        expect(missed.check).toEqual([ expect.objectContaining({ item: "988", missing: "finished" }) ]);
+        expect(missed.written).toEqual([]);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "983 is done, rest fine", asOffered: true, finished: [ "983" ], brief });
+        expect(planned.check).toBeUndefined();
+        expect(kindsOf(planned, "finished")).toEqual([ "ZAP-983" ]);
+        expect(kindsOf(planned, "accept")).toEqual([ "ZAP-984" ]);
+    });
 });
