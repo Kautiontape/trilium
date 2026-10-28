@@ -488,3 +488,28 @@ describe("a stale errand", () => {
         expect(await contentOf(planned.headerNoteId)).toContain(`<h2>${HEADLINE}</h2>`);
     });
 });
+
+describe("a candidate the call itself names", () => {
+    const brief = { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] };
+    const kindsOf = (result: any, kind: string) => result.written.filter((entry: any) => entry.kind === kind).map((entry: any) => entry.id);
+    const openOn = async (date: string) => (await call("caius_plan", { period: "day", date })).sections.flatMap((s: any) => s.tasks)
+        .filter((task: any) => task.state === "open").map((task: any) => task.text);
+
+    it("Plan my day's asOffered takes no candidate the call calls finished", async () => {
+        const DAY = "2031-06-02";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q7-1", "Write the runbook ~30m"))}`);
+        jira.handoff.push(
+            { ...ticket("ZAP-975", { summary: "Ship the fix", status: "QA Testing" }), daysInStatus: 2 },
+            { ...ticket("ZAP-976", { summary: "Check the gate", status: "QA Testing" }), daysInStatus: 2 }
+        );
+        at(`${DAY}T09:40`);
+        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-975", "ZAP-976" ]);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "975 is already done, rest fine", asOffered: true, finished: [ "ZAP-975" ], brief });
+        expect(planned.check).toBeUndefined();
+        expect(kindsOf(planned, "accept")).toEqual([ "ZAP-976" ]);
+        expect(kindsOf(planned, "finished")).toEqual([ "ZAP-975" ]);
+        const open = await openOn(DAY);
+        expect(open).toEqual([ "Write the runbook", expect.stringContaining("ZAP-976") ]);
+        expect(open.some((text: string) => text.includes("ZAP-975"))).toBe(false);
+    });
+});

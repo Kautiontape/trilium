@@ -167,9 +167,12 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const pools = planPools(offer, [ ...catchupTasks, ...heldTasks ], listed.days);
         const { table, items, copies, collided } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         pools.settled = settledOf(items, (item) => item.period === date, copies);
-        // With `asOffered` the answers are the candidates and keep lines offered; the heavy day's move
-        // is made only by its `forward`.
-        const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
+        // With `asOffered` the answers are the candidates and keep lines offered, but for a candidate
+        // the call itself names; the heavy day's move is made only by its `forward`.
+        const put = new Set([
+            ...[ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId),
+            ...candidatesNamed(pools.candidates, [ ...asked.finished, ...(asked.forward ?? []).map((ref) => ref.listItemId) ])
+        ]);
         const answers: PlanApplyInput = asked.asOffered ? {
             ...asked,
             accept: asked.accept.length ? asked.accept : offer.candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
@@ -400,11 +403,10 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const heldOnes = await heldItems(store);
         const stale = await staleItems(store, now, open.items.filter((item) => !item.listItemId || !heldOnes.has(item.listItemId)), targetDay);
         // With `asOffered` the answers are what was offered, but for a candidate the call itself names.
-        const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
-        for (const value of [ ...asked.done, ...asked.finished, ...asked.fates.map((fate) => fate.listItemId) ]) {
-            const found = resolveName(pools.candidates, value);
-            if (found && "id" in found) put.add(found.id);
-        }
+        const put = new Set([
+            ...[ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId),
+            ...candidatesNamed(pools.candidates, [ ...asked.done, ...asked.finished, ...asked.fates.map((fate) => fate.listItemId) ])
+        ]);
         const answers: WindDownApplyInput = asked.asOffered ? {
             ...asked,
             accept: asked.accept.length ? asked.accept : candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
@@ -1261,6 +1263,14 @@ function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, poo
         const item = pool.find((entry) => entry.id === heard.id)?.text ?? heard.id;
         const key = given === null ? "caius.check.fate" : "caius.check.fate_other";
         return [ { item, said: heard.clause, missing: "fate" as const, message: t(key, { item, clause: heard.clause }) } ];
+    });
+}
+
+/** The ids of the candidates in `pool` that the call's own answers (`values`, such as its finished keys) name. */
+function candidatesNamed(pool: Named[], values: string[]): string[] {
+    return values.flatMap((value) => {
+        const found = resolveName(pool, value);
+        return found && "id" in found ? [ found.id ] : [];
     });
 }
 
