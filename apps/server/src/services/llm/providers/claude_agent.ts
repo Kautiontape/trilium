@@ -744,7 +744,7 @@ const CAIUS_OPENER = /^(?:Plan my day|Wind down) \d{4}-\d{2}-\d{2}$/;
 /** Whether the conversation was started by a Caius opener, its first user message. */
 function isCaiusConversation(messages: LlmMessage[]): boolean {
     const first = messages.find((message) => message.role === "user");
-    return !!first && typeof first.content === "string" && CAIUS_OPENER.test(first.content.trim());
+    return !!first && CAIUS_OPENER.test(flattenContent(first.content).trim());
 }
 
 /**

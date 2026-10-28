@@ -430,8 +430,12 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect(queryMock.mock.calls[1][0].options.disallowedTools).toEqual(options.disallowedTools);
 
         scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: [ { type: "text", text: "Plan my day 2026-11-05" } ] }], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[2][0].options.disallowedTools).toEqual(options.disallowedTools);
+
+        scriptAgent([successResult()]);
         await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
-        expect(queryMock.mock.calls[2][0].options.disallowedTools).toBeUndefined();
+        expect(queryMock.mock.calls[3][0].options.disallowedTools).toBeUndefined();
     });
 
     it("wires Trilium's in-process MCP server instance and disables built-in tools", async () => {
