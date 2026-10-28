@@ -309,12 +309,13 @@ describe("caius_winddown", () => {
 });
 
 describe("caius_planday", () => {
-    it("catchup: offers to move a missed night's open tasks, and stops asking once skipped", async () => {
+    it("catchup: offers to move every missed night's open tasks, and stops asking once skipped", async () => {
         const answer = await planday({ date: MONDAY, step: "catchup" });
         expect(answer).toMatchObject({ step: "catchup", date: MONDAY, next: "inputs" });
-        expect(answer.question).toBe("Friday has 2 open tasks. Move all to today, review them, or skip?");
-        expect(answer.data).toMatchObject({ lastWorkday: FRIDAY, moveTo: MONDAY, skipped: false });
-        expect(answer.data.tasks.map((task: any) => task.listItemId)).toEqual([ "f1", "f3" ]);
+        // Thursday was never closed either, so its tasks come with Friday's.
+        expect(answer.question).toBe("Thursday and Friday have 4 open tasks. Move all to today, review them, or skip?");
+        expect(answer.data).toMatchObject({ lastWorkday: FRIDAY, days: [ THURSDAY, FRIDAY ], moveTo: MONDAY, skipped: false });
+        expect(answer.data.tasks.map((task: any) => task.listItemId)).toEqual([ "o1", "o2", "f1", "f3" ]);
 
         expect(await call("caius_skip_catchup", { date: MONDAY })).toMatchObject({ status: "updated" });
         const skipped = await planday({ date: MONDAY, step: "catchup" });

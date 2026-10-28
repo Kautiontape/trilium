@@ -148,7 +148,12 @@ export interface CaiusContextLine {
 
 /** The nudge bar's state for a day: the catch-up first, then whether the day has a brief. */
 export type CaiusNudge = { date: string; lastWorkday: string } & (
-    | { state: "catchup"; tasks: { noteId: string; listItemId: string | null; text: string }[] }
+    | {
+        state: "catchup";
+        /** Every day since the last closed one, oldest first; one day when absent. */
+        days?: string[];
+        tasks: { noteId: string; listItemId: string | null; text: string }[];
+    }
     | { state: "unplanned" }
     | { state: "planned"; plannedAt: string | null }
 );

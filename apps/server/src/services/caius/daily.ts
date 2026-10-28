@@ -42,7 +42,7 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL } from "./brief.js";
+import { ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -186,14 +186,15 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     }
 
     if (step === "catchup") {
-        const { standing, catchup: { lastWorkday: last, skipped, tasks } } = await deps.locked("caius_planday", async () => ({
+        const { standing, catchup: { lastWorkday: last, days, skipped, tasks } } = await deps.locked("caius_planday", async () => ({
             standing: await deps.standing(),
             catchup: await catchupOf(deps.store, date, deps.now)
         }));
-        const question = tasks.length
-            ? t("caius.daily.catchup", { weekday: weekdayName(last), count: tasks.length })
-            : null;
-        return reply(standing, { lastWorkday: last, moveTo: date, skipped, tasks }, question, "inputs");
+        const names = days.map(weekdayName);
+        const question = !tasks.length ? null : names.length > 1
+            ? t("caius.daily.catchup_days", { weekdays: t("caius.daily.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: tasks.length })
+            : t("caius.daily.catchup", { weekday: names[0] ?? weekdayName(last), count: tasks.length });
+        return reply(standing, { lastWorkday: last, days, oldestDay: days[0] ?? null, moveTo: date, skipped, tasks }, question, "inputs");
     }
 
     const read = await deps.dayRead(date, refresh);
@@ -345,21 +346,36 @@ export function drawnEvents(read: DayRead) {
         .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
 }
 
+/** Workdays the catch-up looks back at most. */
+const CATCHUP_DAYS = 5;
+
 /**
- * What Plan my day offers to move to `date`: the live top-level tasks of the last workday, or none
- * once the day note carries `#caiusSkipCatchup=<date>`, or when the last workday's note is protected
- * or not a text note, since Caius cannot read it. Answers the day note too, without creating it.
- * The caller holds the lock.
+ * What Plan my day offers to move to `date`: the live top-level tasks of every workday since the
+ * last closed one, oldest first, at most `CATCHUP_DAYS` back. A day is closed when it has nothing
+ * live, was wound down (`#caiusWoundDown`), or is protected or not a text note, since Caius cannot
+ * read it; a skip recorded on a day (`#caiusSkipCatchup`) covered the days before it, so the walk
+ * stops after that day. None once the day note carries `#caiusSkipCatchup=<date>`. Answers the day
+ * note too, without creating it. The caller holds the lock.
  */
 export async function catchupOf(store: NoteStore, date: string, now: Date) {
     const last = dayKey(lastWorkday(localDay(date)));
     const note = await findPeriodNote(store, "day", date);
     const skipped = !!note?.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
-    const lastNote = skipped ? undefined : await findPeriodNote(store, "day", last);
-    const readable = !lastNote || (lastNote.type === "text" && !lastNote.isProtected);
-    const tasks = skipped || !readable ? [] : mainTasks(await readPlan(store, "day", last, now))
-        .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical }));
-    return { lastWorkday: last, note, skipped, tasks };
+    const days: string[] = [];
+    const tasks: { noteId: string; listItemId: string | null; text: string; section: string | null; critical: boolean; period: string }[] = [];
+    for (let at = localDay(date), i = 0; !skipped && i < CATCHUP_DAYS; i++) {
+        at = lastWorkday(at);
+        const key = dayKey(at);
+        const dayNote = await findPeriodNote(store, "day", key);
+        if (!dayNote || dayNote.type !== "text" || dayNote.isProtected || label(dayNote, WOUND_DOWN_LABEL) !== undefined) break;
+        const live = mainTasks(await readPlan(store, "day", key, now))
+            .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
+        if (!live.length) break;
+        days.unshift(key);
+        tasks.unshift(...live);
+        if (dayNote.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL)) break;
+    }
+    return { lastWorkday: last, days, note, skipped, tasks };
 }
 
 /**

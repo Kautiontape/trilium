@@ -35,6 +35,8 @@ export const RAISED_LABEL = "caiusRaised";
 export const ASKED_LABEL = "caiusAsked";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
 export const NOT_TODAY_LABEL = "caiusNotToday";
+/** On a day note: the day was wound down, so the catch-up looks no further back than it. */
+export const WOUND_DOWN_LABEL = "caiusWoundDown";
 /** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */
 export const SKIP_CATCHUP_LABEL = "caiusSkipCatchup";
 /** Children of a brief that the old push script labels; they are pages of a brief, never the brief. */

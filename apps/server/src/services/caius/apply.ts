@@ -27,7 +27,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASKED_LABEL, type BriefPick, NOT_TODAY_LABEL, sameTitle, writeBrief } from "./brief.js";
+import { ASKED_LABEL, type BriefPick, NOT_TODAY_LABEL, sameTitle, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -264,6 +264,8 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         await dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
         await shelve(store, targetDay, now, candidates, input, written, skipped);
         await eveningAndContext(store, targetDay, now, input, written, skipped);
+        // The day is closed now, so a later catch-up looks no further back than it.
+        await labelDay(store, date, WOUND_DOWN_LABEL, [ date ]);
         return withDateLabels({ date, targetDay, written, skipped });
     });
 }

@@ -621,6 +621,7 @@
       "keep": "Keep '{{- line}}'?",
       "context": "Anything to know for {{- day}}?",
       "catchup_one": "{{- weekday}} has {{count}} open task. Move all to today, review them, or skip?",
+      "catchup_days": "{{- weekdays}} have {{count}} open tasks. Move all to today, review them, or skip?",
       "catchup_review": "The last workday's tasks stay where they are; its wind-down goes through them.",
       "catchup_other": "{{- weekday}} has {{count}} open tasks. Move all to today, review them, or skip?",
       "heavy": "The day is {{percent}}% booked. Move '{{- task}}' to {{- day}}?",

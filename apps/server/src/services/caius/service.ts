@@ -406,9 +406,9 @@ export function createCaiusService(
          * `unplanned`. Reads only.
          */
         nudge: ({ date }: NudgeInput) => withCaiusLock("caius_nudge", async () => {
-            const { lastWorkday, note, tasks } = await catchupOf(store, date, caiusNow());
+            const { lastWorkday, days, note, tasks } = await catchupOf(store, date, caiusNow());
             if (tasks.length) {
-                return { date, state: "catchup", lastWorkday, tasks: tasks.map(({ noteId, listItemId, text }) => ({ noteId, listItemId, text })) };
+                return { date, state: "catchup", lastWorkday, days, tasks: tasks.map(({ noteId, listItemId, text }) => ({ noteId, listItemId, text })) };
             }
             const brief = note ? await findBrief(store, note.noteId, date) : null;
             const plannedAt = brief ? label(brief, PLANNED_AT_LABEL) ?? null : null;

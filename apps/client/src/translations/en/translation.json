@@ -4539,6 +4539,8 @@
     "nudge": {
       "catchup_one": "{{- weekday}} has {{count}} open task.",
       "catchup_other": "{{- weekday}} has {{count}} open tasks.",
+      "catchup_days": "{{- weekdays}} have {{count}} open tasks.",
+      "list_and": "{{- head}} and {{- last}}",
       "move_all": "Move all to today",
       "review": "Review",
       "skip": "Skip",

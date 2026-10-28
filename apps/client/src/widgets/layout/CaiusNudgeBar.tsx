@@ -77,10 +77,16 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
     switch (shown.state) {
         case "catchup": {
             const movable = shown.tasks.filter((task): task is MovableTask => !!task.listItemId);
-            text = t("caius.nudge.catchup", { weekday: weekdayName(shown.lastWorkday), count: shown.tasks.length });
+            const days = shown.days?.length ? shown.days : [ shown.lastWorkday ];
+            const names = days.map(weekdayName);
+            text = names.length > 1
+                ? t("caius.nudge.catchup_days", { weekdays: t("caius.nudge.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: shown.tasks.length })
+                : t("caius.nudge.catchup", { weekday: names[0], count: shown.tasks.length });
+            // Review closes the oldest day first; its wind-down sends what's left on.
+            const oldest = days[0] ?? shown.lastWorkday;
             actions = [
                 ...(movable.length ? [ { label: t("caius.nudge.move_all"), onClick: () => void moveAll(movable) } ] : []),
-                { label: t("caius.nudge.review"), onClick: () => start(caiusOpener("winddown", shown.lastWorkday)) },
+                { label: t("caius.nudge.review"), onClick: () => start(caiusOpener("winddown", oldest)) },
                 { label: t("caius.nudge.skip"), onClick: () => void skip() }
             ];
             break;
@@ -160,7 +166,8 @@ function useNudge(date: string | null, noteId: string | undefined) {
     useEffect(() => () => clearTimeout(timer.current), []);
 
     useTriliumEvent("entitiesReloaded", useCallback(({ loadResults }) => {
-        if (date && noteId && touchesNudge(loadResults, nudge?.lastWorkday, noteId)) {
+        const days = nudge?.state === "catchup" && nudge.days?.length ? nudge.days : nudge ? [ nudge.lastWorkday ] : [];
+        if (date && noteId && touchesNudge(loadResults, days, noteId)) {
             refresh();
         }
     }, [ date, noteId, nudge, refresh ]));
@@ -172,15 +179,15 @@ function useNudge(date: string | null, noteId: string | undefined) {
 const NUDGE_LABELS = [ "caiusSkipCatchup", "morningBrief", "caiusPlannedAt" ];
 
 /**
- * Whether the changes touch what the bar reads: the day note of `lastWorkday` or a note under it, a
- * new child of today's note `dayNoteId` (a brief), or a skip or brief label. Edits to the text of
- * today's note change none of it.
+ * Whether the changes touch what the bar reads: the day note of one of the catch-up's `days` (the
+ * last workday when there is no catch-up) or a note under it, a new child of today's note
+ * `dayNoteId` (a brief), or a skip or brief label. Edits to the text of today's note change none of it.
  */
-function touchesNudge(loadResults: LoadResults, lastWorkday: string | undefined, dayNoteId: string) {
+function touchesNudge(loadResults: LoadResults, days: string[], dayNoteId: string) {
     const inLastWorkday = (noteId: string) => {
         const changed = froca.notes[noteId];
-        return !!lastWorkday && !!changed && [ changed, ...changed.getParentNotes() ]
-            .some((candidate) => candidate.getOwnedLabelValue("dateNote") === lastWorkday);
+        return !!changed && [ changed, ...changed.getParentNotes() ]
+            .some((candidate) => days.includes(candidate.getOwnedLabelValue("dateNote") ?? ""));
     };
 
     return loadResults.getNoteIds().some(inLastWorkday)

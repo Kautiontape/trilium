@@ -75,6 +75,19 @@ describe("CaiusNudgeBar", () => {
 
     afterEach(() => vi.useRealTimers());
 
+    it("names every day the catch-up covers, and reviews the oldest of them", async () => {
+        buildNote({ id: "mon", title: "2", "#dateNote": "2026-11-02" });
+        h.nudge.mockResolvedValue({
+            ...CATCHUP, days: [ "2026-11-02", "2026-11-03" ],
+            tasks: [ { noteId: "mon", listItemId: "m", text: "Monday's" }, ...CATCHUP.tasks ]
+        });
+        const bar = await mount(today);
+
+        expect(text(bar)).toBe("Monday and Tuesday have 4 open tasks.");
+        await press(button(bar, "Review"));
+        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("Wind down 2026-11-02");
+    });
+
     it("offers the catch-up of the last workday: move all to today, review, or skip", async () => {
         h.nudge.mockResolvedValue(CATCHUP);
         const bar = await mount(today);

@@ -58,12 +58,13 @@ Today's day note (today by the Caius clock) shows a slim bar under its journal n
 
 | State | When | Bar | Actions |
 |---|---|---|---|
-| Catch-up | The last workday (Friday on a Monday) still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks." | **Move all to today**, **Review**, **Skip** |
+| Catch-up | A workday since the last closed one still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks.", or "Tuesday and Wednesday have 5 open tasks." | **Move all to today**, **Review**, **Skip** |
 | Not planned | No catch-up is due, and today has no Morning Brief, or its brief was planned on an earlier day | "No plan yet." | **Plan my day** |
 | Planned | Today has a Morning Brief planned today | "Planned 08:40." ("Planned Fri 17:20." for a plan made on another day) | **Refresh** |
 
 - **Move all to today** forwards those tasks to today in one request, with no chat, the way the Plan tab's Close does: today's note is locked and reloaded if it is open. A task without a list item id is counted but not moved; run the id backfill.
-- **Review** starts `Wind down <last workday>` in the sidebar chat.
+- **Review** starts `Wind down <oldest of those days>` in the sidebar chat.
+- **Which days:** walking back from the last workday, at most five workdays, every day with live tasks until the first closed one. A day is closed when it has nothing live, or was wound down (`caius_winddown_apply` labels it `#caiusWoundDown`). A skip recorded on a day covered the days before it, so the walk stops after that day.
 - **Skip** sets `#caiusSkipCatchup=<today>` on today's note, as `caius_skip_catchup` does, so the bar and Plan my day stop offering the catch-up.
 - **Plan my day** and **Refresh** start `Plan my day <today>`.
 
@@ -163,7 +164,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
 
 **Plan my day** plans `date`:
 
-1. **`catchup`.** When the last workday still has live tasks: "Friday has 2 open tasks. Move all to today, review them, or skip?". After `caius_skip_catchup` for the day, it no longer asks.
+1. **`catchup`.** When the workdays since the last closed one still have live tasks, as the nudge bar counts them: "Friday has 2 open tasks. Move all to today, review them, or skip?", or "Tuesday and Wednesday have 5 open tasks…". `data.days` lists them, oldest first, and `data.oldestDay` is the one Review winds down. After `caius_skip_catchup` for the day, it no longer asks.
 2. **`inputs`.**
    - **Candidates:** as in Wind down, but only what is new since the day's brief was last planned (`#caiusPlannedAt`).
    - **Meetings:** the Meetings block to write from the calendar, beside the current one.

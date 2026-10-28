@@ -50,11 +50,25 @@ describe("Caius nudge route", () => {
             date: MONDAY,
             state: "catchup",
             lastWorkday: FRIDAY,
+            days: [ FRIDAY ],
             tasks: [
                 { noteId: noteIds.friday, listItemId: "f1", text: "Left over" },
                 { noteId: noteIds.friday, listItemId: "f2", text: "Also open" }
             ]
         });
+    });
+
+    it("covers every day since the last closed one: Thursday and Wednesday's tasks on a Friday, stopping at Tuesday's wind-down", async () => {
+        await cls.init(async () => {
+            for (const [ date, id ] of [ [ "2033-03-15", "s1" ], [ "2033-03-16", "s2" ], [ "2033-03-17", "s3" ] ]) {
+                const day = await store.calendarDay(date as string);
+                await store.putContent(day.noteId, `<h3>Work</h3>${ul(li(id as string, `Task ${id}`))}`);
+                if (id === "s1") setLabel(day.noteId, "caiusWoundDown", date as string);
+            }
+        });
+        const { body } = await nudge("2033-03-18").expect(200);
+        expect(body).toMatchObject({ state: "catchup", lastWorkday: "2033-03-17", days: [ "2033-03-16", "2033-03-17" ] });
+        expect(body.tasks.map((task: { listItemId: string }) => task.listItemId)).toEqual([ "s2", "s3" ]);
     });
 
     it("answers unplanned once the catch-up is skipped, and planned with the date and time once a brief exists", async () => {

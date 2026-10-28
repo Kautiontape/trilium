@@ -372,3 +372,39 @@ describe("a refresh keeps the morning", () => {
         expect((await call("caius_planday", { date: DAY, step: "inputs", refresh: true })).question).toBeNull();
     });
 });
+
+describe("the catch-up covers every day since the last closed one", () => {
+    const task = async (date: string, id: string, text: string) => cls.init(async () => {
+        const note = await store.calendarDay(date);
+        await store.putContent(note.noteId, `<h2>☑️ Tasks</h2>${ul(li(id, text))}`);
+    });
+
+    it("Thu 10 Dec after missed Tuesday and Wednesday nights: both days' tasks, back to Monday's wind-down", async () => {
+        await task("2026-12-04", "c4", "Friday leftover");
+        await task("2026-12-07", "c7", "Call the bank");
+        at("2026-12-07T17:30");
+        expect((await call("caius_winddown_apply", { date: "2026-12-07" })).skipped).toEqual([]);
+        await task("2026-12-09", "c9", "Book the venue");
+
+        at("2026-12-10T09:30");
+        const catchup = await call("caius_planday", { date: "2026-12-10", step: "catchup" });
+        expect(catchup.data).toMatchObject({ lastWorkday: "2026-12-09", days: [ "2026-12-08", "2026-12-09" ], oldestDay: "2026-12-08", oldestDayLabel: "Tue 8 Dec" });
+        // Monday's wind-down moved Friday's leftover to Tuesday too; Friday itself is behind the wound-down Monday.
+        expect(catchup.data.tasks.map((t: any) => [ t.period, t.text.split(" [")[0] ])).toEqual([
+            [ "2026-12-08", "Call the bank" ], [ "2026-12-08", "Friday leftover" ], [ "2026-12-09", "Book the venue" ]
+        ]);
+        expect(catchup.question).toBe("Tuesday and Wednesday have 3 open tasks. Move all to today, review them, or skip?");
+
+        const moved = await call("caius_plan_apply", { date: "2026-12-10", catchup: "move_all", brief: prose });
+        expect(moved.written.filter((w: any) => w.kind === "catchup").map((w: any) => w.id)).toEqual(expect.arrayContaining([ "c9" ]));
+        expect((await call("caius_planday", { date: "2026-12-10", step: "catchup" })).data.tasks).toEqual([]);
+    });
+
+    it("looks back five workdays at most, and stops at a day with nothing live", async () => {
+        for (const [ date, id ] of [ [ "2026-12-11", "x1" ], [ "2026-12-14", "x2" ], [ "2026-12-15", "x3" ], [ "2026-12-16", "x4" ], [ "2026-12-17", "x5" ], [ "2026-12-18", "x6" ] ]) {
+            await task(date as string, id as string, `Task ${id}`);
+        }
+        at("2026-12-21T09:30");
+        expect((await call("caius_planday", { date: "2026-12-21", step: "catchup" })).data.days).toEqual([ "2026-12-14", "2026-12-15", "2026-12-16", "2026-12-17", "2026-12-18" ]);
+    });
+});
