@@ -510,7 +510,9 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
     if (holding.size && !skipped) {
         const docs = (await loadJournal(store)).docs;
         for (const task of openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, now))) {
-            if (!task.listItemId || !holding.has(task.listItemId) || task.parentListItemId || task.period >= date) continue;
+            if (!task.listItemId || !holding.has(task.listItemId) || task.parentListItemId) continue;
+            // A day's own items are its plan, not its catch-up; a week or month item counts from its first day, since `2027-W45` sorts after every date.
+            if (PERIODS.day.pattern.test(task.period) ? task.period >= date : periodStart(task.period) > date) continue;
             if (held.some((h) => h.listItemId === task.listItemId)) continue;
             held.push({ noteId: task.noteId, listItemId: task.listItemId, text: task.text, section: task.section, critical: task.critical, period: task.period });
             if (PERIODS.day.pattern.test(task.period) && !days.includes(task.period)) days.push(task.period);

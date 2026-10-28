@@ -1153,3 +1153,22 @@ describe("fix round 3: Review with only held tasks", () => {
         await clearHolds(DAY);
     });
 });
+
+describe("fix round 3: a held week item is asked about too", () => {
+    it("Wednesday's 111 and the week's 101 held together; Thursday's catch-up lists the week item with the day item and asks which", async () => {
+        await cls.init(async () => {
+            const wednesday = await store.calendarDay("2027-12-22");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("ws-111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`);
+            const week = await store.calendarWeek("2027-W51");
+            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("ws-101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`))}`);
+        });
+        at("2027-12-22T17:45");
+        const held = await call("caius_winddown_apply", { date: "2027-12-22", done: [ "the export" ] });
+        expect(held.say).toMatch(/Which export: ZAP-1\d\d or ZAP-1\d\d\?$/);
+        at("2027-12-23T09:30");
+        const catchup = await call("caius_planday", { date: "2027-12-23", step: "catchup" });
+        expect(catchup.data.held.map((task: any) => task.listItemId).sort()).toEqual([ "ws-101", "ws-111" ]);
+        expect(catchup.question).toMatch(/ZAP-111.* or ZAP-101.*\?$|ZAP-101.* or ZAP-111.*\?$/);
+        await clearHolds("2027-12-22");
+    });
+});

@@ -116,6 +116,21 @@ describe("Caius nudge route", () => {
         expect((await nudge("2033-07-08").expect(200)).body.held?.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "sh1", "sh2" ]));
     });
 
+    it("lists a held item that lives on a week note", async () => {
+        await cls.init(async () => {
+            const [ root ] = await store.search("#calendarRoot");
+            if (root) await store.addLabel(root.noteId, "enableWeekNote", "");
+            const week = await store.calendarWeek("2033-W33");
+            await store.putContent(week.noteId, `<h3>Work</h3>${ul(li("wk1", "Week export check"))}`);
+            const wed = await store.calendarDay("2033-08-17");
+            await store.putContent(wed.noteId, `<h3>Work</h3>${ul(li("wd1", "Day export check"))}`);
+            await store.addLabel(wed.noteId, "caiusHeld", "wk1");
+            await store.addLabel(wed.noteId, "caiusHeld", "wd1");
+        });
+        const { body } = await nudge("2033-08-18").expect(200);
+        expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "wk1", "wd1" ]));
+    });
+
     it("walks past a missing day to the open one before it", async () => {
         await cls.init(async () => {
             const tue = await store.calendarDay("2033-04-05");
