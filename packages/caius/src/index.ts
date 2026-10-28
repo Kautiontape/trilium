@@ -37,7 +37,7 @@ export { addContext, addContextLine, formatUntil, replaceMeetings, setMeetings }
 export { parseContext, periodSpan, sameContext } from './trilium/until.js';
 export type { ContextAddResult, MeetingsResult } from './trilium/daynote.js';
 export type { ContextLine } from './trilium/until.js';
-export { renderDayTerrain, weatherIcon } from './draw/terrain.js';
+export { renderDayTerrain, weatherIcon, weatherOfSvg } from './draw/terrain.js';
 export { meetingLines, overlapPairs } from './daily/meetings.js';
 export type { MeetingEvent } from './daily/meetings.js';
 export { formatEstimate, formatHours } from './daily/format.js';

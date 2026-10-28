@@ -132,6 +132,12 @@ export function putAttachment(noteId: string, { role, mime, title, content }: At
     });
 }
 
+/** The text content of a note's attachment of `role` and `title`, or null when it has none. The caller provides the `cls.init()` context. */
+export function readAttachment(noteId: string, role: string, title: string): string | null {
+    const attachment = getNote(noteId).getAttachmentsByRole(role).find((candidate) => candidate.title === title);
+    return attachment ? String(attachment.getContent()) : null;
+}
+
 /**
  * Creates a text note under `parentNoteId` with `content` as its HTML and answers its id, in one
  * transaction, the way the `create_note` tool does. Like `putAttachment`, it sits beside

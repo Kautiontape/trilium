@@ -167,14 +167,16 @@ export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "
 
 /**
  * Draws the header of the brief of `date` again, when the day has one: the drawing with `draw`,
- * given the weather the brief was drawn with, and the header note with its date line and headline
- * as written and the acts `acts` makes of the written ones. Answers the header note's write, or
- * null when the day has no brief or no header to read.
+ * given the weather the brief was drawn with, or `fetched` for a brief that kept none, which is
+ * kept on it then; and the header note with its date line and headline as written and the acts
+ * `acts` makes of the written ones. Answers the header note's write, or null when the day has no
+ * brief or no header to read.
  */
 export async function redrawHeader(
     store: NoteStore, date: string,
     draw: (noteId: string, weather: { code: number; label: string } | undefined) => string,
-    acts: (written: BriefAct[]) => BriefAct[]
+    acts: (written: BriefAct[]) => BriefAct[],
+    fetched?: { code: number; label: string }
 ): Promise<NoteWrite | null> {
     const day = await findPeriodNote(store, "day", date);
     const brief = day && day.type === "text" && !day.isProtected ? await findBrief(store, day.noteId, date) : null;
@@ -182,8 +184,10 @@ export async function redrawHeader(
     if (!brief || !header || header.isProtected) return null;
     const written = readHeader(await store.content(header.noteId));
     if (!written) return null;
-    const weather = /^(\d+) (.+)$/.exec(label(brief, WEATHER_LABEL) ?? "");
-    const attachmentId = draw(header.noteId, weather?.[1] && weather[2] ? { code: Number(weather[1]), label: weather[2] } : undefined);
+    const kept = /^(\d+) (.+)$/.exec(label(brief, WEATHER_LABEL) ?? "");
+    const weather = kept?.[1] && kept[2] ? { code: Number(kept[1]), label: kept[2] } : fetched;
+    if (!kept && fetched) setLabel(brief.noteId, WEATHER_LABEL, `${fetched.code} ${fetched.label}`);
+    const attachmentId = draw(header.noteId, weather);
     return replace(store, header.noteId, "header", () => headerHtml({
         dateLine: written.dateLine,
         headline: written.headline,

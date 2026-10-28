@@ -276,6 +276,21 @@ function textWidth(text: string, size: number, bold = false): number {
   return text.length * size * (bold ? EM_BOLD : EM);
 }
 
+/** A WMO code that draws each icon, for redrawing a weather mark read back from a drawing. */
+const ICON_CODES: Record<WeatherIcon, number> = { sun: 0, cloud: 3, fog: 45, rain: 61, snow: 71, storm: 95 };
+
+/**
+ * The weather a drawing shows, as `renderDayTerrain` takes it: a code that draws the same icon and
+ * the label, or null when the drawing has no weather mark.
+ */
+export function weatherOfSvg(svg: string): { code: number; label: string } | null {
+  const mark = /<g data-part="weather" data-icon="(\w+)">[\s\S]*?<text [^>]*>([^<]*)<\/text><\/g>/.exec(svg);
+  const icon = mark?.[1] as WeatherIcon | undefined;
+  if (!icon || !(icon in ICON_CODES) || mark?.[2] === undefined) return null;
+  const label = mark[2].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  return { code: ICON_CODES[icon], label };
+}
+
 /** The icon for a WMO weather code; an unknown code reads as cloud. */
 export function weatherIcon(code: number): WeatherIcon {
   if (code <= 1) return 'sun';

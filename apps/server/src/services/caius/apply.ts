@@ -13,6 +13,7 @@ import {
     findPeriodNote,
     forwardTasks,
     keysOf,
+    label,
     loadJournal,
     isoWeekKey,
     loadStateSymbols,
@@ -28,11 +29,12 @@ import {
     setMeetings,
     setStates,
     takeSuggested,
-    TRILIUM_CONFIG
+    TRILIUM_CONFIG,
+    weatherOfSvg
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -62,7 +64,8 @@ import {
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
-import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn } from "./writes.js";
+import { readAttachment } from "./store.js";
+import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
 import type { DayWeather } from "./weather.js";
 
 export interface ApplyDeps extends StepDeps {
@@ -215,11 +218,16 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
     const { date } = input;
     const targetDay = windDownTarget(date, deps.now);
     const read = await deps.dayRead(targetDay);
-    // A day with a brief has its header drawn again after the writes, from its calendar.
-    const briefed = new Map<string, DayRead>();
+    // A day with a brief has its header drawn again after the writes, from its calendar, with the
+    // day's forecast fetched for a brief that kept no weather.
+    const briefed = new Map<string, { read: DayRead; fetched?: DayWeather }>();
+    const place = await deps.place();
     for (const day of new Set([ date, targetDay ])) {
         const note = await findPeriodNote(deps.store, "day", day);
-        if (note && await findBrief(deps.store, note.noteId, day)) briefed.set(day, day === targetDay ? read : await deps.dayRead(day));
+        const brief = note ? await findBrief(deps.store, note.noteId, day) : null;
+        if (!brief) continue;
+        const fetched = place && label(brief, WEATHER_LABEL) === undefined ? await deps.weatherOf(place.latitude, place.longitude, day) : undefined;
+        briefed.set(day, { read: day === targetDay ? read : await deps.dayRead(day), ...(fetched ? { fetched } : {}) });
     }
     return deps.locked("caius_winddown_apply", async () => {
         const { store, now } = deps;
@@ -327,7 +335,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
             if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
         }
         // The closed day is drawn as it was worked, its done tasks included; the next workday as it stands.
-        for (const [ day, dayRead ] of briefed) {
+        for (const [ day, { read: dayRead, fetched } ] of briefed) {
             if (failedCalendar(dayRead)) {
                 skipped.push({ kind: "header", id: day, reason: "calendar_unavailable" });
                 continue;
@@ -336,7 +344,9 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
                 const plan = await readPlan(store, "day", day, now);
                 const worked = { worked: day === date };
                 const header = headerOf(plan, dayRead, day, now, worked);
-                const write = await redrawHeader(store, day, (noteId, weather) => drawHeader(noteId, header, weather).attachmentId, (acts) => withEveningAct(acts, plan, header, worked));
+                // A weather icon already drawn stays when no weather can be had.
+                const draw = (noteId: string, weather: DayWeather | undefined) => drawHeader(noteId, header, weather ?? weatherOfSvg(readAttachment(noteId, "image", TERRAIN_TITLE) ?? "") ?? undefined).attachmentId;
+                const write = await redrawHeader(store, day, draw, (acts) => withEveningAct(acts, plan, header, worked), fetched);
                 if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
             });
         }

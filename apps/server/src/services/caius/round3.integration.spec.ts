@@ -44,7 +44,9 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
     };
 }
 
-const tools = createCaiusTools(undefined, async () => ({ code: 3, label: "Overcast" }), stubInputs);
+/** The forecast the weather stub answers; undefined is a forecast that can't be had. */
+let forecast: { code: number; label: string } | undefined = { code: 3, label: "Overcast" };
+const tools = createCaiusTools(undefined, async () => forecast, stubInputs);
 
 const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Location for the weather: 39.95, -75.17</li></ul>"
     + "<h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
@@ -351,6 +353,48 @@ describe("the header is drawn from the note as it ends", () => {
         expect(wound.skipped).toEqual([ expect.objectContaining({ kind: "header", id: DAY, reason: "calendar_unavailable" }) ]);
         expect(await headerOf(planned)).toEqual(before);
         delete errorsByDate[DAY];
+    });
+});
+
+describe("a redrawn header keeps its weather", () => {
+    const weatherOf = async (briefNoteId: string) => cls.init(async () => (await store.note(briefNoteId)).attributes.filter((a) => a.name === "caiusWeather").map((a) => a.value));
+
+    it("a brief drawn without a forecast gets the day's forecast on the redraw, and keeps it", async () => {
+        const DAY = "2027-03-08";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("wx1", "Rake the leaves ~30m"))}`);
+        });
+        forecast = undefined;
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
+        expect((await headerOf(planned)).svg).not.toContain('data-part="weather"');
+        forecast = { code: 61, label: "Rain" };
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "wx1" ] });
+        expect((await headerOf(planned)).svg).toContain('data-part="weather" data-icon="rain"');
+        expect(await weatherOf(planned.briefNoteId)).toEqual([ "61 Rain" ]);
+        forecast = { code: 3, label: "Overcast" };
+    });
+
+    it("an icon already drawn stays when no weather can be had", async () => {
+        const DAY = "2027-03-10";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("wx2", "Sweep the yard ~30m"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
+        expect((await headerOf(planned)).svg).toContain('data-part="weather" data-icon="cloud"');
+        // A brief from before the weather was kept on it.
+        cls.init(() => becca.getNoteOrThrow(planned.briefNoteId).getOwnedLabel("caiusWeather")?.markAsDeleted());
+        forecast = undefined;
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "wx2" ] });
+        const { svg } = await headerOf(planned);
+        expect(svg).toContain('data-part="weather" data-icon="cloud"');
+        expect(svg).toContain(">Overcast</text>");
+        forecast = { code: 3, label: "Overcast" };
     });
 });
 
