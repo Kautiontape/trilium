@@ -54,6 +54,7 @@ import {
     namedDays,
     nextAsked,
     plainText,
+    planFromOf,
     localDay,
     nextOffer,
     planOffer,
@@ -987,6 +988,22 @@ function withEveningAct(acts: Prose["acts"], plan: Awaited<ReturnType<typeof rea
     return [ first, second, { range: t("caius.brief.evening_range"), text } ];
 }
 
+/**
+ * The acts of a day already under way as they plan from `from` on: an act that starts earlier
+ * starts at `from`, and one that ends by then reads as `from`. A range that isn't two clock
+ * times, such as "Evening", is left alone.
+ */
+function fromNow(acts: Prose["acts"], from: string | undefined): Prose["acts"] {
+    if (!from) return acts;
+    return acts.map((act) => {
+        const m = /^(\s*)(\d{1,2}:\d{2})(\s*(?:to|–|-)\s*)(\d{1,2}:\d{2})(\s*)$/.exec(act.range);
+        if (!m?.[2] || !m[4]) return act;
+        const clock = (time: string) => time.padStart(5, "0");
+        if (clock(m[4]) <= from) return { ...act, range: from };
+        return clock(m[2]) < from ? { ...act, range: `${m[1]}${from}${m[3]}${m[4]}${m[5]}` } : act;
+    });
+}
+
 /** The day's drawing: its span from the rhythm, the calendar's events and his list laid out between them. */
 function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date, opts: { worked?: boolean } = {}) {
     const { start, end, workEnd } = read.rhythm;
@@ -1041,7 +1058,8 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
         plannedAt: deps.plannedAt,
         ...(weather ? { weather } : {})
     }, {
-        date: input.date, headline: input.brief.headline, acts: withEveningAct(input.brief.acts, plan, header), picks, sections, header,
+        date: input.date, headline: input.brief.headline, picks, sections, header,
+        acts: withEveningAct(fromNow(input.brief.acts, planFromOf(input.date, now, read.rhythm.start).planFrom), plan, header),
         followUps: followUps.map(({ key, commentId }) => ({ key, commentId }))
     });
     if (result.error !== undefined) return { error: result.error, detail: result.detail };

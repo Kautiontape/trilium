@@ -285,7 +285,8 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             plannedAt, list: withRefs(listItems(facts.plan), "l"), candidates: withRefs(candidates, "c"), meetings, overlaps,
             capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x"),
-            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors, ...(fits ? { summary: fits } : {})
+            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
+            ...planFromOf(date, deps.now, read.rhythm.start)
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
@@ -712,6 +713,15 @@ function workLabel(text: string): string {
     const key = keysOf(text).find((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k));
     const plain = plainText(text);
     return key ?? (plain.length > LABEL_LENGTH ? `${plain.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : plain);
+}
+
+/**
+ * `planFrom`, where the plan of a day already under way starts: the next quarter hour from now on
+ * `date` when it is today and that is after `start`, as the work bars are laid out; else nothing.
+ */
+export function planFromOf(date: string, now: Date, start: string): { planFrom?: string } {
+    const from = quarterAfter(now);
+    return date === dayKey(now) && from > start ? { planFrom: from } : {};
 }
 
 /** The local time of `at` rounded up to the quarter hour, `HH:MM`; at most `23:59`. */

@@ -83,6 +83,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Never refuse a reorder he asks for",
         "\"Put X first\" or \"X after Y\", at any point in the conversation, even after the plan is written, is one `caius_plan_apply` call with only `move`: no `brief`, nothing else.",
         "name his work in the order of his list as this call leaves it",
+        "On a day already under way the step gives `data.planFrom`: the acts start there, never in the part of the day already past.",
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
         "An evening calendar event is not a task",
         "`say` names the skip (\"Call Mom is already on the calendar\")",

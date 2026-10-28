@@ -433,6 +433,30 @@ describe("an emptied Suggested goes", () => {
     });
 });
 
+describe("a refresh plans from now", () => {
+    it("Tue 11:05: the refresh's acts and drawing start at 11:15, not at standup", async () => {
+        const DAY = "2027-04-06";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("n101", `${zap("ZAP-101", "Verify the export retry")} ~30m`), li("n-dave", "Message Dave ~15m"))}`);
+        });
+        at(`${DAY}T09:35`);
+        await call("caius_plan_apply", { date: DAY, brief: prose });
+        at(`${DAY}T11:05`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(inputs.data.planFrom).toBe("11:15");
+        const refreshed = await call("caius_plan_apply", { date: DAY, brief: {
+            ...prose, acts: [ { range: "10:00 to 12:15", text: "Verify ZAP-101" }, { range: "10:30 to 11:00", text: "Message Dave" }, { range: "Evening", text: "z" } ]
+        } });
+        const header = await cls.init(() => store.content(refreshed.headerNoteId));
+        expect(header).toContain("<strong>11:15 to 12:15</strong>");
+        expect(header).toContain("<strong>11:15</strong>");
+        expect(header).not.toContain("10:00 to");
+        const brief = await call("caius_planday", { date: DAY, step: "brief" });
+        expect(brief.data.header.work.map((block: any) => block.start)).toEqual([ "11:15", "11:45" ]);
+    });
+});
+
 describe("'later this week' is the week", () => {
     it("Mon 17:30 '111 later this week': the days carry week refs, and the fate goes to the week note, not a day", async () => {
         await wednesday("2027-03-15");

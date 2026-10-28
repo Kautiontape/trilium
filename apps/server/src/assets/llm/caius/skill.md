@@ -100,6 +100,8 @@ In these conversations only these tools are available; every other Caius tool an
 3. Take his reply and call `caius_plan_apply` **once**: `catchup` (`move_all`, `skip` or `review`), `accept` (his order, each with the place he names), `move`, `keep`, `finished`, `notToday`, `dismiss`, `evening`, `context`, `forward`, and `brief` with the `headline` (14 words or fewer, naming the work; say so when the day is half booked or more), three `acts` (the first two name his work in the order of his list as this call leaves it, after the accepts, moves and forwards, grouped by what fits around the meetings; the tool writes the third, the evening, from what is on the day) and any extra `sections`. The tool writes the picks, the Follow up, the Heads-up, the drawing and the weather.
 4. After the apply, reply with the result's `say`, then the headline and the top pick, and nothing else.
 
+On a day already under way the step gives `data.planFrom`: the acts start there, never in the part of the day already past.
+
 On `catchup: "review"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day: call `catchup` again and go on from there.
 
 On a refresh (the day already has a brief), the step asks only what is new; with no question, call `caius_plan_apply` with an empty answer and the brief's prose.
