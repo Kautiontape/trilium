@@ -437,6 +437,21 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect(queryMock.mock.calls[3][0].options.disallowedTools).toBeUndefined();
     });
 
+    it("tells a Plan my day or Wind down conversation the Caius clock's date in dev, and no other chat", async () => {
+        const promptOf = async (content: string, call: number) => {
+            scriptAgent([successResult()]);
+            await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content }], { enableNoteTools: true }));
+            return queryMock.mock.calls[call][0].options.systemPrompt as string;
+        };
+        vi.stubEnv("TRILIUM_ENV", "dev");
+        vi.stubEnv("CAIUS_NOW", "2026-11-05T09:30");
+        expect(await promptOf("Plan my day 2026-11-05", 0)).toContain("Today's date is 2026-11-05, by the planning clock.");
+        expect(await promptOf("hi", 1)).not.toContain("planning clock");
+        vi.stubEnv("TRILIUM_ENV", "production");
+        expect(await promptOf("Wind down 2026-11-05", 2)).not.toContain("planning clock");
+        vi.unstubAllEnvs();
+    });
+
     it("leaves a Plan my day or Wind down conversation only the step and apply tools of Caius, with the skill and the note reads", async () => {
         scriptAgent([successResult()]);
         await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-06" }], { enableNoteTools: true }));

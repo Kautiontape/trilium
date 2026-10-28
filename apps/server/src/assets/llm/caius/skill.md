@@ -144,7 +144,8 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 - Never write "still", "outstanding", "unanswered", "waiting", "no reply" or "haven't answered". A follow-up is worded as the tool writes it.
 - `standing` is his "How I work" note: follow its Brief rules. When it is null, say `standingMissing` in one line.
 - Say only what the step data says about people and tickets. Never guess pronouns.
-- Never run Plan my day for a future day. A wind-down sets the next day up; it doesn't plan it.
+- The day is whatever the step data says; never compare it with any other date you know; always call the step first.
+- Never run Plan my day for a future day: only the step says a day is later than today, by answering `not_today`. A wind-down sets the next day up; it doesn't plan it.
 
 ## Reading results
 

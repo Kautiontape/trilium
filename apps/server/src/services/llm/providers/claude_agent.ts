@@ -22,6 +22,7 @@
 
 import type { Options as AgentOptions, query as queryFn, SDKAssistantMessage, SDKMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
+import { clockOverride } from "@triliumnext/caius/src/clock.js";
 import type { LlmMessage, LlmMessagePart, LlmStreamChunk } from "@triliumnext/commons";
 import { getLog } from "@triliumnext/core";
 import { resolveAttachmentPart } from "@triliumnext/core/src/services/llm/attachment_content.js";
@@ -674,7 +675,11 @@ export class ClaudeAgentProvider implements LlmProvider {
         // buildSystemPrompt only returns undefined in its own documented-unreachable
         // no-parts case (the markdown hints are always appended).
         /* v8 ignore next */
-        return buildSystemPrompt(messages, promptConfig) ?? "";
+        const prompt = buildSystemPrompt(messages, promptConfig) ?? "";
+        // The CLI tells the agent the real date; in dev the Caius clock can be elsewhere, so a
+        // Plan my day or Wind down conversation is told the clock's date too.
+        const clock = isCaiusConversation(messages) ? clockOverride() : null;
+        return clock ? `${prompt}\n\nToday's date is ${dayOf(clock)}, by the planning clock.` : prompt;
     }
 
     /** Options shared by every agent invocation. */
@@ -751,6 +756,11 @@ const CAIUS_CONVERSATION_DISALLOWED = [
     "caius_set_state", "caius_forward", "caius_assign_ids", "caius_context_add", "caius_context_keep", "caius_meetings",
     "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
 ];
+
+/** A local date as `YYYY-MM-DD`. */
+function dayOf(at: Date): string {
+    return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+}
 
 /** Whether the conversation was started by a Caius opener, its first user message. */
 function isCaiusConversation(messages: LlmMessage[]): boolean {
