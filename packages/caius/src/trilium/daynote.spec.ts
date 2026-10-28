@@ -171,10 +171,12 @@ describe('replaceMeetings', () => {
     expect(replaceMeetings(noContext, lines)).toBe(INCLUDE + `<h3>Meetings</h3>${block}` + ASIDE + TASKS);
   });
 
-  it('creates the heading below the include-note, or at the top, and empties it for no lines', () => {
+  it('creates the heading below the include-note, or at the top; for no lines removes the block and creates none', () => {
     expect(replaceMeetings(INCLUDE + CONTEXT + TASKS, lines)).toBe(INCLUDE + `<h3>Meetings</h3>${block}` + CONTEXT + TASKS);
     expect(replaceMeetings(TASKS, lines)).toBe(`<h3>Meetings</h3>${block}` + TASKS);
-    expect(replaceMeetings(DAY, [])).toBe(INCLUDE + '<h3>Meetings</h3>' + CONTEXT + ASIDE + TASKS + SUGGESTED);
+    expect(replaceMeetings(DAY, [])).toBe(INCLUDE + CONTEXT + ASIDE + TASKS + SUGGESTED);
+    expect(replaceMeetings(INCLUDE + '<h3>Meetings</h3>' + TASKS, [])).toBe(INCLUDE + TASKS);
+    expect(replaceMeetings(TASKS, [])).toBe(TASKS);
   });
 
   it('stops at a heading of the same or higher level, not at a lower one', () => {

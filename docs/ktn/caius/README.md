@@ -210,7 +210,7 @@ Each conversation ends in one apply call. The agent maps your reply to the ids i
 
 ### The write tools
 
-- **`caius_meetings`** `{ date, items?, dryRun, refresh? }` replaces only the Meetings block.
+- **`caius_meetings`** `{ date, items?, dryRun, refresh? }` replaces only the Meetings block. A day with no meetings gets no Meetings heading: an empty one is taken away, and none is added.
   - **Default lines:** without `items`, they come from the day's calendar: `10:00 Standup (Sam, Riley)`, with up to four first names. Declined and all-day events are left out, a repeated line is written once, and a meeting that overlaps another ends in `(overlaps)`.
   - **A failed calendar:** when the calendar could not be read, it writes nothing and answers `calendar_unavailable`, so a failing feed never empties the block.
   - **A missing note:** it is created, except on a dry run.

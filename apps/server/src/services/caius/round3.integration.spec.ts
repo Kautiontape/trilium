@@ -326,3 +326,25 @@ describe("the catch-up names days across a weekend", () => {
             .toBe("Wed 6 Jan, Thu 7 Jan, Fri 8 Jan and Monday have 4 open tasks. Move all to today, review them, or skip?");
     });
 });
+
+describe("a meeting-free day has no Meetings heading", () => {
+    it("Mon 9 Nov 09:45: the plan writes no empty Meetings heading, and takes away one left empty", async () => {
+        const DAY = "2027-01-18";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("n1", "Message Dave about the lights"))}`);
+        });
+        at(`${DAY}T09:45`);
+        const content = async () => cls.init(async () => store.content((await call("caius_plan", { period: "day", date: DAY })).noteId));
+        expect((await call("caius_plan_apply", { date: DAY, brief: prose })).skipped).toEqual([]);
+        expect(await content()).not.toContain("Meetings");
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, (await store.content(day.noteId)).replace("</section>", "</section><h3>Meetings</h3>"));
+        });
+        expect(await content()).toMatch(/<\/section><h3>Meetings<\/h3><h2>/);
+        await call("caius_plan_apply", { date: DAY, brief: prose });
+        expect(await content()).not.toContain("Meetings");
+        expect(await content()).toMatch(/^<section class="include-note"/);
+    });
+});

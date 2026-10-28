@@ -15,8 +15,8 @@ import { parseContext, periodSpan, sameContext } from './until.js';
  * The block under `### Meetings` in a note's HTML, replaced with a plain bullet list of `lines`
  * (text escaped). The block runs to the next heading of the same or a higher level, a Context heading of any
  * level, or the Important block; everything past it is untouched. With no Meetings heading, one is added at the
- * top, below a leading include-note section if there is one. `ids` are the list item ids to give
- * the bullets, by position.
+ * top, below a leading include-note section if there is one. With no `lines`, the block goes with its heading,
+ * and none is added. `ids` are the list item ids to give the bullets, by position.
  */
 export function replaceMeetings(html: string, lines: string[], ids: (string | undefined)[] = []): string {
   const root = parse(html, { comment: true });
@@ -27,8 +27,8 @@ export function replaceMeetings(html: string, lines: string[], ids: (string | un
   const edits: Edit[] = [];
 
   if (block) {
-    edits.push({ start: block.start, end: block.end, text: list });
-  } else {
+    edits.push(lines.length ? { start: block.start, end: block.end, text: list } : { start: block.headingStart, end: block.end, text: '' });
+  } else if (lines.length) {
     const first = top[0];
     const at = first && isIncludeNote(first) ? first.range[1] : 0;
     edits.push({ start: at, end: at, text: `<h3>Meetings</h3>${list}` });
@@ -41,7 +41,7 @@ export function replaceMeetings(html: string, lines: string[], ids: (string | un
  * of each bullet. It ends at a heading of the same or a higher level, the other section's heading of
  * any level, or the Important block.
  */
-function proseBlock(top: HTMLElement[], html: string, kind: ProseKind): { start: number; end: number; inside: HTMLElement[]; texts: string[]; ids: (string | undefined)[] } | null {
+function proseBlock(top: HTMLElement[], html: string, kind: ProseKind): { headingStart: number; start: number; end: number; inside: HTMLElement[]; texts: string[]; ids: (string | undefined)[] } | null {
   const heading = top.findIndex((el) => isHeading(el) && proseKind(el.text) === kind);
   const headingEl = top[heading];
   if (!headingEl) return null;
@@ -54,6 +54,7 @@ function proseBlock(top: HTMLElement[], html: string, kind: ProseKind): { start:
   const inside = top.slice(heading + 1, next < 0 ? undefined : next);
   const items = inside.flatMap((el) => el.querySelectorAll('li'));
   return {
+    headingStart: headingEl.range[0],
     start: headingEl.range[1],
     end: nextEl ? nextEl.range[0] : html.length,
     inside,
@@ -91,7 +92,7 @@ export async function setMeetings(api: NoteStore, req: { date: string; lines: st
   const before = note ? await api.content(note.noteId) : '';
   const current = proseBlock(elements(parse(before, { comment: true })), before, 'meetings');
   const same = (text: string, i: number) => text === lines[i]?.replace(/\s+/g, ' ').trim();
-  const unchanged = current && current.texts.length === lines.length && current.texts.every(same);
+  const unchanged = !!current && lines.length > 0 && current.texts.length === lines.length && current.texts.every(same);
   const after = unchanged ? before : replaceMeetings(before, lines, current?.ids);
   const noteId = note?.noteId ?? 'NEW-NOTE';
   if (opts.dryRun) {
