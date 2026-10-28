@@ -9,6 +9,7 @@ For the method see [method.md](method.md); for using it see [README.md](README.m
 | `packages/caius/` | The library. No Trilium imports. `core/` is the task-line grammar, `resolve/` the horizon rules, `index/` the scan, `trilium/` the note-level logic: `journal`, `plan`, `plan-read`, `daynote`, `until`, `context`, `plan-html`, `forward`, `forward-html`, `sections`, `keys`, `markdown`, `html-util`, `present`, `brief-html`, and `store` (the `NoteStore` interface). `daily/` holds the pure parts of Wind down and Plan my day: `meetings`, `candidates`, `standing`, `blocks` and `format`. Beside them are `clock.ts` (the one place the time is read) and `workday.ts`. It reaches notes only through that interface. |
 | `apps/server/src/services/caius/` | `store.ts` (the becca `NoteStore` and the lock), `service.ts` (the operations), `schemas.ts` (zod inputs), `tools.ts` (the tool registry), `register.ts` (the defensive loader and the skill). |
 | `apps/server/src/services/caius/daily.ts`, `brief.ts` | The Wind down and Plan my day steps, and `caius_brief_write`. |
+| `apps/server/src/services/caius/apply.ts`, `writes.ts` | `caius_plan_apply` and `caius_winddown_apply`, and the lock-free writes they share with the single-purpose tools. |
 | `apps/server/src/services/caius/weather.ts` | `fetchDayWeather()`: today's WMO code from Open-Meteo, `undefined` on any failure or after 3 s. |
 | `apps/server/src/routes/api/caius.ts` | The `/api/caius/*` routes. |
 | `apps/server/src/assets/llm/caius/skill.md` | The `caius` skill sheet. |
@@ -148,7 +149,7 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 
 ## Tools, skill and loading
 
-`tools.ts` is registered with `registerToolRegistryLoader`, which puts the eighteen tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
+`tools.ts` is registered with `registerToolRegistryLoader`, which puts the twenty-two tools on `/mcp` and in the AI assistant. `loadCaiusTools` never throws: a failure logs `Caius disabled: <message>` and yields an empty registry. The `caius` skill sheet is registered only once the tools load, so it is listed only where they exist. `explain` returns `lane`, `rule`, `source` and a one-sentence `summary` from the server catalogue.
 
 ## `caius_inputs`
 
@@ -192,6 +193,8 @@ The lock is never taken twice by one call, since it isn't re-entrant.
 - `setLabel` sets a label through `BNote.setLabel`, so a re-run replaces `#caiusPlannedAt` instead of adding a second one.
 
 Each runs in its own transaction. Content goes through the store's compare-and-swap. The sections go through `markdownImportService.renderToHtml`, as the note tools' markdown does. The drawing step is `drawHeader`, shared with `caius_header`. `withInclude` adds the include-note (`data-box-size="full"`, as the demo stores it) only when no include-note of the header is anywhere in the day note.
+
+**The apply tools** (`apply.ts`). Each takes the lock once. `dayRead`, the standing note's coordinates (`placeOf`, under its own short lock) and the forecast are read first, outside it. Under the lock the apply reads the step data again through the functions the steps use (`planOffer`, `nextOffer`, `closingLines`, `stillOpen`, `catchupOf`), so an id resolves against exactly what the step offered, and against every candidate the day could offer, for a re-run after the brief moved `#caiusPlannedAt`. The writes go through the library and the lock-free helpers in `writes.ts` (`contextAddOn`, `contextKeepOn`, `skipCatchupOn`, `finishedOn`, `drawHeader`, `weekPlace`), which the single-purpose tools call too; the entry points never call one another, since the lock isn't re-entrant. Each library result is filed by `record()`: a skip as `duplicate`, `already_moved`, `already_done` or `already_cancelled` is `unchanged`, which is what makes a re-run write nothing. The labels it sets on day notes: `#caiusNotToday`, `#caiusAsked` (line, overlap and heavy-day ids), `#caiusWoundDown`.
 
 **Strings.** The questions, the reasons, the date line and the pick line are in the server catalogue under `caius.brief.*` and `caius.daily.*`. The `(until …)` suffix is not, because `parseContext` reads it back in English.
 

@@ -96,7 +96,7 @@ Two start a planning conversation for today by the Caius clock, from anywhere, a
 
 ## MCP and the AI assistant
 
-Caius registers eighteen tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Most writes take an `items` list and a `dryRun` flag; `caius_meetings`, `caius_context_add` and `caius_brief_write` take one change and `dryRun`, and `caius_skip_catchup` has no dry run.
+Caius registers twenty-two tools on Trilium's `/mcp` endpoint (which needs an ETAPI token) and in the built-in AI assistant. Most writes take an `items` list and a `dryRun` flag; `caius_meetings`, `caius_context_add` and `caius_brief_write` take one change and `dryRun`; `caius_skip_catchup`, `caius_finished`, `caius_context_keep` and the two apply tools have no dry run, since the answer they carry is the yes.
 
 | Tool | Does |
 |---|---|
@@ -114,9 +114,13 @@ Caius registers eighteen tools on Trilium's `/mcp` endpoint (which needs an ETAP
 | `caius_meetings` | Writes a day note's Meetings block: the lines given, or the day's calendar as clock lines. See below. |
 | `caius_context_add` | Adds one Context line to a day or week note, with an optional `until`. See below. |
 | `caius_brief_write` | Writes the day's Morning Brief and its header, and includes the header at the top of the day note. See below. |
+| `caius_context_keep` | Writes the Context lines you kept or carried to the week note of the day planned or wound down to. |
+| `caius_finished` | Records that a ticket you call finished stays off the candidates for 30 days. |
 | `caius_skip_catchup` | Lets Plan my day leave the last workday's open tasks where they are, for one day. |
 | `caius_winddown` | One step of the Wind down conversation. Read-only; see below. |
 | `caius_planday` | One step of the Plan my day conversation. Read-only; see below. |
+| `caius_plan_apply` | Every write of a Plan my day conversation, in one call, from your answers. See below. |
+| `caius_winddown_apply` | Every write of a Wind down conversation, in one call, from your answers. See below. |
 | `caius_header` | Draws the day as terrain and attaches it to a note as `terrain.svg`; see below. |
 
 The **`caius` skill sheet** (`load_skill` with `caius`) teaches an agent the method, the tools, and how to run daily planning and shutdown. Only agents that can load it see it, and only while Caius is on.
@@ -150,7 +154,7 @@ A refresh keeps the morning: the picks come from his list, a Follow up raised th
 
 Every field in a step's answer that holds a day or an ISO week has a display string beside it, named after it with `Label`: `targetDay: "2026-11-09"` comes with `targetDayLabel: "Mon 9 Nov"`, and `fate.forward: "2026-W47"` with `fate.forwardLabel: "the week of Mon 16 Nov"`. The skill sheet tells the agent to use these strings as given and never work out a weekday. Each candidate has a `candidateId` (its ticket key, or a hash of a week item's text), each keep or carry line a `lineId` (a hash of its text, so two copies of one line share it), and each open item its `listItemId`: the ids the apply tools take.
 
-Nothing is kept between calls except what the notes hold, so calling a step again reads them again and a conversation that stopped can pick up where it was. The steps only read. Every change goes through the write tools, as a dry run first. Only `caius_accept`, or a `caius_forward` of a task Shawn names, puts anything into his main list.
+Nothing is kept between calls except what the notes hold, so calling a step again reads them again and a conversation that stopped can pick up where it was. The steps only read. Each conversation is one question set, then one apply call that makes every write from your answers; nothing goes into your main list except what you took, the catch-up you moved and the evening tasks you named.
 
 **Wind down** closes `date` and works against the next workday after it (Friday → Monday):
 
@@ -178,6 +182,26 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
    - **Follow-ups:** each ask in `followUps` carries a `sentence`, written by Caius: `Jordan asked on Sunday: "The rollout note is now in the runbook…" (ZAP-105). If you already answered in Chat, dismiss this.` The excerpt is cut at a word after 100 characters.
 
 `caius_inputs` is read once for a day and reused for 15 minutes, so a Plan my day right after a Wind down doesn't fetch again. An answer in which a source failed is not reused; one with only warnings (`*_partial`, `*_truncated`, `*_narrowed`, `*_unknown_tz`) is. `caius_inputs` itself goes through the same cache. `refresh: true` on `caius_inputs`, on a step or on `caius_meetings` fetches again. The work window passed to it is the Rhythm's standup and end of work.
+
+### The apply tools
+
+Each conversation ends in one apply call. The agent maps your reply to the ids in the step data (`candidateId`, `lineId`, `listItemId`) and passes them; the tool makes every write, with no dry run, since you have answered. It answers `{ written, skipped }`: each entry names its `kind`, the id, and `status: "written"` or `"unchanged"`, and each skip a `reason` (`not_offered`, `not_found`, `review`, `calendar_unavailable`, `edited`…). Running it again with the same input changes no note.
+
+- **`caius_plan_apply`** `{ date, catchup?, accept, keep, finished, notToday, dismiss, evening, context, forward?, brief: { headline, acts, sections } }`, in this order:
+  - **The catch-up:** `move_all` forwards every task of the catch-up's days to `date`; `skip` labels the day as `caius_skip_catchup` does; `review` writes nothing (the oldest day's wind-down goes through them).
+  - **Accepts,** in your order, each to the end of your list: a ticket through Suggested (added there first when it isn't), a week item by forwarding it to the day.
+  - **Keeps:** each line to this week's note. Every keep or carry line, overlap and heavy-day question the step showed is recorded under `#caiusAsked`, whatever you answered.
+  - **Finished** tickets, as `caius_finished` records them, on the day's note.
+  - **Not today:** `#caiusNotToday=<candidateId>` on the day's note, and off its Suggested without a dismissal; it comes back on the next workday (a week item two workdays later).
+  - **Dismiss,** only on your word: the candidate is dismissed from the day's Suggested, so the key is off every list for 14 days and its asks leave the Follow up.
+  - **Every other offered ticket** goes to the day's Suggested.
+  - **Evening** tasks under a `### Evening` heading, created after your tasks and above Suggested when missing; words already a live task of the day count as written.
+  - **Context** lines, placed by `caius_context_add`'s rules. **Forwards** by `listItemId`. The **Meetings block** from the calendar.
+  - **The brief:** the agent's headline, acts and extra sections; the picks are your list in its order (evening tasks apart, at most 5), with a candidate's reason where there is one; Follow up from the step's sentences and Heads-up from `headsUp`, in place of anything the agent wrote under those titles; the Evening act names the evening's events and tasks ("Call Mom, then Laundry."), the agent's words staying only for an empty evening; the drawing; the weather from the standing note. The answer carries `briefNoteId`, `link`, `headline` and `topPick`.
+- **`caius_winddown_apply`** `{ date, done, fates, accept, keep, carry, finished, notToday, dismiss, evening, context }` closes `date` against the next workday:
+  - **Done** items are marked done. **Fates** you named are a forward (`to`: a day, week or month) or a drop (`drop`: your reason, only when you said drop, cancel or not doing). **Every open item you didn't name** keeps the fate the `open` step proposed. A task sent to a week is put off there, so its week item comes back two workdays later.
+  - **Accepts, keeps, carries,** finished, not today, dismiss, the other candidates to Suggested, evening tasks and Context lines all land on the next workday (keeps and carries in its week note).
+  - The closed day is labelled `#caiusWoundDown`, so a later catch-up looks no further back.
 
 ### The write tools
 
