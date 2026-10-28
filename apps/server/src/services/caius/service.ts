@@ -318,10 +318,15 @@ export function createCaiusService(
             });
         },
 
-        /** Adds a Context line; one given a date that names a ticket or a state goes to that day's week note. */
+        /**
+         * Adds a Context line; one given a date that `aboutTheWeek` places in the week goes to that
+         * day's week note, ending on that day unless it says how long it holds.
+         */
         contextAdd: ({ dryRun, ...req }: ContextAddInput) => withCaiusLock("caius_context_add", async () => {
-            const moved = req.date !== undefined && aboutState(req.text);
-            const target = moved && req.date ? { week: isoWeekKey(new Date(`${req.date}T00:00:00Z`)), text: req.text, until: req.until } : req;
+            const moved = req.date !== undefined && aboutTheWeek(req.text);
+            // A moved line that doesn't say how long it holds ends on the day it was written for.
+            const until = req.until ?? (/\b(?:all week|this week|until)\b/i.test(req.text) ? undefined : req.date);
+            const target = moved && req.date ? { week: isoWeekKey(new Date(`${req.date}T00:00:00Z`)), text: req.text, until } : req;
             const result = await addContext(store, target, { dryRun, now: caiusNow() });
             return withBlobIds([ moved ? { ...withDiff(result), detail: "moved to the week note" } : withDiff(result) ]);
         }),
@@ -566,10 +571,18 @@ const MONTHS = [
     "july", "august", "september", "october", "november", "december"
 ];
 
-/** Whether a Context line is about the state of things: it names a ticket, or says something is open, someone is out or on leave, or until when. */
-function aboutState(text: string): boolean {
+/**
+ * Whether a Context line belongs in the week note: it names a ticket or a state (open, out, off,
+ * away, on leave, covering, down, freeze, until) or a span of days (this week, next week, all week,
+ * "Thu-Fri"), and has no clock time and no part of today (today, tonight, this morning, afternoon or
+ * evening), which keep it on the day.
+ */
+function aboutTheWeek(text: string): boolean {
+    if (/\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?[ap]m\b|\b(?:today|tonight|this (?:morning|afternoon|evening))\b/i.test(text)) return false;
+    const day = "(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*";
     return /\b[A-Z][A-Z0-9]+-\d+\b/.test(text)
-        || /\b(?:is|are)\s+(?:open|out|away|off)\b|\bout (?:all|this|until|today|on)\b|\bon (?:leave|PTO|holiday|vacation)\b|\ball week\b|\buntil\b/i.test(text);
+        || /\bis (?:open|out)\b|\b(?:off|away|on leave|covering|down|freeze|until|this week|next week|all week)\b/i.test(text)
+        || new RegExp(`\\b${day}\\s*(?:-|–|to)\\s*${day}\\b`, "i").test(text);
 }
 
 /** The keys `addTasks` gives an item: its source's, else those of its text. */

@@ -112,7 +112,7 @@ export function createCaiusTools(
         },
 
         caius_context_add: {
-            description: "Add one Context line to a day note (date) or an ISO week note (week): a plain bullet under ### Context, never a task. A line about the state of things goes in the week note; only a line about one day goes in that day's note. Given date, a line that names a ticket or a state (is open, is out, on leave, until) is moved to that day's week note, with detail \"moved to the week note\". until is written as (until Fri 6 Nov). Text already in force is skipped as duplicate. Creates the heading and the note if missing. dryRun shows the change without writing.",
+            description: "Add one Context line to a day note (date) or an ISO week note (week): a plain bullet under ### Context, never a task. A line about the state of things goes in the week note; only a line about one day goes in that day's note. Given date, a line that names a ticket, a state (is open, is out, off, away, on leave, covering, down, freeze, until) or a span of days (this week, next week, all week, Thu-Fri) is moved to that day's week note, with detail \"moved to the week note\", and ends on that day unless it says all week, this week or until; a line with a clock time or today, tonight, this morning, afternoon or evening stays on the day. until is written as (until Fri 6 Nov). Text already in force is skipped as duplicate. Creates the heading and the note if missing. dryRun shows the change without writing.",
             inputSchema: toolInputs.contextAdd,
             async: true,
             mutates: true,

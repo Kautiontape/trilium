@@ -488,3 +488,37 @@ describe("a done task closes its own ticket only", () => {
         expect(offered).toContain("ZAP-181");
     });
 });
+
+describe("where a Context line goes", () => {
+    const day = "2026-11-25";
+    const contextOf = async (period: string, date: string) => (await call("caius_plan", { period, date })).context;
+    const add = async (text: string) => (await call("caius_context_add", { date: day, text })).results[0];
+
+    it("keeps a line with a clock time or a part of today on the day, whatever else it names", async () => {
+        at(`${day}T09:30`);
+        for (const text of [ "Taking Incident Review over Vendor Onboarding at 11:00", "ZAP-2620 demo at 14:00", "Riley is out this afternoon",
+            "Laundry tonight", "Staging is down this morning", "Lunch with Sam" ]) {
+            expect((await add(text)).detail, text).not.toBe("moved to the week note");
+        }
+        expect((await contextOf("day", day)).map((line: any) => line.text)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00",
+            "ZAP-2620 demo at 14:00", "Riley is out this afternoon", "Laundry tonight", "Staging is down this morning", "Lunch with Sam" ]);
+    });
+
+    it("moves a line naming a ticket or a state to the week, ending it on the day unless it says the week or until", async () => {
+        at(`${day}T09:30`);
+        for (const text of [ "ZAP-2621 waits on legal", "Riley is out", "Jordan off sick", "Pat away at the offsite", "Sam on leave",
+            "James covering for Jaco", "Staging is down", "Release freeze", "Vendor portal closed until the upgrade",
+            "Jaco out all week", "Design review moved this week", "Riley off next week", "Offsite Thu-Fri" ]) {
+            expect((await add(text)).detail, text).toBe("moved to the week note");
+        }
+        const week = await contextOf("week", "2026-W48");
+        const until = (text: string) => week.find((line: any) => line.text === text)?.until ?? null;
+        expect(until("ZAP-2621 waits on legal")).toBe(day);
+        expect(until("Riley is out")).toBe(day);
+        expect(until("Offsite Thu-Fri")).toBe(day);
+        expect(until("Jaco out all week")).toBeNull();
+        expect(until("Design review moved this week")).toBeNull();
+        expect(until("Vendor portal closed until the upgrade")).toBeNull();
+        expect(week).toHaveLength(13);
+    });
+});

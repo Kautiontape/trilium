@@ -258,12 +258,12 @@ describe("caius_winddown", () => {
     });
 
     it("context: offers a day note's line that outlasts the days its note is read", async () => {
-        expect((await call("caius_context_add", { date: THURSDAY, text: "Vendor freeze", until: "2026-11-13" })).results[0]).toMatchObject({ status: "added" });
+        expect((await call("caius_context_add", { date: THURSDAY, text: "Vendor demo prep", until: "2026-11-13" })).results[0]).toMatchObject({ status: "added" });
         // Tuesday still reads Thursday's note; Wednesday does not.
-        expect((await call("caius_winddown", { date: MONDAY, step: "context" })).data.noticed.map((n: any) => n.line)).not.toContain("Vendor freeze");
+        expect((await call("caius_winddown", { date: MONDAY, step: "context" })).data.noticed.map((n: any) => n.line)).not.toContain("Vendor demo prep");
         const answer = await call("caius_winddown", { date: TUESDAY, step: "context" });
-        expect(answer.data.noticed).toEqual([ { kind: "carry", line: "Vendor freeze", until: "2026-11-13" } ]);
-        expect(answer.question).toBe("Keep 'Vendor freeze' going? Anything to know for Wednesday?");
+        expect(answer.data.noticed).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13" } ]);
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything to know for Wednesday?");
     });
 
     it("next: a candidate put in Suggested and then dismissed does not come back", async () => {
@@ -340,7 +340,7 @@ describe("caius_planday", () => {
         calendars[WEDNESDAY] = [ event("10:00", "15:30", "Offsite") ];
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
         expect(answer.data.forwardSuggestion).toMatchObject({ noteId: notes.wednesday, listItemId: "we2", text: "Read", to: "2026-11-12" });
-        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor freeze' going?");
+        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor demo prep' going?");
     });
 
     it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
@@ -430,12 +430,12 @@ describe("carrying Context", () => {
 
     it("Plan my day offers Thursday's line on Wednesday after a missed Tuesday, after the step's other questions", async () => {
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
-        expect(answer.data.carry).toEqual([ { kind: "carry", line: "Vendor freeze", until: "2026-11-13" } ]);
-        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor freeze' going?");
+        expect(answer.data.carry).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13" } ]);
+        expect(answer.question).toBe("The day is 69% booked. Move 'Read' to Thursday? Keep 'Vendor demo prep' going?");
     });
 
     it("neither conversation offers a line already carried into a note the day reads", async () => {
-        for (const item of [ { text: "Sam is out", until: "2026-11-11" }, { text: "Release branch is cut" }, { text: "Vendor freeze", until: "2026-11-13" } ]) {
+        for (const item of [ { text: "Sam is out", until: "2026-11-11" }, { text: "Release branch is cut" }, { text: "Vendor demo prep", until: "2026-11-13" } ]) {
             expect((await call("caius_context_add", { week: "2026-W46", ...item })).results[0]).toMatchObject({ status: "added" });
         }
         for (const date of [ FRIDAY, MONDAY, TUESDAY ]) {
