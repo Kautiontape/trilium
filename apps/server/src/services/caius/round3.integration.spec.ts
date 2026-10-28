@@ -190,6 +190,50 @@ describe("accept takes a position, whatever the item", () => {
     });
 });
 
+describe("a place can name what the same call writes", () => {
+    it("Plan my day 'move them all, 302 first': an item the catch-up moves goes first", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-02-22");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("t301", `${zap("ZAP-301", "Check the export")} ~30m`), li("tmemo", "Write the memo ~30m"), li("t302", `${zap("ZAP-302", "Verify the retry")} ~30m`))}`);
+            const tuesday = await store.calendarDay("2027-02-23");
+            await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("tmorn", "Morning thing ~30m"))}`);
+        });
+        at("2027-02-23T09:40");
+        const applied = await call("caius_plan_apply", { date: "2027-02-23", catchup: "move_all", move: [ { listItemId: "t302", first: true } ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect(await listed("2027-02-23")).toEqual([ expect.stringContaining("ZAP-302"), "Morning thing", expect.stringContaining("ZAP-301"), "Write the memo" ]);
+    });
+
+    it("Wind down '305 tomorrow, first' and '311 after 305': items the fates move are placed on the next workday", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-03-01");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("s305", `${zap("ZAP-305", "Confirm the bucket")} ~30m`), li("s311", `${zap("ZAP-311", "Check the invoice")} ~30m`), li("sdesk", "Tidy the desk"))}`);
+            const tuesday = await store.calendarDay("2027-03-02");
+            await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("sold", "Already there"))}`);
+        });
+        at("2027-03-01T17:30");
+        const wound = await call("caius_winddown_apply", {
+            date: "2027-03-01", fates: [ { listItemId: "s305", to: "2027-03-02" } ],
+            move: [ { listItemId: "s305", first: true }, { listItemId: "s311", after: "s305" } ]
+        });
+        expect(wound.skipped).toEqual([]);
+        expect(await listed("2027-03-02")).toEqual([ expect.stringContaining("ZAP-305"), expect.stringContaining("ZAP-311"), "Already there", "Tidy the desk" ]);
+    });
+
+    it("accept [{321, after: 320}, {320}]: a candidate taken later in the call is a place", async () => {
+        const DAY = "2027-03-03";
+        jira.handoff.push({ ...ticket("ZAP-320"), daysInStatus: 2 }, { ...ticket("ZAP-321"), daysInStatus: 2 });
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("own", "Own task ~30m"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "ZAP-321", after: "ZAP-320" }, { candidateId: "ZAP-320" } ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect(await listed(DAY)).toEqual([ "Own task", expect.stringContaining("ZAP-320"), expect.stringContaining("ZAP-321") ]);
+    });
+});
+
 describe("the header is drawn from the note as it ends", () => {
     it("Wed 09:40 'laundry can go to tomorrow': the forward of his own evening item is made, and neither the drawing nor the Evening act has Laundry", async () => {
         const DAY = "2026-11-11";

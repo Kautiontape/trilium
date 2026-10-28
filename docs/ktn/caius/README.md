@@ -191,7 +191,7 @@ Each conversation ends in one apply call. The agent maps your reply to the ids i
 
 - **`caius_plan_apply`** `{ date, catchup?, accept, move, keep, finished, notToday, dismiss, evening, context, forward?, brief: { headline, acts, sections } }`, in this order:
   - **The catch-up:** `move_all` forwards every task of the catch-up's days to `date`; `skip` labels the day as `caius_skip_catchup` does; `review` writes nothing (the oldest day's wind-down goes through them).
-  - **Accepts,** in your order, each to the end of your list unless you named a place: `first`, or `before`/`after` an item of `data.list` (by `listItemId`) or a candidate taken in the same call. A ticket goes through Suggested (added there first when it isn't), a week item by forwarding it to the day.
+  - **Accepts,** in your order, each to the end of your list unless you named a place: `first`, or `before`/`after` an item of `data.list` (by `listItemId`), a candidate taken in the same call, or an item the call moves to the day (the catch-up's `move_all`, Wind down's fates), by the id it had. Every accept runs first, then every place, then the moves. A ticket goes through Suggested (added there first when it isn't), a week item by forwarding it to the day.
   - **Moves** (`move`), only when you asked for an order: items of your main list put `first`, `before` or `after` another; an item outside it, such as an evening one, is skipped as `not_in_main_list`.
   - **Keeps:** each line to this week's note. Every keep or carry line, overlap and heavy-day question the step showed is recorded under `#caiusAsked`, whatever you answered.
   - **Finished** tickets, as `caius_finished` records them, on the day's note.
