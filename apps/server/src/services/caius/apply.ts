@@ -691,10 +691,10 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
     }
     const tickets = dayCandidates({ jira: { ...jira, done: [] }, live: new Map(), exclude: [] }).map(present);
     for (const candidate of [ ...tickets, ...known.values() ]) {
-        table.set(refOf("c", candidate.candidateId), { id: candidate.candidateId, text: candidate.text, settled: live.has(candidate.candidateId) });
+        put(refOf("c", candidate.candidateId), { id: candidate.candidateId, text: candidate.text, settled: live.has(candidate.candidateId) });
     }
-    for (const text of offered) table.set(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: false });
-    for (const text of inForce) table.set(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: true });
+    for (const text of offered) put(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: false });
+    for (const text of inForce) put(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: true });
     return { table, items, copies, collided };
 }
 
