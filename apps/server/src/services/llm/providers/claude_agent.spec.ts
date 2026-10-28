@@ -411,6 +411,29 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         ]);
     });
 
+    it("keeps a Plan my day or Wind down conversation off the generic note write tools, and leaves other chats alone", async () => {
+        scriptAgent([successResult()]);
+        const provider = new ClaudeAgentProvider();
+        await collect(provider.chatChunks([{ role: "user", content: "Plan my day 2026-11-04" }], { enableNoteTools: true }));
+        const options = queryMock.mock.calls[0][0].options;
+        expect(options.disallowedTools).toEqual(expect.arrayContaining([
+            "mcp__trilium__set_note_content", "mcp__trilium__append_to_note", "mcp__trilium__edit_note_content", "mcp__trilium__create_note",
+            "mcp__trilium__delete_note", "mcp__trilium__set_attribute", "mcp__trilium__move_note"
+        ]));
+        expect(options.disallowedTools).not.toContain("mcp__trilium__get_note_content");
+        expect(options.disallowedTools.some((name: string) => name.startsWith("mcp__trilium__caius_"))).toBe(false);
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([
+            { role: "user", content: "Wind down 2026-11-04" }, { role: "assistant", content: "…" }, { role: "user", content: "laundry" }
+        ], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[1][0].options.disallowedTools).toEqual(options.disallowedTools);
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[2][0].options.disallowedTools).toBeUndefined();
+    });
+
     it("wires Trilium's in-process MCP server instance and disables built-in tools", async () => {
         scriptAgent([successResult()]);
         const provider = new ClaudeAgentProvider();

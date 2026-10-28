@@ -395,8 +395,10 @@ export class ClaudeAgentProvider implements LlmProvider {
             // Options the SDK fixes at query() construction: a change to any of
             // them can't be applied to a live session, so it forces a new one.
             // `model` is deliberately absent — setModel() handles it in place.
+            const caius = isCaiusConversation(messages);
             const fingerprint = JSON.stringify({
                 systemPrompt,
+                caius,
                 noteTools: areNoteToolsAvailable(config),
                 webSearch: !!config.enableWebSearch,
                 thinking: !!config.enableExtendedThinking
@@ -427,7 +429,7 @@ export class ClaudeAgentProvider implements LlmProvider {
                     query: query({
                         prompt: input,
                         options: {
-                            ...await this.buildBaseOptions(config),
+                            ...await this.buildBaseOptions(config, caius),
                             systemPrompt,
                             model,
                             resume,
@@ -676,7 +678,7 @@ export class ClaudeAgentProvider implements LlmProvider {
     }
 
     /** Options shared by every agent invocation. */
-    private async buildBaseOptions(config: Pick<LlmProviderConfig, "enableNoteTools" | "enableWebSearch" | "enableExtendedThinking">): Promise<AgentOptions> {
+    private async buildBaseOptions(config: Pick<LlmProviderConfig, "enableNoteTools" | "enableWebSearch" | "enableExtendedThinking">, caius = false): Promise<AgentOptions> {
         // Built-in Claude Code tools (file access, bash, …) stay disabled — the
         // agent runs on the server host and must only ever touch notes. Web
         // search is the one opt-in exception.
@@ -727,11 +729,34 @@ export class ClaudeAgentProvider implements LlmProvider {
             };
             // Bare server prefix auto-allows every tool from that server.
             allowedTools.push("mcp__trilium");
+            // In Plan my day and Wind down every Journal write goes through the Caius tools.
+            if (caius) options.disallowedTools = await genericNoteWrites();
         }
 
         options.allowedTools = allowedTools;
         return options;
     }
+}
+
+/** The opener the Plan tab, the nudge bar and the commands send: `Plan my day 2026-11-04`, `Wind down 2026-11-04`. */
+const CAIUS_OPENER = /^(?:Plan my day|Wind down) \d{4}-\d{2}-\d{2}$/;
+
+/** Whether the conversation was started by a Caius opener, its first user message. */
+function isCaiusConversation(messages: LlmMessage[]): boolean {
+    const first = messages.find((message) => message.role === "user");
+    return !!first && typeof first.content === "string" && CAIUS_OPENER.test(first.content.trim());
+}
+
+/**
+ * The generic note tools that write, as the agent names them: every mutating tool of the note,
+ * attribute, hierarchy and attachment registries. Loaded only for a Caius conversation.
+ */
+async function genericNoteWrites(): Promise<string[]> {
+    const { attachmentTools, attributeTools, hierarchyTools, noteTools } = await import("@triliumnext/core/src/services/llm/tools/index.js");
+    return [ noteTools, attributeTools, hierarchyTools, attachmentTools ]
+        .flatMap((registry) => [ ...registry ])
+        .filter(([ , def ]) => def.mutates)
+        .map(([ name ]) => `mcp__trilium__${name}`);
 }
 
 /**

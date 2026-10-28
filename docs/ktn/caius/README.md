@@ -137,7 +137,7 @@ The settings are in [internals.md](internals.md#caius_inputs).
 
 ## Wind down and Plan my day
 
-Two conversations in the sidebar chat, run by the AI assistant with the Caius tools and the `caius` skill sheet. Each starts from a short opener that names a day: `Wind down 2026-11-06` closes that day, and `Plan my day 2026-11-09` plans it. Caius holds the steps and the exact questions, so the wording is the same every time; the skill sheet tells the assistant how to run the conversation.
+Two conversations in the sidebar chat, run by the AI assistant with the Caius tools and the `caius` skill sheet. A conversation whose first message is an opener (`Plan my day 2026-11-04`, `Wind down 2026-11-04`) runs without the generic note tools that write (`set_note_content`, `edit_note_content`, `append_to_note`, `create_note` and the other mutating note, attribute, hierarchy and attachment tools), so every Journal write goes through Caius; the Claude agent provider passes them as `disallowedTools` when the session starts. Each starts from a short opener that names a day: `Wind down 2026-11-06` closes that day, and `Plan my day 2026-11-09` plans it. Caius holds the steps and the exact questions, so the wording is the same every time; the skill sheet tells the assistant how to run the conversation.
 
 Each step is one call, `caius_winddown` or `caius_planday` with `{ date, step }`, and answers:
 
