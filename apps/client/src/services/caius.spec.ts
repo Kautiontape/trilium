@@ -43,7 +43,7 @@ vi.mock("./i18n.js", () => ({
 
 import { noteSavedDataStore, setEditorNoteId } from "../widgets/react/NoteStore.js";
 import {
-    ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, caiusNow, type CaiusItemResult, caiusWrite, describeSkip,
+    ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, caiusClockMinutes, caiusNow, type CaiusItemResult, caiusWrite, describeSkip,
     flushEditors,
     forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, RELOAD_TIMEOUT_MS, startCaiusConversation
 } from "./caius.js";
@@ -633,9 +633,28 @@ describe("isCaiusEnabled", () => {
         expect([ at.getMonth(), at.getDate(), at.getHours() ]).toEqual([ 10, 6, 17 ]);
 
         forgetCaiusStatus();
-        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true });
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true, rollover: "00:00" });
         await isCaiusEnabled();
         expect(Math.abs(caiusNow().getTime() - Date.now())).toBeLessThan(1000);
+    });
+
+    it("is still the day before until the rollover the status gives, and reads the clock past 24:00", async () => {
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true, now: "2026-11-03T01:30:00", rollover: "04:00" });
+        await isCaiusEnabled();
+        const at = caiusNow();
+        expect([ at.getMonth(), at.getDate() ]).toEqual([ 10, 2 ]);
+        expect(caiusClockMinutes(at)).toBe(25 * 60 + 30);
+
+        forgetCaiusStatus();
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true, now: "2026-11-03T04:00:00", rollover: "04:00" });
+        await isCaiusEnabled();
+        expect(caiusNow().getDate()).toBe(3);
+        expect(caiusClockMinutes(caiusNow())).toBe(4 * 60);
+
+        forgetCaiusStatus();
+        h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: true, now: "2026-11-03T01:30:00" });
+        await isCaiusEnabled();
+        expect(caiusNow().getDate()).toBe(2);
     });
 
     it("reads enabled: false, which the server answers when the service fails to load", async () => {
