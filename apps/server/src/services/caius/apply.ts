@@ -393,17 +393,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const closingNote = await findPeriodNote(store, "day", date);
         const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
         pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
-        // An item carried on three workdays or more is offered a month; it goes there only on his word.
-        // As the open step, a held item gets no park offer.
+        // An item carried on three workdays or more is offered a month; it goes there only when the
+        // call passes its month fate. As the open step, a held item gets no park offer.
         const heldOnes = await heldItems(store);
         const stale = await staleItems(store, now, open.items.filter((item) => !item.listItemId || !heldOnes.has(item.listItemId)), targetDay);
         // On a vague yes the answers are what was offered, unless a question of its own is pending.
-        // A bare yes takes the park only when the park is all there is to answer, the next workday's
-        // candidates included; with candidates on offer it takes them, and the item goes on.
         const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0);
-        const yes = vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && !asked.fates.length && !asked.done.length;
-        const parkOnly = !asked.asOffered && yes && stale.size > 0 && pending === 0 && candidates.length === 0;
-        const vague = asked.asOffered || (yes && pending === 0 && !parkOnly);
+        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && pending === 0);
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
         const answers: WindDownApplyInput = vague ? {
             ...asked,
@@ -415,7 +411,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
         const endOf = (id: string) => { const entry = byEntry.get(id); return entry ? chainEnd(entry, byEntry, copies)?.id ?? id : id; };
-        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...(parkOnly ? [] : parkChecks(asked.said, stale, open.items, input)), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
+        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
             ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
@@ -476,7 +472,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const fates = [
             ...input.fates,
             ...open.items.filter((item) => item.listItemId && !given.has(item.listItemId) && "forward" in item.fate)
-                .map((item) => ({ listItemId: item.listItemId ?? "", to: (parkOnly && stale.get(item.listItemId ?? "")?.month) || (item.fate as { forward: string }).forward, proposed: true })),
+                .map((item) => ({ listItemId: item.listItemId ?? "", to: (item.fate as { forward: string }).forward, proposed: true })),
             ...freed
         ];
         await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {

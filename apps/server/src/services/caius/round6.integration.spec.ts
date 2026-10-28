@@ -314,7 +314,20 @@ describe("a stale errand", () => {
         expect((await call("caius_plan", { period: "day", date: FRI })).suggested).toEqual([]);
     });
 
-    it("asOffered doesn't park: a park needs his month fate, or a bare yes with nothing else on offer", async () => {
+    it("a bare yes with only the park on offer and no fate in the call doesn't park: the item takes its proposed fate", async () => {
+        const days = [ "2030-07-01", "2030-07-02", "2030-07-03", "2030-07-04", "2030-07-05" ];
+        const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
+        await carriedThrice(days);
+        at(`${THU}T17:30`);
+        expect((await call("caius_winddown", { date: THU, step: "open" })).question).toContain("Park it in July?");
+        const result = await call("caius_winddown_apply", { date: THU, said: "yes" });
+        expect(result.skipped).toEqual([]);
+        expect(result.check).toBeUndefined();
+        expect(fatesOf(result)).toEqual([ FRI ]);
+        expect(await textsOf("month", "2030-07")).toEqual([]);
+    });
+
+    it("asOffered doesn't park: a park needs his month fate", async () => {
         const days = [ "2030-06-03", "2030-06-04", "2030-06-05", "2030-06-06", "2030-06-07" ];
         const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
         await carriedThrice(days);
@@ -361,14 +374,14 @@ describe("a stale errand", () => {
         expect((await call("caius_winddown_apply", { date: THU, said: "carry it" })).skipped).toEqual([]);
         expect(await textsOf("day", FRI)).toEqual([ { text: DAVE, state: "open" } ]);
 
-        // Friday: "park it" without the fate is a check; a bare yes to the one question takes it.
+        // Friday: "park it" without the fate is a check; his yes parks it as the month fate the call passes.
         at(`${FRI}T17:30`);
         const fri = await call("caius_winddown", { date: FRI, step: "open" });
         expect(daveOf(fri)).toMatchObject({ forwarded: 4, park: { month: "2029-04" } });
         const checked = await call("caius_winddown_apply", { date: FRI, said: "park it" });
         expect(checked.check).toEqual([ expect.objectContaining({ missing: "fate", item: DAVE }) ]);
         expect(await textsOf("day", FRI)).toEqual([ { text: DAVE, state: "open" } ]);
-        const parked = await call("caius_winddown_apply", { date: FRI, said: "yes" });
+        const parked = await call("caius_winddown_apply", { date: FRI, said: "yes", fates: [ { listItemId: daveOf(fri).ref, to: "2029-04" } ] });
         expect(parked.skipped).toEqual([]);
         expect(parked.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", detail: "2029-04" }) ]));
         expect(await textsOf("month", "2029-04")).toEqual([ { text: DAVE, state: "open" } ]);
