@@ -242,10 +242,10 @@ describe("caius_winddown", () => {
         expect(answer).toMatchObject({ step: "context", targetDay: MONDAY, next: null });
         expect(answer.data.targetWeek).toBe("2026-W46");
         expect(plain(answer.data.noticed)).toEqual([
-            { kind: "keep", line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?" },
+            { kind: "keep", line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?", ref: "x1" },
             // The week ends before Monday: the week note's lines still in force then are offered to carry.
-            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
-            { kind: "carry", line: "Release branch is cut" }
+            { kind: "carry", line: "Sam is out", until: "2026-11-11", ref: "x2" },
+            { kind: "carry", line: "Release branch is cut", ref: "x3" }
         ]);
         expect(answer.data.context.map((line: any) => line.text)).toContain("ZAP-2600 is open");
         expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry 'Sam is out' and 'Release branch is cut' into next week? Anything to know for Monday?");
@@ -259,8 +259,8 @@ describe("caius_winddown", () => {
         const answer = await call("caius_winddown", { date: MONDAY, step: "context" });
         expect(answer.data.targetWeek).toBe("2026-W46");
         expect(plain(answer.data.noticed)).toEqual([
-            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
-            { kind: "carry", line: "Release branch is cut" }
+            { kind: "carry", line: "Sam is out", until: "2026-11-11", ref: "x1" },
+            { kind: "carry", line: "Release branch is cut", ref: "x2" }
         ]);
         expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going? Anything to know for Tuesday?");
     });
@@ -270,7 +270,7 @@ describe("caius_winddown", () => {
         // Tuesday still reads Thursday's note; Wednesday does not.
         expect((await call("caius_winddown", { date: MONDAY, step: "context" })).data.noticed.map((n: any) => n.line)).not.toContain("Vendor demo prep");
         const answer = await call("caius_winddown", { date: TUESDAY, step: "context" });
-        expect(plain(answer.data.noticed)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13" } ]);
+        expect(plain(answer.data.noticed)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13", ref: "x1" } ]);
         expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything to know for Wednesday?");
     });
 
@@ -432,15 +432,15 @@ describe("carrying Context", () => {
         const answer = await planday({ date: TUESDAY, step: "inputs", refresh: true });
         expect(answer.data.targetWeek).toBe("2026-W46");
         expect(plain(answer.data.carry)).toEqual([
-            { kind: "carry", line: "Sam is out", until: "2026-11-11" },
-            { kind: "carry", line: "Release branch is cut" }
+            { kind: "carry", line: "Sam is out", until: "2026-11-11", ref: "x1" },
+            { kind: "carry", line: "Release branch is cut", ref: "x2" }
         ]);
         expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going?");
     });
 
     it("Plan my day offers Thursday's line on Wednesday after a missed Tuesday, after the step's other questions", async () => {
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
-        expect(plain(answer.data.carry)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13" } ]);
+        expect(plain(answer.data.carry)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13", ref: "x1" } ]);
         expect(answer.question).toBe("Keep 'Vendor demo prep' going?");
     });
 

@@ -38,6 +38,7 @@ import { ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL, redrawHeader, 
 import {
     catchupOf,
     closingLines,
+    dateLabel,
     dayKey,
     type DayRead,
     drawnEvents,
@@ -63,6 +64,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
+import { type Named, resolveIn, withRefs } from "./refs.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment } from "./store.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
@@ -99,8 +101,8 @@ export interface Skipped {
 /** Most picks the brief's "Get done today" lists. */
 const MAX_PICKS = 5;
 
-export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
-    const { date } = input;
+export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
+    const { date } = asked;
     if (date > dayKey(deps.now)) {
         return { date, error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today: dayKey(deps.now) }) };
     }
@@ -135,6 +137,14 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         ].filter((id): id is string => !!id));
         const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
         const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
+        // Every ref and name is read against the step data as it stands before the first write.
+        const input = planAnswers(asked, {
+            open: named(withRefs(catchupTasks, "o"), (task) => task.listItemId, (task) => task.text),
+            candidates: named(withRefs(offer.candidates, "c"), (c) => c.candidateId, (c) => c.text),
+            list: named(withRefs(listItems(offer.day.plan), "l"), (item) => item.listItemId, (item) => item.text),
+            lines: named(withRefs(offer.carry, "x"), (line) => line.lineId, (line) => line.line),
+            days: named(listed.days, (day) => day.date, (day) => dateLabel(day.date) ?? day.date)
+        }, skipped);
 
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
@@ -214,8 +224,8 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
  * the candidates he took for the next workday in his order, the keep and carry lines, finished
  * tickets, candidates put off, evening tasks and Context lines on the next workday.
  */
-export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) {
-    const { date } = input;
+export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) {
+    const { date } = asked;
     const targetDay = windDownTarget(date, deps.now);
     const read = await deps.dayRead(targetDay);
     // A day with a brief has its header drawn again after the writes, from its calendar, with the
@@ -249,6 +259,14 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         const shownItems = new Set(open.items.map((item) => item.listItemId).filter((id): id is string => !!id));
         const listed = namedDays(date, targetDay);
         const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
+        // Every ref and name is read against the step data as it stands before the first write.
+        const input = windDownAnswers(asked, {
+            open: named(withRefs(open.items, "o"), (item) => item.listItemId, (item) => item.text),
+            candidates: named(withRefs(candidates, "c"), (c) => c.candidateId, (c) => c.text),
+            list: named(withRefs(listItems(facts.plan), "l"), (item) => item.listItemId, (item) => item.text),
+            lines: named(withRefs([ ...lines.keep, ...lines.carry ], "x"), (line) => line.lineId, (line) => line.line),
+            days: named(listed.days, (day) => day.date, (day) => dateLabel(day.date) ?? day.date)
+        }, skipped);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
         await guarded({ kind: "done" }, skipped, async () => { for (const listItemId of input.done) {
@@ -266,11 +284,11 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         } });
 
         // A fate he named, then the proposed one for every item he didn't name.
-        const named = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId) ]);
+        const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId) ]);
         const putOffWeek: string[] = [];
         const fates = [
             ...input.fates,
-            ...open.items.filter((item) => item.listItemId && !named.has(item.listItemId) && "forward" in item.fate)
+            ...open.items.filter((item) => item.listItemId && !given.has(item.listItemId) && "forward" in item.fate)
                 .map((item) => ({ listItemId: item.listItemId ?? "", to: (item.fate as { forward: string }).forward, proposed: true }))
         ];
         await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {
@@ -360,6 +378,120 @@ const EVENING = "Evening";
 
 /** The local time of `at` as `HH:MM`. */
 const hhmm = (at: Date) => `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+
+/** What each kind of answer names its items from, each item with the ref its step gave it. */
+interface Pools {
+    open: Named[];
+    candidates: Named[];
+    list: Named[];
+    lines: Named[];
+    days: Named[];
+}
+
+/** `items` as names an answer can give: each with its id, ref and plain text; an item without an id can't be named. */
+function named<T extends { ref: string }>(items: T[], id: (item: T) => string | null | undefined, text: (item: T) => string): Named[] {
+    return items.flatMap((item) => {
+        const value = id(item);
+        return value ? [ { id: value, ref: item.ref, text: plainText(withoutMoveLinks(text(item))) } ] : [];
+    });
+}
+
+/**
+ * Reads the names of one answer: the id each names, its own value when it names nothing the steps
+ * showed (the write then says why), or null when it names several, skipped as ambiguous.
+ */
+function nameReader(skipped: Skipped[]) {
+    const read = (kind: string, value: string, pools: Named[][]): string | null => {
+        const found = resolveIn(pools, value);
+        if (found && "ambiguous" in found) {
+            skipped.push({ kind, text: value, reason: "ambiguous", detail: found.ambiguous.join("; ") });
+            return null;
+        }
+        return found?.id ?? value;
+    };
+    /** A place with the item it names read from `pools`, or null when that is ambiguous. */
+    const place = <P extends { before?: string; after?: string }>(kind: string, at: P, pools: Named[][]): P | null => {
+        const by = at.before ?? at.after;
+        if (by === undefined) return at;
+        const id = read(kind, by, pools);
+        return id === null ? null : { ...at, ...(at.before !== undefined ? { before: id } : { after: id }) };
+    };
+    return { read, place };
+}
+
+/** Plan my day's answers with every name read as the id it names; an ambiguous one is left out, skipped. */
+function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[]): PlanApplyInput {
+    const { read, place } = nameReader(skipped);
+    const onList = [ pools.list, pools.candidates, pools.open ];
+    const candidate = (kind: string) => (ref: { candidateId: string }) => {
+        const id = read(kind, ref.candidateId, [ pools.candidates ]);
+        return id === null ? [] : [ { ...ref, candidateId: id } ];
+    };
+    return {
+        ...input,
+        accept: input.accept.flatMap((ref) => {
+            const id = read("accept", ref.candidateId, [ pools.candidates ]);
+            const at = place("place", ref, onList);
+            return id === null || at === null ? [] : [ { ...at, candidateId: id } ];
+        }),
+        move: input.move.flatMap((ref) => {
+            const id = read("move", ref.listItemId, onList);
+            const at = place("move", ref, onList);
+            return id === null || at === null ? [] : [ { ...at, listItemId: id } ];
+        }),
+        keep: input.keep.flatMap((ref) => {
+            const id = read("keep", ref.lineId, [ pools.lines ]);
+            return id === null ? [] : [ { lineId: id } ];
+        }),
+        notToday: input.notToday.flatMap(candidate("not_today")),
+        dismiss: input.dismiss.flatMap(candidate("dismiss")),
+        ...(input.forward ? { forward: input.forward.flatMap((fate) => {
+            const id = read("forward", fate.listItemId, onList);
+            const to = read("forward", fate.to, [ pools.days ]);
+            return id === null || to === null ? [] : [ { listItemId: id, to } ];
+        }) } : {})
+    };
+}
+
+/** Wind down's answers with every name read as the id it names; an ambiguous one is left out, skipped. */
+function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[]): WindDownApplyInput {
+    const { read, place } = nameReader(skipped);
+    const onList = [ pools.list, pools.candidates, pools.open ];
+    const candidate = (kind: string) => (ref: { candidateId: string }) => {
+        const id = read(kind, ref.candidateId, [ pools.candidates ]);
+        return id === null ? [] : [ { ...ref, candidateId: id } ];
+    };
+    const line = (kind: string) => (ref: { lineId: string }) => {
+        const id = read(kind, ref.lineId, [ pools.lines ]);
+        return id === null ? [] : [ { lineId: id } ];
+    };
+    return {
+        ...input,
+        done: input.done.flatMap((value) => {
+            const id = read("done", value, [ pools.open ]);
+            return id === null ? [] : [ id ];
+        }),
+        fates: input.fates.flatMap((fate) => {
+            const id = read("fate", fate.listItemId, [ pools.open ]);
+            const to = fate.to === undefined ? undefined : read("fate", fate.to, [ pools.days ]);
+            return id === null || to === null ? [] : [ { ...fate, listItemId: id, ...(to === undefined ? {} : { to }) } ];
+        }),
+        accept: input.accept.flatMap((ref) => {
+            const id = read("accept", ref.candidateId, [ pools.candidates ]);
+            const at = place("place", ref, onList);
+            return id === null || at === null ? [] : [ { ...at, candidateId: id } ];
+        }),
+        move: input.move.flatMap((ref) => {
+            const id = read("move", ref.listItemId, onList);
+            const at = place("move", ref, onList);
+            return id === null || at === null ? [] : [ { ...at, listItemId: id } ];
+        }),
+        keep: input.keep.flatMap(line("keep")),
+        carry: input.carry.flatMap(line("carry")),
+        notToday: input.notToday.flatMap(candidate("not_today")),
+        dismiss: input.dismiss.flatMap(candidate("dismiss"))
+    };
+}
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
 async function guarded(entry: { kind: string; id?: string }, skipped: Skipped[], work: () => Promise<unknown>) {

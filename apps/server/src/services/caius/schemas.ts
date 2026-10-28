@@ -154,17 +154,21 @@ const briefWrite = z.object({
 }).refine(bothOrNeither, "Give latitude and longitude together, or neither");
 
 const jiraKey = z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase());
-const candidateRef = z.object({ candidateId: z.string().min(1).describe("A candidate's candidateId, from the step data") });
-const lineRef = z.object({ lineId: z.string().min(1).describe("A keep or carry line's lineId, from the step data") });
+/** What an answer may name an item by, as `refs.ts` resolves it. */
+const NAMED = "its id or ref from the step data (o1, c1, l1, x1), a ticket key or its number, or a distinctive word of its text";
+/** A day, week or month an answer sends a task to. */
+const DESTINATION = "A day's ref (d1) or date YYYY-MM-DD, a week YYYY-Www or a month YYYY-MM, from the step's data.days, data.weeks or data.months";
+const candidateRef = z.object({ candidateId: z.string().min(1).describe(`A candidate: ${NAMED}`) });
+const lineRef = z.object({ lineId: z.string().min(1).describe(`A keep or carry line: ${NAMED}`) });
 /** Where an item goes in his main list: first, or before or after an item of `data.list` or a candidate taken in the same call. */
 const place = {
     first: z.boolean().optional().describe("true puts it at the top of his list"),
-    before: z.string().min(1).optional().describe("Put it just before this item: a listItemId from the step's data.list, or a candidateId taken in the same call"),
-    after: z.string().min(1).optional().describe("Put it just after this item: a listItemId from the step's data.list, or a candidateId taken in the same call")
+    before: z.string().min(1).optional().describe(`Put it just before this item of his list or a candidate taken in the same call: ${NAMED}`),
+    after: z.string().min(1).optional().describe(`Put it just after this item of his list or a candidate taken in the same call: ${NAMED}`)
 };
 const placed = (item: { first?: boolean; before?: string; after?: string }) => [ item.first || undefined, item.before, item.after ].filter((v) => v !== undefined).length;
 const acceptRef = candidateRef.extend(place).refine((item) => placed(item) <= 1, "Give at most one of first, before or after");
-const moveRef = z.object({ listItemId: z.string().min(1).describe("An item of his main list, from the step's data.list"), ...place })
+const moveRef = z.object({ listItemId: z.string().min(1).describe(`An item of his main list: ${NAMED}`), ...place })
     .refine((item) => placed(item) === 1, "Give exactly one of first, before or after");
 const moves = z.array(moveRef).default([]).describe("Only when the user asks to reorder: items of his main list moved first, before or after another");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
@@ -181,8 +185,8 @@ const planApply = z.object({
     evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
     context: answerTexts("What the user said is worth knowing, such as an overlap's answer, each written as a Context line"),
     forward: z.array(z.object({
-        listItemId: z.string().min(1).describe("A task's listItemId from the step data"),
-        to: z.string().refine((to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to), "Give a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
+        listItemId: z.string().min(1).describe(`A task: ${NAMED}`),
+        to: z.string().min(1).describe(DESTINATION)
     })).optional().describe("Tasks the user moved, such as the heavy day's suggestion, each to one of the inputs step's data.days, data.weeks or data.months"),
     brief: z.object({
         headline: z.string().trim().min(1).describe("One sentence of 14 words or fewer that names the work"),
@@ -194,11 +198,10 @@ const planApply = z.object({
 
 const windDownApply = z.object({
     date: periodKey("day").describe("The day being closed, YYYY-MM-DD; the rest works against the next workday"),
-    done: z.array(z.string().min(1)).default([]).describe("The listItemIds of the open items the user says are done"),
+    done: z.array(z.string().min(1)).default([]).describe(`The open items the user says are done, each by ${NAMED}`),
     fates: z.array(z.object({
-        listItemId: z.string().min(1).describe("An open item's listItemId from the open step"),
-        to: z.string().refine((to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to), "Give a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM").optional()
-            .describe("Where the user sends it: one of the open step's data.days, data.weeks (\"later this week\") or data.months"),
+        listItemId: z.string().min(1).describe(`An open item: ${NAMED}`),
+        to: z.string().min(1).optional().describe(`Where the user sends it. ${DESTINATION}`),
         drop: z.string().trim().min(1).optional().describe("Only when the user says drop, cancel or not doing: the user's reason")
     }).refine((fate) => (fate.to === undefined) !== (fate.drop === undefined), "Give exactly one of to or drop")).default([])
         .describe("Fates the user named. Every open item not named keeps the fate the open step proposed"),

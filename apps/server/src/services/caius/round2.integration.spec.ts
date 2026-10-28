@@ -541,8 +541,9 @@ describe("only days and ids the step showed", () => {
         at("2027-02-25T17:30");
         const open = await call("caius_winddown", { date: "2027-02-25", step: "open" });
         expect(open.data.days).toEqual([
-            { date: "2027-02-26", dateLabel: "Fri 26 Feb" }, { date: "2027-03-01", dateLabel: "Mon 1 Mar" }, { date: "2027-03-02", dateLabel: "Tue 2 Mar" },
-            { date: "2027-03-03", dateLabel: "Wed 3 Mar" }, { date: "2027-03-04", dateLabel: "Thu 4 Mar" }, { date: "2027-03-05", dateLabel: "Fri 5 Mar" }
+            { date: "2027-02-26", dateLabel: "Fri 26 Feb", ref: "d1" }, { date: "2027-03-01", dateLabel: "Mon 1 Mar", ref: "d2" },
+            { date: "2027-03-02", dateLabel: "Tue 2 Mar", ref: "d3" }, { date: "2027-03-03", dateLabel: "Wed 3 Mar", ref: "d4" },
+            { date: "2027-03-04", dateLabel: "Thu 4 Mar", ref: "d5" }, { date: "2027-03-05", dateLabel: "Fri 5 Mar", ref: "d6" }
         ]);
         expect(open.data.weeks).toEqual([ { week: "2027-W08", weekLabel: "the week of Mon 22 Feb" }, { week: "2027-W09", weekLabel: "the week of Mon 1 Mar" } ]);
         const applied = await call("caius_winddown_apply", {
