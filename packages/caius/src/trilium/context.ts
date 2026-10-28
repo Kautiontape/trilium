@@ -44,9 +44,10 @@ export function contextNotes(date: string): { period: 'day' | 'week'; key: strin
  * `(until …)` date is before `date` is dropped, and so is an earlier day note's line without an
  * `until`, which holds on its own day only and so takes no part in the comparison below. When the same text is in several notes, the
  * newest note's line is kept (compared by `sameContext`): a day note is dated by its day, a week note by its Monday, and a
- * day note beats a week note that starts the same day. The result is newest first.
+ * day note beats a week note that starts the same day. The result is newest first. `pending` holds
+ * the lines whose range starts later, for a writer to tell a duplicate.
  */
-export async function gatherContext(api: NoteReader, date: string): Promise<{ date: string; context: ContextEntry[] }> {
+export async function gatherContext(api: NoteReader, date: string): Promise<{ date: string; context: ContextEntry[]; pending: ContextEntry[] }> {
   const states = await loadStateSymbols(api);
   const sources = contextNotes(date)
     .map(({ period, key }) => ({ period, key, dated: period === 'week' ? periodSpan('week', key).start : key }))
@@ -54,13 +55,15 @@ export async function gatherContext(api: NoteReader, date: string): Promise<{ da
 
   // Oldest first, so that a later note's line replaces an earlier one with the same text.
   const kept = new Map<string, { entry: ContextEntry; expired: boolean }>();
+  const pending = new Map<string, ContextEntry>();
   for (const { period, key, dated } of sources) {
     const note = await findPeriodNote(api, period as PeriodKind, key);
     if (!note || note.type !== 'text' || note.isProtected) continue;
     const doc = buildDoc(note, periodPath(period, key), await api.content(note.noteId), states);
     // Expired lines take part, so that a newer note ending a line hides the older open-ended copy;
     // within one note an in force line is read last and so beats an expired copy.
-    const { context, expiredContext } = parseContext(doc.contextLines, dated, date);
+    const { context, expiredContext, pendingContext } = parseContext(doc.contextLines, dated, date);
+    for (const line of pendingContext) pending.set(sameContext(line.text), { ...line, period, key, noteId: note.noteId });
     const oneDayOver = (line: ContextLine) => period === 'day' && key < date && line.until === undefined;
     for (const [expired, lines] of [[true, expiredContext], [false, context]] as const) {
       for (const line of lines) {
@@ -71,5 +74,7 @@ export async function gatherContext(api: NoteReader, date: string): Promise<{ da
       }
     }
   }
-  return { date, context: [...kept.values()].reverse().filter((k) => !k.expired).map((k) => k.entry) };
+  const context = [...kept.values()].reverse().filter((k) => !k.expired).map((k) => k.entry);
+  const inForce = new Set(context.map((line) => sameContext(line.text)));
+  return { date, context, pending: [...pending.entries()].filter(([id]) => !inForce.has(id)).map(([, line]) => line) };
 }

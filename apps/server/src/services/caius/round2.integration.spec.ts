@@ -502,3 +502,14 @@ describe("evening stays evening", () => {
         ]);
     });
 });
+
+describe("a re-run with a range line", () => {
+    it("Mon 8 Feb: caius_plan_apply twice with 'Sam is out Thu–Fri' leaves one copy in the week note", async () => {
+        at("2027-02-08T09:40");
+        const input = { date: "2027-02-08", context: [ "Sam is out Thu–Fri" ], brief: prose };
+        expect((await call("caius_plan_apply", input)).written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "context", status: "written" }) ]));
+        expect((await call("caius_plan_apply", input)).written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "context", status: "unchanged" }) ]));
+        const week = await call("caius_plan", { period: "week", date: "2027-W06" });
+        expect(week.pendingContext.map((c: any) => c.text)).toEqual([ "Sam is out Thu–Fri" ]);
+    });
+});

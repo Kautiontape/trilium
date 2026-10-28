@@ -182,9 +182,10 @@ export async function addContext(
   if (note && (note.type !== 'text' || note.isProtected)) {
     return { status: 'skipped', reason: 'unreadable', detail: 'note is protected or not a text note' };
   }
-  const inForce = period === 'day'
-    ? (await gatherContext(api, key)).context
-    : (await readPlan(api, 'week', key, opts.now ?? clock())).context;
+  // A copy not started yet, or one lapsed in the same week note, is the same line too.
+  const gathered = period === 'day' ? await gatherContext(api, key) : null;
+  const week = gathered ? null : await readPlan(api, 'week', key, opts.now ?? clock());
+  const inForce = gathered ? [...gathered.context, ...gathered.pending] : [...(week?.context ?? []), ...(week?.expiredContext ?? []), ...(week?.pendingContext ?? [])];
   const hit = inForce.find((line) => sameContext(line.text) === sameContext(text));
   if (hit) {
     const longer = hit.until !== undefined && (until === undefined || hit.until < until);

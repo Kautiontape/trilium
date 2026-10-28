@@ -148,6 +148,18 @@ describe('Context ranges', () => {
   });
 });
 
+describe('a range line written twice', () => {
+  it('is a duplicate before it starts, in a week note and for a day of that week', async () => {
+    const fake = fakeTrilium({ w: [periodNote('w', 'weekNote', '2026-W45'), TASKS] });
+    const MON = new Date(2026, 10, 2, 9);
+    const line = { text: 'Sam is out Thu–Fri', from: '2026-11-05', until: '2026-11-06' };
+    expect(await addContext(fake.api, { week: '2026-W45', ...line }, { now: MON })).toMatchObject({ status: 'added' });
+    expect(await addContext(fake.api, { week: '2026-W45', ...line }, { now: MON })).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+    expect(await addContext(fake.api, { date: '2026-11-02', ...line }, { now: MON })).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+    expect(fake.html.w.match(/Sam is out/g)).toHaveLength(1);
+  });
+});
+
 describe('replaceMeetings', () => {
   const lines = ['09:30 Standup', 'a & b <c>'];
   const block = '<ul><li>09:30 Standup</li><li>a &amp; b &lt;c&gt;</li></ul>';

@@ -39,7 +39,8 @@ describe("Caius context route", () => {
             context: [
                 { text: "ZAP-2590 is open", until: "2033-03-09", period: "day", key: MONDAY, noteId: noteIds.monday },
                 { text: "Jaco out", until: "2033-03-11", period: "day", key: FRIDAY, noteId: noteIds.friday }
-            ]
+            ],
+            pending: []
         });
     });
 
