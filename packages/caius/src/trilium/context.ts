@@ -5,7 +5,7 @@ import { lastWorkday } from '../workday.js';
 import { buildDoc, loadStateSymbols } from './journal.js';
 import { findPeriodNote, isoWeekKey, periodPath, type PeriodKind } from './plan-read.js';
 import type { NoteReader } from './store.js';
-import { parseContext, periodSpan, type ContextLine } from './until.js';
+import { parseContext, periodSpan, sameContext, type ContextLine } from './until.js';
 
 export interface ContextEntry extends ContextLine {
   /** The kind and key of the note the line is in. */
@@ -18,7 +18,6 @@ const WORKDAYS_BACK = 3;
 const DAY_MS = 86_400_000;
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const sameText = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
 /**
  * The notes `gatherContext` reads for `date`: the ISO week note, last week's on a Monday (marked
@@ -42,7 +41,7 @@ export function contextNotes(date: string): { period: 'day' | 'week'; key: strin
 /**
  * Context lines in force on `date` (`YYYY-MM-DD`), from the notes `contextNotes` names. A line whose
  * `(until …)` date is before `date` is dropped. When the same text is in several notes, the
- * newest note's line is kept: a day note is dated by its day, a week note by its Monday, and a
+ * newest note's line is kept (compared by `sameContext`): a day note is dated by its day, a week note by its Monday, and a
  * day note beats a week note that starts the same day. The result is newest first.
  */
 export async function gatherContext(api: NoteReader, date: string): Promise<{ date: string; context: ContextEntry[] }> {
@@ -62,7 +61,7 @@ export async function gatherContext(api: NoteReader, date: string): Promise<{ da
     const { context, expiredContext } = parseContext(doc.contextLines, dated, date);
     for (const [expired, lines] of [[true, expiredContext], [false, context]] as const) {
       for (const line of lines) {
-        const id = sameText(line.text);
+        const id = sameContext(line.text);
         kept.delete(id);
         kept.set(id, { entry: { ...line, period, key, noteId: note.noteId }, expired });
       }

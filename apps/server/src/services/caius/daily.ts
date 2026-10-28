@@ -34,6 +34,7 @@ import {
     type PlanView,
     readPlan,
     type Rhythm,
+    sameContext,
     scanDocs,
     sectionOf,
     TRILIUM_CONFIG
@@ -269,9 +270,9 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
  */
 function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEntry[]) {
     const reads = new Set(contextNotes(day).filter((n) => !n.oneDay).map((n) => `${n.period}:${n.key}`));
-    const readThen = new Set(dayContext.filter((line) => reads.has(`${line.period}:${line.key}`)).map((line) => sameText(line.text)));
+    const readThen = new Set(dayContext.filter((line) => reads.has(`${line.period}:${line.key}`)).map((line) => sameContext(line.text)));
     return inForce
-        .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= day) && !readThen.has(sameText(line.text)))
+        .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= day) && !readThen.has(sameContext(line.text)))
         .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
 }
 

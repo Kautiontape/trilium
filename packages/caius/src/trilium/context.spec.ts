@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fakeTrilium as seeded, periodNote } from './helpers.js';
 import { contextNotes, gatherContext } from './context.js';
+import { sameContext } from './until.js';
 import type { StoreNote } from './store.js';
 
 /** A fake whose notes are keyed by their own noteId, as the fake store reads content by it. */
@@ -69,6 +70,16 @@ describe('gatherContext', () => {
       { text: 'same text', until: '2026-11-13', period: 'day', key: '2026-11-10', noteId: 'd2026-11-10' },
       { text: 'Only in the week', period: 'week', key: '2026-W46', noteId: 'w2026-W46' },
     ]);
+  });
+
+  it('reads two lines that differ only in case, spacing and trailing punctuation as one', async () => {
+    // Round 2: Week 45 held the ZAP-2590 line twice, once with a full stop.
+    const fake = fakeTrilium({
+      a: week('2026-W45', 'ZAP-2590 is open; Jira&#39;s Done is a mistake.', 'zap-2590 is  open; Jira&#39;s Done is a mistake'),
+    });
+    expect(ids(await gatherContext(fake.api, '2026-11-06'))).toEqual(['zap-2590 is open; Jira\'s Done is a mistake']);
+    expect(sameContext('ZAP-2590 is open.')).toBe(sameContext(' zap-2590  IS open '));
+    expect(sameContext('Done!;')).toBe('done');
   });
 
   it('lets a newer expired line hide the older open-ended one', async () => {

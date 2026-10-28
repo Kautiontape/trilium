@@ -6,6 +6,14 @@ export interface ContextLine {
   until?: string;
 }
 
+/**
+ * A Context line's text as two copies of it compare: lower case, spacing collapsed and trailing
+ * punctuation dropped, so "ZAP-2590 is open." and "zap-2590 is  open" are one line.
+ */
+export function sameContext(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().replace(/[\s.!?,;:…]+$/, '').toLowerCase();
+}
+
 const UNTIL = /\s*\(\s*until\s+([^()]*?)\s*\)\s*$/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const DAY_MS = 86_400_000;

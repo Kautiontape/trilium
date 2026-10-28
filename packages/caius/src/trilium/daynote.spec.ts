@@ -215,6 +215,10 @@ describe('addContext', () => {
     expect(fake.html.d).toContain('<li>Release frozen (until Fri 13 Nov)</li></ul>');
     const again = await addContext(fake.api, { date: '2026-11-06', text: ' release  FROZEN ', until: '2026-11-10' }, { now: NOW });
     expect(again).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+    // Trailing punctuation doesn't make a new line, nor does it stop the line being kept longer.
+    expect(await addContext(fake.api, { date: '2026-11-06', text: 'Release frozen.' }, { now: NOW })).toMatchObject({ status: 'updated', line: 'Release frozen' });
+    expect(fake.html.d).toContain('<li>Release frozen</li></ul>');
+    expect(await addContext(fake.api, { date: '2026-11-06', text: 'release frozen!' }, { now: NOW })).toMatchObject({ status: 'skipped', reason: 'duplicate' });
     // An expired line is not in force, so the same text can be written again.
     expect(await addContext(fake.api, { date: '2026-11-06', text: 'Jaco out all week' }, { now: NOW })).toMatchObject({ status: 'added' });
   });

@@ -9,7 +9,7 @@ import { escapeHtml } from './plan-html.js';
 import { findPeriodNote, isPeriodKey, readPlan } from './plan-read.js';
 import { normName, proseKind, type ProseKind } from './sections.js';
 import type { NoteStore, StoreNote } from './store.js';
-import { parseContext, periodSpan } from './until.js';
+import { parseContext, periodSpan, sameContext } from './until.js';
 
 /**
  * The block under `### Meetings` in a note's HTML, replaced with a plain bullet list of `lines`
@@ -151,7 +151,7 @@ export type ContextAddResult =
  * Adds one Context line to a day note (`date`) or an ISO week note (`week`), with ` (until Fri 6 Nov)`
  * when `until` is given. Text already in force there is skipped as `duplicate`: for a day, anything
  * `gatherContext` returns for it (the week note's lines included); for a week, the week note's own
- * lines in force. The text is compared ignoring case and spacing. A missing note is created from the
+ * lines in force. The text is compared by `sameContext`: ignoring case, spacing and trailing punctuation. A missing note is created from the
  * template, except on a dry run. The write is a compare-and-swap.
  */
 export async function addContext(
@@ -180,8 +180,7 @@ export async function addContext(
   const inForce = period === 'day'
     ? (await gatherContext(api, key)).context
     : (await readPlan(api, 'week', key, opts.now ?? clock())).context;
-  const same = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
-  const hit = inForce.find((line) => same(line.text) === same(text));
+  const hit = inForce.find((line) => sameContext(line.text) === sameContext(text));
   if (hit) {
     const longer = hit.until !== undefined && (until === undefined || hit.until < until);
     if (!longer) return { status: 'skipped', reason: 'duplicate', detail: `already in force: ${hit.text}` };
@@ -241,14 +240,13 @@ async function extendUntil(
 export function setContextLine(html: string, text: string, line: string, noteDate: string): string | null {
   const top = elements(parse(html, { comment: true }));
   const block = proseBlock(top, html, 'context');
-  const same = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
   const copies = (block?.inside ?? [])
     .flatMap((el) => el.querySelectorAll('li'))
     .map((item) => {
       const { context, expiredContext } = parseContext([item.text.replace(/\s+/g, ' ').trim()], noteDate);
       return { item, parsed: context[0] ?? expiredContext[0] };
     })
-    .filter(({ parsed }) => same(parsed?.text ?? '') === same(text));
+    .filter(({ parsed }) => sameContext(parsed?.text ?? '') === sameContext(text));
   // A copy without an until outlasts any with one.
   const longest = copies.reduce<(typeof copies)[number] | undefined>(
     (best, copy) => !best || (best.parsed?.until !== undefined && (copy.parsed?.until === undefined || copy.parsed.until > best.parsed.until)) ? copy : best,
