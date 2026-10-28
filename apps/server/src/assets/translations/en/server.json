@@ -684,6 +684,7 @@
       "ambiguous": "'{{- said}}' is unchanged since it could be {{- matches}}",
       "which": "Which {{- noun}}: {{- matches}}?",
       "which_held": "Which do you mean: {{- matches}}?",
+      "what_about": "What about {{- item}}?",
       "calendar_unavailable": "the meetings stay as they were because the calendar couldn't be read",
       "not_found": "'{{- item}}' wasn't found",
       "duplicate": "{{- item}} is already open",

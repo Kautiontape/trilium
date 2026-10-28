@@ -143,7 +143,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // An ask offered today is a Follow up from tomorrow on.
         await labelDay(store, date, ASK_SEEN_LABEL, offer.offeredAsks);
         // A forward may name only a task the steps showed, and only a day, week or month they listed.
-        const catchupTasks = (await catchupOf(store, date, now)).tasks;
+        const { tasks: catchupTasks, held: heldTasks } = await catchupOf(store, date, now);
         const shown = new Set([
             offer.forwardSuggestion?.listItemId, ...offer.candidates.map((c) => c.listItemId), ...catchupTasks.map((t) => t.listItemId),
             ...listItems(offer.day.plan).map((item) => item.listItemId)
@@ -151,7 +151,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
         const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
-        const pools = planPools(offer, catchupTasks, listed.days);
+        // A held task can be named, to settle it, but no catch-up moves it.
+        const pools = planPools(offer, [ ...catchupTasks, ...heldTasks ], listed.days);
         const { table, items, copies } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         pools.settled = settledOf(items, new Set([ date ]));
         const input = planAnswers(asked, pools, skipped, table, copies);
@@ -159,11 +160,14 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         /** The result with `say`, its entries named by their text first. */
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
             withTexts([ ...result.written, ...result.skipped ], pools, known, followed);
-            return withDateLabels({ ...result, say: sayOf(result, { day: date }) });
+            const stillHeld = heldTasks.filter((task) => task.listItemId && !input.done.includes(task.listItemId)).map((task) => task.text);
+            return withDateLabels({ ...result, say: sayOf(result, { day: date, held: stillHeld }) });
         };
 
         // What he finished is ticked where it is, his list or a catch-up day, before the catch-up moves anything.
-        const onList = new Set([ ...listItems(offer.day.plan).map((item) => item.listItemId), ...catchupTasks.map((task) => task.listItemId), ...followed.keys() ]);
+        const onList = new Set([
+            ...listItems(offer.day.plan).map((item) => item.listItemId), ...[ ...catchupTasks, ...heldTasks ].map((task) => task.listItemId), ...followed.keys()
+        ]);
         await guarded({ kind: "done" }, skipped, async () => {
             const states = await loadStateSymbols(store);
             for (const listItemId of input.done) {
@@ -175,6 +179,9 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
                 }
                 const [ result ] = await setStates(store, "done", [ { noteId, listItemId } ], { states });
                 record(written, skipped, { kind: "done", id: listItemId }, result);
+                // Named now, a held task is settled: its hold goes.
+                const held = heldTasks.find((task) => task.listItemId === listItemId);
+                if (held) removeLabel(held.noteId, HELD_LABEL, listItemId);
             }
         });
 

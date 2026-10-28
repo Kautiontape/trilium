@@ -42,7 +42,7 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -461,14 +461,17 @@ const CATCHUP_DAYS = 5;
  * none live; one with nothing live that was wound down (`#caiusWoundDown`), recorded a skip
  * (`#caiusSkipCatchup`) or has a brief; one protected or not a text note, since Caius cannot read
  * it; or, after taking its tasks, one that recorded a skip, which covered the days before it. None once the day note carries
- * `#caiusSkipCatchup=<date>`. Answers the day note too, without creating it. The caller holds the lock.
+ * `#caiusSkipCatchup=<date>`. A task held on its day (`#caiusHeld`) is in `held`, not `tasks`: no
+ * catch-up moves it. Answers the day note too, without creating it. The caller holds the lock.
  */
 export async function catchupOf(store: NoteStore, date: string, now: Date) {
     const last = dayKey(lastWorkday(localDay(date)));
     const note = await findPeriodNote(store, "day", date);
     const skipped = !!note?.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
     const days: string[] = [];
-    const tasks: { noteId: string; listItemId: string | null; text: string; section: string | null; critical: boolean; period: string }[] = [];
+    type Task = { noteId: string; listItemId: string | null; text: string; section: string | null; critical: boolean; period: string };
+    const tasks: Task[] = [];
+    const held: Task[] = [];
     for (let at = localDay(date), i = 0; !skipped && i < CATCHUP_DAYS; i++) {
         at = lastWorkday(at);
         const key = dayKey(at);
@@ -485,10 +488,13 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
             continue;
         }
         days.unshift(key);
-        tasks.unshift(...live);
+        // A task an ambiguous wind-down answer held stays on its day until he says which.
+        const holding = new Set(dayNote.attributes.filter((a) => a.type === "label" && a.name === HELD_LABEL).map((a) => a.value));
+        tasks.unshift(...live.filter((task) => !task.listItemId || !holding.has(task.listItemId)));
+        held.unshift(...live.filter((task) => task.listItemId && holding.has(task.listItemId)));
         if (skippedHere) break;
     }
-    return { lastWorkday: last, days, note, skipped, tasks };
+    return { lastWorkday: last, days, note, skipped, tasks, held };
 }
 
 /** A plan's top-level tasks in any state. */

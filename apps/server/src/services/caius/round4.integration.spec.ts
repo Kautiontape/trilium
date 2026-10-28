@@ -822,3 +822,24 @@ describe("fix round 1: a moved item is followed to its copy, not taken as in pla
         expect(wednesday).toEqual(expect.arrayContaining([ "Own task", "First leftover" ]));
     });
 });
+
+describe("fix round 1: a hold survives the catch-up", () => {
+    it("Wed night 'the export is done' holds both; Thu move_all leaves them on Wednesday and asks which; 'ZAP-111 is finished' settles one", async () => {
+        await wednesday("2027-09-01");
+        at("2027-09-01T17:45");
+        await call("caius_winddown_apply", { date: "2027-09-01", done: [ "the export" ] });
+        at("2027-09-02T09:30");
+        const catchup = await call("caius_planday", { date: "2027-09-02", step: "catchup" });
+        expect(catchup.data.tasks.map((task: any) => task.listItemId)).not.toContain("2027-09-01-111");
+        const planned = await call("caius_plan_apply", { date: "2027-09-02", catchup: "move_all", brief: prose });
+        expect((await tasksOf("2027-09-01")).slice(0, 2).map((task: any) => task.state)).toEqual([ "open", "open" ]);
+        expect((await tasksOf("2027-09-02")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
+        expect(planned.say).toMatch(/Which do you mean: ZAP-111 or ZAP-101\?$/);
+
+        const finished = await call("caius_plan_apply", { date: "2027-09-02", finished: [ "ZAP-111" ], brief: prose });
+        expect(finished.skipped).toEqual([]);
+        expect((await tasksOf("2027-09-01"))[0]).toEqual({ text: "ZAP-111 Check the invoice export in QA", state: "done" });
+        expect(await labelsOf("2027-09-01", "caiusHeld")).toEqual([ "2027-09-01-101" ]);
+        expect(finished.say).toMatch(/What about ZAP-101\?$/);
+    });
+});

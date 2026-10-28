@@ -67,7 +67,8 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
             const matches = orList(labels.length < texts.length ? texts.map((text) => labelWords(text, key)) : labels);
             return noun ? t("caius.say.which", { noun, matches }) : t("caius.say.which_held", { matches });
         }))
-        : held.length ? [ t("caius.say.which_held", { matches: orList(unique(held.map(labelOf))) }) ] : [];
+        : held.length > 1 ? [ t("caius.say.which_held", { matches: orList(unique(held.map(labelOf))) }) ]
+            : held[0] ? [ t("caius.say.what_about", { item: labelOf(held[0]) }) ] : [];
     const sentences = [ wrote, missed ].filter((clauses) => clauses.length).map((clauses) => `${capitalized(andList(clauses))}.`);
     if (!sentences.length && !questions.length) return t("caius.say.nothing");
     return [ ...sentences, ...questions ].join(" ");
