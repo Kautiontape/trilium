@@ -457,6 +457,29 @@ describe("a refresh plans from now", () => {
     });
 });
 
+describe("a place finds the copy the wind-down moved", () => {
+    it("Tue 17:30 'laundry first': the Laundry forwarded from Tuesday goes first, not Monday's; an item sent elsewhere is no place on Wednesday", async () => {
+        await cls.init(async () => {
+            const tuesday = await store.calendarDay("2027-04-13");
+            await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-lau", "Laundry"), li("t-wat", "Water the plants"))}`);
+            const wednesday = await store.calendarDay("2027-04-14");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(
+                li("w-lau", "Laundry <a href=\"#root/aMonday\">from Mon 12 Apr</a>"), li("w-wat", "Water the plants"), li("w-oth", "Other")
+            )}`);
+        });
+        at("2027-04-13T17:30");
+        const applied = await call("caius_winddown_apply", {
+            date: "2027-04-13", fates: [ { listItemId: "t-wat", to: "w1" } ], move: [ { listItemId: "t-lau", first: true }, { listItemId: "t-wat", after: "Other" } ]
+        });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "move", id: "t-wat", reason: "not_on_list" }) ]);
+        const plan = await call("caius_plan", { period: "day", date: "2027-04-14" });
+        const tuesdayId = (await call("caius_plan", { period: "day", date: "2027-04-13" })).noteId;
+        expect(plan.sections.flatMap((s: any) => s.tasks).map((t: any) => t.text)).toEqual([
+            `Laundry [from Tue 13 Apr](#root/${tuesdayId})`, "Laundry [from Mon 12 Apr](#root/aMonday)", "Water the plants", "Other"
+        ]);
+    });
+});
+
 describe("'later this week' is the week", () => {
     it("Mon 17:30 '111 later this week': the days carry week refs, and the fate goes to the week note, not a day", async () => {
         await wednesday("2027-03-15");

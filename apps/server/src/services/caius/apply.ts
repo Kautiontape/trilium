@@ -161,7 +161,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
         // What the catch-up moves here can be placed by the id it had on its own day.
-        const moved = new Map(input.catchup === "move_all" ? catchupTasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, task.text ] as const ] : []) : []);
+        const moved = new Map(input.catchup === "move_all" ? catchupTasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, { text: task.text, noteId: task.noteId } ] as const ] : []) : []);
         await acceptAll(store, date, now, input, { known, moved }, written, skipped);
 
         const onList = new Set(listItems(offer.day.plan).map((item) => item.listItemId));
@@ -354,8 +354,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await labelDay(store, date, NOT_TODAY_LABEL, putOffWeek);
         });
 
-        // What the fates move to the next workday can be placed by the id it had here.
-        const moved = new Map(open.items.flatMap((item) => item.listItemId ? [ [ item.listItemId, item.text ] as const ] : []));
+        // What the fates move to the next workday can be placed by the id it had here; nothing else can.
+        const toTarget = (item: (typeof open.items)[number]) => {
+            if (!item.listItemId || input.done.includes(item.listItemId)) return false;
+            const fate = input.fates.find((f) => f.listItemId === item.listItemId);
+            return fate ? fate.to === targetDay : "forward" in item.fate && item.fate.forward === targetDay;
+        };
+        const moved = new Map(open.items.filter(toTarget).map((item) => [ item.listItemId ?? "", { text: item.text, noteId: item.noteId } ] as const));
         await acceptAll(store, targetDay, now, input, { known, moved }, written, skipped);
         await guarded({ kind: "keep" }, skipped, async () => { for (const [ kind, refs ] of [ [ "keep", input.keep ], [ "carry", input.carry ] ] as const) {
             for (const { lineId } of refs) {
@@ -902,16 +907,20 @@ async function acceptAll(store: NoteStore, date: string, now: Date, input: Pick<
     }
 }
 
-/** What a place can name besides an item of the list: the call's candidates, and the items it moved here by the id they had (`moved`, id to text). */
+/**
+ * What a place can name besides an item of the list: the call's candidates, and the items it moved
+ * here by the id they had (`moved`, id to their text and the note they came from).
+ */
 interface Refs {
     known: Map<string, Candidate>;
-    moved: Map<string, string>;
+    moved: Map<string, { text: string; noteId: string }>;
 }
 
 /**
  * Moves `item` in his main list of `date` to `place`. `item` and the item it is placed by are each
  * a listItemId of the list, a candidate's id or the id of an item the call moved here, found on the
- * list by its key or, for an item whose copy has a new id, by its text without the forward links.
+ * list by its key or, for an item whose copy has a new id, by its text without the forward links;
+ * of several copies with that text, the one whose back link points at the note it came from.
  */
 async function placeOnList(store: NoteStore, date: string, now: Date, entry: { kind: string; id: string }, item: string, place: { first?: boolean; before?: string; after?: string }, refs: Refs, written: Written[], skipped: Skipped[]) {
     const by = place.before ?? place.after;
@@ -919,11 +928,16 @@ async function placeOnList(store: NoteStore, date: string, now: Date, entry: { k
     const plan = await readPlan(store, "day", date, now);
     const tasks = mainTasks(plan);
     const refsOf = (ref: string) => {
-        const text = refs.known.get(ref)?.text ?? refs.moved.get(ref);
+        const text = refs.known.get(ref)?.text ?? refs.moved.get(ref)?.text;
         return [ ref, ...(text ? keysOf(withoutMoveLinks(text)) : []) ];
     };
-    const find = (ref: string) => tasks.find((task) => task.listItemId === ref)
-        ?? tasks.find((task) => keysOf(withoutMoveLinks(task.text)).some((key) => refsOf(ref).includes(key)));
+    const find = (ref: string) => {
+        const exact = tasks.find((task) => task.listItemId === ref);
+        if (exact) return exact;
+        const matches = tasks.filter((task) => keysOf(withoutMoveLinks(task.text)).some((key) => refsOf(ref).includes(key)));
+        const origin = refs.moved.get(ref)?.noteId;
+        return (origin ? matches.find((task) => task.text.includes(`(#root/${origin})`)) : undefined) ?? matches[0];
+    };
     const task = find(item);
     const anchor = by === undefined ? undefined : find(by)?.listItemId ?? undefined;
     const noteId = task?.noteId ?? plan.noteId;
