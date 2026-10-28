@@ -265,13 +265,18 @@ export function inspectSuggested(html: string, id: string): ({ ok: true } & Sugg
 
 /**
  * A Suggested item's markup as a task of his list: `Get X done: because Y (~30m)` becomes `X ~30m`,
- * keeping the markup inside X, such as a key's link, so the estimate is a token again. Markup of any
- * other shape comes back unchanged.
+ * keeping the markup inside X, such as a key's link, so the estimate is a token again. A
+ * non-breaking space reads as a space. Markup of any other shape comes back unchanged.
  */
 export function asListTask(markup: string): string {
   const inSpan = '(?:(?!</span>)[\\s\\S])';
-  const wrapped = new RegExp(`(<span class="todo-list__label__description">)Get\\s+(${inSpan}*?)\\s+done: because ${inSpan}*\\(~(\\d+)m\\)(</span>)`);
-  return markup.replace(wrapped, (_, open: string, subject: string, minutes: string, close: string) => `${open}${subject} ~${minutes}m${close}`);
+  // CKEditor saves some spaces as &nbsp;, so the description is read with plain spaces.
+  const description = new RegExp(`<span class="todo-list__label__description">${inSpan}*</span>`);
+  const spaced = markup.replace(description, (span) => span.replace(/&nbsp;|\u00a0/g, ' '));
+  const wrapped = new RegExp(`(<span class="todo-list__label__description">)Get\\s+(${inSpan}*?)\\s+done: because ${inSpan}*\\(~(\\d+)m\\)\\s*(</span>)`);
+  return wrapped.test(spaced)
+    ? spaced.replace(wrapped, (_, open: string, subject: string, minutes: string, close: string) => `${open}${subject} ~${minutes}m${close}`)
+    : markup;
 }
 
 /** Remove a Suggested item (and its list, if it was the last one). */

@@ -222,6 +222,17 @@ describe('acceptTasks', () => {
       ['Book the venue', 15],
     ]);
   });
+  it('unwraps a suggestion that CKEditor saved with non-breaking spaces', async () => {
+    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-2">ZAP-2</a>';
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
+      li('es1', `Get&nbsp;${link} Fix done:&nbsp;because it waits (~30m)`),
+      li('es2', 'Get Book the venue done: because it waits (~15m)&nbsp;'),
+    );
+    const f = fakeTrilium(seed(day));
+    await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }, { noteId: 'd', listItemId: 'es2' }], base);
+    expect(f.html.d).toContain(`<span class="todo-list__label__description">${link} Fix ~30m</span>`);
+    expect(f.html.d).toContain('<span class="todo-list__label__description">Book the venue ~15m</span>');
+  });
   it('keeps Suggested last when accepting into a new section', async () => {
     const f = fakeTrilium(seed(html));
     await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'Home' }], base);
