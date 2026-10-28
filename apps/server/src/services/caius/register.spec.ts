@@ -60,7 +60,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
         "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
-        "\"Later this week\" is the week ref `w1` in `data.days`, and \"next week\" is `w2`: never a date.",
+        "\"Later this week\" and \"this week\" are the week ref `w1` in `data.days`, and \"next week\" is `w2`: never a date.",
         "Name each item in an answer by its `ref` from the step data (such as `o3fa9c` or `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
         "When `say` ends with a which-question, the items it names stay open until he answers; his answer is one more apply call naming them.",
         "A ref names the same item for the whole conversation. One whose item changed since the step is skipped as `stale`: ask him about that item in one clause.",

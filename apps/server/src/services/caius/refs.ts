@@ -7,11 +7,12 @@
 
 import { createHash } from "crypto";
 
-/** An item an answer can name: its id in the step data, its ref and its text. */
+/** An item an answer can name: its id in the step data, its ref, its text and phrases that name it exactly. */
 export interface Named {
     id: string;
     ref: string;
     text: string;
+    aliases?: string[];
 }
 
 /** What an answer names: one item's id, the texts and ids of several that match, or null for none. */
@@ -44,13 +45,14 @@ export function numbered<T extends object>(items: T[], prefix: string): (T & { r
 }
 
 /**
- * The item of `pool` that `said` names: by id or ref, then by ticket key ("ZAP-101") or its number
+ * The item of `pool` that `said` names: by id, ref or exact phrase, then by ticket key ("ZAP-101") or its number
  * ("101"), then by its words ("the bag"), each word a word of the item's text. A key, number or word
  * that matches more than one item is ambiguous.
  */
 export function resolveName(pool: Named[], said: string): Resolved {
     const value = said.trim();
-    const exact = pool.find((item) => item.id === value) ?? pool.find((item) => item.ref.toLowerCase() === value.toLowerCase());
+    const exact = pool.find((item) => item.id === value) ?? pool.find((item) => item.ref.toLowerCase() === value.toLowerCase())
+        ?? pool.find((item) => item.aliases?.some((alias) => alias === value.toLowerCase()));
     if (exact) return { id: exact.id };
     const one = (matches: Named[]): Resolved => matches.length === 1 && matches[0]
         ? { id: matches[0].id }

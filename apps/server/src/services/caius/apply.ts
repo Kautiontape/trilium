@@ -498,8 +498,12 @@ function settledOf(items: (RefEntry & { period: string })[], periods: Set<string
 
 /** The days and weeks an answer can send a task to, by ref or his words. */
 function dayNames(days: NamedDay[]): Named[] {
-    return named(days, (day) => "date" in day ? day.date : day.week, (day) => "date" in day ? dateLabel(day.date) ?? day.date : day.name);
+    return named(days, (day) => "date" in day ? day.date : day.week, (day) => "date" in day ? dateLabel(day.date) ?? day.date : day.name)
+        .map((day) => ({ ...day, ...(WEEK_PHRASES[day.ref] ? { aliases: WEEK_PHRASES[day.ref] } : {}) }));
 }
+
+/** The phrases that name a week ref outright; "week" alone could be either. */
+const WEEK_PHRASES: Record<string, string[]> = { w1: [ "later this week", "this week" ], w2: [ "next week" ] };
 
 /** Every day, week and month the steps listed for a task to go to. */
 function listedOf(listed: ReturnType<typeof namedDays>): Set<string> {
@@ -670,6 +674,8 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         fates: input.fates.flatMap((fate) => {
             const id = read("fate", fate.listItemId, [ pools.open ], [ pools.settled ], true);
             const to = fate.to === undefined ? undefined : read("fate", fate.to, [ pools.days ]);
+            // An item he sent somewhere unclear stays held: it never falls back to its proposed fate.
+            if (to === null && id !== null) held.add(id);
             return id === null || to === null ? [] : [ { ...fate, listItemId: id, ...(to === undefined ? {} : { to }) } ];
         }),
         accept: input.accept.flatMap((ref) => {

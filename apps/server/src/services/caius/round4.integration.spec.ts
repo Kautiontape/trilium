@@ -714,3 +714,19 @@ describe("fix round 1: finished in Plan my day reaches the catch-up", () => {
         expect(thursday).toEqual(expect.arrayContaining([ "ZAP-101 Verify the export retry on staging", "Pack the climbing gym bag" ]));
     });
 });
+
+describe("fix round 1: an ambiguous destination holds the item", () => {
+    it("P7: '111 this week' goes to the week note; '101 some week' holds 101 open, and say asks which week instead of calling it moved", async () => {
+        const DAY = "2027-07-21";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const applied = await call("caius_winddown_apply", { date: DAY, fates: [ { listItemId: "111", to: "this week" }, { listItemId: "101", to: "week" } ] });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "fate", text: "week", reason: "ambiguous" }) ]);
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", id: `${DAY}-111`, detail: "2027-W29" }) ]));
+        expect((await tasksOf(DAY))[1]).toEqual({ text: "ZAP-101 Verify the export retry on staging", state: "open" });
+        expect((await tasksOf("2027-07-22")).map((task: any) => task.text).join()).not.toContain("ZAP-101");
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([ `${DAY}-101` ]);
+        expect(applied.say).not.toMatch(/ZAP-101[^?]*moved/);
+        expect(applied.say).toMatch(/Which week: later this week or next week\?$/);
+    });
+});
