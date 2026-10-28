@@ -160,10 +160,15 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const pools = planPools(offer, [ ...catchupTasks, ...heldTasks ], listed.days);
         const { table, items, copies, collided } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         pools.settled = settledOf(items, (item) => item.period === date, copies);
-        // On a vague yes the answers are what was offered.
-        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length);
+        // On a vague yes the answers are what was offered. A bare yes with a question of its own
+        // pending answers that one: the heavy day's move alone, or, with another, nothing more.
+        const yes = vagueYes(asked.said) && !asked.accept.length && !asked.keep.length;
+        const pending = offer.carry.length + offer.overlaps.length + catchupTasks.length;
+        const moveOnly = !asked.asOffered && yes && !!offer.forwardSuggestion && pending === 0 && !asked.forward?.length;
+        const vague = asked.asOffered || (yes && !offer.forwardSuggestion && pending === 0);
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
-        const answers: PlanApplyInput = vague ? {
+        const suggested = offer.forwardSuggestion ? [ { listItemId: offer.forwardSuggestion.listItemId, to: offer.forwardSuggestion.to } ] : undefined;
+        const answers: PlanApplyInput = moveOnly ? { ...asked, forward: suggested } : vague ? {
             ...asked,
             accept: asked.accept.length ? asked.accept : offer.candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
             keep: asked.keep.length ? asked.keep : offer.carry.map((line) => ({ lineId: line.lineId })),
@@ -373,8 +378,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const closingNote = await findPeriodNote(store, "day", date);
         const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
         pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
-        // On a vague yes the answers are what was offered.
-        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length);
+        // On a vague yes the answers are what was offered, unless a question of its own is pending.
+        const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0);
+        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && pending === 0);
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
         const answers: WindDownApplyInput = vague ? {
             ...asked,

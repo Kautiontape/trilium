@@ -572,6 +572,27 @@ describe("'fine' takes what was offered", () => {
     });
 });
 
+describe("a bare yes answers the one question asked", () => {
+    it("a heavy day's 'Move X to Friday?' answered 'yes' takes that move only, not the candidates", async () => {
+        const DAY = "2027-10-20";
+        calendars[DAY] = [ { start: "10:00", end: "15:00", title: "Offsite", attendees: [], allDay: false, declined: false, source: [ 0 ] } ];
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h-spec", "Write the spec ~1h"), li("h-review", "Review the plan ~1h"))}`);
+        });
+        jira.handoff.push({ ...ticket("ZAP-950", { summary: "Check the gate" }), daysInStatus: 2 });
+        at(`${DAY}T09:40`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(inputs.data.forwardSuggestion).toMatchObject({ listItemId: "h-review" });
+        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-950" ]);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "yes", brief: prose });
+        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "forward", status: "written" }) ]));
+        expect(planned.written.map((entry: any) => entry.kind)).not.toContain("accept");
+        expect((await tasksOf("day", DAY)).filter((task: any) => task.state === "open").map((task: any) => task.text)).toEqual([ "Write the spec" ]);
+        delete calendars[DAY];
+    });
+});
+
 describe("a correction after the plan", () => {
     it("Tue 09:40 'oh, I answered jordan in chat' after the plan: one more plan apply with said, the answer and the brief again; a bare one is refused; a repeat changes nothing", async () => {
         const DAY = "2027-03-09";
