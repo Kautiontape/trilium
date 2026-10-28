@@ -173,17 +173,20 @@ const acceptRef = candidateRef.extend(place).refine((item) => placed(item) <= 1,
 const moveRef = z.object({ listItemId: z.string().min(1).describe(`An item of his main list: ${NAMED}`), ...place })
     .refine((item) => placed(item) === 1, "Give exactly one of first, before or after");
 const moves = z.array(moveRef).default([]).describe("Only when the user asks to reorder: items of his main list moved first, before or after another");
+/** His reply word for word, which the apply reads the fates he named from and checks a dismissal against. */
+const said = z.string().describe("His reply this call answers, word for word, such as \"110 is done. 111 later this week\": a fate he named there that the call leaves out is applied as he named it, and a dismissal needs his word (dismiss, drop, cancel, not doing, answered) in it. \"\" only for a call no reply of his asked for, such as a refresh");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
 
 const planApply = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
+    said,
     catchup: z.enum([ "move_all", "skip", "review" ]).optional().describe("The answer to the catch-up question, when one was asked"),
     accept: z.array(acceptRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after)"),
     move: moves,
     keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
     finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): a ticket or week item is offered again on the next workday, an ask comes back as a Follow up. Not a dismissal"),
-    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing: kept off every list for 14 days"),
+    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days"),
     evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
     context: answerTexts("What the user said is worth knowing, such as an overlap's answer, each written as a Context line"),
     forward: z.array(z.object({
@@ -216,6 +219,7 @@ export function onlyContext(input: Answers): boolean {
 
 const windDownApply = z.object({
     date: periodKey("day").describe("The day being closed, YYYY-MM-DD; the rest works against the next workday"),
+    said,
     done: z.array(z.string().min(1)).default([]).describe(`The open items the user says are done, each by ${NAMED}`),
     fates: z.array(z.object({
         listItemId: z.string().min(1).describe(`An open item: ${NAMED}`),
@@ -229,7 +233,7 @@ const windDownApply = z.object({
     carry: z.array(lineRef).default([]).describe("Carry lines the user said yes to"),
     finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday: a ticket or week item is offered again the workday after, an ask comes back as a Follow up. Not a dismissal"),
-    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing: kept off every list for 14 days"),
+    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days"),
     evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),
     context: answerTexts("What the user said is worth knowing for the next workday, each a Context line")
 });

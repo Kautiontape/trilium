@@ -89,6 +89,62 @@ export function resolveIn(pools: Named[][], said: string): Resolved {
     return null;
 }
 
+/**
+ * The fates `said`, his reply word for word, gives open items: in each clause with one place, a day
+ * (by weekday, the first listed) or a week (`later this week`, `next week`) from `days`, and one item
+ * of `open` named by its other words. A clause that starts with a negation, names two places or a
+ * name that fits two items gives none.
+ */
+export function saidFates(said: string, open: Named[], days: Named[]): { listItemId: string; to: string }[] {
+    const places = [
+        ...days.flatMap((day) => (day.aliases ?? []).map((phrase) => ({ phrase, id: day.id }))),
+        ...days.filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day.id)).map((day) => ({ phrase: weekdayOf(day.id), id: day.id }))
+    ].sort((a, b) => b.phrase.length - a.phrase.length);
+    const fates: { listItemId: string; to: string }[] = [];
+    for (const clause of said.toLowerCase().split(/[.;,\n]|\band\b|\balso\b/)) {
+        if (NEGATION.test(clause)) continue;
+        let rest = ` ${words(clause).join(" ")} `;
+        const found = new Set<string>();
+        for (const { phrase, id } of places) {
+            if (!rest.includes(` ${phrase} `)) continue;
+            found.add(id);
+            rest = rest.replace(` ${phrase} `, " ");
+        }
+        const [ to ] = found;
+        if (found.size !== 1 || !to) continue;
+        const named = rest.split(" ").filter((word) => word && !FILLER.has(word) && !FATE_WORDS.has(word)).map((word) => resolveName(open, word));
+        if (named.some((found) => found && "ambiguous" in found)) continue;
+        const ids = new Set(named.flatMap((found) => found && "id" in found ? [ found.id ] : []));
+        const [ listItemId ] = ids;
+        if (ids.size === 1 && listItemId) fates.push({ listItemId, to });
+    }
+    return fates;
+}
+
+/**
+ * Whether `said` holds his word to close something: dismiss, drop, cancel, not doing, or that he
+ * answered, replied or handled it, not negated ("don't dismiss 105").
+ */
+export function hisWord(said: string): boolean {
+    const text = said.toLowerCase();
+    for (const match of text.matchAll(/\b(?:dismiss\w*|drop\w*|cancel\w*|not doing|answered|replied|handled)\b/g)) {
+        const before = text.slice(0, match.index).trim().split(/\s+/).slice(-2).join(" ");
+        if (!/(?:^|\s)(?:not|never|no|don'?t|do not|didn'?t)$/.test(before)) return true;
+    }
+    return false;
+}
+
+/** A clause that says where something doesn't go. */
+const NEGATION = /^\s*(?:not|no|never|don'?t)\b/;
+
+/** Words around a fate that name no item: "dave can go to monday". */
+const FATE_WORDS = new Set([ "can", "go", "goes", "move", "moved", "push", "put", "off", "for", "later", "until", "till", "on", "in", "be", "should" ]);
+
+/** A date's weekday in lower case, such as `tuesday`. */
+function weekdayOf(date: string): string {
+    return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }).toLowerCase();
+}
+
 const JIRA_KEY = /^[A-Za-z][A-Za-z0-9]+-\d+$/;
 
 /** Words that name nothing in an answer: "the bag is done", "my laundry". */

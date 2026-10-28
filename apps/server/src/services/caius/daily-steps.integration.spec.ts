@@ -65,7 +65,8 @@ const tools = createCaiusTools(undefined, async () => undefined, stubInputs);
 function callWith(registry: typeof tools, name: string, args: object): Promise<any> {
     const def = [ ...registry ].find(([ n ]) => n === name)?.[1];
     if (!def) throw new Error(`Tool ${name} not registered`);
-    return cls.init(() => def.execute(args)) as Promise<any>;
+    // An apply answers a reply of his; a test without one passes none.
+    return cls.init(() => def.execute(name.endsWith("_apply") ? { said: "", ...args } : args)) as Promise<any>;
 }
 const call = (name: string, args: object) => callWith(tools, name, args);
 

@@ -56,7 +56,8 @@ const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>
 function call(name: string, args: object): Promise<any> {
     const def = [ ...tools ].find(([ n ]) => n === name)?.[1];
     if (!def) throw new Error(`Tool ${name} not registered`);
-    return cls.init(() => def.execute(args)) as Promise<any>;
+    // An apply answers a reply of his; a test without one passes none.
+    return cls.init(() => def.execute(name.endsWith("_apply") ? { said: "", ...args } : args)) as Promise<any>;
 }
 
 /** Sets the Caius clock. */
@@ -281,7 +282,7 @@ describe("only his explicit words drop, cancel or dismiss", () => {
         at(`${TUE}T11:10`);
         const inputs = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
         expect(inputs.data.followUps.map((f: any) => f.key)).toContain("ZAP-105");
-        const applied = await call("caius_plan_apply", { date: TUE, dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+        const applied = await call("caius_plan_apply", { date: TUE, said: "dismiss 105", dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
         expect(applied.skipped).toEqual([]);
         expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", status: "written" }) ]));
         const tuesday = await call("caius_plan", { period: "day", date: TUE });
@@ -591,7 +592,7 @@ describe("a write that throws", () => {
         const run = (args: object) => cls.init(() => [ ...fragile ].find(([ n ]) => n === "caius_plan_apply")?.[1].execute(args)) as Promise<any>;
         jira.handoff.push({ ...ticket("ZAP-150"), daysInStatus: 1 });
         at("2027-03-08T09:40");
-        const applied = await run({ date: "2027-03-08", notToday: [ { candidateId: "ZAP-150" } ], evening: [ "Water the plants" ], brief: prose });
+        const applied = await run({ date: "2027-03-08", said: "150 not today. evening water the plants", notToday: [ { candidateId: "ZAP-150" } ], evening: [ "Water the plants" ], brief: prose });
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "not_today", reason: "failed", detail: "boom" }) ]);
         expect(applied.written.map((w: any) => w.kind)).toEqual(expect.arrayContaining([ "evening", "brief" ]));
 

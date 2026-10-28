@@ -46,7 +46,8 @@ const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>
 function call(name: string, args: object): Promise<any> {
     const def = [ ...tools ].find(([ n ]) => n === name)?.[1];
     if (!def) throw new Error(`Tool ${name} not registered`);
-    return cls.init(() => def.execute(args)) as Promise<any>;
+    // An apply answers a reply of his; a test without one passes none.
+    return cls.init(() => def.execute(name.endsWith("_apply") ? { said: "", ...args } : args)) as Promise<any>;
 }
 
 /** Sets the Caius clock. */
@@ -456,7 +457,7 @@ describe("an emptied Suggested goes", () => {
             )}`);
         });
         at(`${DAY}T09:40`);
-        const applied = await call("caius_plan_apply", { date: DAY, dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+        const applied = await call("caius_plan_apply", { date: DAY, said: "I answered Jordan in chat", dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
         expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", status: "written" }) ]));
         const plan = await call("caius_plan", { period: "day", date: DAY });
         expect(await cls.init(() => store.content(plan.noteId))).not.toContain("Suggested");

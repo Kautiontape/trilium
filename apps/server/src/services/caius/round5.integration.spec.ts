@@ -47,6 +47,9 @@ function call(name: string, args: object): Promise<any> {
 /** Sets the Caius clock. */
 const at = (stamp: string) => vi.stubEnv("CAIUS_NOW", stamp);
 
+/** A brief's prose, as the agent writes it. */
+const prose = { headline: "A light day", acts: [ { range: "10:00 to 12:00", text: "x" }, { range: "12:00 to 18:00", text: "y" }, { range: "Evening", text: "z" } ], sections: [] };
+
 /** The day's tasks in his order, each as its plain text with its state. */
 async function tasksOf(period: "day" | "week", date: string) {
     const plan = await call("caius_plan", { period, date });
@@ -97,17 +100,18 @@ describe("a correction after the apply", () => {
     it("Mon 17:30: '111 was later this week, not tomorrow' is a second apply that moves only 111 to the week, adds the Context line, and repeats without change", async () => {
         const MON = "2026-11-02";
         const TUE = "2026-11-03";
+        const FIX = "111 was later this week, not tomorrow. and don't dismiss 105. also ZAP-2590 is open, Jira's Done is wrong";
         await monday(MON);
         jira.handoff.push({ ...ticket("ZAP-111", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
         at(`${MON}T17:30`);
-        const first = await call("caius_winddown_apply", { date: MON, done: [ "ZAP-110" ], evening: [ "Pack the climbing gym bag" ] });
+        const first = await call("caius_winddown_apply", { date: MON, said: "110 is done. evening pack the climbing gym bag", done: [ "ZAP-110" ], evening: [ "Pack the climbing gym bag" ] });
         expect(first.skipped).toEqual([]);
         expect((await tasksOf("day", TUE)).map((task: any) => task.text)).toEqual([
             "ZAP-101 Verify the export retry on staging", "ZAP-111 Check the invoice export in QA", "Pack the climbing gym bag"
         ]);
 
         at(`${MON}T17:31`);
-        const fix = await call("caius_winddown_apply", { date: MON, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
+        const fix = await call("caius_winddown_apply", { date: MON, said: FIX, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
         expect(fix.skipped).toEqual([]);
         expect(fix.written).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: "fate", detail: "2026-W45", status: "written" }),
@@ -123,7 +127,7 @@ describe("a correction after the apply", () => {
         expect((await call("caius_context", { date: TUE })).context.map((line: any) => line.text)).toContain("ZAP-2590 is open");
 
         const before = await journal();
-        const again = await call("caius_winddown_apply", { date: MON, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
+        const again = await call("caius_winddown_apply", { date: MON, said: FIX, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
         expect(again.skipped).toEqual([]);
         expect(again.written.filter((entry: any) => entry.status === "written")).toEqual([]);
         expect(await journal()).toEqual(before);
@@ -132,5 +136,39 @@ describe("a correction after the apply", () => {
         at(`${TUE}T09:35`);
         const inputs = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
         expect(inputs.data.candidates.map((candidate: any) => candidate.candidateId)).not.toContain("ZAP-111");
+    });
+});
+
+describe("his words decide", () => {
+    it("Mon 17:30: the agent's round-5 call left out '111 later this week'; with his reply in said, 111 goes to the week as he named it", async () => {
+        const MON = "2026-11-16";
+        await monday(MON);
+        at(`${MON}T17:30`);
+        const applied = await call("caius_winddown_apply", {
+            date: MON, said: "110 is done. 111 later this week. evening laundry", done: [ "ZAP-110" ], evening: [ "Laundry" ]
+        });
+        expect(applied.skipped).toEqual([]);
+        expect(applied.written).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "fate", id: `${MON}-111`, detail: "2026-W47", status: "written" }),
+            expect.objectContaining({ kind: "fate", id: `${MON}-101`, detail: "2026-11-17", status: "written" })
+        ]));
+        expect((await tasksOf("week", "2026-W47")).map((task: any) => task.text)).toEqual([ "ZAP-111 Check the invoice export in QA" ]);
+    });
+
+    it("nothing is dismissed without his word: 'don't dismiss 105' or 'fine' leaves Jordan's ask on the shelf; 'answered jordan in chat' dismisses it", async () => {
+        const DAY = "2026-11-18";
+        const ask = () => jira.asks.push({
+            ticket: ticket("ZAP-105", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created: "2026-11-15T15:00:00.000-0500",
+            commentId: "c105", excerpt: "@Sam Example the rollout note is in the runbook now."
+        });
+        ask();
+        at(`${DAY}T09:40`);
+        const refused = await call("caius_plan_apply", { date: DAY, said: "fine. and don't dismiss 105", dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+        expect(refused.skipped).toEqual([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", reason: "not_his_word" }) ]);
+        expect((await call("caius_plan", { period: "day", date: DAY })).suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-105") ]);
+
+        const dismissed = await call("caius_plan_apply", { date: DAY, said: "answered jordan in chat", dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+        expect(dismissed.skipped).toEqual([]);
+        expect(dismissed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", status: "written" }) ]));
     });
 });

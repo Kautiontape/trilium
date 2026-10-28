@@ -72,7 +72,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { isRef, type Named, refOf, resolveIn, resolveName, withRefs } from "./refs.js";
+import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidFates, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment, removeLabel } from "./store.js";
@@ -159,6 +159,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const { table, items, copies, collided } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         pools.settled = settledOf(items, (item) => item.period === date, copies);
         const input = planAnswers(asked, pools, skipped, table, copies, collided);
+        input.dismiss = withHisWord(asked.said, input.dismiss, skipped);
         const followed = new Map([ ...input.follows ].map(([ id, copy ]) => [ id, copy.text ]));
         /** The result with `say`, its entries named by their text first. */
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
@@ -346,6 +347,10 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
         pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
         const input = windDownAnswers(asked, pools, skipped, table, copies, collided);
+        // A fate he named in his own words that the call left out is applied as he named it.
+        const answered = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.held ]);
+        input.fates.push(...saidFates(asked.said, pools.open, pools.days).filter((fate) => !answered.has(fate.listItemId)));
+        input.dismiss = withHisWord(asked.said, input.dismiss, skipped);
         // The ref table covers the Journal, so a held item that lives outside the window is read from it.
         const journalItem = (id: string) => items.find((item) => item.id === id);
         // The open items and the ref table carry their note; only an id from elsewhere needs the Journal searched.
@@ -1064,6 +1069,13 @@ function holdGroupOf(value: string): HoldGroup {
 }
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
+/** The dismissals his reply `said` gives his word for; without it each is skipped as `not_his_word`. */
+function withHisWord<T extends { candidateId: string }>(said: string, dismiss: T[], skipped: Skipped[]): T[] {
+    if (hisWord(said)) return dismiss;
+    for (const { candidateId } of dismiss) skipped.push({ kind: "dismiss", id: candidateId, reason: "not_his_word" });
+    return [];
+}
+
 async function guarded(entry: { kind: string; id?: string }, skipped: Skipped[], work: () => Promise<unknown>) {
     try {
         await work();
