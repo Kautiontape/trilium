@@ -46,7 +46,9 @@ describe("the caius service writing Meetings", () => {
 
     it("replaces the block under the lock and leaves the task list alone", async () => {
         vi.stubEnv("CAIUS_NOW", "2026-11-06T09:00");
-        onTestFinished(() => vi.unstubAllEnvs());
+        onTestFinished(() => {
+            vi.unstubAllEnvs();
+        });
         const service = createCaiusService(store);
         const answer = await service.meetings({ date: "2026-11-06", items: [ "10:00 Standup" ] });
         expect(answer).toMatchObject({ source: "items", lines: [ "10:00 Standup" ] });
