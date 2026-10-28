@@ -68,7 +68,7 @@ import {
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
 import { type Named, resolveIn, resolveName, withRefs } from "./refs.js";
-import { sayOf } from "./say.js";
+import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment } from "./store.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
@@ -767,9 +767,14 @@ async function eveningAndContext(store: NoteStore, date: string, now: Date, inpu
         if (result?.status === "skipped" && result.reason === "duplicate") skipped.push({ kind: "evening", text, reason: "duplicate", detail: result.detail });
         else record(written, skipped, { kind: "evening", text }, result);
     }
-    for (const text of input.context) {
-        const { result } = await contextAddOn(store, { date, text }, now, opts);
-        record(written, skipped, { kind: "context", text }, result);
+    for (const said of input.context) {
+        const voiced = inHisVoice(said);
+        if ("error" in voiced) {
+            skipped.push({ kind: "context", text: said, reason: "third_person", detail: voiced.error });
+            continue;
+        }
+        const { result } = await contextAddOn(store, { date, text: voiced.text }, now, opts);
+        record(written, skipped, { kind: "context", text: voiced.text }, result);
     }
 }
 

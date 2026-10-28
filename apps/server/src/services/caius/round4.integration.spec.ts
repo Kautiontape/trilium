@@ -399,6 +399,23 @@ describe("asks are suggestions first, follow-ups later", () => {
     });
 });
 
+describe("no third person in his notes", () => {
+    it("Wed 17:45: 'Shawn takes Incident Review…' is written as 'Taking Incident Review…', and a line it can't reword is sent back", async () => {
+        at("2027-03-24T17:45");
+        const applied = await call("caius_winddown_apply", {
+            date: "2027-03-24", context: [ "Shawn takes Incident Review over Vendor Onboarding at 11:00", "Riley plans the release with Shawn at 14:00" ]
+        });
+        expect(applied.written).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "context", text: "Taking Incident Review over Vendor Onboarding at 11:00", status: "written" })
+        ]));
+        expect(applied.skipped).toEqual([ expect.objectContaining({
+            kind: "context", text: "Riley plans the release with Shawn at 14:00", reason: "third_person", detail: expect.stringContaining("his voice")
+        }) ]);
+        const thursday = await call("caius_plan", { period: "day", date: "2027-03-25" });
+        expect(thursday.context.map((line: any) => line.text)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00" ]);
+    });
+});
+
 describe("'later this week' is the week", () => {
     it("Mon 17:30 '111 later this week': the days carry week refs, and the fate goes to the week note, not a day", async () => {
         await wednesday("2027-03-15");

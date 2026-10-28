@@ -68,9 +68,38 @@ function skipClause(entry: Skipped): string[] {
     if (entry.reason === "calendar_unavailable") return [ t("caius.say.calendar_unavailable") ];
     if (UNKNOWN.has(entry.reason)) return item ? [ t("caius.say.not_found", { item }) ] : [];
     if (entry.reason === "duplicate" && item) return [ t("caius.say.duplicate", { item }) ];
+    if (entry.reason === "third_person") return [ t("caius.say.not_noted", { item: entry.text ?? "" }) ];
     if (entry.reason === "edited") return [ t("caius.say.edited", { item: item ?? t("caius.say.a_task") }) ];
     if (entry.kind === "brief") return [ t("caius.say.brief_skipped") ];
     return [ t("caius.say.unchanged", { item: item ?? t("caius.say.a_task") }) ];
+}
+
+/**
+ * A line for his notes in his voice: one that starts "Shawn takes X" becomes "Taking X"; one that
+ * names him any other way is refused with the message the agent rewords it from. A line without his
+ * name comes back as it is.
+ */
+export function inHisVoice(text: string): { text: string } | { error: string } {
+    const name = new RegExp(`\\b${HIS_NAME}\\b`, "gi");
+    const mentions = text.match(name)?.length ?? 0;
+    if (!mentions) return { text };
+    const simple = new RegExp(`^${HIS_NAME}\\s+([a-z]{2,})s\\s+(\\S.*)$`, "i").exec(text.trim());
+    const verb = simple?.[1]?.toLowerCase();
+    if (mentions === 1 && simple?.[2] && verb && !NOT_SIMPLE.has(verb)) return { text: `${capitalized(ingOf(verb))} ${simple[2]}` };
+    return { error: t("caius.say.third_person", { name: HIS_NAME }) };
+}
+
+/** The name a line in his notes never uses for him. */
+const HIS_NAME = "Shawn";
+
+/** Verbs whose -ing form isn't their stem plus "ing" in his voice: "Shawn is out", "Shawn has the demo". */
+const NOT_SIMPLE = new Set([ "i", "ha", "wa" ]);
+
+/** The -ing form of a verb's stem: take → taking, see → seeing, run → running, cover → covering. */
+function ingOf(stem: string): string {
+    if (stem.endsWith("e") && !stem.endsWith("ee")) return `${stem.slice(0, -1)}ing`;
+    if (/^[^aeiou]*[aeiou][bdgklmnprt]$/.test(stem)) return `${stem}${stem.at(-1)}ing`;
+    return `${stem}ing`;
 }
 
 /** A task as `say` names it: its first ticket key, else its words without links, estimate or the Suggested wording. */

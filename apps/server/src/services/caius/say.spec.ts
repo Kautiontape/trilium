@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { sayOf } from "./say.js";
+import { inHisVoice, sayOf } from "./say.js";
+
+describe("inHisVoice", () => {
+    it("rewrites a line that starts 'Shawn <verb>s' as the verb's -ing form, and leaves a line without his name alone", () => {
+        expect(inHisVoice("Shawn takes Incident Review over Vendor Onboarding at 11:00")).toEqual({ text: "Taking Incident Review over Vendor Onboarding at 11:00" });
+        expect(inHisVoice("Shawn covers the release")).toEqual({ text: "Covering the release" });
+        expect(inHisVoice("shawn runs standup")).toEqual({ text: "Running standup" });
+        expect(inHisVoice("Shawn goes to the dentist at 3")).toEqual({ text: "Going to the dentist at 3" });
+        expect(inHisVoice("ZAP-2590 is open")).toEqual({ text: "ZAP-2590 is open" });
+        expect(inHisVoice("Shawnee office is closed")).toEqual({ text: "Shawnee office is closed" });
+    });
+
+    it("refuses any other line that names him, so the agent rewords it", () => {
+        for (const text of [ "Riley plans the release with Shawn", "Shawn is out Friday", "Shawn has the demo", "Shawn's call moved", "Shawn takes the call; Shawn presents" ]) {
+            expect(inHisVoice(text), text).toEqual({ error: expect.stringContaining("his voice") });
+        }
+    });
+});
 
 /** What `say` must never hold: a list item id, a ref, a line or overlap id, or an ISO date. */
 const ID = /\be[0-9a-f]{8,}|\b[oclxdw]\d+\b|\b[lo][0-9a-f]{10}\b|\d{4}-\d{2}-\d{2}|\d{4}-W\d{2}/;
