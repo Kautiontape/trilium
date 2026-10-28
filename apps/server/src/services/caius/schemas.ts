@@ -196,8 +196,8 @@ const planApply = z.object({
         sections: z.array(z.object({ title: z.string().trim().min(1), markdown: z.string() })).default([])
             .describe("Sections after the picks, such as Heads-up; Follow up is written by the tool")
     }).optional().describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes. Left out only on a call that just moves items of his list or just adds Context lines"),
-    acts: z.array(z.object({ range: z.string(), text: z.string() })).length(3).optional()
-        .describe("Only with a call that just moves: the header's three acts in the new order, sent when the move changes the first task; the tool writes the third, the evening")
+    acts: z.array(z.union([ z.string(), z.object({ range: z.string(), text: z.string() }) ])).length(3).optional()
+        .describe("Only with a call that just moves: the header's three acts in the new order, sent when the move changes the first task, each a sentence or { range, text }; a sentence takes the drawing's range. The tool writes the third, the evening")
 }).refine((input) => input.brief !== undefined || onlyMoves(input) || onlyContext(input), "Give brief, unless the call only moves items of his list or only adds Context lines");
 
 type Answers = { move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; forward?: unknown[] };

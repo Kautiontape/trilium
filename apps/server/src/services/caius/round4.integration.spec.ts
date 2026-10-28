@@ -152,7 +152,10 @@ describe("reorder after the plan", () => {
         const acts = [ { range: "10:00 to 11:00", text: "Verify the retry, then the importer." }, { range: "11:00 to 12:00", text: "The export check." }, { range: "Evening", text: "z" } ];
         await call("caius_plan_apply", { date: MON, move: [ { listItemId: "110", first: true } ], acts });
         expect(await cls.init(() => store.content(planned.headerNoteId))).toContain("<p>Verify the retry, then the importer.</p>");
-        await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
+        // Three plain strings take the ranges the drawing gives.
+        await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ], acts: [ "Verify the retry, then the importer.", "The export check.", "z" ] });
+        expect(await cls.init(() => store.content(planned.headerNoteId)))
+            .toContain("<td><p><strong>10:00 to 11:00</strong></p><p>Verify the retry, then the importer.</p></td><td><p><strong>11:00 to 11:30</strong></p><p>The export check.</p></td>");
 
         const again = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
         expect(again.written).toEqual([ expect.objectContaining({ kind: "move", status: "unchanged" }) ]);

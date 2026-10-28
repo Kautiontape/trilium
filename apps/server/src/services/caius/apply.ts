@@ -468,7 +468,11 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
                 const write = await rewritePicks(store, date, picksFor(plan, reasons));
                 if (write) record(written, skipped, { kind: "picks", detail: date }, write.status === "updated" ? { status: "written" } : write);
             });
-            const acts = (header: ReturnType<typeof headerOf>) => asked.acts ?? plainActs(header);
+            // A sentence he sent takes the range the drawing gives that act.
+            const acts = (header: ReturnType<typeof headerOf>) => {
+                const plain = plainActs(header);
+                return asked.acts?.map((act, i) => typeof act === "string" ? { range: plain[i]?.range ?? "", text: act } : act) ?? plain;
+            };
             if (failedCalendar(read)) skipped.push({ kind: "header", id: date, reason: "calendar_unavailable" });
             else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, {}, weather, written, skipped, acts));
         }
