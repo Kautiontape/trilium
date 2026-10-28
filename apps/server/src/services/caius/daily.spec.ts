@@ -16,7 +16,7 @@ describe("fitted", () => {
         const fit = fitted(reply);
         expect(JSON.stringify(fit).length).toBeLessThanOrEqual(MAX_REPLY_CHARS);
         expect(fit.data.candidates.length).toBeGreaterThan(100);
-        expect(fit.data.omitted).toEqual({ candidates: 400 - fit.data.candidates.length });
+        expect((fit.data as Record<string, unknown>).omitted).toEqual({ candidates: 400 - fit.data.candidates.length });
         expect(fit.data.overlaps).toEqual(reply.data.overlaps);
         expect(fitted({ step: "next", data: { candidates: [] } })).toEqual({ step: "next", data: { candidates: [] } });
     });

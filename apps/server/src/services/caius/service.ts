@@ -18,6 +18,7 @@ import {
     clockOverride,
     closedKeys,
     daysLate,
+    DEFAULT_WORK_END,
     diffSummary,
     dismissTasks,
     ensureListItemIds,
@@ -328,7 +329,7 @@ export function createCaiusService(
         /** Writes each line Shawn kept to the week note of `date`, the day planned or wound down to. */
         contextKeep: ({ date, lines, dryRun }: ContextKeepInput) => withCaiusLock("caius_context_keep", async () => {
             const week = isoWeekKey(new Date(`${date}T00:00:00Z`));
-            const results = [];
+            const results: object[] = [];
             for (const line of lines) {
                 results.push({ week, ...withDiff(await addContext(store, { week, ...line }, { dryRun, now: caiusNow() })) });
             }
@@ -422,7 +423,8 @@ export function createCaiusService(
                 const day = await findPeriodNote(store, "day", input.date);
                 const plan = day && (day.type !== "text" || day.isProtected) ? null : await readPlan(store, "day", input.date, now);
                 const { kept, dropped } = plan ? listPicks(plan, input.picks) : { kept: input.picks, dropped: [] };
-                const header = plan ? { ...input.header, work: workBlocks(plan, input.header, input.header.events, input.date, now).work } : input.header;
+                const span = { ...input.header, workEnd: input.header.workEnd ?? DEFAULT_WORK_END };
+                const header = plan ? { ...input.header, work: workBlocks(plan, span, input.header.events, input.date, now).work } : input.header;
                 const result = await writeBrief({
                     store,
                     draw: (noteId) => drawHeader(noteId, header, weather).attachmentId,
