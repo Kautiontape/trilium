@@ -15,6 +15,15 @@ RUN apt-get update && \
     /var/lib/apt/lists/* \
     /var/cache/apt/*
 
+# The Claude Code CLI the Claude Agent provider drives (see claude_binary.ts). Pinned, and
+# self-update off: the node user can't write here and a new CLI can change the agent surface.
+# Its config and sessions live under /home/node, which start-docker.sh chowns on every start.
+RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@2.1.304 && \
+    npm cache clean --force
+ENV TRILIUM_CLAUDE_CODE_PATH=/usr/local/bin/claude \
+    DISABLE_AUTOUPDATER=1 \
+    CLAUDE_CONFIG_DIR=/home/node/trilium-data/claude
+
 WORKDIR /usr/src/app
 COPY ./dist /usr/src/app
 COPY ./start-docker.sh /usr/src/app
