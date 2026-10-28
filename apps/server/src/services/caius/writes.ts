@@ -101,7 +101,7 @@ const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ]
  * write it to, and the day it ends on when the line itself doesn't say. Null keeps it on the day.
  * - A clock time, or today, tonight, this morning, this afternoon or this evening: the day.
  * - Next week: next week's note. A weekday range ("Thu-Fri"): from its first day until its last, in
- *   this week, or next week when its first day is already past.
+ *   this week, or next week when its last day is already past.
  * - This week, all week, or until a weekday or a date: this week's, with no end of its own.
  * - A ticket key: this week's, with no end, so "ZAP-2590 is open" doesn't lapse.
  * - A person's or a one-day state (is open, out, off or down; away, on leave, covering, freeze,
@@ -114,10 +114,13 @@ export function weekPlace(text: string, date: string): { week: string; from?: st
     if (/\bnext week\b/i.test(text)) return { week: isoWeekKey(new Date(at.getTime() + 7 * 86_400_000)) };
     const range = new RegExp(`\\b(${WEEKDAY})\\s*(?:-|–|to)\\s*(${WEEKDAY})\\b`, "i").exec(text);
     if (range?.[1] && range[2]) {
-        // Looking forward: a range already past in this week is next week's.
-        let from = weekdayOf(date, range[1]);
-        if (from < date) from = new Date(Date.parse(`${from}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
-        return { week: isoWeekKey(new Date(`${from}T00:00:00Z`)), from, until: weekdayOf(from, range[2]) };
+        // Looking forward: a range whose last day is already past in this week is next week's.
+        const later = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+        const until = weekdayOf(date, range[2]);
+        const from = weekdayOf(date, range[1]);
+        return until < date
+            ? { week: isoWeekKey(new Date(`${later(from)}T00:00:00Z`)), from: later(from), until: later(until) }
+            : { week, from, until };
     }
     const untilWhen = new RegExp(`\\buntil\\s+(?:${WEEKDAY}\\b|\\d|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\s+\\d)`, "i");
     if (/\b(?:this week|all week)\b/i.test(text) || untilWhen.test(text)) return { week };

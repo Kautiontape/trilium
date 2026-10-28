@@ -650,3 +650,13 @@ describe("a month he names", () => {
         expect((await call("caius_planday", { date: "2027-04-05", step: "inputs" })).data.months.map((m: any) => m.month)).toEqual([ "2027-04", "2027-05", "2027-06" ]);
     });
 });
+
+describe("a range still running stays this week", () => {
+    it("Thu 8 Apr: 'Sam is out Wed–Fri' holds this week, from Wednesday to Friday", async () => {
+        at("2027-04-08T09:40");
+        expect((await call("caius_plan_apply", { date: "2027-04-08", context: [ "Sam is out Wed–Fri" ], brief: prose })).skipped).toEqual([]);
+        const week = await call("caius_plan", { period: "week", date: "2027-W14" });
+        expect([ ...week.context, ...week.pendingContext ]).toEqual([ { text: "Sam is out Wed–Fri", from: "2027-04-07", until: "2027-04-09" } ]);
+        expect((await call("caius_context", { date: "2027-04-08" })).context.map((c: any) => c.text)).toContain("Sam is out Wed–Fri");
+    });
+});
