@@ -151,7 +151,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
 
 **Wind down** closes `date` and works against the next workday after it (Friday → Monday):
 
-1. **`open`.** One list of every live task in the day's note, the overdue ones and those in the day's week note. Each item has a proposed fate: the next workday for the day's and the overdue tasks. A week task stays in its week, or moves to the next week's note when the next workday is in another week (Friday → Monday). A sub-item goes with its parent.
+1. **`open`.** One list of every live task in the day's note, the overdue ones and those in the day's week note. Each item has a proposed fate: the next workday for the day's and the overdue tasks. A week task stays in its week, or moves to the next week's note when the next workday is in another week (Friday → Monday). A sub-item goes with its parent. The older overdue tasks are counted (`olderCount`, from `oldestDate`) only on a Friday, or when the call passes `older: true` because you asked about them.
 2. **`next`.** Candidates for the next workday's Suggested, each as "Get X done" with a `because`, `minutes` and `source`:
    - **Sources:** Jira hand-offs that aren't done ("sitting in Dev Verify for 3 days"), the latest ask on each ticket ("Sam asked on Wednesday"), and the next workday's week note items. A ticket a Context line says is open counts as not done.
    - **Left out:** anything whose key is already a live task anywhere in the Journal, already in that day's Suggested, or dismissed there.

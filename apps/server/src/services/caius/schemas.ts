@@ -223,7 +223,8 @@ const refresh = z.boolean().optional().describe("Fetch Jira and the calendar aga
 const winddown = z.object({
     date: periodKey("day").describe("The day being closed, YYYY-MM-DD. The steps work against the next workday after it."),
     step: z.enum([ "open", "next", "context" ]).describe("open, then next, then context"),
-    refresh
+    refresh,
+    older: z.boolean().optional().describe("open: count the older overdue tasks on a day other than Friday, only when the user asks about them")
 });
 
 const planday = z.object({

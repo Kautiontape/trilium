@@ -75,9 +75,10 @@ export interface StepDeps {
 export type WindDownStep = "open" | "next" | "context";
 
 const EVENING_SECTIONS = new Set([ "evening", "recharge" ]);
+const FRIDAY = 5;
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
-export async function windDown(deps: StepDeps, { date, step, refresh }: { date: string; step: WindDownStep; refresh?: boolean }) {
+export async function windDown(deps: StepDeps, { date, step, refresh, older }: { date: string; step: WindDownStep; refresh?: boolean; older?: boolean }) {
     const targetDay = dayKey(nextWorkday(localDay(date)));
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: WindDownStep | null) => fitted({
         ...withDateLabels({ step, date, targetDay, targetDayName: weekdayName(targetDay), data, question, next }),
@@ -94,7 +95,10 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
         const done = keys.length ? new Set((await deps.dayRead(targetDay, refresh, keys)).inputs.jira.done) : new Set<string>();
         const items = open.items.map((item) => done.has(keysOf(item.text)[0] ?? "") ? { ...item, jiraDone: true } : item);
         const question = items.length ? t("caius.daily.open", { day: weekdayName(targetDay) }) : null;
-        return reply(standing, { ...open, items, ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
+        const { olderCount, oldestDate, ...rest } = open;
+        const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
+        return reply(standing, { ...rest, ...backlog, items, ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
     }
 
     const read = await deps.dayRead(targetDay, refresh);

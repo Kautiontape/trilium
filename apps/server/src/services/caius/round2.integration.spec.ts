@@ -188,3 +188,21 @@ describe("follow-ups are written by the tool", () => {
         expect(brief.data.shape.sections[0]).toEqual({ title: "Follow up", markdown: `- ${followUp.sentence}` });
     });
 });
+
+describe("the overdue backlog is not a nightly line", () => {
+    it("Mon and Wed nights leave the older count out; Friday, or a wind-down that asks, has it", async () => {
+        await cls.init(async () => {
+            const july = await store.calendarDay("2026-07-01");
+            await store.putContent(july.noteId, `<h2>☑️ Tasks</h2>${ul(li("j1", "Sort the garage ~1h"))}`);
+        });
+        for (const date of [ MON, WED ]) {
+            at(`${date}T17:30`);
+            const open = await call("caius_winddown", { date, step: "open" });
+            expect(open.data, date).not.toHaveProperty("olderCount");
+            expect(open.data, date).not.toHaveProperty("oldestDate");
+            expect((await call("caius_winddown", { date, step: "open", older: true })).data, date).toMatchObject({ olderCount: 1, oldestDate: "2026-07-01" });
+        }
+        at(`${FRI}T17:20`);
+        expect((await call("caius_winddown", { date: FRI, step: "open" })).data).toMatchObject({ olderCount: 1, oldestDate: "2026-07-01", oldestDateLabel: "Wed 1 Jul" });
+    });
+});

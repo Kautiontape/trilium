@@ -154,7 +154,7 @@ describe("work he finished never comes back", () => {
 });
 
 describe("a wind-down that fits on one screen", () => {
-    it("Wed 17:45: open lists today, the last three workdays and the week, and counts the 189 older overdue tasks", async () => {
+    it("Wed 17:45: open lists today, the last three workdays and the week, and counts the 189 older overdue tasks when asked", async () => {
         await cls.init(async () => {
             for (let day = 1; day <= 21; day++) {
                 const date = `2026-10-${String(day).padStart(2, "0")}`;
@@ -173,8 +173,11 @@ describe("a wind-down that fits on one screen", () => {
             [ "recent", expect.stringContaining("Confirm the staging bucket name") ],
             [ "week", expect.stringContaining("Review the import mapper change") ]
         ]);
-        expect(answer.data).toMatchObject({ olderCount: 189, oldestDate: "2026-10-01" });
-        expect(JSON.stringify(answer).length).toBeLessThan(20_000);
+        // The older backlog is counted on a Friday, or when he asks (round 2 had it every night).
+        expect(answer.data).not.toHaveProperty("olderCount");
+        const asked = await call("caius_winddown", { date: WED, step: "open", older: true });
+        expect(asked.data).toMatchObject({ olderCount: 189, oldestDate: "2026-10-01" });
+        expect(JSON.stringify(asked).length).toBeLessThan(20_000);
     });
 });
 
