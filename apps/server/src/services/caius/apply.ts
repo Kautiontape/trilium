@@ -64,7 +64,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { type Named, resolveIn, withRefs } from "./refs.js";
+import { type Named, resolveIn, resolveName, withRefs } from "./refs.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment } from "./store.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
@@ -151,6 +151,20 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // What the catch-up moves here can be placed by the id it had on its own day.
         const moved = new Map(input.catchup === "move_all" ? catchupTasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, task.text ] as const ] : []) : []);
         await acceptAll(store, date, now, input, { known, moved }, written, skipped);
+
+        const onList = new Set(listItems(offer.day.plan).map((item) => item.listItemId));
+        await guarded({ kind: "done" }, skipped, async () => {
+            const states = await loadStateSymbols(store);
+            for (const listItemId of input.done) {
+                const noteId = onList.has(listItemId) ? await noteOf(store, listItemId) : null;
+                if (!noteId) {
+                    skipped.push({ kind: "done", text: listItemId, reason: "not_on_list" });
+                    continue;
+                }
+                const [ result ] = await setStates(store, "done", [ { noteId, listItemId } ], { states });
+                record(written, skipped, { kind: "done", id: listItemId }, result);
+            }
+        });
 
         await guarded({ kind: "keep" }, skipped, async () => { for (const { lineId } of input.keep) {
             const line = offer.carry.find((c) => c.lineId === lineId);
@@ -419,9 +433,14 @@ function nameReader(skipped: Skipped[]) {
     return { read, place };
 }
 
-/** Plan my day's answers with every name read as the id it names; an ambiguous one is left out, skipped. */
-function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[]): PlanApplyInput {
+/**
+ * Plan my day's answers with every name read as the id it names; an ambiguous one is left out,
+ * skipped. `done` holds the items of his list that `finished` names: by a ticket key, or by anything
+ * else he called done.
+ */
+function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[]): PlanApplyInput & { done: string[] } {
     const { read, place } = nameReader(skipped);
+    const { done, finished } = doneOf([], input.finished, [ pools.list ], read);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
@@ -429,6 +448,8 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[]): P
     };
     return {
         ...input,
+        done,
+        finished,
         accept: input.accept.flatMap((ref) => {
             const id = read("accept", ref.candidateId, [ pools.candidates ]);
             const at = place("place", ref, onList);
@@ -465,12 +486,11 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         const id = read(kind, ref.lineId, [ pools.lines ]);
         return id === null ? [] : [ { lineId: id } ];
     };
+    const { done, finished } = doneOf(input.done, input.finished, [ pools.open ], read);
     return {
         ...input,
-        done: input.done.flatMap((value) => {
-            const id = read("done", value, [ pools.open ]);
-            return id === null ? [] : [ id ];
-        }),
+        done,
+        finished,
         fates: input.fates.flatMap((fate) => {
             const id = read("fate", fate.listItemId, [ pools.open ]);
             const to = fate.to === undefined ? undefined : read("fate", fate.to, [ pools.days ]);
@@ -492,6 +512,23 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         dismiss: input.dismiss.flatMap(candidate("dismiss"))
     };
 }
+
+/**
+ * What he called done, read from `done` and `finished`: each done answer, each finished answer that
+ * is not a Jira key, and the item each finished key names in `pools`, once. `finished` keeps only
+ * the keys, which are recorded as finished whether or not they name an item.
+ */
+function doneOf(said: string[], finished: string[], pools: Named[][], read: (kind: string, value: string, pools: Named[][]) => string | null) {
+    const keys = finished.filter((value) => JIRA_KEY.test(value));
+    const done = new Set([ ...said, ...finished.filter((value) => !JIRA_KEY.test(value)) ].flatMap((value) => read("done", value, pools) ?? []));
+    for (const key of keys) {
+        const found = pools.map((pool) => resolveName(pool, key)).find((r) => r !== null);
+        if (found && "id" in found) done.add(found.id);
+    }
+    return { done: [ ...done ], finished: keys };
+}
+
+const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
 async function guarded(entry: { kind: string; id?: string }, skipped: Skipped[], work: () => Promise<unknown>) {

@@ -153,7 +153,9 @@ const briefWrite = z.object({
     dryRun
 }).refine(bothOrNeither, "Give latitude and longitude together, or neither");
 
-const jiraKey = z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase());
+/** A finished answer: a Jira key, upper-cased, or anything else he called done, read as a done answer. */
+const finishedAnswers = z.array(z.string().trim().min(1).transform((value) => /^[A-Za-z][A-Za-z0-9]+-\d+$/.test(value) ? value.toUpperCase() : value)).default([])
+    .describe("Tickets the user says are finished, by key; a key that names an open item ticks it too. Anything else he called done is read as a done answer");
 /** What an answer may name an item by, as `refs.ts` resolves it. */
 const NAMED = "its id or ref from the step data (o1, c1, l1, x1), a ticket key or its number, or a distinctive word of its text";
 /** A day, week or month an answer sends a task to. */
@@ -179,7 +181,7 @@ const planApply = z.object({
     accept: z.array(acceptRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after)"),
     move: moves,
     keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
-    finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),
+    finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): offered again on the next workday. Not a dismissal"),
     dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing: kept off every list for 14 days"),
     evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
@@ -209,7 +211,7 @@ const windDownApply = z.object({
     move: moves,
     keep: z.array(lineRef).default([]).describe("Keep lines the user said yes to"),
     carry: z.array(lineRef).default([]).describe("Carry lines the user said yes to"),
-    finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),
+    finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday; offered again the workday after. Not a dismissal"),
     dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing: kept off every list for 14 days"),
     evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),

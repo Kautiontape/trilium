@@ -156,3 +156,44 @@ describe("short references", () => {
         expect((await tasksOf(DAY)).map((task: any) => task.text)).toEqual([ "Tidy the desk", "Write the memo", "ZAP-151 Fix the gate", "ZAP-150 Check the report" ]);
     });
 });
+
+describe("'done' means done", () => {
+    it("Wed 17:45 '111, 101 and the bag are done': keys in finished that are open items are ticked and recorded, and the bag's text is a done answer", async () => {
+        await wednesday("2026-12-02");
+        at("2026-12-02T17:45");
+        const applied = await call("caius_winddown_apply", {
+            date: "2026-12-02", done: [], finished: [ "ZAP-111", "ZAP-101", "the gym bag" ], fates: [],
+            context: [ "Taking Incident Review over Vendor Onboarding at 11:00" ], evening: [ "Laundry" ]
+        });
+        expect(applied.skipped).toEqual([]);
+        expect(applied.written).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "done", id: "2026-12-02-111", status: "written" }),
+            expect.objectContaining({ kind: "done", id: "2026-12-02-101", status: "written" }),
+            expect.objectContaining({ kind: "done", id: "2026-12-02-bag", status: "written" }),
+            expect.objectContaining({ kind: "finished", id: "ZAP-111" }),
+            expect.objectContaining({ kind: "finished", id: "ZAP-101" })
+        ]));
+        // Only Dave goes on to Thursday, with the evening's Laundry.
+        expect(await tasksOf("2026-12-03")).toEqual([
+            { text: "Message Dave if he knows anyone who will hang lights as a small job", state: "open" },
+            { text: "Laundry", state: "open" }
+        ]);
+    });
+
+    it("Thu 09:30 '111 and 101 were done yesterday': Plan my day ticks the list items that finished keys name, and the picks leave them out", async () => {
+        const DAY = "2026-12-10";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
+                li("t111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`),
+                li("t101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`),
+                li("tdave", "Message Dave about the lights")
+            )}<h3>Evening</h3>${ul(li("tbag", "Pack the climbing gym bag"))}`);
+        });
+        at(`${DAY}T09:30`);
+        const applied = await call("caius_plan_apply", { date: DAY, finished: [ "ZAP-111", "ZAP-101", "bag" ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect((await tasksOf(DAY)).map((task: any) => task.state)).toEqual([ "done", "done", "open", "done" ]);
+        expect(applied.topPick).toBe("Message Dave about the lights");
+    });
+});
