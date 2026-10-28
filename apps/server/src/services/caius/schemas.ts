@@ -177,6 +177,9 @@ const moves = z.array(moveRef).default([]).describe("Only when the user asks to 
 const said = z.string().describe("His reply this call answers, word for word, such as \"110 is done. 111 later this week\": a fate he named there that the call leaves out is applied as he named it, and a dismissal needs his word (dismiss, drop, cancel, not doing, answered) in it. \"\" only for a call no reply of his asked for, such as a refresh");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
 
+/** His vague yes, which takes the proposals as offered. */
+const asOffered = z.boolean().optional().describe("true on his vague yes (\"fine\", \"ok\", \"sounds good\"): every candidate taken in the order shown, every keep or carry line kept and the heavy-day move made, everything else as proposed. A said that is only such a word reads the same");
+
 const overlapAnswers = z.array(z.object({
     overlapId: z.string().min(1).describe("The overlap's overlapId from the step data"),
     take: z.string().trim().min(1).describe("The meeting he takes, by its title as the step gives it")
@@ -185,6 +188,7 @@ const overlapAnswers = z.array(z.object({
 const planApply = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
     said,
+    asOffered,
     catchup: z.enum([ "move_all", "skip", "review" ]).optional().describe("The answer to the catch-up question, when one was asked"),
     accept: z.array(acceptRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after)"),
     move: moves,
@@ -229,6 +233,7 @@ export function onlyContext(input: Answers): boolean {
 const windDownApply = z.object({
     date: periodKey("day").describe("The day being closed, YYYY-MM-DD; the rest works against the next workday"),
     said,
+    asOffered,
     done: z.array(z.string().min(1)).default([]).describe(`The open items the user says are done, each by ${NAMED}`),
     fates: z.array(z.object({
         listItemId: z.string().min(1).describe(`An open item: ${NAMED}`),

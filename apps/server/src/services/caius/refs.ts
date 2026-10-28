@@ -153,6 +153,11 @@ export function saysPhrase(said: string, phrase: string): boolean {
     return wanted !== "" && ` ${words(said).join(" ")} `.includes(` ${wanted} `);
 }
 
+/** Whether `said` is only a vague yes, such as "fine", "ok" or "sounds good", which takes the proposals as offered. */
+export function vagueYes(said: string): boolean {
+    return /^\s*(?:fine|ok|okay|sure|yes|yeah|yep|yup|good|great|perfect|sounds good|that works|go ahead|do it)[\s.!]*$/i.test(said);
+}
+
 /** A clause that says where something doesn't go. */
 const NEGATION = /^\s*(?:not|no|never|don'?t)\b/;
 

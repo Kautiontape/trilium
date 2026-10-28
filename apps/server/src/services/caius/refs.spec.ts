@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hisWord, isRef, numbered, refOf, resolveIn, resolveName, saidAnswered, saidFates, withRefs } from "./refs.js";
+import { hisWord, isRef, numbered, refOf, resolveIn, resolveName, saidAnswered, saidFates, vagueYes, withRefs } from "./refs.js";
 
 const open = withRefs([
     { id: "e111", text: "ZAP-111 Check the invoice export in QA" },
@@ -109,5 +109,12 @@ describe("saidAnswered", () => {
         expect(saidAnswered("answered it in chat", [ jordan, riley ])).toEqual([]);
         expect(saidAnswered("don't dismiss 105", [ jordan ])).toEqual([]);
         expect(saidAnswered("fine", [ jordan ])).toEqual([]);
+    });
+});
+
+describe("vagueYes", () => {
+    it("is a reply that is only a yes, never one that says more", () => {
+        for (const said of [ "fine", "Fine.", "ok", "sounds good!", "yeah" ]) expect(vagueYes(said), said).toBe(true);
+        for (const said of [ "fine, but not 111", "skip it", "nothing", "" ]) expect(vagueYes(said), said).toBe(false);
     });
 });

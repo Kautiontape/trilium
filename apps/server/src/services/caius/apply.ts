@@ -79,7 +79,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidAnswered, saidFates, saysPhrase, withRefs } from "./refs.js";
+import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidAnswered, saidFates, saysPhrase, vagueYes, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment, removeLabel } from "./store.js";
@@ -165,7 +165,16 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const pools = planPools(offer, [ ...catchupTasks, ...heldTasks ], listed.days);
         const { table, items, copies, collided } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         pools.settled = settledOf(items, (item) => item.period === date, copies);
-        const input = planAnswers(asked, pools, skipped, table, copies, collided);
+        // On a vague yes the answers are what was offered.
+        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length);
+        const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
+        const answers: PlanApplyInput = vague ? {
+            ...asked,
+            accept: asked.accept.length ? asked.accept : offer.candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
+            keep: asked.keep.length ? asked.keep : offer.carry.map((line) => ({ lineId: line.lineId })),
+            forward: asked.forward?.length || !offer.forwardSuggestion ? asked.forward : [ { listItemId: offer.forwardSuggestion.listItemId, to: offer.forwardSuggestion.to } ]
+        } : asked;
+        const input = planAnswers(answers, pools, skipped, table, copies, collided);
         input.dismiss = withHisWord(asked.said, [ ...input.dismiss, ...answeredIn(asked.said, offer.jira, input.dismiss) ], skipped);
         const followed = new Map([ ...input.follows ].map(([ id, copy ]) => [ id, copy.text ]));
         /** The result with `say`, its entries named by their text first. */
@@ -361,7 +370,16 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const closingNote = await findPeriodNote(store, "day", date);
         const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
         pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
-        const input = windDownAnswers(asked, pools, skipped, table, copies, collided);
+        // On a vague yes the answers are what was offered.
+        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length);
+        const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
+        const answers: WindDownApplyInput = vague ? {
+            ...asked,
+            accept: asked.accept.length ? asked.accept : candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
+            keep: asked.keep.length ? asked.keep : lines.keep.map((line) => ({ lineId: line.lineId })),
+            carry: asked.carry.length ? asked.carry : lines.carry.map((line) => ({ lineId: line.lineId }))
+        } : asked;
+        const input = windDownAnswers(answers, pools, skipped, table, copies, collided);
         // A fate he named in his own words that the call left out is applied as he named it.
         const answered = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.held ]);
         input.fates.push(...saidFates(asked.said, pools.open, pools.days).filter((fate) => !answered.has(fate.listItemId)));

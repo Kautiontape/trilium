@@ -368,3 +368,25 @@ describe("a Review goes straight on", () => {
         expect(wound.planday.inputs.data.list.map((item: any) => item.text)).toEqual([ "Message Dave about the lights" ]);
     });
 });
+
+describe("'fine' takes what was offered", () => {
+    it("a vague yes accepts the candidates in the order shown, in Plan my day and in a wind-down, and is never read as a skip", async () => {
+        const DAY = "2027-03-01";
+        jira.handoff.push(
+            { ...ticket("ZAP-501", { summary: "Check the report" }), daysInStatus: 2 },
+            { ...ticket("ZAP-502", { summary: "Fix the gate" }), daysInStatus: 3 }
+        );
+        at(`${DAY}T09:40`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-501", "ZAP-502" ]);
+        // The agent passes nothing but his word.
+        const planned = await call("caius_plan_apply", { date: DAY, said: "fine", brief: prose });
+        expect(planned.skipped).toEqual([]);
+        expect((await tasksOf("day", DAY)).map((task: any) => task.text)).toEqual([ "ZAP-501 Check the report", "ZAP-502 Fix the gate" ]);
+
+        jira.handoff.push({ ...ticket("ZAP-503", { summary: "Ship the fix" }), daysInStatus: 1 });
+        at(`${DAY}T17:30`);
+        await call("caius_winddown_apply", { date: DAY, said: "501 and 502 are done, the rest is fine", done: [ "501", "502" ], asOffered: true });
+        expect((await tasksOf("day", "2027-03-02")).map((task: any) => task.text)).toEqual([ "ZAP-503 Ship the fix" ]);
+    });
+});
