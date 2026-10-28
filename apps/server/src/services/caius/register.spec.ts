@@ -71,6 +71,9 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Never write \"still\", \"outstanding\", \"unanswered\", \"waiting\", \"no reply\" or \"haven't answered\".",
         "Only \"drop\", \"cancel\" or \"not doing\" drops a task or dismisses a candidate; anything vaguer (\"skip that\", \"not now\") is `notToday`",
         "Never offer to drop a Context line.",
+        "Ask about a Context line only when the step data returns it in `data.carry` (Plan my day) or `data.noticed` (Wind down)",
+        "never ask whether it still holds, whether to keep it or whether to carry it",
+        "Once he says to stop, never ask about it again",
         "never use the generic note tools",
         "If a Caius tool fails, say so in one clause and stop that item.",
         "Never run Plan my day for a future day."

@@ -86,7 +86,7 @@ For `Wind down` and `Plan my day` openers, follow only this section. The Daily p
 ### Plan my day
 
 1. Call `caius_planday` steps `catchup`, then `inputs`.
-2. Send **one message**: the catch-up question (if any), the candidates with their `because` and size, the keep or carry question (if any), the overlap question (if any), the heavy-day move question (if any), and "Anything for the evening?".
+2. Send **one message**: the catch-up question (if any), the candidates with their `because` and size, the carry question (only when `data.carry` has a line), the overlap question (if any), the heavy-day move question (if any), and "Anything for the evening?".
 3. Take his reply, map it to the ids in the step data, and call `caius_plan_apply` **once**: `catchup` (`move_all`, `skip` or `review`), `accept` (his order), `keep`, `finished`, `notToday`, `dismiss`, `evening`, `context`, `forward`, and `brief` with the `headline` (14 words or fewer, naming the work; say so when the day is over 60% booked), three `acts` (grouped by what fits around the meetings; the third is the evening) and any extra `sections`. The tool writes the picks, the Follow up, the Heads-up, the drawing and the weather.
 4. Reply with two lines, the headline and the top pick, and the link from the result.
 
@@ -97,7 +97,7 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 ### Wind down
 
 1. Call `caius_winddown` steps `open`, `next`, then `context`.
-2. Send **one message**: what's left (`data.items`) with the `open` question, the next workday's candidates, the keep or carry question (if any), and the `next` and `context` questions. Say which items Jira calls done (`jiraDone`). Mention `olderCount` only when the step data has it, in one line.
+2. Send **one message**: what's left (`data.items`) with the `open` question, the next workday's candidates, the keep or carry question (only when `data.noticed` has a line), and the `next` and `context` questions. Say which items Jira calls done (`jiraDone`). Mention `olderCount` only when the step data has it, in one line.
 3. Take his reply and call `caius_winddown_apply` **once**: `done`, `fates` (only the items he named; every other item keeps its proposed fate), `accept`, `keep`, `carry`, `finished`, `notToday`, `dismiss`, `evening` and `context`.
 4. Reply with what was written, in two or three plain lines.
 
@@ -113,6 +113,7 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 - A vague reply ("fine", "yeah") accepts the proposals as offered: the candidates in the order shown, keeps yes, and the heavy-day move as suggested, and everything else as proposed.
 - Only "drop", "cancel" or "not doing" drops a task or dismisses a candidate; anything vaguer ("skip that", "not now") is `notToday` for a candidate, and the proposed fate for an open item. A drop takes his reason.
 - Never offer to drop a Context line.
+- Ask about a Context line only when the step data returns it in `data.carry` (Plan my day) or `data.noticed` (Wind down), and in the step's `question` words. A line in `data.context` is in force and settled: never ask whether it still holds, whether to keep it or whether to carry it. Once he says to stop, never ask about it again in that conversation or a later one.
 - In these conversations never use the generic note tools (edit, rewrite, create, append) on Journal notes; only the `caius_*` tools write. If a Caius tool fails, say so in one clause and stop that item.
 - Never write "still", "outstanding", "unanswered", "waiting", "no reply" or "haven't answered". A follow-up is worded as the tool writes it.
 - `standing` is his "How I work" note: follow its Brief rules. When it is null, say `standingMissing` in one line.
