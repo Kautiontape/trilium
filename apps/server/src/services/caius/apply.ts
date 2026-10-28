@@ -441,7 +441,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
-        if (!held.length && !skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
+        // A day keeps open while a hold given on it remains, or one given elsewhere covers an item that lives on it.
+        const heldHere = allHeld.some((id) => open.items.some((item) => item.listItemId === id && item.period === date));
+        if (!held.length && !heldHere && !skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
             const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
             if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
             // A closed day needs no record for a re-run's words any more.

@@ -1172,3 +1172,22 @@ describe("fix round 3: a held week item is asked about too", () => {
         await clearHolds("2027-12-22");
     });
 });
+
+describe("fix round 3: a day with a held item isn't closed", () => {
+    it("Wednesday's hold covers Monday's 111; Thursday's Review of Monday keeps 111 there and doesn't mark Monday wound down", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2028-01-03");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("cg-111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`);
+            const wednesday = await store.calendarDay("2028-01-05");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("cg-101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`))}`);
+        });
+        at("2028-01-05T17:45");
+        await call("caius_winddown_apply", { date: "2028-01-05", done: [ "the export" ] });
+        at("2028-01-06T09:30");
+        const review = await call("caius_winddown_apply", { date: "2028-01-03" });
+        expect(review.say).toMatch(/ZAP-1\d\d.*\?/);
+        expect((await tasksOf("2028-01-03"))[0]).toEqual({ text: "ZAP-111 Check the invoice export in QA", state: "open" });
+        expect(await labelsOf("2028-01-03", "caiusWoundDown")).toEqual([]);
+        await clearHolds("2028-01-05");
+    });
+});
