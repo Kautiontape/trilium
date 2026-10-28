@@ -295,5 +295,7 @@ describe("Jira helpers", () => {
         ];
         expect(asksIn(ticket, comments, "me", new Date("2026-10-20T00:00:00Z"))).toEqual([]);
         expect(asksIn(ticket, comments.slice(0, 1), "me", new Date("2026-10-20T00:00:00Z"))).toHaveLength(1);
+        // A comment without an id is told apart by when it was made.
+        expect(asksIn(ticket, comments.slice(0, 1), "me", new Date("2026-10-20T00:00:00Z"))[0]?.commentId).toBe("2026-10-26T10:00:00.000Z");
     });
 });

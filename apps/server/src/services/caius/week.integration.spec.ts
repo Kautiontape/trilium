@@ -264,7 +264,7 @@ describe("follow-ups are raised once", () => {
         ({ ticket: ticket(key), author, created, commentId, excerpt: "Is the legacy report job gone from production?" });
     const followUps = (answer: any) => answer.data.followUps.map((f: any) => `${f.key}:${f.commentId}`);
 
-    it("Mon 09:40: the brief records the asks its Follow up names", async () => {
+    it("Mon 09:40: a brief with a Follow up records every ask it was given", async () => {
         jira.done.push("ZAP-104");
         jira.asks.push(ask("ZAP-104", "2", "2026-10-26T19:30:00.000Z"), ask("ZAP-130", "20", "2026-10-30T14:00:00.000Z", "Jordan Placeholder"));
         at(`${MON}T09:40`);
@@ -277,16 +277,10 @@ describe("follow-ups are raised once", () => {
             sections: [ { title: "Follow up", markdown: "Riley asked on ZAP-104 whether the legacy report job is gone. If you already answered in Chat, dismiss this." } ]
         });
         const note = await cls.init(() => store.note(written.briefNoteId));
-        expect(note.attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value)).toEqual([ "ZAP-104:2" ]);
+        expect(note.attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value)).toEqual([ "ZAP-104:2", "ZAP-130:20" ]);
     });
 
     it("Thu 09:30: Plan my day and Wind down drop an ask raised on Monday until a newer comment comes", async () => {
-        await cls.init(async () => {
-            const monday = await store.note(notes.mon);
-            const [ briefId ] = monday.childNoteIds;
-            if (!briefId) throw new Error("no brief");
-            await store.addLabel(briefId, "caiusRaised", "ZAP-130:20");
-        });
         at(`${THU}T09:30`);
         const quiet = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
         expect(followUps(quiet)).toEqual([]);
@@ -539,5 +533,33 @@ describe("a same-day refresh keeps the Follow up", () => {
         expect(raised(await call("caius_planday", { date: day, step: "brief" }))).toContain("ZAP-190:30");
         at("2026-11-27T09:30");
         expect(raised(await call("caius_planday", { date: "2026-11-27", step: "brief", refresh: true }))).not.toContain("ZAP-190:30");
+    });
+});
+
+describe("what counts as raised", () => {
+    it("records every follow-up passed when the Follow up has text, whatever its wording, and none without one", async () => {
+        const day = "2026-11-30";
+        jira.asks.push({ ticket: ticket("ZAP-191"), author: "Jordan Placeholder", created: "2026-11-27T15:00:00.000Z", commentId: "31", excerpt: "Can you check?" });
+        jira.asks.push({ ticket: ticket("ZAP-192"), author: "Sam Example", created: "2026-11-27T16:00:00.000Z", commentId: "32", excerpt: "Any news?" });
+        await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("v1", "Something ~30m"))}`));
+        at(`${day}T09:30`);
+        const brief = await call("caius_planday", { date: day, step: "brief", refresh: true });
+        const passed = brief.data.shape.followUps;
+        expect(passed).toEqual([ { key: "ZAP-191", commentId: "31" }, { key: "ZAP-192", commentId: "32" } ]);
+        const raisedOn = async (noteId: string) => (await cls.init(() => store.note(noteId))).attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value).sort();
+
+        const quiet = await call("caius_brief_write", { ...brief.data.shape, headline: "Quiet", sections: [ { title: "Follow up", markdown: " " }, { title: "Heads-up", markdown: "ZAP-191 shipped." } ] });
+        expect(await raisedOn(quiet.briefNoteId)).toEqual([]);
+
+        const written = await call("caius_brief_write", { ...brief.data.shape, headline: "Asks", sections: [ { title: "Follow up", markdown: "Jordan asked whether you could check the export." } ] });
+        expect(await raisedOn(written.briefNoteId)).toEqual(passed.map((f: any) => `${f.key}:${f.commentId}`).sort());
+    });
+
+    it("accepts only valid ticket keys in followUps", async () => {
+        const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
+        const shape = { date: "2026-11-30", headline: "x", acts: [ { range: "", text: "" }, { range: "", text: "" }, { range: "", text: "" } ], picks: [], sections: [],
+            header: { start: "10:00", end: "23:00", events: [], work: [] } };
+        expect(schema?.safeParse({ ...shape, followUps: [ { key: "ZAP-1", commentId: "1" } ] }).success).toBe(true);
+        expect(schema?.safeParse({ ...shape, followUps: [ { key: "ZAP.*", commentId: "1" } ] }).success).toBe(false);
     });
 });

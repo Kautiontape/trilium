@@ -125,12 +125,13 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
     // The planned time marks a finished plan, so a write that lost its compare-and-swap leaves the old one.
     const complete = writes.every((write) => write.status !== "skipped");
     if (complete) setLabel(brief.noteId, PLANNED_AT_LABEL, deps.plannedAt);
-    // An ask counts as raised when a section names its ticket.
-    const sectionText = input.sections.map(({ markdown }) => markdown).join("\n");
+    // Every ask passed counts as raised once the brief has a Follow up with text, however it is worded.
+    const followUp = input.sections.find(({ title }) => sameTitle(title) === sameTitle(t("caius.daily.follow_up")));
+    const asked = complete && !!followUp?.markdown.trim();
     const raised = new Set(brief.attributes.filter((a) => a.type === "label" && a.name === RAISED_LABEL).map((a) => a.value));
-    for (const { key, commentId } of complete ? input.followUps ?? [] : []) {
+    for (const { key, commentId } of asked ? input.followUps ?? [] : []) {
         const value = `${key}:${commentId}`;
-        if (raised.has(value) || !new RegExp(`\\b${key}\\b`).test(sectionText)) continue;
+        if (raised.has(value)) continue;
         await store.addLabel(brief.noteId, RAISED_LABEL, value);
         raised.add(value);
     }
@@ -180,6 +181,11 @@ async function replace(store: NoteStore, noteId: string, role: NoteWrite["role"]
     return await store.putContent(noteId, after, before)
         ? { noteId, role, status: "updated" }
         : { noteId, role, status: "skipped", reason: "edited" };
+}
+
+/** A section title compared ignoring case, spacing and punctuation: "Follow-up" is "Follow up". */
+function sameTitle(title: string): string {
+    return title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 /** `Tuesday · October 27 2026`, with names from the server catalogue. */

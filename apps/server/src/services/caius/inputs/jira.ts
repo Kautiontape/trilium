@@ -261,7 +261,7 @@ export function asksIn(ticket: JiraTicket, comments: RawComment[], myAccountId: 
             ticket,
             author: comment.author?.displayName ?? "unknown",
             created: new Date(created).toISOString(),
-            commentId: comment.id ?? "",
+            commentId: comment.id ?? new Date(created).toISOString(),
             excerpt: excerpt(text)
         });
     }

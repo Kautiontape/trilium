@@ -106,7 +106,7 @@ The brief takes about 60 seconds to read:
 - `headline`: 14 words or fewer, naming the work; say so when the day is over 60% booked.
 - `acts`: three sentences, grouped by what fits around the meetings; the third is the evening.
 - `picks`: 3 to 5 tasks of `data.list`, each "Get X done" with its `because` and `minutes`. Candidates he didn't take aren't picks.
-- `sections`: Follow up, only from `data.followUps`: who asked what and when, ending "if you already answered in Chat, dismiss this". Never "no reply", "unanswered", "still open", "still waiting", "outstanding" or "haven't answered". Heads-up only for an outside event.
+- `sections`: Follow up, only from `data.followUps`: for each, its ticket key, who asked what and when, ending "if you already answered in Chat, dismiss this". Never "no reply", "unanswered", "still open", "still waiting", "outstanding" or "haven't answered". Heads-up only for an outside event.
 - Keep `header` and `followUps` as given.
 
 ### Wind down
