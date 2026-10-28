@@ -45,8 +45,16 @@
 
 .model-selection-make-default {
     padding: 0;
+    border: none;
+    background: none;
+    color: var(--link-color);
     font-size: 0.85em;
     white-space: nowrap;
+    cursor: pointer;
+
+    &:hover {
+        text-decoration: underline;
+    }
 }
 
 .model-selection-label {

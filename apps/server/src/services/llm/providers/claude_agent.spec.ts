@@ -1244,6 +1244,23 @@ describe("buildSubscriptionModelList", () => {
         expect(merged.some(m => m.id === "claude-haiku-4-5-20251001")).toBe(false);
     });
 
+    it("names a bare alias row with the version its description leads with", () => {
+        // A `claude setup-token` login lists the aliases as "Sonnet", "Opus"…; the version is only in the description.
+        const merged = buildSubscriptionModelList([
+            { value: "sonnet", resolvedModel: "claude-sonnet-5-5", displayName: "Sonnet", description: "Sonnet 5.5 · Efficient for routine tasks" },
+            { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5", description: "For complex work" },
+            { value: "haiku", resolvedModel: "claude-haiku-5-5", displayName: "Haiku", description: "Fastest for quick answers" },
+            { value: "fable", resolvedModel: "claude-fable-5-1", displayName: "Fable", description: "Opus 5.5 · something else" }
+        ], curated);
+
+        expect(Object.fromEntries(merged.map(m => [m.id, m.name]))).toEqual({
+            "claude-sonnet-5-5": "Sonnet 5.5", // bare name, versioned description
+            "claude-opus-5-5": "Opus 5.5", // already versioned
+            "claude-haiku-5-5": "Haiku", // no version anywhere
+            "claude-fable-5-1": "Fable" // description names another model
+        });
+    });
+
     it("passes through unknown models with subscription invariants and no pricing/context window", () => {
         const merged = buildSubscriptionModelList([
             { value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet 5" },

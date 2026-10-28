@@ -896,6 +896,8 @@ interface SubscriptionModelSource {
     resolvedModel?: string;
     /** Human-readable name Claude Code shows for the model. */
     displayName?: string;
+    /** What the model is for; on a family alias it leads with the version (`Sonnet 5.5 · Efficient…`). */
+    description?: string;
 }
 
 /**
@@ -929,7 +931,7 @@ export function buildSubscriptionModelList(sdkModels: SubscriptionModelSource[],
             continue;
         }
         seen.add(id);
-        remote.push({ id, name: model.displayName });
+        remote.push({ id, name: versionedName(model) });
     }
 
     return mergeModelLists(withContextVariants(curated, remote), remote).map(model => ({
@@ -937,6 +939,19 @@ export function buildSubscriptionModelList(sdkModels: SubscriptionModelSource[],
         isSubscription: true,
         pricing: model.pricing ?? { input: 0, output: 0 }
     }));
+}
+
+/**
+ * The model's name with its version. A login made with `claude setup-token` gets the family aliases
+ * named bare (`Sonnet`), which hides which model a row is; their description leads with the
+ * versioned name (`Sonnet 5.5 · …`), so that is used when it extends the bare one.
+ */
+function versionedName({ displayName, description }: SubscriptionModelSource): string | undefined {
+    const lead = description?.split(" · ")[0].trim();
+    if (!displayName || /\d/.test(displayName) || !lead || !/\d/.test(lead)) {
+        return displayName;
+    }
+    return lead.toLowerCase().startsWith(displayName.toLowerCase()) ? lead : displayName;
 }
 
 /** A long-context model id: `claude-opus-4-8[1m]` → base `claude-opus-4-8`, label `1M`. */

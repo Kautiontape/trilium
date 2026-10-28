@@ -55,6 +55,9 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
                 setLoading(false);
                 if (autoSelectDefaults && selected.length === 0 && fetched.length > 0) {
                     onChange(defaultSelectedModels(fetched));
+                } else {
+                    const renamed = withFetchedNames(selected, fetched);
+                    if (renamed) onChange(renamed);
                 }
             })
             .catch(err => {
@@ -123,7 +126,7 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
                         {model.id === defaultId
                             ? <span className="model-selection-default">{t("llm.models_default")}</span>
                             : isSelected(model) && (
-                                <button type="button" className="btn btn-link btn-sm model-selection-make-default" onClick={() => makeDefault(model.id)}>
+                                <button type="button" className="model-selection-make-default" onClick={() => makeDefault(model.id)}>
                                     {t("llm.models_make_default")}
                                 </button>
                             )}
@@ -149,6 +152,22 @@ function defaultSelectedModels(models: LlmModelInfo[]): LlmModelInfo[] {
  */
 function defaultModelId(selected: LlmModelInfo[]): string | undefined {
     return (selected.find(model => model.isDefault) ?? selected[0])?.id;
+}
+
+/**
+ * The selection with each model's name as the provider now gives it, or null when none changed. The
+ * chat's picker shows the stored names, so a name the provider has since improved ("Sonnet" →
+ * "Sonnet 5.5") reaches it on the next save.
+ */
+function withFetchedNames(selected: LlmModelInfo[], fetched: LlmModelInfo[]): LlmModelInfo[] | null {
+    let changed = false;
+    const renamed = selected.map(model => {
+        const name = fetched.find(f => f.id === model.id)?.name;
+        if (!name || name === model.name) return model;
+        changed = true;
+        return { ...model, name };
+    });
+    return changed ? renamed : null;
 }
 
 /**
