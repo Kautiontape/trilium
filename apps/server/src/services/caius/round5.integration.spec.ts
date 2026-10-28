@@ -156,6 +156,12 @@ describe("a correction to a day, by key or words", () => {
         });
         at(`${MON}T17:30`);
         await call("caius_winddown_apply", { date: MON, said: "fine", asOffered: true });
+        // A correction given only in his words is never lost: with no fate it is a check, and nothing moves.
+        const before = await journal();
+        const words = await call("caius_winddown_apply", { date: MON, said: "dave wednesday actually" });
+        expect(words.written).toEqual([]);
+        expect(words.check).toEqual([ expect.objectContaining({ item: "Message Dave about the lights", missing: "fate" }) ]);
+        expect(await journal()).toEqual(before);
         const live = async (date: string) => (await tasksOf("day", date)).filter((task: any) => task.state === "open").map((task: any) => task.text);
         for (const [ said, id, to, status ] of [
             [ "dave wednesday", "dave", WED, "written" ], [ "dave wednesday", "dave", WED, "unchanged" ],
