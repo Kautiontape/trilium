@@ -384,7 +384,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         } : asked;
         const input = windDownAnswers(answers, pools, skipped, table, copies, collided);
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
-        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
+        const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
+        const endOf = (id: string) => { const entry = byEntry.get(id); return entry ? chainEnd(entry, byEntry, copies)?.id ?? id : id; };
+        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
             ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
@@ -737,8 +739,10 @@ function settledOf(items: (RefEntry & { period: string })[], within: (item: RefE
 function chainEnd(entry: RefEntry, byId: Map<string, RefEntry>, copies: Copies): RefEntry | undefined {
     let at: RefEntry | undefined = entry;
     for (let hops = 0; at?.item?.moved && hops < 5; hops++) {
-        const copy = copies.get(copyKey(at.item.noteId, at.text));
-        at = copy ? byId.get(copy.id) : undefined;
+        // A copy moved on keeps its first back link, so its next copy is filed under the note it came from.
+        const copy = copies.get(copyKey(at.item.noteId, at.text)) ?? (at.item.from ? copies.get(copyKey(at.item.from, at.text)) : undefined);
+        const next: RefEntry | undefined = copy && copy.id !== at.id ? byId.get(copy.id) : undefined;
+        at = next;
     }
     return at;
 }
@@ -837,7 +841,9 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
         put(refOf("o", id), entry);
         put(refOf("l", id), entry);
         items.push({ ...entry, period });
-        if (from) copies.set(copyKey(from, entry.text), { id, period, text: entry.text });
+        // The live copy of an item moved more than once wins over the copies it left behind.
+        const key = copyKey(from ?? "", entry.text);
+        if (from && (!moved || !copies.has(key))) copies.set(key, { id, period, text: entry.text });
     }
     const tickets = dayCandidates({ jira: { ...jira, done: [] }, live: new Map(), exclude: [] }).map(present);
     for (const candidate of [ ...tickets, ...known.values() ]) {
@@ -906,9 +912,10 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
             skipped.push({ kind, ...(entry ? { text: entry.text } : {}), reason: "stale" });
             return null;
         }
-        // A name that matches nothing open can name what an earlier run already settled.
-        const open = resolveIn(pools, value);
-        const found = open ?? resolveIn(fallback, value);
+        // A name that matches nothing open can name what an earlier run already settled. Matches that
+        // are all copies of one moved item are that item.
+        const open = oneChain(resolveIn(pools, value));
+        const found = open ?? oneChain(resolveIn(fallback, value));
         if (found && "ambiguous" in found) {
             skipped.push({ kind, text: value, reason: "ambiguous", detail: found.ambiguous.join("; ") });
             if (hold) {
@@ -927,6 +934,13 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
             return null;
         }
         return found?.id ?? value;
+    };
+    /** `found` with several matches that all lead to one live copy (`chainEnd`) read as the first of them. */
+    const oneChain = (found: ReturnType<typeof resolveIn>): ReturnType<typeof resolveIn> => {
+        if (!found || !("ambiguous" in found)) return found;
+        const ends = new Set(found.ids.map((id) => { const entry = byId.get(id); return entry ? chainEnd(entry, byId, copies)?.id ?? id : id; }));
+        const [ first ] = found.ids;
+        return ends.size === 1 && first ? { id: first } : found;
     };
     /** A place with the item it names read from `pools`, or null when that is ambiguous. */
     const place = <P extends { before?: string; after?: string }>(kind: string, at: P, pools: Named[][]): P | null => {
@@ -1173,15 +1187,21 @@ function checkAnswer<T extends object>(head: T, check: Check[]) {
  * The items his reply seems to give a place (`saidPlaces`, over the open and settled items) that the
  * call leaves out, or sends somewhere else: an item done, held or given a fate to that place is answered.
  */
-function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, pools: Pools): Check[] {
+function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, pools: Pools, endOf: (id: string) => string): Check[] {
     const answered = new Map<string, string | undefined>();
     for (const id of [ ...input.done, ...input.held ]) answered.set(id, undefined);
     for (const fate of input.fates) answered.set(fate.listItemId, fate.to ?? "dropped");
     // A moved item named in the call answers for the item it was moved from too.
     for (const [ copy, { source } ] of input.follows) if (answered.has(copy)) answered.set(source, answered.get(copy));
+    // An item answers for every copy of it along its moves.
+    for (const [ id, to ] of [ ...answered ]) answered.set(endOf(id), to);
     const pool = [ ...pools.open, ...pools.settled ];
+    const seen = new Set<string>();
     return saidPlaces(said, pool, pools.days).flatMap((heard) => {
-        const given = answered.has(heard.id) ? answered.get(heard.id) : null;
+        const end = endOf(heard.id);
+        if (seen.has(end)) return [];
+        seen.add(end);
+        const given = answered.has(heard.id) ? answered.get(heard.id) : answered.has(end) ? answered.get(end) : null;
         if (given === undefined || given === heard.to || (given !== null && !PERIODS.day.pattern.test(given) && !PERIODS.week.pattern.test(given) && !PERIODS.month.pattern.test(given))) return [];
         const item = pool.find((entry) => entry.id === heard.id)?.text ?? heard.id;
         const key = given === null ? "caius.check.fate" : "caius.check.fate_other";

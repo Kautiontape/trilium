@@ -145,6 +145,33 @@ describe("a correction after the apply", () => {
     });
 });
 
+describe("a correction to a day, by key or words", () => {
+    it("'dave wednesday' twice, then 'dave back to tuesday' twice, then '101 wednesday' twice: each repeat is unchanged, never ambiguous", async () => {
+        const MON = "2027-07-12";
+        const TUE = "2027-07-13";
+        const WED = "2027-07-14";
+        await cls.init(async () => {
+            const day = await store.calendarDay(MON);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MON}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`), li(`${MON}-dave`, "Message Dave about the lights"))}`);
+        });
+        at(`${MON}T17:30`);
+        await call("caius_winddown_apply", { date: MON, said: "fine", asOffered: true });
+        const live = async (date: string) => (await tasksOf("day", date)).filter((task: any) => task.state === "open").map((task: any) => task.text);
+        for (const [ said, id, to, status ] of [
+            [ "dave wednesday", "dave", WED, "written" ], [ "dave wednesday", "dave", WED, "unchanged" ],
+            [ "dave back to tuesday", "dave", TUE, "written" ], [ "dave back to tuesday", "dave", TUE, "unchanged" ],
+            [ "101 wednesday", "101", WED, "written" ], [ "101 wednesday", "101", WED, "unchanged" ]
+        ] as const) {
+            const result = await call("caius_winddown_apply", { date: MON, said, fates: [ { listItemId: id, to } ] });
+            expect(result.check, said).toBeUndefined();
+            expect(result.skipped, said).toEqual([]);
+            expect(result.written.filter((entry: any) => entry.kind === "fate"), `${said} ${status}`).toEqual([ expect.objectContaining({ detail: to, status }) ]);
+        }
+        expect(await live(TUE)).toEqual([ "Message Dave about the lights" ]);
+        expect(await live(WED)).toEqual([ "ZAP-101 Verify the export retry on staging" ]);
+    });
+});
+
 describe("his words decide", () => {
     it("Mon 17:30: the agent's round-5 call left out '111 later this week'; the apply writes nothing and asks for a check, and the call with the fate writes it", async () => {
         const MON = "2026-11-16";
