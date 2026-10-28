@@ -34,7 +34,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_LABEL, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_LABEL, findBrief, rewritePicks, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -428,8 +428,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 }
 
 /**
- * A Plan my day call with only `move`: his list reordered, and the header's drawing and Evening act
- * drawn again when the order changes the picks. Nothing else is written.
+ * A Plan my day call with only `move`: his list reordered and, when the order changes the picks, the
+ * brief's picks, the drawing and the acts (his `acts`, or plain ones from the drawing) written again.
+ * Nothing else is written.
  */
 async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, weather: DayWeather | undefined) {
     const { date } = asked;
@@ -447,13 +448,52 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
         const input = planAnswers(asked, pools, skipped, table);
         const before = picksOf(offer.day.plan);
         await acceptAll(store, date, now, input, { known, moved: new Map() }, written, skipped);
-        if (picksOf(await readPlan(store, "day", date, now)) !== before) {
+        const plan = await readPlan(store, "day", date, now);
+        if (picksOf(plan) !== before) {
+            // The tool's own words follow the new order: the brief's picks, and the acts unless he sent them.
+            const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
+                .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
+            await guarded({ kind: "picks", id: date }, skipped, async () => {
+                const write = await rewritePicks(store, date, picksFor(plan, reasons));
+                if (write) record(written, skipped, { kind: "picks", detail: date }, write.status === "updated" ? { status: "written" } : write);
+            });
+            const acts = (header: ReturnType<typeof headerOf>) => asked.acts ?? plainActs(header);
             if (failedCalendar(read)) skipped.push({ kind: "header", id: date, reason: "calendar_unavailable" });
-            else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, {}, weather, written, skipped));
+            else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, {}, weather, written, skipped, acts));
         }
         withTexts([ ...written, ...skipped ], pools, known);
         return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date }) });
     });
+}
+
+/** The brief's "Get done today": the first work tasks of his list, in order, each with its candidate's reason when it had one. */
+function picksFor(plan: Awaited<ReturnType<typeof readPlan>>, reasons: Map<string, Candidate>): BriefPick[] {
+    return listOf(plan).filter((task) => !task.evening).slice(0, MAX_PICKS).map((task) => {
+        const reason = task.keys.map((key) => reasons.get(key)).find((candidate) => candidate && candidate.kind !== "week");
+        return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
+    });
+}
+
+/**
+ * Plain acts from the drawing's work blocks before the end of work, in two groups: "10:00 to 11:00"
+ * with "ZAP-101, then ZAP-110.", and the rest; open time when there is no rest. The third, the
+ * evening, `withEveningAct` writes.
+ */
+function plainActs(header: ReturnType<typeof headerOf>): Prose["acts"] {
+    const blocks = header.work.filter((block) => block.start < header.workEnd);
+    const half = Math.ceil(blocks.length / 2);
+    const act = (group: typeof blocks) => {
+        const [ first ] = group;
+        const last = group.at(-1);
+        return first && last ? {
+            range: t("caius.brief.act_range", { start: first.start, end: last.end }),
+            text: t("caius.brief.act_text", { items: group.map((block) => block.label).join(t("caius.brief.evening_then")) })
+        } : null;
+    };
+    const one = act(blocks.slice(0, half));
+    const after = one ? blocks[half - 1]?.end ?? header.start : header.start;
+    const two = act(blocks.slice(half)) ?? { range: t("caius.brief.act_range", { start: after, end: header.workEnd }), text: t("caius.brief.open_time") };
+    return [ one ?? { range: t("caius.brief.act_range", { start: header.start, end: header.workEnd }), text: t("caius.brief.open_time") }, two, { range: "", text: "" } ];
 }
 
 /** The brief's picks of a plan as they read, in order: the first work tasks of his list. */
@@ -462,15 +502,15 @@ function picksOf(plan: Awaited<ReturnType<typeof readPlan>>): string {
 }
 
 /**
- * Draws the header of `day`'s brief again from its note: the drawing, and the acts with the Evening
- * act as the note now has it. With `worked`, as the day was worked. A weather icon already drawn
- * stays when no weather can be had.
+ * Draws the header of `day`'s brief again from its note: the drawing, and the acts (the ones kept,
+ * or those `acts` gives) with the Evening act as the note now has it. With `worked`, as the day was
+ * worked. A weather icon already drawn stays when no weather can be had.
  */
-async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, worked: { worked?: boolean }, fetched: DayWeather | undefined, written: Written[], skipped: Skipped[]) {
+async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, worked: { worked?: boolean }, fetched: DayWeather | undefined, written: Written[], skipped: Skipped[], acts?: (header: ReturnType<typeof headerOf>) => Prose["acts"]) {
     const plan = await readPlan(store, "day", day, now);
     const header = headerOf(plan, read, day, now, worked);
     const draw = (noteId: string, weather: DayWeather | undefined) => drawHeader(noteId, header, weather ?? weatherOfSvg(readAttachment(noteId, "image", TERRAIN_TITLE) ?? "") ?? undefined).attachmentId;
-    const write = await redrawHeader(store, day, draw, (acts) => withEveningAct(acts, plan, header, worked), fetched);
+    const write = await redrawHeader(store, day, draw, (kept) => withEveningAct(acts ? acts(header) : kept, plan, header, worked), fetched);
     if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
 }
 
@@ -1163,10 +1203,7 @@ function record(written: Written[], skipped: Skipped[], entry: Omit<Written, "st
 async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, read: DayRead, reasons: Map<string, Candidate>, jira: DayRead["inputs"]["jira"], headsUp: string[], weather: DayWeather | undefined) {
     const { store, now } = deps;
     const plan = await readPlan(store, "day", input.date, now);
-    const picks: BriefPick[] = listOf(plan).filter((task) => !task.evening).slice(0, MAX_PICKS).map((task) => {
-        const reason = task.keys.map((key) => reasons.get(key)).find((candidate) => candidate && candidate.kind !== "week");
-        return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
-    });
+    const picks = picksFor(plan, reasons);
     const followUps = followUpsOf(jira);
     // Follow up and Heads-up are written from the step data, in place of anything the agent wrote under them.
     const followUpTitle = t("caius.daily.follow_up");

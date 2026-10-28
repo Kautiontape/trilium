@@ -601,7 +601,10 @@
       "evening_then": ", then ",
       "evening_range": "Evening",
       "evening_empty": "Nothing planned.",
-      "image_alt": "The day: meetings on a line, planned work as bars under it"
+      "image_alt": "The day: meetings on a line, planned work as bars under it",
+      "act_range": "{{start}} to {{end}}",
+      "act_text": "{{- items}}.",
+      "open_time": "Open time."
     },
     "daily": {
       "standing_missing": "No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.",

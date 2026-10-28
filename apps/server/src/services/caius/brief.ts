@@ -91,13 +91,7 @@ export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "
             return { date, error: "bad_request", detail: `The ${name} note of ${date}, or a child of the brief, is protected` };
         }
     }
-    const picks = input.picks.map((pick) => pick.because?.trim()
-        ? t("caius.brief.pick", {
-            text: pick.text.trim(),
-            because: pick.because.trim().replace(/^because\s+/i, ""),
-            estimate: formatEstimate(pick.minutes)
-        })
-        : t("caius.brief.pick_plain", { text: pick.text.trim(), estimate: formatEstimate(pick.minutes) }));
+    const picks = pickLines(input.picks);
     const sections = input.sections.map(({ title, markdown }) => ({ title, html: withoutImages(deps.render(markdown, title)) }));
     const headerContent = (attachmentId: string) => headerHtml({
         dateLine: dateLine(date),
@@ -239,6 +233,41 @@ async function replace(store: NoteStore, noteId: string, role: NoteWrite["role"]
         ? { noteId, role, status: "updated" }
         : { noteId, role, status: "skipped", reason: "edited" };
 }
+
+/** The "Get done today" lines of `picks`: "Get X done: because Y (~30m)", or without a reason. */
+function pickLines(picks: BriefPick[]): string[] {
+    return picks.map((pick) => pick.because?.trim()
+        ? t("caius.brief.pick", {
+            text: pick.text.trim(),
+            because: pick.because.trim().replace(/^because\s+/i, ""),
+            estimate: formatEstimate(pick.minutes)
+        })
+        : t("caius.brief.pick_plain", { text: pick.text.trim(), estimate: formatEstimate(pick.minutes) }));
+}
+
+/**
+ * Writes the brief of `date` again with `picks` as its "Get done today" list, leaving the rest of
+ * it as it is. Null when the day has no brief, or the brief has no such list where `writeBrief` puts it.
+ */
+export async function rewritePicks(store: NoteStore, date: string, picks: BriefPick[]): Promise<NoteWrite | null> {
+    const day = await findPeriodNote(store, "day", date);
+    const brief = day && day.type === "text" && !day.isProtected ? await findBrief(store, day.noteId, date) : null;
+    if (!brief || brief.isProtected) return null;
+    const title = `<h2>${escapeText(t("caius.brief.picks_title"))}</h2>`;
+    if (!(await store.content(brief.noteId)).includes(title)) return null;
+    let index = 0;
+    const newId = () => `e${createHash("sha1").update(`${brief.noteId}:picks:${index++}`).digest("hex").slice(0, 32)}`;
+    const lines = pickLines(picks);
+    const list = lines.length ? ensureListItemIds(`<ul>${lines.map((line) => `<li>${escapeText(line)}</li>`).join("")}</ul>`, newId) : "";
+    return replace(store, brief.noteId, "brief", (before) => {
+        const at = before.indexOf(title) + title.length;
+        const old = /^<ul>[\s\S]*?<\/ul>/.exec(before.slice(at))?.[0] ?? "";
+        return `${before.slice(0, at)}${list}${before.slice(at + old.length)}`;
+    });
+}
+
+/** Text as `briefBodyHtml` escapes it. */
+const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** A section title compared ignoring case, spacing and punctuation: "Follow-up" is "Follow up". */
 export function sameTitle(title: string): string {

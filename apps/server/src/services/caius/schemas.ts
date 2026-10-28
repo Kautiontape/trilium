@@ -195,7 +195,9 @@ const planApply = z.object({
         acts: z.array(z.object({ range: z.string(), text: z.string() })).length(3).describe("The day in three acts, the third the evening"),
         sections: z.array(z.object({ title: z.string().trim().min(1), markdown: z.string() })).default([])
             .describe("Sections after the picks, such as Heads-up; Follow up is written by the tool")
-    }).optional().describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes. Left out only on a call that just moves items of his list")
+    }).optional().describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes. Left out only on a call that just moves items of his list"),
+    acts: z.array(z.object({ range: z.string(), text: z.string() })).length(3).optional()
+        .describe("Only with a call that just moves: the header's three acts in the new order, sent when the move changes the first task; the tool writes the third, the evening")
 }).refine((input) => input.brief !== undefined || onlyMoves(input), "Give brief, unless the call only moves items of his list");
 
 /** Whether a Plan my day answer only reorders his list: `move` and nothing else. */

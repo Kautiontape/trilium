@@ -113,7 +113,7 @@ afterEach(() => {
 });
 
 describe("reorder after the plan", () => {
-    it("Mon 09:40 'take 110, 111 and 101', then 'put 101 first': the move-only call reorders his list and rewrites only the header", async () => {
+    it("Mon 09:40 'take 110, 111 and 101', then 'put 101 first': the move-only call reorders his list, and the picks, acts and drawing follow it", async () => {
         mondayJira();
         at(`${MON}T09:40`);
         const planned = await call("caius_plan_apply", { date: MON, accept: [ { candidateId: "110" }, { candidateId: "111" }, { candidateId: "101" } ], brief: prose });
@@ -128,18 +128,31 @@ describe("reorder after the plan", () => {
         expect(moved.skipped).toEqual([]);
         expect(moved.written).toEqual([
             expect.objectContaining({ kind: "move", status: "written", detail: "first" }),
-            expect.objectContaining({ kind: "header" })
+            expect.objectContaining({ kind: "picks", status: "written" }),
+            expect.objectContaining({ kind: "header", status: "written" })
         ]);
         expect(moved.say).toBe("ZAP-101 is first.");
         expect((await tasksOf(MON)).map((task: any) => task.text)).toEqual([ "ZAP-101 Verify the export retry on staging", "ZAP-110 Review the importer", "ZAP-111 Check the invoice export in QA" ]);
-        // Nothing else: the brief, the questions answered and Suggested are as the plan left them.
-        expect(await cls.init(() => store.content(planned.briefNoteId))).toBe(brief);
+        // The brief's picks follow the new order; its prose, the questions answered and Suggested stay.
+        const picksOf = (html: string) => [ ...html.matchAll(/<li[^>]*>([^<]*)<\/li>/g) ].map((m) => (m[1] ?? "").slice(0, 7));
+        const rewritten = await cls.init(() => store.content(planned.briefNoteId));
+        expect(picksOf(brief)).toEqual([ "ZAP-110", "ZAP-111", "ZAP-101" ]);
+        expect(picksOf(rewritten)).toEqual([ "ZAP-101", "ZAP-110", "ZAP-111" ]);
+        expect(rewritten.replace(/<ul>[\s\S]*?<\/ul>/, "")).toBe(brief.replace(/<ul>[\s\S]*?<\/ul>/, ""));
         expect(await labelsOf(MON, "caiusAsked")).toEqual(asked);
         const plan = await call("caius_plan", { period: "day", date: MON });
         expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-105") ]);
-        // The picks changed, so the header's drawing leads with ZAP-101, and his acts stay.
+        // The picks changed, so the drawing leads with ZAP-101, and with no acts given the tool writes plain ones.
         expect(drawing().indexOf("ZAP-101")).toBeLessThan(drawing().indexOf("ZAP-110"));
-        expect(await cls.init(() => store.content(planned.headerNoteId))).toContain("<strong>10:00 to 12:00</strong>");
+        const header = await cls.init(() => store.content(planned.headerNoteId));
+        expect(header).toContain("<td><p><strong>10:00 to 11:00</strong></p><p>ZAP-101, then ZAP-110.</p></td>");
+        expect(header).toContain("<td><p><strong>11:00 to 11:30</strong></p><p>ZAP-111.</p></td>");
+
+        // Acts he sent with the move replace the first two.
+        const acts = [ { range: "10:00 to 11:00", text: "Verify the retry, then the importer." }, { range: "11:00 to 12:00", text: "The export check." }, { range: "Evening", text: "z" } ];
+        await call("caius_plan_apply", { date: MON, move: [ { listItemId: "110", first: true } ], acts });
+        expect(await cls.init(() => store.content(planned.headerNoteId))).toContain("<p>Verify the retry, then the importer.</p>");
+        await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
 
         const again = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
         expect(again.written).toEqual([ expect.objectContaining({ kind: "move", status: "unchanged" }) ]);
