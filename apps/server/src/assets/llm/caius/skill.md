@@ -81,6 +81,16 @@ A week or month ends the same way at its own grain: forward to the next week or 
 
 For `Wind down` and `Plan my day` openers, follow only this section. The Daily planning and Daily shutdown steps above are for other requests.
 
+In these conversations only these tools are available; every other Caius tool and every generic note write is switched off:
+
+| Tool | Use |
+|---|---|
+| `caius_planday` | Plan my day's steps: `catchup`, `inputs`. |
+| `caius_plan_apply` | Plan my day's one write. |
+| `caius_winddown` | Wind down's steps: `open`, `next`, `context`. |
+| `caius_winddown_apply` | Wind down's one write. |
+| `load_skill`, note reads | This sheet, and reading a note when the step data points at one. |
+
 `Plan my day 2026-11-09` plans that day; `Wind down 2026-11-06` closes that day against the next workday. Each conversation is one question set, then one apply call that makes every write. You read, ask, pass his answers through as ids, and write the brief's prose. The tool does the rest.
 
 ### Plan my day

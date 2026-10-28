@@ -421,7 +421,6 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             "mcp__trilium__delete_note", "mcp__trilium__set_attribute", "mcp__trilium__move_note"
         ]));
         expect(options.disallowedTools).not.toContain("mcp__trilium__get_note_content");
-        expect(options.disallowedTools.some((name: string) => name.startsWith("mcp__trilium__caius_"))).toBe(false);
 
         scriptAgent([successResult()]);
         await collect(new ClaudeAgentProvider().chatChunks([
@@ -436,6 +435,29 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         scriptAgent([successResult()]);
         await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
         expect(queryMock.mock.calls[3][0].options.disallowedTools).toBeUndefined();
+    });
+
+    it("leaves a Plan my day or Wind down conversation only the step and apply tools of Caius, with the skill and the note reads", async () => {
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-06" }], { enableNoteTools: true }));
+        const disallowed: string[] = queryMock.mock.calls[0][0].options.disallowedTools;
+        const caius = disallowed.filter((name) => name.startsWith("mcp__trilium__caius_")).map((name) => name.slice("mcp__trilium__".length));
+        expect(caius.sort()).toEqual([
+            "caius_accept", "caius_add", "caius_assign_ids", "caius_brief_write", "caius_context", "caius_context_add", "caius_context_keep",
+            "caius_dismiss", "caius_explain", "caius_finished", "caius_forward", "caius_header", "caius_inputs", "caius_meetings",
+            "caius_open", "caius_plan", "caius_set_state", "caius_skip_catchup"
+        ]);
+        for (const kept of [ "caius_planday", "caius_winddown", "caius_plan_apply", "caius_winddown_apply", "load_skill", "get_note", "get_note_content", "search_notes" ]) {
+            expect(disallowed, kept).not.toContain(`mcp__trilium__${kept}`);
+        }
+        // Every registered Caius tool is either kept or disallowed by name.
+        const { caiusTools } = await import("../../caius/tools.js");
+        const kept = [ "caius_planday", "caius_winddown", "caius_plan_apply", "caius_winddown_apply" ];
+        expect([ ...caiusTools ].map(([ name ]) => name).filter((name) => !kept.includes(name)).sort()).toEqual(caius.sort());
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "what's on my plan today?" }], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[1][0].options.disallowedTools).toBeUndefined();
     });
 
     it("wires Trilium's in-process MCP server instance and disables built-in tools", async () => {

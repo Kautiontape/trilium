@@ -729,8 +729,9 @@ export class ClaudeAgentProvider implements LlmProvider {
             };
             // Bare server prefix auto-allows every tool from that server.
             allowedTools.push("mcp__trilium");
-            // In Plan my day and Wind down every Journal write goes through the Caius tools.
-            if (caius) options.disallowedTools = await genericNoteWrites();
+            // In Plan my day and Wind down every Journal write goes through the Caius apply tools,
+            // and the agent reads only through the steps, so it asks only the questions they return.
+            if (caius) options.disallowedTools = [ ...await genericNoteWrites(), ...CAIUS_CONVERSATION_DISALLOWED.map((name) => `mcp__trilium__${name}`) ];
         }
 
         options.allowedTools = allowedTools;
@@ -740,6 +741,16 @@ export class ClaudeAgentProvider implements LlmProvider {
 
 /** The opener the Plan tab, the nudge bar and the commands send: `Plan my day 2026-11-04`, `Wind down 2026-11-04`. */
 const CAIUS_OPENER = /^(?:Plan my day|Wind down) \d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The Caius tools a Plan my day or Wind down conversation must not use: all but the steps
+ * (`caius_planday`, `caius_winddown`) and the apply tools (`caius_plan_apply`, `caius_winddown_apply`).
+ */
+const CAIUS_CONVERSATION_DISALLOWED = [
+    "caius_plan", "caius_open", "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
+    "caius_set_state", "caius_forward", "caius_assign_ids", "caius_context_add", "caius_context_keep", "caius_meetings",
+    "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
+];
 
 /** Whether the conversation was started by a Caius opener, its first user message. */
 function isCaiusConversation(messages: LlmMessage[]): boolean {
