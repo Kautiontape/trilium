@@ -523,6 +523,19 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             { type: "done" }
         ]);
 
+        // A turn whose only text came before a tool call still shows that text, rather than nothing.
+        scriptAgent([
+            event({ type: "message_start" }),
+            textDelta("Monday is closed out."),
+            ...toolCall("toolu_4", { date: "2026-11-03", said: "" }),
+            result("toolu_4", "{}", false),
+            event({ type: "message_start" }),
+            event({ type: "message_stop" }),
+            successResult()
+        ]);
+        const quiet = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-02" }], { enableNoteTools: true }));
+        expect(quiet.filter((chunk) => chunk.type === "text")).toEqual([ { type: "text", content: "Monday is closed out." } ]);
+
         // Any other chat streams as it did.
         scriptAgent([ event({ type: "message_start" }), textDelta("Let me look. "), ...toolCall("toolu_3", {}), result("toolu_3", "x", true), successResult() ]);
         const plain = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));

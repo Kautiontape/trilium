@@ -457,6 +457,9 @@ export class ClaudeAgentProvider implements LlmProvider {
             // call shows once its result is in, and not at all when it failed.
             let pendingText = "";
             let calledTool = false;
+            // A turn that would show no text at all shows the last text it dropped instead.
+            let lastDropped = "";
+            let shownText = false;
             const pendingCalls = new Map<string, Record<string, unknown>>();
 
             // Manual iteration on purpose: `for await (…) { break }` calls
@@ -484,6 +487,7 @@ export class ClaudeAgentProvider implements LlmProvider {
                         } else if (event.type === "message_stop") {
                             if (caius && !calledTool && pendingText) {
                                 assistantText += pendingText;
+                                shownText = true;
                                 yield { type: "text", content: pendingText };
                             }
                             pendingText = "";
@@ -492,6 +496,7 @@ export class ClaudeAgentProvider implements LlmProvider {
                             toolNamesById.set(event.content_block.id, event.content_block.name);
                             if (caius) {
                                 calledTool = true;
+                                if (pendingText.trim()) lastDropped = pendingText;
                                 pendingText = "";
                             } else {
                                 yield {
@@ -587,8 +592,13 @@ export class ClaudeAgentProvider implements LlmProvider {
                         // A last message whose end never came still shows, unless it called a tool.
                         if (caius && !calledTool && pendingText) {
                             assistantText += pendingText;
+                            shownText = true;
                             yield { type: "text", content: pendingText };
                             pendingText = "";
+                        }
+                        if (caius && !shownText && lastDropped) {
+                            assistantText += lastDropped;
+                            yield { type: "text", content: lastDropped };
                         }
                         if (message.subtype !== "success") {
                             const errors = "errors" in message && message.errors.length > 0
