@@ -233,7 +233,7 @@ function planOf(tasks: CaiusPlanTask[], critical: CaiusPlanTask[] = []): CaiusPl
         top3: [], suggested: [], dismissed: [],
         capacity: {
             plannedMinutes: 0, estimatedCount: 0, unestimatedCount: 0, unestimatedMinutes: 0,
-            totalMinutes: 0, target: { min: 180, max: 240 }, horizons: {}
+            totalMinutes: 0, eveningMinutes: 0, target: { min: 180, max: 240 }, horizons: {}
         }
     };
 }
