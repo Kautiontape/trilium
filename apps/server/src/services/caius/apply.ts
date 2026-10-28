@@ -54,6 +54,7 @@ import {
     dayKey,
     type DayRead,
     EVENING_ID,
+    EVENING_SUGGESTED_ID,
     eveningEventTitles,
     drawnEvents,
     failedCalendar,
@@ -1495,6 +1496,8 @@ async function suggestEvening(store: NoteStore, date: string, now: Date, line: s
     if (!line || listOf(await readPlan(store, "day", date, now)).some((task) => task.evening)) return;
     const [ result ] = await addTasks(store, [ { date, suggested: true, text: line } ], { now });
     record(written, skipped, { kind: "suggested", text: line.slice(0, line.indexOf(`: because ${EVENING_REASON}`)) }, result);
+    // Offered once a day: accepted, ticked done or dismissed, it doesn't come back.
+    if (result?.status === "added") await labelDay(store, date, ASKED_LABEL, [ EVENING_SUGGESTED_ID ]);
 }
 
 /**

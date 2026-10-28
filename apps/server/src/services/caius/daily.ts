@@ -449,7 +449,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
         overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID), offeredAsks: offeredAsks(fresh, candidates),
-        evening: eveningOf(day, read)
+        evening: eveningOf(day, read, askedToday)
     };
 }
 
@@ -457,16 +457,16 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
  * The day's evening as the steps show it: his evening tasks, the calendar's evening events and
  * `suggestion`, the Suggested line the plan's apply writes while the evening has neither. The line
  * is his standing note's evening rule ("something away from screens, a chore or a Recharge item"),
- * sized by its evening minutes; it is null without a rule, or once it is in the day's Suggested or
- * dismissed there.
+ * sized by its evening minutes; it is null without a rule, or once the day was offered it
+ * (`#caiusAsked=evening_suggested`, `asked`), whatever became of it.
  */
-function eveningOf(day: Awaited<ReturnType<typeof dayFacts>>, read: DayRead) {
+function eveningOf(day: Awaited<ReturnType<typeof dayFacts>>, read: DayRead, asked: Set<string>) {
     const tasks = listOf(day.plan).filter((task) => task.evening).map((task) => task.text);
     const events = eveningEventTitles(read);
     const rule = eveningRule(read.standing.markdown);
     const line = rule ? `${rule.text}: because ${EVENING_REASON} (~${rule.minutes}m)` : null;
     const taken = new Set([ ...day.plan.dismissed, ...day.plan.suggested.flatMap((task) => keysOf(task.text)) ]);
-    const suggestion = line && !tasks.length && !events.length && !keysOf(line).some((key) => taken.has(key)) ? line : null;
+    const suggestion = line && !tasks.length && !events.length && !asked.has(EVENING_SUGGESTED_ID) && !keysOf(line).some((key) => taken.has(key)) ? line : null;
     return { tasks, events, suggestion };
 }
 
@@ -528,6 +528,8 @@ function workMinutes(facts: { plan: PlanView }): number {
 export const HEAVY_ID = "heavy";
 /** The `#caiusAsked` value of the evening question. */
 export const EVENING_ID = "evening";
+/** The `#caiusAsked` value of a day offered the evening suggestion, once. */
+export const EVENING_SUGGESTED_ID = "evening_suggested";
 
 /** An overlap's id for `#caiusAsked`: a hash of its two meetings and its time. */
 export function overlapIdOf(pair: { first: string; second: string; at: string }): string {

@@ -221,6 +221,25 @@ describe("the evening", () => {
         expect(await suggestedOf(THU)).toEqual([]);
     });
 
+    it("the suggestion is offered once a day: accepted and ticked done, a later refresh offers it again nowhere", async () => {
+        const DAY = "2030-06-12";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("g-1", "Write the runbook ~30m"))}`);
+        at(`${DAY}T09:40`);
+        const brief = { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] };
+        await call("caius_plan_apply", { date: DAY, said: "", brief });
+        let plan = await call("caius_plan", { period: "day", date: DAY });
+        expect(plan.suggested.map((t: any) => t.text)).toEqual([ SUGGESTION ]);
+        await call("caius_accept", { items: [ { noteId: plan.noteId, listItemId: plan.suggested[0].listItemId } ] });
+        plan = await call("caius_plan", { period: "day", date: DAY });
+        const accepted = plan.sections.flatMap((s: any) => s.tasks).find((t: any) => t.text.startsWith("Something"));
+        await call("caius_set_state", { items: [ { noteId: plan.noteId, listItemId: accepted.listItemId, state: "done" } ] });
+
+        at(`${DAY}T19:30`);
+        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.evening.suggestion).toBeNull();
+        await call("caius_plan_apply", { date: DAY, said: "", brief });
+        expect(await suggestedOf(DAY)).toEqual([]);
+    });
+
     it("an evening with a calendar event, or a task he names in the reply, gets no suggestion", async () => {
         const MON = "2029-02-05";
         const TUE = "2029-02-06";
