@@ -84,8 +84,9 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
             text = names.length > 1
                 ? t("caius.nudge.catchup_days", { weekdays: t("caius.nudge.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count })
                 : t("caius.nudge.catchup", { weekday: names[0], count });
-            // Review closes the oldest day first; its wind-down sends what's left on.
-            const oldest = days[0] ?? shown.lastWorkday;
+            // Review closes the oldest day first, and its wind-down sends what's left on; with a hold, it
+            // opens the day the hold was given on, where its question can be answered in full.
+            const oldest = shown.heldOn ?? days[0] ?? shown.lastWorkday;
             actions = [
                 ...(movable.length ? [ { label: t("caius.nudge.move_all"), onClick: () => void moveAll(movable) } ] : []),
                 { label: t("caius.nudge.review"), onClick: () => start(caiusOpener("winddown", oldest)) },

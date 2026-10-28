@@ -141,6 +141,16 @@ describe("CaiusNudgeBar", () => {
         }));
     });
 
+    it("G3: Review for a hold opens the day the hold was given on, not the oldest held item's day", async () => {
+        h.nudge.mockResolvedValue({
+            ...CATCHUP, days: [ "2026-11-02", "2026-11-03" ], tasks: [], heldOn: "2026-11-03",
+            held: [ { noteId: "mon", listItemId: "h1", text: "Check the export" }, { noteId: "tue", listItemId: "h2", text: "Verify the export" } ]
+        });
+        const bar = await mount(today);
+        await press(button(bar, "Review"));
+        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("Wind down 2026-11-03");
+    });
+
     it("moves tasks from several notes without a version token, locking every source", async () => {
         h.nudge.mockResolvedValue({ ...CATCHUP, tasks: [
             { noteId: "tue", listItemId: "a", text: "First" },

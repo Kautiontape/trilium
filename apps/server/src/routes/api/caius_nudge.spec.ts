@@ -138,7 +138,7 @@ describe("Caius nudge route", () => {
         expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "wk1", "wd1" ]));
     });
 
-    it("G4: with one hold, reads the notes its items live on, never the whole Journal", async () => {
+    it("G4, G3: with one hold, reads the notes its items live on, never the whole Journal, and names the day it was given on", async () => {
         await cls.init(async () => {
             for (const note of await store.search("#caiusHeld")) {
                 for (const a of note.attributes) if (a.type === "label" && a.name === "caiusHeld") removeLabel(note.noteId, "caiusHeld", a.value);
@@ -158,7 +158,7 @@ describe("Caius nudge route", () => {
         const { body } = await nudge("2033-09-08").expect(200);
         expect(loadJournal).not.toHaveBeenCalled();
         expect(scanDocs).not.toHaveBeenCalled();
-        expect(body).toMatchObject({ state: "catchup", days: [ "2033-09-05", "2033-09-07" ], tasks: [] });
+        expect(body).toMatchObject({ state: "catchup", days: [ "2033-09-05", "2033-09-07" ], tasks: [], heldOn: "2033-09-07" });
         expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual([ "jw1", "jw2" ]);
     });
 

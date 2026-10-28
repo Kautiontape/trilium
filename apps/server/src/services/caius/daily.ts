@@ -507,7 +507,7 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
     }
     // A held task is asked about every morning until he names it, however long ago its day was closed;
     // a day he skipped the catch-up of is quiet until the next. Only the notes the held items live on are read.
-    const periods = skipped ? [] : [ ...new Set(holding.values()) ];
+    const periods = skipped ? [] : [ ...new Set([ ...holding.values() ].map((hold) => hold.period)) ];
     for (const period of periods) {
         const kind = periodKind(period);
         // A day's own items are its plan, not its catch-up; a week or month item counts from its first day, since `2027-W45` sorts after every date.
@@ -515,28 +515,30 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         const periodNote = await findPeriodNote(store, kind, period);
         if (!periodNote || periodNote.type !== "text" || periodNote.isProtected) continue;
         for (const task of mainTasks(await readPlan(store, kind, period, now))) {
-            if (!task.listItemId || holding.get(task.listItemId) !== period || held.some((h) => h.listItemId === task.listItemId)) continue;
+            if (!task.listItemId || holding.get(task.listItemId)?.period !== period || held.some((h) => h.listItemId === task.listItemId)) continue;
             held.push({ noteId: task.noteId, listItemId: task.listItemId, text: task.text, section: task.section, critical: task.critical, period });
             if (kind === "day" && !days.includes(period)) days.push(period);
         }
     }
     days.sort();
     held.sort((a, b) => a.period.localeCompare(b.period));
-    return { lastWorkday: last, days, note, skipped, tasks, held };
+    // A held item's question is answered in full on the day its hold was given on.
+    const heldOn = held.map((task) => holding.get(task.listItemId ?? "")?.on ?? "").filter((day) => day !== "").sort()[0] ?? null;
+    return { lastWorkday: last, days, note, skipped, tasks, held, heldOn };
 }
 
 /**
- * Every list item held (`#caiusHeld`) anywhere in the Journal, whichever day note the hold was given
- * on, with the period of the note the item lives on. The caller holds the lock.
+ * Every list item held (`#caiusHeld`) anywhere in the Journal, with the period of the note it lives
+ * on and the day the hold was given on. The caller holds the lock.
  */
-export async function allHeld(store: NoteStore): Promise<Map<string, string>> {
-    const held = new Map<string, string>();
+export async function allHeld(store: NoteStore): Promise<Map<string, { period: string; on: string }>> {
+    const held = new Map<string, { period: string; on: string }>();
     for (const note of await store.search(`#${HELD_LABEL}`)) {
         const day = label(note, PERIODS.day.label) ?? "";
         for (const a of note.attributes) {
             if (a.type !== "label" || a.name !== HELD_LABEL) continue;
             const { id, period } = heldValueOf(a.value);
-            held.set(id, period ?? day);
+            held.set(id, { period: period ?? day, on: day });
         }
     }
     return held;

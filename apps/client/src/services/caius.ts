@@ -157,6 +157,8 @@ export type CaiusNudge = { date: string; lastWorkday: string } & (
         tasks: { noteId: string; listItemId: string | null; text: string }[];
         /** Open tasks an ambiguous wind-down answer held: counted, reviewed, never moved. */
         held?: { noteId: string; listItemId: string | null; text: string }[];
+        /** The day the oldest of those holds was given on, whose wind-down asks about all of its items. */
+        heldOn?: string;
     }
     | { state: "unplanned" }
     | { state: "planned"; plannedAt: string | null }

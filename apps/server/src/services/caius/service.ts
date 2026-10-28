@@ -406,7 +406,7 @@ export function createCaiusService(
          * brief, with the date and time it was planned, else `unplanned`. Reads only.
          */
         nudge: ({ date }: NudgeInput) => withCaiusLock("caius_nudge", async () => {
-            const { lastWorkday, days, note, tasks, held } = await catchupOf(store, date, caiusNow());
+            const { lastWorkday, days, note, tasks, held, heldOn } = await catchupOf(store, date, caiusNow());
             const woundDown = note ? label(note, WOUND_DOWN_LABEL) : undefined;
             if (woundDown !== undefined) {
                 const woundDownAt = woundDown.length > 10 ? woundDown : null;
@@ -415,7 +415,7 @@ export function createCaiusService(
             // A day whose open tasks are held is not closed either: the bar offers its Review, and Move all leaves them.
             if (tasks.length || held.length) {
                 const brief = ({ noteId, listItemId, text }: (typeof tasks)[number]) => ({ noteId, listItemId, text });
-                return { date, state: "catchup", lastWorkday, days, tasks: tasks.map(brief), ...(held.length ? { held: held.map(brief) } : {}) };
+                return { date, state: "catchup", lastWorkday, days, tasks: tasks.map(brief), ...(held.length ? { held: held.map(brief), ...(heldOn ? { heldOn } : {}) } : {}) };
             }
             const brief = note ? await findBrief(store, note.noteId, date) : null;
             const plannedAt = brief ? label(brief, PLANNED_AT_LABEL) ?? null : null;
