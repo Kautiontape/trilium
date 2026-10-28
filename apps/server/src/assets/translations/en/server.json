@@ -705,6 +705,7 @@
       "stale_unnamed": "one task changed since you saw it",
       "third_person": "It names {{- name}} in the third person. Reword it in his voice, such as \"Taking Vendor Onboarding\" for \"{{- name}} takes Vendor Onboarding\", and send only that line again.",
       "acts_not_a_move": "the acts go with a move, so they aren't written",
+      "review": "the earlier day goes through its wind-down",
       "not_noted": "'{{- item}}' isn't noted",
       "unnamed_one": "one task wasn't found",
       "unnamed_other": "{{count}} tasks weren't found",

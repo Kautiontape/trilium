@@ -1130,3 +1130,18 @@ describe("fix round 3: held items on several days are named with their days", ()
         await clearHolds("2027-12-08");
     });
 });
+
+describe("fix round 3: Review with only held tasks", () => {
+    it("F7: catchup 'review' when Wednesday's only open tasks are held says the review is coming and asks the held question", async () => {
+        const DAY = "2027-12-15";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "the export" ] });
+        at("2027-12-16T09:30");
+        const planned = await call("caius_plan_apply", { date: "2027-12-16", catchup: "review", brief: prose });
+        expect(planned.skipped).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "catchup", reason: "review" }) ]));
+        expect(planned.say).toContain("goes through its wind-down");
+        expect(planned.say).toMatch(/Which do you mean: ZAP-1\d\d or ZAP-1\d\d\?$/);
+        await clearHolds(DAY);
+    });
+});

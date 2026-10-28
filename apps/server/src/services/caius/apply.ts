@@ -1206,9 +1206,10 @@ async function catchup(store: NoteStore, date: string, now: Date, answer: PlanAp
         else written.push({ kind: "catchup", status: result.status === "updated" ? "written" : "unchanged", detail: "skip" });
         return;
     }
-    const { tasks } = await catchupOf(store, date, now);
+    const { tasks, held } = await catchupOf(store, date, now);
     if (answer === "review") {
-        if (tasks.length) skipped.push({ kind: "catchup", reason: "review", detail: t("caius.daily.catchup_review") });
+        // Held tasks are reviewed with the rest: the wind-down of their day asks which.
+        if (tasks.length || held.length) skipped.push({ kind: "catchup", reason: "review", detail: t("caius.daily.catchup_review") });
         return;
     }
     for (const task of tasks) {
