@@ -188,6 +188,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             for (const id of live) if (!kept.includes(id)) heldTasks.splice(heldTasks.findIndex((task) => task.listItemId === id), 1);
         }
 
+        if (asked.acts) skipped.push({ kind: "acts", reason: "not_a_move", detail: "Acts go with a call that only moves items of his list" });
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
         // What the catch-up moves here can be placed by the id it had on its own day.

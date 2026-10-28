@@ -976,6 +976,13 @@ describe("fix round 2: acts outside a move are said, not dropped", () => {
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "acts", reason: "not_a_move" }) ]);
         expect(applied.say).toMatch(/[Tt]he acts go with a move/);
     });
+
+    it("N7: a full plan call that carries acts writes the brief from its own acts and reports the stray ones", async () => {
+        const DAY = "2027-10-12";
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", { date: DAY, brief: prose, acts: [ "a", "b", "c" ] });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "acts", reason: "not_a_move" }) ]);
+    });
 });
 
 describe("fix round 2: a held item is never forwarded or forgotten by a later day", () => {
