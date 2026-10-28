@@ -119,6 +119,7 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 - Name each item in an answer by its `ref` from the step data (`o1`, `c1`, `l1`, `x1`, `d1`) or by his own words: a ticket key or its number ("101"), or a distinctive word ("the bag"). A name that fits more than one item is skipped, so use a ref when his words fit two.
 - A ref holds only for the reply it came in; after an apply, name items by his words.
 - Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date. An answer may name only items the steps showed.
+- "Later this week" is the week ref `w1` in `data.days`, and "next week" is `w2`: never a date.
 - Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.
 - Never ask permission for anything the apply tool does.
 - Never claim a write that isn't in the result: its `say` is the whole recap.

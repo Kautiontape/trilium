@@ -398,3 +398,23 @@ describe("asks are suggestions first, follow-ups later", () => {
         expect(night.data.followUps).toEqual([ expect.objectContaining({ key: "ZAP-105" }) ]);
     });
 });
+
+describe("'later this week' is the week", () => {
+    it("Mon 17:30 '111 later this week': the days carry week refs, and the fate goes to the week note, not a day", async () => {
+        await wednesday("2027-03-15");
+        at("2027-03-15T17:30");
+        const open = await call("caius_winddown", { date: "2027-03-15", step: "open" });
+        expect(open.data.days.slice(-2)).toEqual([
+            { ref: "w1", week: "2027-W11", name: "later this week", weekLabel: "the week of Mon 15 Mar" },
+            { ref: "w2", week: "2027-W12", name: "next week", weekLabel: "the week of Mon 22 Mar" }
+        ]);
+        const applied = await call("caius_winddown_apply", { date: "2027-03-15", fates: [ { listItemId: "111", to: "w1" }, { listItemId: "101", to: "next week" } ] });
+        expect(applied.skipped).toEqual([]);
+        expect(applied.written).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "fate", id: "2027-03-15-111", detail: "2027-W11", status: "written" }),
+            expect.objectContaining({ kind: "fate", id: "2027-03-15-101", detail: "2027-W12", status: "written" })
+        ]));
+        const week = await call("caius_plan", { period: "week", date: "2027-W11" });
+        expect(week.sections.flatMap((s: any) => s.tasks).map((t: any) => t.text)).toEqual([ expect.stringContaining("ZAP-111") ]);
+    });
+});

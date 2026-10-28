@@ -556,7 +556,9 @@ describe("only days and ids the step showed", () => {
         expect(open.data.days).toEqual([
             { date: "2027-02-26", dateLabel: "Fri 26 Feb", ref: "d1" }, { date: "2027-03-01", dateLabel: "Mon 1 Mar", ref: "d2" },
             { date: "2027-03-02", dateLabel: "Tue 2 Mar", ref: "d3" }, { date: "2027-03-03", dateLabel: "Wed 3 Mar", ref: "d4" },
-            { date: "2027-03-04", dateLabel: "Thu 4 Mar", ref: "d5" }, { date: "2027-03-05", dateLabel: "Fri 5 Mar", ref: "d6" }
+            { date: "2027-03-04", dateLabel: "Thu 4 Mar", ref: "d5" }, { date: "2027-03-05", dateLabel: "Fri 5 Mar", ref: "d6" },
+            { ref: "w1", week: "2027-W08", name: "later this week", weekLabel: "the week of Mon 22 Feb" },
+            { ref: "w2", week: "2027-W09", name: "next week", weekLabel: "the week of Mon 1 Mar" }
         ]);
         expect(open.data.weeks).toEqual([ { week: "2027-W08", weekLabel: "the week of Mon 22 Feb" }, { week: "2027-W09", weekLabel: "the week of Mon 1 Mar" } ]);
         const applied = await call("caius_winddown_apply", {
@@ -571,7 +573,7 @@ describe("only days and ids the step showed", () => {
 
         at("2027-03-01T09:40");
         const inputs = await call("caius_planday", { date: "2027-03-01", step: "inputs" });
-        expect(inputs.data.days.map((d: any) => d.date)).toEqual([ "2027-03-02", "2027-03-03", "2027-03-04", "2027-03-05", "2027-03-08", "2027-03-09", "2027-03-10", "2027-03-11", "2027-03-12" ]);
+        expect(inputs.data.days.map((d: any) => d.date ?? d.ref)).toEqual([ "2027-03-02", "2027-03-03", "2027-03-04", "2027-03-05", "2027-03-08", "2027-03-09", "2027-03-10", "2027-03-11", "2027-03-12", "w1", "w2" ]);
         const planned = await call("caius_plan_apply", { date: "2027-03-01", forward: [ { listItemId: "sd9", to: "2027-03-02" } ], brief: prose });
         expect(planned.skipped).toEqual([ expect.objectContaining({ kind: "forward", id: "sd9", reason: "not_offered" }) ]);
     });

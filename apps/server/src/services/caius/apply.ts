@@ -50,6 +50,7 @@ import {
     listItems,
     listOf,
     mainTasks,
+    type NamedDay,
     namedDays,
     nextAsked,
     plainText,
@@ -146,7 +147,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             ...listItems(offer.day.plan).map((item) => item.listItemId)
         ].filter((id): id is string => !!id));
         const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
-        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
+        const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
         const pools = planPools(offer, catchupTasks, listed.days);
         const input = planAnswers(asked, pools, skipped);
@@ -285,14 +286,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // An answer may name only an item the open step showed, and only a day, week or month it listed.
         const shownItems = new Set(open.items.map((item) => item.listItemId).filter((id): id is string => !!id));
         const listed = namedDays(date, targetDay);
-        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
+        const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
         const pools: Pools = {
             open: named(withRefs(open.items, "o"), (item) => item.listItemId, (item) => item.text),
             candidates: named(withRefs(candidates, "c"), (c) => c.candidateId, (c) => c.text),
             list: named(withRefs(listItems(facts.plan), "l"), (item) => item.listItemId, (item) => item.text),
             lines: named(withRefs([ ...lines.keep, ...lines.carry ], "x"), (line) => line.lineId, (line) => line.line),
-            days: named(listed.days, (day) => day.date, (day) => dateLabel(day.date) ?? day.date)
+            days: dayNames(listed.days)
         };
         const input = windDownAnswers(asked, pools, skipped);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
@@ -446,14 +447,24 @@ async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, w
 }
 
 /** What Plan my day's answers name their items from: the step data of `catchup` and `inputs`, with their refs. */
-function planPools(offer: Awaited<ReturnType<typeof planOffer>>, catchupTasks: Awaited<ReturnType<typeof catchupOf>>["tasks"], days: { date: string; ref: string }[]): Pools {
+function planPools(offer: Awaited<ReturnType<typeof planOffer>>, catchupTasks: Awaited<ReturnType<typeof catchupOf>>["tasks"], days: NamedDay[]): Pools {
     return {
         open: named(withRefs(catchupTasks, "o"), (task) => task.listItemId, (task) => task.text),
         candidates: named(withRefs(offer.candidates, "c"), (c) => c.candidateId, (c) => c.text),
         list: named(withRefs(listItems(offer.day.plan), "l"), (item) => item.listItemId, (item) => item.text),
         lines: named(withRefs(offer.carry, "x"), (line) => line.lineId, (line) => line.line),
-        days: named(days, (day) => day.date, (day) => dateLabel(day.date) ?? day.date)
+        days: dayNames(days)
     };
+}
+
+/** The days and weeks an answer can send a task to, by ref or his words. */
+function dayNames(days: NamedDay[]): Named[] {
+    return named(days, (day) => "date" in day ? day.date : day.week, (day) => "date" in day ? dateLabel(day.date) ?? day.date : day.name);
+}
+
+/** Every day, week and month the steps listed for a task to go to. */
+function listedOf(listed: ReturnType<typeof namedDays>): Set<string> {
+    return new Set<string>([ ...listed.days.map((d) => "date" in d ? d.date : d.week), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
 }
 
 const EVENING = "Evening";

@@ -642,7 +642,9 @@
       "list_more": "{{- head}} …and {{count}} more",
       "day_label": "{{- weekday}} {{day}} {{- month}}",
       "week_label": "the week of {{- monday}}",
-      "month_label": "{{- month}} {{year}}"
+      "month_label": "{{- month}} {{year}}",
+      "later_this_week": "later this week",
+      "next_week": "next week"
     },
     "say": {
       "done_one": "{{- items}} is done",

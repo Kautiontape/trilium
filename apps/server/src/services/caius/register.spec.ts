@@ -60,6 +60,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
         "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
+        "\"Later this week\" is the week ref `w1` in `data.days`, and \"next week\" is `w2`: never a date.",
         "Name each item in an answer by its `ref` from the step data (`o1`, `c1`, `l1`, `x1`, `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
         "A ref holds only for the reply it came in; after an apply, name items by his words.",
         "the heavy-day move question (if any)",

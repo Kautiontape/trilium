@@ -202,10 +202,11 @@ export function windDownTarget(date: string, now: Date): string {
 /**
  * The days, weeks and months he can name in an answer, so a day he says maps to a date without the
  * agent working one out: the workdays from `first` to the end of the week after `date`'s, those two
- * ISO weeks, and `date`'s month and the next two. Each day has a ref (`d1`), and each gets its display
+ * ISO weeks, and `date`'s month and the next two. Each day has a ref (`d1`), and `days` ends with the
+ * two weeks as he names them, `w1` "later this week" and `w2` "next week". Each gets its display
  * string from `withDateLabels`.
  */
-export function namedDays(date: string, first: string): { days: { date: string; ref: string }[]; weeks: { week: string }[]; months: { month: string }[] } {
+export function namedDays(date: string, first: string): { days: NamedDay[]; weeks: { week: string }[]; months: { month: string }[] } {
     const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(date))).start);
     const end = dayKey(new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 11));
     const days: { date: string }[] = [];
@@ -215,8 +216,16 @@ export function namedDays(date: string, first: string): { days: { date: string; 
         const at = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + offset, 1));
         return { month: at.toISOString().slice(0, 7) };
     });
-    return { days: withRefs(days, "d"), weeks, months };
+    const [ thisWeek, nextWeek ] = weeks;
+    const inWords = [
+        ...(thisWeek ? [ { ref: "w1", week: thisWeek.week, name: t("caius.daily.later_this_week") } ] : []),
+        ...(nextWeek ? [ { ref: "w2", week: nextWeek.week, name: t("caius.daily.next_week") } ] : [])
+    ];
+    return { days: [ ...withRefs(days, "d"), ...inWords ], weeks, months };
 }
+
+/** A day an answer can name by its ref (`d1`), or a week by its ref and his words (`w1`, "later this week"). */
+export type NamedDay = { date: string; ref: string } | { week: string; ref: string; name: string };
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";
 
