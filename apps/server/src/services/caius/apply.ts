@@ -167,23 +167,25 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const pools = planPools(offer, [ ...catchupTasks, ...heldTasks ], listed.days);
         const { table, items, copies, collided } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         pools.settled = settledOf(items, (item) => item.period === date, copies);
-        // On a vague yes the answers are what was offered. A bare yes with a question of its own
-        // pending answers that one: the heavy day's move alone, or, with another, nothing more.
-        const yes = vagueYes(asked.said) && !asked.accept.length && !asked.keep.length;
-        const pending = offer.carry.length + offer.overlaps.length + catchupTasks.length;
-        const moveOnly = !asked.asOffered && yes && !!offer.forwardSuggestion && pending === 0 && !asked.forward?.length;
-        const vague = asked.asOffered || (yes && !offer.forwardSuggestion && pending === 0);
+        // With `asOffered` the answers are the candidates and keep lines offered; the heavy day's move
+        // is made only by its `forward`.
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
-        const suggested = offer.forwardSuggestion ? [ { listItemId: offer.forwardSuggestion.listItemId, to: offer.forwardSuggestion.to } ] : undefined;
-        const answers: PlanApplyInput = moveOnly ? { ...asked, forward: suggested } : vague ? {
+        const answers: PlanApplyInput = asked.asOffered ? {
             ...asked,
             accept: asked.accept.length ? asked.accept : offer.candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
-            keep: asked.keep.length ? asked.keep : offer.carry.map((line) => ({ lineId: line.lineId })),
-            forward: asked.forward?.length || !offer.forwardSuggestion ? asked.forward : [ { listItemId: offer.forwardSuggestion.listItemId, to: offer.forwardSuggestion.to } ]
+            keep: asked.keep.length ? asked.keep : offer.carry.map((line) => ({ lineId: line.lineId }))
         } : asked;
         const input = planAnswers(answers, pools, skipped, table, copies, collided);
+        const hasAnswer = !!asked.asOffered || !!asked.eveningAnswered || asked.catchup !== undefined || !!asked.forward?.length || [
+            asked.accept, asked.move, asked.keep, asked.finished, asked.notToday, asked.dismiss, asked.evening, asked.context, asked.overlaps
+        ].some((answers) => answers.length > 0);
+        const offered = [
+            ...offer.candidates.map((c) => c.text), ...offer.carry.map((line) => line.line), ...offer.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
+            ...(offer.forwardSuggestion ? [ offer.forwardSuggestion.text ] : []), ...catchupTasks.map((task) => task.text)
+        ];
         // His words only check the call: when they seem to say something the call doesn't, nothing is written.
         const check = asked.checked ? [] : [
+            ...yesChecks(asked.said, hasAnswer, offered),
             ...dismissChecks(asked.said, input.dismiss, known, [ ...offer.candidates, ...followUpsOf(offer.jira) ], offer.day.plan.suggested),
             ...overlapChecks(asked.said, offer.overlaps, input.overlaps)
         ];
@@ -413,14 +415,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
         const endOf = (id: string) => { const entry = byEntry.get(id); return entry ? chainEnd(entry, byEntry, copies)?.id ?? id : id; };
-        const answered = !!asked.asOffered || !!asked.eveningAnswered || [
+        const hasAnswer = !!asked.asOffered || !!asked.eveningAnswered || [
             asked.done, asked.fates, asked.accept, asked.move, asked.keep, asked.carry, asked.finished, asked.notToday, asked.dismiss, asked.evening, asked.context, asked.overlaps
         ].some((answers) => answers.length > 0);
         const offered = [
             ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
             ...open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)))
         ];
-        const check = asked.checked ? [] : [ ...yesChecks(asked.said, answered, offered), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
+        const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
             ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));

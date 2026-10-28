@@ -687,8 +687,8 @@ describe("a Review whose plan steps fail", () => {
     });
 });
 
-describe("'fine' takes what was offered", () => {
-    it("a vague yes accepts the candidates in the order shown, in Plan my day and in a wind-down, and is never read as a skip", async () => {
+describe("'fine' takes what was offered through asOffered", () => {
+    it("a bare 'fine' is a check that writes nothing; with asOffered it accepts the candidates in the order shown, in Plan my day and in a wind-down", async () => {
         const DAY = "2027-03-01";
         jira.handoff.push(
             { ...ticket("ZAP-501", { summary: "Check the report" }), daysInStatus: 2 },
@@ -697,8 +697,11 @@ describe("'fine' takes what was offered", () => {
         at(`${DAY}T09:40`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-501", "ZAP-502" ]);
-        // The agent passes nothing but his word.
-        const planned = await call("caius_plan_apply", { date: DAY, said: "fine", brief: prose });
+        const checked = await call("caius_plan_apply", { date: DAY, said: "fine", brief: prose });
+        expect(checked.check).toEqual([ expect.objectContaining({ missing: "asOffered" }) ]);
+        expect(checked.written).toEqual([]);
+        expect(await tasksOf("day", DAY)).toEqual([]);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "fine", asOffered: true, brief: prose });
         expect(planned.skipped).toEqual([]);
         expect((await tasksOf("day", DAY)).map((task: any) => task.text)).toEqual([ "ZAP-501 Check the report", "ZAP-502 Fix the gate" ]);
 
@@ -709,8 +712,8 @@ describe("'fine' takes what was offered", () => {
     });
 });
 
-describe("a bare yes answers the one question asked", () => {
-    it("a heavy day's 'Move X to Friday?' answered 'yes' takes that move only, not the candidates", async () => {
+describe("a bare yes to the heavy day's move", () => {
+    it("'Move X to Friday?' answered 'yes' is a check that writes nothing; the move is made only by its forward, and takes no candidate", async () => {
         const DAY = "2027-10-20";
         calendars[DAY] = [ { start: "10:00", end: "15:00", title: "Offsite", attendees: [], allDay: false, declined: false, source: [ 0 ] } ];
         await cls.init(async () => {
@@ -722,10 +725,36 @@ describe("a bare yes answers the one question asked", () => {
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(inputs.data.forwardSuggestion).toMatchObject({ listItemId: "h-review" });
         expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-950" ]);
-        const planned = await call("caius_plan_apply", { date: DAY, said: "yes", brief: prose });
+        const checked = await call("caius_plan_apply", { date: DAY, said: "yes", brief: prose });
+        expect(checked.check).toEqual([ expect.objectContaining({ missing: "asOffered" }) ]);
+        expect(checked.written).toEqual([]);
+        expect((await tasksOf("day", DAY)).filter((task: any) => task.state === "open").map((task: any) => task.text)).toEqual([ "Write the spec", "Review the plan" ]);
+        const { listItemId, to } = inputs.data.forwardSuggestion;
+        const planned = await call("caius_plan_apply", { date: DAY, said: "yes", forward: [ { listItemId, to } ], brief: prose });
         expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "forward", status: "written" }) ]));
         expect(planned.written.map((entry: any) => entry.kind)).not.toContain("accept");
         expect((await tasksOf("day", DAY)).filter((task: any) => task.state === "open").map((task: any) => task.text)).toEqual([ "Write the spec" ]);
+        delete calendars[DAY];
+    });
+
+    it("with the move the only thing offered, a bare 'yes' is a check and asOffered makes no move", async () => {
+        const DAY = "2027-10-27";
+        calendars[DAY] = [ { start: "10:00", end: "15:00", title: "Offsite", attendees: [], allDay: false, declined: false, source: [ 0 ] } ];
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("q-spec", "Write the spec ~1h"), li("q-review", "Review the plan ~1h"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(inputs.data.forwardSuggestion).toMatchObject({ listItemId: "q-review" });
+        expect(inputs.data.candidates).toEqual([]);
+        const checked = await call("caius_plan_apply", { date: DAY, said: "yes", brief: prose });
+        expect(checked.check).toEqual([ expect.objectContaining({ missing: "asOffered" }) ]);
+        expect(checked.written).toEqual([]);
+        expect(checked.briefNoteId).toBeUndefined();
+        const offered = await call("caius_plan_apply", { date: DAY, said: "fine", asOffered: true, brief: prose });
+        expect(offered.written.map((entry: any) => entry.kind)).not.toContain("forward");
+        expect((await tasksOf("day", DAY)).filter((task: any) => task.state === "open").map((task: any) => task.text)).toEqual([ "Write the spec", "Review the plan" ]);
         delete calendars[DAY];
     });
 });
