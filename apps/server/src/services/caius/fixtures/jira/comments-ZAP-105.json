@@ -1,0 +1,157 @@
+{
+  "total": 5,
+  "comments": [
+    {
+      "id": "1",
+      "author": {
+        "accountId": "acc-riley-0002",
+        "displayName": "Riley Sample"
+      },
+      "created": "2026-10-13T10:00:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Which bucket did you settle on?"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2",
+      "author": {
+        "accountId": "acc-sam-0001",
+        "displayName": "Sam Example"
+      },
+      "created": "2026-10-22T09:15:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "I'll check with the platform team."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3",
+      "author": {
+        "accountId": "acc-riley-0002",
+        "displayName": "Riley Sample"
+      },
+      "created": "2026-10-24T11:20:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Can you confirm the staging bucket name before Friday? "
+              },
+              {
+                "type": "text",
+                "text": "The release notes depend on it, and I'd like to put the exact value in the runbook so nobody has to guess later. "
+              },
+              {
+                "type": "text",
+                "text": "Thanks!"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "(Second paragraph.) Is it "
+              },
+              {
+                "type": "text",
+                "text": "zap-staging-east",
+                "marks": [
+                  {
+                    "type": "code"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "?"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "4",
+      "author": {
+        "accountId": "acc-jordan-0003",
+        "displayName": "Jordan Placeholder"
+      },
+      "created": "2026-10-25T14:00:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "mention",
+                "attrs": {
+                  "id": "acc-sam-0001",
+                  "text": "@Sam Example"
+                }
+              },
+              {
+                "type": "text",
+                "text": " the rollout note is in the runbook now."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "5",
+      "author": {
+        "accountId": "acc-riley-0002",
+        "displayName": "Riley Sample"
+      },
+      "created": "2026-10-25T15:00:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Updated the diagram."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

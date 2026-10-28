@@ -16,6 +16,12 @@ describe("reduceTabSelection", () => {
         expect(reduceTabSelection("docked", "chat", { tabId: "chat" })).toBe("close");
     });
 
+    it("keeps the tab on show for an entry point that puts something in it", () => {
+        expect(reduceTabSelection("docked", "chat", { tabId: "chat", keepOpen: true })).toBe("select");
+        expect(reduceTabSelection("peek", "chat", { tabId: "chat", keepOpen: true })).toBe("select");
+        expect(reduceTabSelection("closed", undefined, { tabId: "chat", keepOpen: true })).toBe("open");
+    });
+
     it("leaves a docked pane docked for a glance at the tab it is already showing", () => {
         // The dock is the user's layout; the press is left to expand the widget it is about.
         expect(reduceTabSelection("docked", "connections", { tabId: "connections", peek: true })).toBe("select");

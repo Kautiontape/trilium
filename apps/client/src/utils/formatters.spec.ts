@@ -16,7 +16,7 @@ vi.mock("../services/i18n", async () => {
 import { LOCALES } from "@triliumnext/commons";
 
 import options from "../services/options";
-import { formatDateNumeric, formatDateTime, formatDuration, getMeasurementSystem, isContentRightToLeft, normalizeLocale, resolveContentLanguage } from "./formatters";
+import { formatDateNumeric, formatDateTime, formatDuration, formatShortDate, getMeasurementSystem, isContentRightToLeft, normalizeLocale, resolveContentLanguage } from "./formatters";
 
 describe("formatters", () => {
     it("tolerates incorrect locale", () => {
@@ -179,6 +179,16 @@ describe("formatters", () => {
             expect(formatDateNumeric(null)).toBe("");
             expect(formatDateNumeric(undefined)).toBe("");
             expect(formatDateNumeric("")).toBe("");
+        });
+    });
+
+    describe("formatShortDate", () => {
+        it("renders the short weekday, the day and the short month of a local calendar date", () => {
+            options.set("formattingLocale", "en");
+            expect(formatShortDate("2026-11-13")).toBe("Fri 13 Nov");
+
+            options.set("formattingLocale", "de");
+            expect(formatShortDate("2026-11-13")).toBe("Fr. 13 Nov.");
         });
     });
 

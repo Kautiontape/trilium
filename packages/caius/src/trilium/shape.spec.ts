@@ -1,0 +1,197 @@
+import { describe, expect, it } from 'vitest';
+import { critical, fakeTrilium, li, periodNote, ul } from './helpers.js';
+import { forwardTasks } from './forward.js';
+import { placeForwarded } from './plan-html.js';
+import { acceptTasks, addTasks } from './plan.js';
+import { replaceMeetings, setMeetings } from './daynote.js';
+import { withListItemIds } from './store.js';
+import { readPlan } from './plan-read.js';
+import { setTaskState } from './plan-html.js';
+import { inspectItem } from './forward-html.js';
+import { gatherContext } from './context.js';
+
+// Notes in the day-note shape: include-note, Meetings, Context, the Important block, Tasks, Suggested.
+const NOW = new Date(2026, 10, 6, 9, 0);
+const INCLUDE = '<section class="include-note" data-note-id="brief" data-box-size="expandable">&nbsp;</section>';
+const bullets = (...items: string[]) => `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+const HEAD = INCLUDE + `<h3>Meetings</h3>${bullets('10:00 Standup')}<h3>Context</h3>${bullets('Standing note')}`;
+const NO_ASIDE = '<aside class="admonition important"><p>[…]</p></aside>';
+const day = (p: string, aside: string = critical(li(p + 'c', 'Ship the fix ~1h'))) =>
+  HEAD + aside + `<h2>☑️ Tasks</h2>${ul(li(p + '1', 'Write the spec ~30m'))}<h3>Suggested</h3>${ul(li(p + 's', 'Idea ~30m'))}`;
+const texts = (tasks: { text: string }[]) => tasks.map((t) => t.text);
+
+describe('forwarding in the full day-note shape', () => {
+  it('keeps an Important task Important in the target, in the aside, never in Context', async () => {
+    const fake = fakeTrilium({ a: [periodNote('a', 'dateNote', '2026-11-06'), day('a')], b: [periodNote('b', 'dateNote', '2026-11-09'), day('b', NO_ASIDE)] });
+    const [res] = await forwardTasks(fake.api, [{ noteId: 'a', listItemId: 'ac', to: '2026-11-09' }]);
+    expect(res).toMatchObject({ status: 'moved' });
+    const plan = await readPlan(fake.api, 'day', '2026-11-09', NOW);
+    expect(texts(plan.critical).map((t) => t.split(' [from ')[0])).toEqual(['Ship the fix']);
+    expect(plan.context).toEqual([{ text: 'Standing note' }]);
+    expect(texts(plan.sections.flatMap((s) => s.tasks))).toEqual(['Write the spec']);
+  });
+
+  it('adds the aside to a target that has none', async () => {
+    const bare = HEAD + `<h2>☑️ Tasks</h2>${ul(li('b1', 'Write the spec ~30m'))}`;
+    const fake = fakeTrilium({ a: [periodNote('a', 'dateNote', '2026-11-06'), day('a')], b: [periodNote('b', 'dateNote', '2026-11-09'), bare] });
+    await forwardTasks(fake.api, [{ noteId: 'a', listItemId: 'ac', to: '2026-11-09' }]);
+    const plan = await readPlan(fake.api, 'day', '2026-11-09', NOW);
+    expect(texts(plan.critical).map((t) => t.split(' [from ')[0])).toEqual(['Ship the fix']);
+    expect(plan.context).toEqual([{ text: 'Standing note' }]);
+  });
+
+  it('puts a normal task under its own heading, and no heading name reaches a prose section', async () => {
+    const fake = fakeTrilium({ a: [periodNote('a', 'dateNote', '2026-11-06'), day('a')], b: [periodNote('b', 'dateNote', '2026-11-09'), day('b', NO_ASIDE)] });
+    await forwardTasks(fake.api, [{ noteId: 'a', listItemId: 'a1', to: '2026-11-09' }]);
+    const plan = await readPlan(fake.api, 'day', '2026-11-09', NOW);
+    expect(texts(plan.sections.flatMap((s) => s.tasks)).map((t) => t.split(' [from ')[0])).toEqual(['Write the spec', 'Write the spec']);
+    expect(plan.context).toEqual([{ text: 'Standing note' }]);
+    for (const name of ['Context', 'Meetings']) {
+      const out = placeForwarded(day('b'), '<li>NEW</li>', name);
+      expect(out.indexOf('NEW')).toBeGreaterThan(out.indexOf('☑️ Tasks'));
+    }
+  });
+});
+
+describe('forwarding an evening task', () => {
+  const work = `<h2>☑️ Tasks</h2>${ul(li('e1', 'Write the spec ~30m'))}`;
+  const suggested = `<h3>Suggested</h3>${ul(li('es', 'Idea ~30m'))}`;
+
+  it('keeps it under an evening heading: the same one, else any Evening or Recharge, else a new ### Evening above Suggested', () => {
+    const made = placeForwarded(work + suggested, '<li>NEW</li>', 'Evening');
+    expect(made).toBe(`${work}<h3>Evening</h3><ul class="todo-list"><li>NEW</li></ul>${suggested}`);
+    expect(placeForwarded(work, '<li>NEW</li>', 'Recharge')).toBe(`${work}<h3>Recharge</h3><ul class="todo-list"><li>NEW</li></ul>`);
+    const recharge = `${work}<h3>🌙 Recharge</h3>${ul(li('r1', 'Read ~30m'))}${suggested}`;
+    expect(placeForwarded(recharge, '<li>NEW</li>', 'Evening')).toContain('Read ~30m</span></label></li><li>NEW</li>');
+  });
+});
+
+describe('placing a task under a heading nested in a prose section', () => {
+  const nested = INCLUDE + `<h3>Meetings</h3>${bullets('10:00 Standup')}<h3>Context</h3><h4>Notes</h4>${bullets('x')}`
+    + `<h2>☑️ Tasks</h2>${ul(li('e1', 'Write the spec ~30m'))}<h3>Suggested</h3>${ul(li('es', 'Idea ~30m'))}`;
+  const underContext = '<h2>Context</h2>' + bullets('x') + '<h3>Suggested</h3>' + ul(li('es', 'Idea ~30m')) + '<h2>Tasks</h2>' + ul(li('e1', 'A ~30m'));
+  const one = (html: string) => fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), html] });
+
+  it('skips a heading under Context, however it is reached', async () => {
+    const fake = one(nested);
+    const added = await addTasks(fake.api, [{ date: '2026-11-06', section: 'Notes', text: 'added ~1h' }], { now: NOW });
+    expect(added).toMatchObject([{ status: 'skipped', reason: 'prose_section' }]);
+    const accepted = await acceptTasks(fake.api, [{ noteId: 'd', listItemId: 'es', section: 'Notes' }]);
+    expect(accepted).toMatchObject([{ status: 'skipped', reason: 'prose_section' }]);
+    expect(fake.html.d).toBe(nested);
+    expect(await addTasks(fake.api, [{ date: '2026-11-06', section: '☑️ Tasks', text: 'ok ~1h' }], { now: NOW })).toMatchObject([{ status: 'added' }]);
+  });
+
+  it('skips the Suggested target when Suggested lies inside Context', async () => {
+    const fake = one(underContext);
+    const added = await addTasks(fake.api, [{ date: '2026-11-06', suggested: true, text: 'Book the venue ~1h' }], { now: NOW });
+    expect(added).toMatchObject([{ status: 'skipped', reason: 'prose_section' }]);
+    expect(fake.html.d).toBe(underContext);
+  });
+});
+
+describe('Meetings and Context in either order or level', () => {
+  const read = async (html: string) => readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), html] }).api, 'day', '2026-11-06', NOW);
+  const TAIL = critical(li('ec', 'Crit ~1h')) + `<h2>Tasks</h2>${ul(li('e1', 'A ~30m'))}`;
+
+  it('ends Meetings at a lower Context heading, and replaceMeetings keeps the Context', async () => {
+    const html = `<h2>Meetings</h2>${bullets('old')}<h3>Context</h3>${bullets('keep')}` + TAIL;
+    expect(replaceMeetings(html, ['new'])).toBe(`<h2>Meetings</h2><ul><li>new</li></ul><h3>Context</h3>${bullets('keep')}` + TAIL);
+    const plan = await read(html);
+    expect([plan.meetings, plan.context]).toEqual([['old'], [{ text: 'keep' }]]);
+  });
+
+  it('reads both orders, with the other section nested or not', async () => {
+    for (const html of [
+      `<h3>Context</h3>${bullets('keep')}<h2>Meetings</h2>${bullets('old')}` + TAIL,
+      `<h2>Context</h2>${bullets('keep')}<h3>Meetings</h3>${bullets('old')}` + TAIL,
+    ]) {
+      const plan = await read(html);
+      expect([plan.meetings, plan.context]).toEqual([['old'], [{ text: 'keep' }]]);
+      expect(plan.capacity.estimatedCount).toBe(2);
+    }
+    const nested = `<h2>Context</h2>${bullets('keep')}<h3>Meetings</h3>${bullets('old')}` + TAIL;
+    expect(replaceMeetings(nested, ['new'])).toBe(`<h2>Context</h2>${bullets('keep')}<h3>Meetings</h3><ul><li>new</li></ul>` + TAIL);
+  });
+
+  it('ignores an empty heading inside either section, in the note and in the markdown alike', async () => {
+    const html = `<h3>Context</h3>${bullets('keep')}<h3>&nbsp;</h3>${ul(li('ez', 'Hidden task ~1h'))}<h2>Tasks</h2>${ul(li('e1', 'A ~30m'))}`;
+    const plan = await read(html);
+    expect(texts(plan.sections.flatMap((s) => s.tasks))).toEqual(['A']);
+    expect(plan.context.map((c) => c.text)).toEqual(['keep', 'Hidden task ~1h']);
+    expect(setTaskState(html, 'ez', 'done', { states: new Map() })).toMatchObject({ ok: false, reason: 'not_live' });
+    expect(replaceMeetings(`<h3>Meetings</h3>${bullets('a')}<h3>&nbsp;</h3>${bullets('b')}<h2>T</h2>`, ['n'])).toBe('<h3>Meetings</h3><ul><li>n</li></ul><h2>T</h2>');
+  });
+});
+
+describe('setMeetings through the id-adding store', () => {
+  const setup = () => {
+    const fake = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), `<h3>Meetings</h3><h2>Tasks</h2>${ul(li('e1', 'A ~30m'))}`] });
+    return { fake, store: withListItemIds(fake.api, (() => { let n = 0; return () => `e${++n}id`; })()) };
+  };
+
+  it('writes once, then answers unchanged without a second write', async () => {
+    const { fake, store } = setup();
+    expect(await setMeetings(store, { date: '2026-11-06', lines: ['10:00 Standup', '14:00 Review'] })).toMatchObject({ status: 'updated' });
+    const written = fake.html.d;
+    expect(await setMeetings(store, { date: '2026-11-06', lines: ['10:00 Standup', '14:00 Review'] })).toMatchObject({ status: 'unchanged' });
+    expect(fake.html.d).toBe(written);
+    expect(fake.log.filter((l) => l.startsWith('put'))).toHaveLength(1);
+  });
+
+  it('keeps the ids of the lines that stay by position when the text changes', async () => {
+    const { fake, store } = setup();
+    await setMeetings(store, { date: '2026-11-06', lines: ['10:00 Standup', '14:00 Review'] });
+    const ids = [...fake.html.d.matchAll(/<li data-list-item-id="(e\d+id)">(?:10:00|14:00)/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    await setMeetings(store, { date: '2026-11-06', lines: ['10:30 Standup', '14:00 Review', '16:00 Sync'] });
+    expect(fake.html.d).toContain(`<li data-list-item-id="${ids[0]}">10:30 Standup</li><li data-list-item-id="${ids[1]}">14:00 Review</li>`);
+  });
+
+  it('says what a dry run on a missing note is diffed against', async () => {
+    const dry = await setMeetings(fakeTrilium({}).api, { date: '2026-11-09', lines: ['x'] }, { dryRun: true });
+    expect(dry).toMatchObject({ status: 'dry-run', before: '', detail: expect.stringContaining('template') });
+  });
+});
+
+describe('a new Important block', () => {
+  const crit = { date: '2026-11-06', critical: true, text: 'Ship it ~1h' } as const;
+  const rest = `<h2>☑️ Tasks</h2>${ul(li('e1', 'A ~30m'))}`;
+  const run = async (html: string, extra: object = {}) => {
+    const fake = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), html] });
+    await addTasks(fake.api, [{ ...crit, ...extra }], { now: NOW });
+    return fake.html.d as string;
+  };
+
+  it('goes below the include-note and the Meetings and Context blocks, above the first other content', async () => {
+    const out = await run(HEAD + rest);
+    expect(out.indexOf('<aside')).toBe(HEAD.length);
+    expect(out.indexOf('<aside')).toBeLessThan(out.indexOf('<h2>'));
+    expect((await run(INCLUDE + rest)).indexOf('<aside')).toBe(INCLUDE.length);
+    expect((await run(rest)).startsWith('<aside')).toBe(true);
+    expect((await run(HEAD)).startsWith(HEAD + '<aside')).toBe(true);
+  });
+
+  it('replaces the template placeholder paragraph when the first task goes in', async () => {
+    const out = await run(HEAD + NO_ASIDE + rest);
+    expect(out).not.toContain('[…]');
+    expect(out).toContain('Ship it');
+    expect(out.split('<aside').length).toBe(2);
+  });
+
+  it('is named Important by the forward lookup, not by the heading above it', () => {
+    const html = HEAD + critical(li('ec', 'Ship ~1h')) + rest;
+    expect(inspectItem(html, 'ec', new Map())).toMatchObject({ ok: true, section: 'Important' });
+    expect(inspectItem(html, 'e1', new Map())).toMatchObject({ ok: true, section: '☑️ Tasks' });
+  });
+});
+
+describe('a line twice in one note', () => {
+  it('is in force when one copy is, whichever comes first', async () => {
+    const lines = ['Freeze (until 30 Nov)', 'Freeze (until 2 Nov)'];
+    for (const order of [lines, [...lines].reverse()]) {
+      const fake = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-11-06'), `<h3>Context</h3>${bullets(...order)}`] });
+      expect((await gatherContext(fake.api, '2026-11-09')).context).toMatchObject([{ text: 'Freeze', until: '2026-11-30' }]);
+    }
+  });
+});

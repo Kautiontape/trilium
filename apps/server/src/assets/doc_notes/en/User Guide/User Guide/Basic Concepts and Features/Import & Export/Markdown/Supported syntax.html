@@ -14,6 +14,9 @@
   are embedded as HTML in order to preserve the information on import.</p>
 <h2>Math equations</h2>
 <p>Both inline and display equations are supported, using the <code>$</code> and <code>$$</code> syntaxes.</p>
+<p>A single <code>$</code> starts inline math only when a non-space character
+  follows it, and the closing <code>$</code> must follow a non-space character
+  and must not be followed by a digit, so prices like $5 and $10 stay text.</p>
 <h2>Admonitions</h2>
 <p>The Markdown syntax for admonitions as supported by Trilium is the one
   that GitHub uses, which is as follows:</p><pre><code class="language-text-x-trilium-auto">&gt; [!NOTE]

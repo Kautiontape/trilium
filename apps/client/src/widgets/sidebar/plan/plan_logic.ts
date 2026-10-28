@@ -3,7 +3,7 @@ import {
     dayKey, isSuggested, monthKey, nextMonthKey, nextWeekKey, tomorrowKey, weekKey
 } from "../../../menus/task_actions";
 import type {
-    CaiusForwardItem, CaiusPeriodKind, CaiusPlan, CaiusPlanTask, CaiusSetStateItem
+    CaiusContextLine, CaiusForwardItem, CaiusPeriodKind, CaiusPlan, CaiusPlanTask, CaiusSetStateItem
 } from "../../../services/caius";
 
 /** The period the Plan tab shows: its kind, and any local day inside it. */
@@ -98,6 +98,20 @@ export function taskLabel(text: string) {
     return text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
 }
 
+/**
+ * A Suggested item's label split into what to do and why, at its "because". A size in brackets at
+ * the end stays with what to do: "Get X done: because Y (~30m)" reads as "Get X done (~30m)" and
+ * "because Y". A label without a "because" after some text is all title.
+ */
+export function splitReason(label: string): { title: string; reason: string | null } {
+    const match = /^(.*?\S):?\s+(because\s.*?)(\s*\(~\d+[hm](?:\d+m)?\))?$/i.exec(label);
+    if (!match) {
+        return { title: label, reason: null };
+    }
+
+    return { title: `${match[1]}${match[3] ?? ""}`, reason: match[2] };
+}
+
 export function isLive(task: Pick<CaiusPlanTask, "state">) {
     return task.state === "open" || task.state === "in_progress";
 }
@@ -119,12 +133,21 @@ export function closeCandidates(plan: CaiusPlan) {
 
 /**
  * The live tasks without an estimate, counted as `capacity.unestimatedCount` counts them: a task
- * with live sub-items counts through its sub-items instead.
+ * with live sub-items counts through its sub-items instead, an empty to-do is not a task, and an
+ * evening task (under Evening or Recharge) is not work.
  */
 export function unestimatedTasks(plan: CaiusPlan) {
-    const live = planTasks(plan).filter(isLive);
+    const live = planTasks(plan).filter((task) => isLive(task) && task.text.trim() !== "");
     const parents = new Set(live.filter((task) => task.parent !== null).map((task) => task.parent));
-    return live.filter((task) => !parents.has(task.text) && task.estMinutes === null);
+    return live.filter((task) => !parents.has(task.text) && task.estMinutes === null && !EVENING_SECTIONS.has(sectionName(task.section)));
+}
+
+/** The sections whose tasks are the evening's, as the library's `isEveningName` reads them. */
+const EVENING_SECTIONS = new Set([ "evening", "recharge" ]);
+
+/** A heading as the library compares it: lower-case letters and digits only. */
+function sectionName(name: string | null) {
+    return (name ?? "").replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase();
 }
 
 /** Where the capacity of the plan stands against its target. */
@@ -145,9 +168,25 @@ export function capacityStatus({ totalMinutes, target }: CaiusPlan["capacity"]) 
  */
 export function acceptSections(html: string) {
     const document = new DOMParser().parseFromString(html, "text/html");
-    const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"))
-        .map((heading) => (heading.textContent ?? "").trim())
-        .filter((heading) => heading.length > 0 && !isSuggested(heading));
+    // Meetings and Context hold notes, not tasks, down to the next heading of their level or higher.
+    const open: { level: number; prose: boolean }[] = [];
+    const headings: string[] = [];
+    for (const heading of document.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
+        const name = (heading.textContent ?? "").trim();
+        if (!name.replace(/[^\p{L}\p{N}]+/gu, "")) {
+            continue;
+        }
+
+        const level = Number(heading.tagName[1]);
+        while (open.length && (open.at(-1)?.level ?? 0) >= level) {
+            open.pop();
+        }
+        const prose = /^(meetings|context)$/.test(name.replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase());
+        open.push({ level, prose });
+        if (!open.some((entry) => entry.prose) && !isSuggested(name)) {
+            headings.push(name);
+        }
+    }
     return [ ...new Set(headings) ];
 }
 
@@ -173,6 +212,21 @@ export function closeFates(period: CaiusPeriodKind, key: string, now: Date): Fat
 export function isPastPeriod(period: CaiusPeriodKind, key: string, now: Date) {
     // Keys of one kind sort by date.
     return key < periodKey({ kind: period, anchor: now });
+}
+
+/** Whether a Context line in force on the day `date` lapses before the next workday. */
+export function endsSoon(line: Pick<CaiusContextLine, "until">, date: string) {
+    const day = parsePeriodKey("day", date);
+    return !!line.until && !!day && line.until < dayKey(nextWorkday(day));
+}
+
+/** The first workday after `date`, as `nextWorkday` in `packages/caius/src/workday.ts` steps. */
+function nextWorkday(date: Date) {
+    const day = startOfDay(date);
+    do {
+        day.setDate(day.getDate() + 1);
+    } while (day.getDay() === 0 || day.getDay() === 6);
+    return day;
 }
 
 /**

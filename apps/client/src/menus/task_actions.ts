@@ -4,8 +4,9 @@ import { DEFAULT_TASK_STATES, type TaskStateDef } from "@triliumnext/commons";
 import appContext, { type CommandNames } from "../components/app_context.js";
 import type FNote from "../entities/fnote.js";
 import {
-    caiusApi, type CaiusTaskState, caiusWrite, describeSkip, type EditableElement, findOpenEditors,
-    flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, wasCaiusEnabled
+    caiusApi, type CaiusConversation, caiusNow, caiusOpener, type CaiusTaskState, caiusWrite, describeSkip,
+    type EditableElement, findOpenEditors, flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds,
+    startCaiusConversation, wasCaiusEnabled
 } from "../services/caius.js";
 import dialog from "../services/dialog.js";
 import froca from "../services/froca.js";
@@ -59,17 +60,17 @@ export function buildTaskActionItems(target: TaskTarget): MenuItem<CommandNames>
                 {
                     title: t("caius.forward_tomorrow"),
                     uiIcon: "bx bx-sun",
-                    handler: () => void forwardTask(target, tomorrowKey(new Date()))
+                    handler: () => void forwardTask(target, tomorrowKey(caiusNow()))
                 },
                 {
                     title: t("caius.forward_next_week"),
                     uiIcon: "bx bx-calendar-week",
-                    handler: () => void forwardTask(target, nextWeekKey(new Date()))
+                    handler: () => void forwardTask(target, nextWeekKey(caiusNow()))
                 },
                 {
                     title: t("caius.forward_next_month"),
                     uiIcon: "bx bx-calendar",
-                    handler: () => void forwardTask(target, nextMonthKey(new Date()))
+                    handler: () => void forwardTask(target, nextMonthKey(caiusNow()))
                 },
                 { kind: "separator" },
                 {
@@ -167,6 +168,16 @@ export function isOverJournalTask(element: Element | null) {
     return true;
 }
 
+/** Starts Plan my day or Wind down for today by the Caius clock, for the two day commands. */
+export async function runDayCommand(kind: CaiusConversation) {
+    if (!(await isCaiusEnabled())) {
+        toast.showMessage(t("caius.disabled"), 3000, "bx bx-info-circle");
+        return;
+    }
+
+    await startCaiusConversation(caiusOpener(kind, dayKey(caiusNow())));
+}
+
 /** Runs `command` on the todo item at the caret in the note context `ntxId`, or the active one. */
 export async function runTaskCommand(command: TaskCommand, ntxId?: string | null) {
     if (!(await isCaiusEnabled())) {
@@ -190,7 +201,7 @@ export async function runTaskCommand(command: TaskCommand, ntxId?: string | null
             await setTaskState(target, command);
             break;
         case "forwardTomorrow":
-            await forwardTask(target, tomorrowKey(new Date()));
+            await forwardTask(target, tomorrowKey(caiusNow()));
             break;
         case "drop":
             await dropTask(target);
@@ -430,7 +441,7 @@ async function pickDateAndForward(target: TaskTarget) {
     const value = (await dialog.prompt({
         title: t("caius.forward_pick_title"),
         message: t("caius.forward_pick_message"),
-        defaultValue: tomorrowKey(new Date())
+        defaultValue: tomorrowKey(caiusNow())
     }))?.trim();
     if (!value) {
         return;

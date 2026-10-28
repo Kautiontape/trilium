@@ -382,6 +382,8 @@ export type CommandMappings = {
     caiusTaskDone: CommandData;
     caiusForwardTomorrow: CommandData;
     caiusTaskDrop: CommandData;
+    caiusPlanDay: CommandData;
+    caiusWindDown: CommandData;
     editReadOnlyNote: CommandData;
     toggleRibbonTabClassicEditor: CommandData;
     toggleRibbonTabBasicProperties: CommandData;
@@ -405,6 +407,11 @@ export type CommandMappings = {
          * at the tab and shouldn't reflow the content around it. An already docked pane stays docked.
          */
         peek?: boolean;
+        /**
+         * Show the tab even when it is the one on show already, for an entry point that puts something
+         * in it (a new chat), rather than toggling it away.
+         */
+        keepOpen?: boolean;
         /**
          * The id of a widget of that tab (see `RightPanelWidget`) to expand, so that an entry point
          * aimed at one widget doesn't land on it collapsed.

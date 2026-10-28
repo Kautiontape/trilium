@@ -22,7 +22,7 @@ import { useNoteBlob, useNoteLabel, useSearchTermsConsumer, useSyncedRef, useTri
 import { RawHtmlBlock } from "../../react/RawHtml";
 import { TypeWidgetProps } from "../type_widget";
 import { applyReferenceLinks } from "./read_only_helper";
-import { loadIncludedNote, refreshIncludedNote, setupImageOpening } from "./utils";
+import { loadIncludedNote, refreshChangedIncludes, refreshIncludedNote, setupImageOpening } from "./utils";
 
 export default function ReadOnlyText({ note, noteContext, ntxId, parentComponent, isVisible }: TypeWidgetProps) {
     // The componentId matters: the WS echo of a save made by the editable-text editor in the same
@@ -123,6 +123,10 @@ export function ReadOnlyTextContent({ html, ntxId, dir, className, contentRef: e
     useTriliumEvent("refreshIncludedNote", ({ noteId }) => {
         if (!contentRef.current) return;
         refreshIncludedNote(contentRef.current, noteId);
+    });
+    useTriliumEvent("entitiesReloaded", ({ loadResults }) => {
+        if (!contentRef.current) return;
+        void refreshChangedIncludes(contentRef.current, loadResults);
     });
 
     // Search integration.

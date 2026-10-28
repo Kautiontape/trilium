@@ -2,12 +2,14 @@
 // by section in priority order, the Suggested lane, what was dismissed, and
 // how much time the live tasks add up to. Read-only; never creates a note.
 
+import { now as clock } from '../clock.js';
 import { scanDocs, type IndexedTask } from '../index/index.js';
 import { label, type NoteReader, type StoreNote } from './store.js';
 import { buildDoc, loadStateSymbols, type TriliumDoc } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
-import { headingsByLine, isSuggestedName, sectionKind, type SectionKind } from './sections.js';
+import { headingsByLine, isSuggestedName, normName, sectionKind, type SectionKind } from './sections.js';
 import { parentItemId } from './open.js';
+import { parseContext, periodSpan, type ContextLine } from './until.js';
 
 export type PeriodKind = 'day' | 'week' | 'month';
 
@@ -37,7 +39,7 @@ export function isPeriodKey(kind: PeriodKind, key: string): boolean {
 const DAY_MS = 86_400_000;
 
 /** `YYYY-Www` for a UTC date: the year and number of its week's Thursday. */
-function isoWeekKey(date: Date): string {
+export function isoWeekKey(date: Date): string {
   const thursday = new Date(date.getTime() + (3 - ((date.getUTCDay() + 6) % 7)) * DAY_MS);
   const year = thursday.getUTCFullYear();
   const week = Math.ceil(((thursday.getTime() - Date.UTC(year, 0, 1)) / DAY_MS + 1) / 7);
@@ -78,6 +80,8 @@ export interface Capacity {
   /** unestimatedCount x 30 */
   unestimatedMinutes: number;
   totalMinutes: number;
+  /** On a day note, minutes of the live tasks under Evening or Recharge, which the counts above leave out: not work. */
+  eveningMinutes: number;
   /** Suggested range for this period (minutes), null when there is none (a month). */
   target: { min: number; max: number } | null;
   /** Live tasks by horizon (today, week, orbit, overdue, …). */
@@ -96,6 +100,14 @@ export interface PlanView {
   /** Source keys dismissed on this note (`#caiusDismissed`). */
   dismissed: string[];
   capacity: Capacity;
+  /** The bullets under `### Meetings`, as written (`10:00 Standup (Sasha)`). */
+  meetings: string[];
+  /** The Context lines in force on the plan's date. */
+  context: ContextLine[];
+  /** Context lines whose `(until …)` date is before the plan's date. */
+  expiredContext: ContextLine[];
+  /** Context lines whose `(from …)` date is after the plan's date. */
+  pendingContext: ContextLine[];
 }
 
 const TARGETS: Record<PeriodKind, { min: number; max: number } | null> = {
@@ -167,9 +179,14 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   const isLive = (t: { live: boolean }) => t.live;
   const top3 = main.filter((t) => !t.critical && t.parent === null && isLive(t)).slice(0, 3).map(strip);
 
-  // A live task with live sub-items counts through its sub-items, not twice.
-  const parents = new Set(main.filter((t) => t.live && t.parent !== null).map((t) => t.parent));
-  const counted = main.filter((t) => t.live && !parents.has(t.text));
+  // A live task with live sub-items counts through its sub-items, not twice. An empty to-do is a
+  // blank checkbox, not a task, and neither counts nor makes its parent a parent.
+  const countable = main.filter((t) => t.live && t.text.trim() !== '');
+  const parents = new Set(countable.filter((t) => t.parent !== null).map((t) => t.parent));
+  // Only a day's evening is apart from its work; a week's or month's Recharge is planned time.
+  const inEvening = (t: { section: string | null }) => period === 'day' && isEveningName(t.section);
+  const evening = countable.filter((t) => !parents.has(t.text) && inEvening(t));
+  const counted = countable.filter((t) => !parents.has(t.text) && !inEvening(t));
   const estimated = counted.filter((t) => t.estMinutes !== null);
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;
@@ -191,10 +208,30 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
       unestimatedCount: unestimated,
       unestimatedMinutes: unestimated * DEFAULT_ESTIMATE,
       totalMinutes: planned + unestimated * DEFAULT_ESTIMATE,
+      eveningMinutes: evening.reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0),
       target: TARGETS[period],
       horizons,
     },
+    meetings: doc.meetings,
+    ...parseContext(doc.contextLines, periodSpan(period, key).start, planDate(period, key, now)),
   };
+}
+
+/** Whether a section is the evening, Evening or Recharge: its tasks are not work. */
+export function isEveningName(name: string | null): boolean {
+  return name !== null && EVENING_NAMES.has(normName(name));
+}
+
+const EVENING_NAMES = new Set(['evening', 'recharge']);
+
+/**
+ * The day Context expires against: the day itself, or `now` when it falls inside the week or
+ * month (otherwise the nearer end of it).
+ */
+function planDate(period: PeriodKind, key: string, now: Date): string {
+  const { start, end } = periodSpan(period, key);
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return today < start ? start : today > end ? end : today;
 }
 
 function emptyView(period: PeriodKind, key: string): PlanView {
@@ -213,14 +250,19 @@ function emptyView(period: PeriodKind, key: string): PlanView {
       unestimatedCount: 0,
       unestimatedMinutes: 0,
       totalMinutes: 0,
+      eveningMinutes: 0,
       target: TARGETS[period],
       horizons: {},
     },
+    meetings: [],
+    context: [],
+    expiredContext: [],
+    pendingContext: [],
   };
 }
 
 /** Read one day, week or month note. A missing note gives an empty view with `noteId: null`. */
-export async function readPlan(api: NoteReader, period: PeriodKind, key: string, now: Date = new Date()): Promise<PlanView> {
+export async function readPlan(api: NoteReader, period: PeriodKind, key: string, now: Date = clock()): Promise<PlanView> {
   const note = await findPeriodNote(api, period, key);
   if (!note) return emptyView(period, key);
   if (note.type !== 'text' || note.isProtected) throw new Error(`${period} note ${note.noteId} is protected or not a text note`);

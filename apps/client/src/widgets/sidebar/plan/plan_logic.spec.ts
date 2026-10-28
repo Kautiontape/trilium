@@ -4,8 +4,8 @@ import type { CaiusPlan, CaiusPlanTask } from "../../../services/caius";
 import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
-    acceptSections, capacityStatus, closeCandidates, closeFates, fateTarget, groupFates,
-    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, stepPeriod, taskLabel,
+    acceptSections, capacityStatus, closeCandidates, closeFates, endsSoon, fateTarget, groupFates,
+    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, splitReason, stepPeriod, taskLabel,
     unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
 
@@ -94,6 +94,24 @@ describe("plan tasks", () => {
         expect(unestimatedTasks(plan).map((t) => t.listItemId)).toEqual([ "k", "a1", "c" ]);
     });
 
+    it("leaves empty to-dos out of the unestimated list, as the capacity does", () => {
+        const blank = planOf([
+            task({ listItemId: "x1", text: "Real" }),
+            task({ listItemId: "x2", text: "  " }),
+            task({ listItemId: "x3", text: "" })
+        ]);
+        expect(unestimatedTasks(blank).map((t) => t.listItemId)).toEqual([ "x1" ]);
+        expect(closeCandidates(blank).map((t) => t.listItemId)).toEqual([ "x1", "x2", "x3" ]);
+    });
+
+    it("keeps an unestimated parent listed when its only sub-item is empty", () => {
+        const parent = planOf([
+            task({ listItemId: "p", text: "Parent" }),
+            task({ listItemId: "pa", text: " ", parent: "Parent", parentListItemId: "p" })
+        ]);
+        expect(unestimatedTasks(parent).map((t) => t.listItemId)).toEqual([ "p" ]);
+    });
+
     it("tells a sub-item's parent by its id, not by its text", () => {
         // Two live tasks and a done one share a name; only the done one has a live sub-item.
         const emails = planOf([
@@ -128,6 +146,12 @@ describe("plan tasks", () => {
         const html = "<h2>Morning</h2><ul><li>x</li></ul><h2> Deep&nbsp;work </h2><h3></h3>"
             + "<h2>Morning</h2><h2>💡 Suggested</h2>";
         expect(acceptSections(html)).toEqual([ "Morning", "Deep work" ]);
+    });
+
+    it("keeps Meetings, Context and the headings inside them out of Accept", () => {
+        const html = "<h3>🗓 Meetings</h3><h4>Am</h4><h3>Context</h3><h4>Notes</h4><h4> </h4>"
+            + "<h2>Morning</h2><h3>Deep work</h3><h2>Context</h2><h3>Suggested</h3><h3>Later</h3>";
+        expect(acceptSections(html)).toEqual([ "Morning", "Deep work" ]);
     });
 
     it("shows a Markdown link in a task's text as its label", () => {
@@ -209,7 +233,38 @@ function planOf(tasks: CaiusPlanTask[], critical: CaiusPlanTask[] = []): CaiusPl
         top3: [], suggested: [], dismissed: [],
         capacity: {
             plannedMinutes: 0, estimatedCount: 0, unestimatedCount: 0, unestimatedMinutes: 0,
-            totalMinutes: 0, target: { min: 180, max: 240 }, horizons: {}
+            totalMinutes: 0, eveningMinutes: 0, target: { min: 180, max: 240 }, horizons: {}
         }
     };
 }
+
+describe("endsSoon", () => {
+    it("marks a Context line that lapses before the next workday", () => {
+        // A Tuesday: the next workday is Wednesday.
+        expect(endsSoon({ until: "2026-10-27" }, "2026-10-27")).toBe(true);
+        expect(endsSoon({ until: "2026-10-28" }, "2026-10-27")).toBe(false);
+        expect(endsSoon({}, "2026-10-27")).toBe(false);
+
+        // A Friday: a line until Sunday lapses before Monday.
+        expect(endsSoon({ until: "2026-11-01" }, "2026-10-30")).toBe(true);
+        expect(endsSoon({ until: "2026-11-02" }, "2026-10-30")).toBe(false);
+    });
+});
+
+describe("splitReason", () => {
+    it("splits a Suggested line into what to do, with its size, and why", () => {
+        expect(splitReason("Get ZAP-101 Verify the export retry done: because sitting in Dev Verify for 6 days (~30m)")).toEqual({
+            title: "Get ZAP-101 Verify the export retry done (~30m)",
+            reason: "because sitting in Dev Verify for 6 days"
+        });
+        expect(splitReason("Get the review done: because Sam asked on Tuesday (~1h30m)"))
+            .toEqual({ title: "Get the review done (~1h30m)", reason: "because Sam asked on Tuesday" });
+        expect(splitReason("Get ZAP-110 done because it blocks the release"))
+            .toEqual({ title: "Get ZAP-110 done", reason: "because it blocks the release" });
+
+        // The formats without a reason stay on one line.
+        for (const text of [ "ZAP-101 — Verify the export retry on staging", "ZAP-111", "ZAP-111 (QA Testing, 3 days)", "Because of the freeze" ]) {
+            expect(splitReason(text)).toEqual({ title: text, reason: null });
+        }
+    });
+});

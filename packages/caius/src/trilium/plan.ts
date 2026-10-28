@@ -5,6 +5,8 @@
 // write if the note changed, never call the calendar endpoints on a dry run, and
 // be safe to run twice.
 
+import { now as clock } from '../clock.js';
+import { proseKind } from './sections.js';
 import { scanDocs } from '../index/index.js';
 import { newListItemId, tokenZoneStart } from './html-util.js';
 import { scanTokens } from '../core/index.js';
@@ -14,9 +16,14 @@ import type { NoteChange } from './forward.js';
 import type { StoreNote, NoteStore } from './store.js';
 import { JIRA_BASE, markdownLinks, parseEstimate, parseSource, taskKeys } from './keys.js';
 import {
+  asListTask,
   escapeHtml,
   inspectSuggested,
   itemMarkup,
+  inProseById,
+  moveInMainList,
+  placeForwarded,
+  placeInMainList,
   placeTask,
   setTaskState,
   suggestedItems,
@@ -46,6 +53,7 @@ export interface AddRequest {
 export interface AcceptRequest {
   noteId: string;
   listItemId: string;
+  /** At most one of section or critical; with neither, the end of his main list. */
   section?: string;
   critical?: boolean;
   /** 1-based place in the destination list; default the end. */
@@ -59,10 +67,21 @@ export interface ItemRequest {
   reason?: string;
 }
 
+export interface MoveRequest {
+  noteId: string;
+  listItemId: string;
+  /** Exactly one of first, before or after: the place in his main list. */
+  first?: boolean;
+  before?: string;
+  after?: string;
+}
+
 export type PlanSkip =
   | 'not_found'
+  | 'not_in_main_list'
   | 'not_live'
   | 'not_suggested'
+  | 'prose_section'
   | 'already_done'
   | 'already_doing'
   | 'already_cancelled'
@@ -77,7 +96,7 @@ export type PlanSkip =
 export type PlanResult<R> = R &
   (
     | {
-        status: 'added' | 'accepted' | 'dismissed' | 'updated';
+        status: 'added' | 'accepted' | 'dismissed' | 'updated' | 'moved' | 'unchanged';
         detail?: string;
         dryRun?: boolean;
         /** The note written (add: the day, week or month note). */
@@ -121,6 +140,9 @@ async function eachSequentially<Q, R>(reqs: Q[], fn: (req: Q) => Promise<Done<Q>
 function usable(note: StoreNote): string | null {
   return note.type !== 'text' || note.isProtected ? 'note is protected or not a text note' : null;
 }
+
+const isProseTarget = (target: Target) => target.kind === 'section' && proseKind(target.name) !== null;
+const PROSE_DETAIL = 'Meetings and Context hold plain bullets, never tasks';
 
 const symbolId = (states: StateSymbols, symbol: string) => [...states].find(([, s]) => s === symbol)?.[0];
 
@@ -175,7 +197,7 @@ async function journalKeys(api: NoteStore, now: Date): Promise<Map<string, strin
 }
 
 export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOptions & { now?: Date } = {}): Promise<Done<AddRequest>[]> {
-  const now = opts.now ?? new Date();
+  const now = opts.now ?? clock();
   let journal: Map<string, string> | null = null;
   const newId = opts.newId ?? newListItemId;
 
@@ -185,6 +207,7 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
     if (typeof when === 'string') return skip(req, 'bad_request', when);
     const target = targetOf(req);
     if (typeof target === 'string') return skip(req, 'bad_request', target);
+    if (isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
     const est = req.est === undefined ? null : parseEstimate(req.est);
     if (req.est !== undefined && !est) return skip(req, 'bad_request', 'est must look like 30m, 2h or 1h30m');
     const source = req.source === undefined ? null : parseSource(req.source);
@@ -229,6 +252,7 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
     }
 
     const after = placeTask(html, markup, target);
+    if (inProseById(after, id)) return skip(req, 'prose_section', PROSE_DETAIL);
     const noteId = target_?.noteId ?? 'NEW-NOTE';
     const track = () => {
       const where = `${when.key}: ${req.text.trim()}`;
@@ -269,28 +293,62 @@ async function loadNote(api: NoteStore, noteId: string): Promise<{ note: StoreNo
   return problem ? { problem } : { note };
 }
 
-const validItem = (r: ItemRequest | AcceptRequest) => !!r.noteId && !!r.listItemId;
+const validItem = (r: ItemRequest | AcceptRequest | MoveRequest) => !!r.noteId && !!r.listItemId;
+
+/**
+ * The reason a Suggested evening item gives, "X: because the evening has nothing planned (~45m)":
+ * accepting it without a section puts it under the evening's heading, not in his main list.
+ */
+export const EVENING_REASON = 'the evening has nothing planned';
 
 export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: PlanOptions = {}): Promise<Done<AcceptRequest>[]> {
   return eachSequentially(reqs, async (req) => {
     if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
     const given = [req.section !== undefined, !!req.critical].filter(Boolean).length;
-    if (given !== 1) return skip(req, 'bad_request', 'give exactly one of section, critical');
+    if (given > 1) return skip(req, 'bad_request', 'give at most one of section, critical');
     if (req.position !== undefined && (!Number.isInteger(req.position) || req.position < 1)) return skip(req, 'bad_request', 'position must be 1 or more');
-    const target: Target = req.critical ? { kind: 'critical' } : { kind: 'section', name: (req.section ?? '').trim() };
-    if (target.kind === 'section' && !target.name) return skip(req, 'bad_request', 'section name is empty');
+    if (req.position !== undefined && !given) return skip(req, 'bad_request', 'position needs a section or critical');
+    // With neither, the item joins the end of his main list (`placeInMainList`).
+    const target: Target | null = req.critical ? { kind: 'critical' } : req.section !== undefined ? { kind: 'section', name: req.section.trim() } : null;
+    if (target?.kind === 'section' && !target.name) return skip(req, 'bad_request', 'section name is empty');
+    if (target && isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
 
     const loaded = await loadNote(api, req.noteId);
     if ('problem' in loaded) return skip(req, 'unreadable', loaded.problem);
     const html = await api.content(req.noteId);
     const taken = takeSuggested(html, req.listItemId);
     if (!taken.ok) return skip(req, taken.reason, taken.reason === 'not_suggested' ? 'only an item under Suggested can be accepted (already accepted?)' : undefined);
-    const after = placeTask(taken.html, taken.markup, target, req.position);
+    const markup = asListTask(taken.markup);
+    // An evening suggestion stays in the evening: under any Evening or Recharge heading, else a new Evening one.
+    const after = target ? placeTask(taken.html, markup, target, req.position)
+      : taken.text.includes(`: because ${EVENING_REASON} (`) ? placeForwarded(taken.html, markup, 'Evening')
+        : placeInMainList(taken.html, markup);
+    if (inProseById(after, req.listItemId)) return skip(req, 'prose_section', PROSE_DETAIL);
     if (opts.dryRun) {
       return { ...req, status: 'accepted', dryRun: true, listItemId: req.listItemId, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };
     }
     if (!(await api.putContent(req.noteId, after, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
     return { ...req, status: 'accepted', listItemId: req.listItemId };
+  });
+}
+
+/** Moves items of his main list: first, or before or after another item of it. */
+export async function moveTasks(api: NoteStore, reqs: MoveRequest[], opts: PlanOptions = {}): Promise<Done<MoveRequest>[]> {
+  return eachSequentially(reqs, async (req) => {
+    if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
+    const place = req.first ? { first: true as const } : req.before !== undefined ? { before: req.before } : req.after !== undefined ? { after: req.after } : null;
+    const given = [!!req.first, req.before !== undefined, req.after !== undefined].filter(Boolean).length;
+    if (!place || given !== 1) return skip(req, 'bad_request', 'give exactly one of first, before or after');
+    if (req.before === req.listItemId || req.after === req.listItemId) return skip(req, 'bad_request', 'an item is placed by another item');
+    const loaded = await loadNote(api, req.noteId);
+    if ('problem' in loaded) return skip(req, 'unreadable', loaded.problem);
+    const html = await api.content(req.noteId);
+    const moved = moveInMainList(html, req.listItemId, place);
+    if (!moved.ok) return skip(req, moved.reason, 'the item and the one it is placed by must both be in his main list');
+    if (moved.unchanged) return { ...req, status: 'unchanged' };
+    if (opts.dryRun) return { ...req, status: 'moved', dryRun: true, changes: [{ noteId: req.noteId, role: 'target', before: html, after: moved.html }] };
+    if (!(await api.putContent(req.noteId, moved.html, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
+    return { ...req, status: 'moved' };
   });
 }
 

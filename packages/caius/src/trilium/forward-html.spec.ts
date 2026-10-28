@@ -26,22 +26,22 @@ const copy = { sourceNoteId: SRC_ID, sourceLabel: 'Monday 26', states: STATES };
 
 describe('periodLabel', () => {
   it('names a day, week or month in the short style, adding the year to a month in another year', () => {
-    expect(periodLabel('2026-10-27')).toBe('Tuesday 27');
+    expect(periodLabel('2026-10-27')).toBe('Tue 27 Oct');
     expect(periodLabel('2026-W45')).toBe('week 45');
     expect(periodLabel('2026-W05')).toBe('week 5');
     expect(periodLabel('2026-11')).toBe('November');
     expect(periodLabel('2026-11', 2026)).toBe('November');
     expect(periodLabel('2027-01', 2026)).toBe('January 2027');
     expect(periodLabel('2027-W02', 2026)).toBe('week 2');
-    expect(periodLabel('2027-01-04', 2026)).toBe('Monday 4');
+    expect(periodLabel('2027-01-04', 2026)).toBe('Mon 4 Jan');
     expect(periodLabel('nonsense')).toBe('nonsense');
   });
 });
 
 describe('dayLabel', () => {
-  it('names the weekday and day of month', () => {
-    expect(dayLabel('2026-10-27')).toBe('Tuesday 27');
-    expect(dayLabel('2026-11-01')).toBe('Sunday 1');
+  it('names the short weekday, the day of month and the short month, as the step data labels a day', () => {
+    expect(dayLabel('2026-10-27')).toBe('Tue 27 Oct');
+    expect(dayLabel('2026-11-01')).toBe('Sun 1 Nov');
   });
 });
 
@@ -263,5 +263,35 @@ describe('trailing tokens stay trailing', () => {
     if (!r.ok) throw new Error('expected ok');
     expect(hasCopy(r.html, source, 'etok', SRC_ID)).toBe(true);
     expect(hasCopy('<h3>Work</h3>', source, 'etok', SRC_ID)).toBe(false);
+  });
+});
+
+describe('a task forwarded again', () => {
+  const monday = '<h3>Work</h3>' + ul(li('eone', 'Confirm the bucket ~30m'));
+  const toTuesday = insertCopy('<h3>Work</h3>', monday, 'eone', { ...copy, newId: () => 'etue' });
+  if (!toTuesday.ok) throw new Error('expected ok');
+  const again = { sourceNoteId: 'tuenote', sourceLabel: 'Tuesday 27', states: STATES, newId: () => 'ewed' };
+
+  it('keeps only the original "from" link, not a growing chain', () => {
+    const toWednesday = insertCopy('<h3>Work</h3>', toTuesday.html, 'etue', again);
+    if (!toWednesday.ok) throw new Error('expected ok');
+    expect(text(toWednesday.html, 'ewed')).toBe('Confirm the bucket <a href="#root/srcnote">from Monday 26</a> ~30m');
+  });
+
+  it('still recognises its copy, so a retried forward adds no second one', () => {
+    const toWednesday = insertCopy('<h3>Work</h3>', toTuesday.html, 'etue', again);
+    if (!toWednesday.ok) throw new Error('expected ok');
+    expect(hasCopy(toWednesday.html, toTuesday.html, 'etue', 'tuenote')).toBe(true);
+    expect(hasCopy('<h3>Work</h3>', toTuesday.html, 'etue', 'tuenote')).toBe(false);
+  });
+});
+
+describe('hasCopy of a task with a back link', () => {
+  it('tells a recurring Laundry from Monday from one from Tuesday by where each link points', () => {
+    const fromMon = ul(li('wlau', 'Laundry <a href="#root/mon">from Mon 2 Nov</a>'));
+    const fromTue = ul(li('tlau', 'Laundry <a class="reference-link" href="#root/tue">from Tuesday 3</a>'));
+    expect(hasCopy(fromMon, fromTue, 'tlau', 'src')).toBe(false);
+    const same = ul(li('wlau', 'Laundry <a href="#root/tue">from Tue 3 Nov</a>'));
+    expect(hasCopy(same, fromTue, 'tlau', 'src')).toBe(true);
   });
 });

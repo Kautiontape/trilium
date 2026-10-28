@@ -30,7 +30,7 @@ describe("Caius routes", () => {
             await store.putContent(past.noteId, `<h3>Work</h3>${ul(li("o1", "Overdue thing"))}`);
             const today = await store.calendarDay(TODAY);
             await store.putContent(today.noteId, `<h3>Work</h3>${ul(li("t1", "Finish me"), li("t2", "Start me"), li("t3", "Drop me"), li("t4", "Move me"))}`
-                + `<ul><li>Bullet without an id</li></ul><h2>Suggested</h2>${ul(li("s1", "Accept me"), li("s2", "Dismiss me"))}`);
+                + `<ul><li>Bullet without an id</li></ul><h2>Suggested</h2>${ul(li("s1", "Get Accept me done: because it waits (~45m)"), li("s2", "Dismiss me"))}`);
             const older = await store.calendarDay("2031-05-01");
             await store.putContent(older.noteId, "<ul><li>Older task</li></ul>");
             Object.assign(noteIds, { past: past.noteId, today: today.noteId, older: older.noteId });
@@ -110,6 +110,8 @@ describe("Caius routes", () => {
         const accepted = await post("/api/caius/accept", { items: [{ noteId: noteIds.today, listItemId: "s1", section: "Work", expectedBlobId: blobOf(noteIds.today) }] }).expect(200);
         expect(accepted.body.results[0]).toMatchObject({ status: "accepted" });
         expect(blobOf(noteIds.today)).not.toBe(blobBeforeAccept);
+        // The Plan tab's Accept writes his list's line, not the suggestion's.
+        expect(await store.content(noteIds.today)).toContain(">Accept me ~45m</span>");
 
         expect(accepted.body.blobIds).toEqual({ [noteIds.today]: blobOf(noteIds.today) });
         const dismissed = await post("/api/caius/dismiss", { items: [{ noteId: noteIds.today, listItemId: "s2" }] }).expect(200);

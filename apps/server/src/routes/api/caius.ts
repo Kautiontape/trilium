@@ -15,8 +15,9 @@ type CaiusModule = typeof import("../../services/caius/service.js");
 export default {
     status: async () => {
         try {
-            await loadCaius();
-            return { enabled: true };
+            const caius = await loadCaius();
+            const now = caius.caiusDevNow();
+            return { enabled: true, ...(now ? { now } : {}) };
         } catch (e) {
             return { enabled: false, detail: messageOf(e) };
         }
@@ -33,7 +34,10 @@ export default {
     setState: caiusRoute((caius, req) => caius.caiusService.setState(parse(caius.routeInputs.setState, req.body))),
     forward: caiusRoute((caius, req) => caius.caiusService.forward(parse(caius.routeInputs.forward, req.body))),
     assignIds: caiusRoute((caius, req) => caius.caiusService.assignIds(parse(caius.routeInputs.assignIds, req.body))),
-    apply: caiusRoute((caius, req) => caius.caiusService.apply(parse(caius.routeInputs.apply, req.body)))
+    apply: caiusRoute((caius, req) => caius.caiusService.apply(parse(caius.routeInputs.apply, req.body))),
+    nudge: caiusRoute((caius, req) => caius.caiusService.nudge(parse(caius.routeInputs.nudge, { date: req.query.date }))),
+    context: caiusRoute((caius, req) => caius.caiusService.context(parse(caius.routeInputs.context, { date: req.query.date }))),
+    skipCatchup: caiusRoute((caius, req) => caius.caiusService.skipCatchup(parse(caius.routeInputs.skipCatchup, req.body)))
 };
 
 let loading: Promise<CaiusModule> | undefined;

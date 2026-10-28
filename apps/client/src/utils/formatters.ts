@@ -105,6 +105,18 @@ export function formatDateNumeric(date: string | Date | number | null | undefine
 }
 
 /**
+ * Formats a date as its short weekday, day and short month, in that order: "Fri 13 Nov". The names
+ * come from the formatting locale.
+ */
+export function formatShortDate(date: string | Date | number) {
+    const parts = getDateTimeFormatter(getFormattingLocale(), "short-weekday-day-month", {
+        weekday: "short", day: "numeric", month: "short"
+    }).formatToParts(parseDate(date));
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+    return `${part("weekday")} ${part("day")} ${part("month")}`;
+}
+
+/**
  * Formatters are memoized because building one costs roughly thirty times what using one does --
  * `Intl.DateTimeFormat` resolves and parses the locale's CLDR data in its constructor, then formats
  * in microseconds. A dialog formatting a single date never noticed; a collection view formatting one

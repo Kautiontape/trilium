@@ -104,6 +104,70 @@ export function createBeccaStore(): NoteStore {
     };
 }
 
+/** What `putAttachment` writes. */
+export interface AttachmentSpec {
+    role: string;
+    mime: string;
+    title: string;
+    content: string;
+}
+
+/**
+ * Writes an attachment on a note and answers its id. An attachment of the same role and title is
+ * updated in place, otherwise one is created, the way ETAPI's `POST /attachments` and
+ * `PATCH /attachments/:id` do through `saveAttachment`. It sits beside `createBeccaStore` rather
+ * than in `NoteStore`, which the ETAPI adapter would have to implement too, and the note's text is
+ * never touched. The caller provides the `cls.init()` context.
+ */
+export function putAttachment(noteId: string, { role, mime, title, content }: AttachmentSpec): { attachmentId: string; created: boolean } {
+    const note = getNote(noteId);
+    if (note.isProtected) {
+        throw new Error(`Note '${noteId}' is protected and cannot be modified.`);
+    }
+
+    return sql.transactional(() => {
+        const existing = note.getAttachmentsByRole(role).find((attachment) => attachment.title === title);
+        const attachment = note.saveAttachment({ attachmentId: existing?.attachmentId, role, mime, title, content });
+        return { attachmentId: attachment.attachmentId as string, created: !existing };
+    });
+}
+
+/** The text content of a note's attachment of `role` and `title`, or null when it has none. The caller provides the `cls.init()` context. */
+export function readAttachment(noteId: string, role: string, title: string): string | null {
+    const attachment = getNote(noteId).getAttachmentsByRole(role).find((candidate) => candidate.title === title);
+    return attachment ? String(attachment.getContent()) : null;
+}
+
+/**
+ * Creates a text note under `parentNoteId` with `content` as its HTML and answers its id, in one
+ * transaction, the way the `create_note` tool does. Like `putAttachment`, it sits beside
+ * `createBeccaStore` rather than in `NoteStore`. The caller provides the `cls.init()` context.
+ */
+export function createChildNote(parentNoteId: string, title: string, content: string): string {
+    const parent = getNote(parentNoteId);
+    if (parent.isProtected) {
+        throw new Error(`Note '${parentNoteId}' is protected and cannot be modified.`);
+    }
+    return sql.transactional(() => noteService.createNewNote({ parentNoteId, title, content, type: "text" }).note.noteId);
+}
+
+/**
+ * Gives a note one label `name` with `value`: an existing one is changed in place, so a re-run never
+ * adds a second copy, as `NoteStore.addLabel` would. The caller provides the `cls.init()` context.
+ */
+export function setLabel(noteId: string, name: string, value: string): void {
+    const note = getNote(noteId);
+    sql.transactional(() => note.setLabel(name, value));
+}
+
+/** Takes each label `name` with `value` off a note. The caller provides the `cls.init()` context. */
+export function removeLabel(noteId: string, name: string, value: string): void {
+    const note = getNote(noteId);
+    sql.transactional(() => {
+        for (const attribute of note.getOwnedLabels(name)) if (attribute.value === value) attribute.markAsDeleted();
+    });
+}
+
 let lockTail: Promise<void> = Promise.resolve();
 
 /** How long a call can hold the lock before `withCaiusLock` warns that it is blocking the others. */

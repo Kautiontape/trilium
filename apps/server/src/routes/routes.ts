@@ -203,6 +203,9 @@ function register(app: express.Application) {
     asyncApiRoute(PST, "/api/caius/forward", caiusRoute.forward);
     asyncApiRoute(PST, "/api/caius/assign-ids", caiusRoute.assignIds);
     asyncApiRoute(PST, "/api/caius/apply", caiusRoute.apply);
+    asyncApiRoute(GET, "/api/caius/nudge", caiusRoute.nudge);
+    asyncApiRoute(GET, "/api/caius/context", caiusRoute.context);
+    asyncApiRoute(PST, "/api/caius/skip-catchup", caiusRoute.skipCatchup);
 
     // OCR API
     asyncApiRoute(PST, "/api/ocr/process-note/:noteId", ocrRoute.processNoteOCR);

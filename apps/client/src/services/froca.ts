@@ -43,6 +43,11 @@ class FrocaImpl implements Froca {
     attributes!: Record<string, FAttribute>;
     attachments!: Record<string, FAttachment>;
     blobPromises!: Record<string, Promise<FBlob | null> | null>;
+    /**
+     * Notes whose new `blobId` `addResp()` took from a tree load before their entity change came,
+     * so that `froca_updater` still registers that change as new content.
+     */
+    unreportedContentNoteIds!: Set<string>;
 
     constructor() {
         this.initializedPromise = this.loadInitialTree();
@@ -66,6 +71,7 @@ class FrocaImpl implements Froca {
         this.attributes = {};
         this.attachments = {};
         this.blobPromises = {};
+        this.unreportedContentNoteIds = new Set();
     }
 
     async loadSubTree(subTreeNoteId: string) {
@@ -89,6 +95,10 @@ class FrocaImpl implements Froca {
             const note = this.notes[noteId];
 
             if (note) {
+                if (note.blobId !== noteRow.blobId && note.isProtected === noteRow.isProtected) {
+                    this.unreportedContentNoteIds.add(noteId);
+                    delete this.blobPromises[`notes-${noteId}`];
+                }
                 note.update(noteRow);
 
                 // search note doesn't have child branches in the database and all the children are virtual branches

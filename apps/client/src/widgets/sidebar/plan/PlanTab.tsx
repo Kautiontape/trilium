@@ -8,10 +8,11 @@ import appContext from "../../../components/app_context";
 import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
-    caiusApi, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
-    isCaiusEnabled, RELOAD_TIMEOUT_MS, wasCaiusEnabled
+    caiusApi, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, caiusOpener, type CaiusPeriodKind, type CaiusPlan,
+    isCaiusEnabled, RELOAD_TIMEOUT_MS, startCaiusConversation, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
+import type LoadResults from "../../../services/load_results";
 import { t } from "../../../services/i18n";
 import ActionButton from "../../react/ActionButton";
 import { Badge } from "../../react/Badge";
@@ -24,6 +25,7 @@ import SegmentedChoice from "../../react/SegmentedChoice";
 import { CollapsibleWidgets, RightPaneTabVisible } from "../RightPanelWidget";
 import PlanCapacity from "./PlanCapacity";
 import PlanClose from "./PlanClose";
+import PlanContext from "./PlanContext";
 import {
     acceptSections, isCloseable, isPastPeriod, periodKey, periodOfNote, stepPeriod,
     type ViewedPeriod
@@ -58,8 +60,16 @@ export interface PlanTaskRef {
  */
 export default function PlanTab() {
     const { note, noteContext } = useActiveNoteContext();
-    const [ period, setPeriod ] = useState<ViewedPeriod>(() => periodOfNote(note, new Date()));
-    useEffect(() => setPeriod(periodOfNote(note, new Date())), [ note ]);
+    const [ period, setPeriod ] = useState<ViewedPeriod>(() => periodOfNote(note, caiusNow()));
+    useEffect(() => {
+        setPeriod(periodOfNote(note, caiusNow()));
+        // The server's dev clock is known once the status has answered.
+        let mounted = true;
+        void isCaiusEnabled().then(() => mounted && setPeriod(periodOfNote(note, caiusNow())));
+        return () => {
+            mounted = false;
+        };
+    }, [ note ]);
 
     const key = periodKey(period);
     const { data, error, reload, refresh } = usePlanData(period.kind, key);
@@ -88,13 +98,14 @@ export default function PlanTab() {
                         <div className="plan-no-note">{t("caius.plan.no_note")}</div>
                     )}
                     <PlanCapacity plan={current.plan} onOpen={openTask} />
+                    {current.context && <PlanContext date={key} lines={current.context} />}
                     <PlanSuggested
                         key={key}
                         plan={current.plan}
                         sections={current.sections}
                         onChanged={refresh}
                     />
-                    {!isPastPeriod(current.plan.period, current.plan.key, new Date()) && (
+                    {!isPastPeriod(current.plan.period, current.plan.key, caiusNow()) && (
                         <PlanPullIn
                             plan={current.plan}
                             lanes={current.lanes}
@@ -102,7 +113,7 @@ export default function PlanTab() {
                             onChanged={refresh}
                         />
                     )}
-                    {current.plan.noteId && isCloseable(period, new Date()) && (
+                    {current.plan.noteId && isCloseable(period, caiusNow()) && (
                         <PlanClose
                             key={key}
                             plan={current.plan}
@@ -134,7 +145,7 @@ function PlanPeriodBar({ period, onChange }: {
     period: ViewedPeriod;
     onChange: (period: ViewedPeriod) => void;
 }) {
-    const now = new Date();
+    const now = caiusNow();
     const key = periodKey(period);
     const isCurrent = key === periodKey({ kind: period.kind, anchor: now });
 
@@ -175,6 +186,22 @@ function PlanPeriodBar({ period, onChange }: {
                     />
                 )}
             </div>
+            {period.kind === "day" && (
+                <div className="plan-day-actions">
+                    <Button
+                        size="small"
+                        icon="bx bx-sun"
+                        text={t("caius.plan_my_day")}
+                        onClick={() => void startCaiusConversation(caiusOpener("plan", key))}
+                    />
+                    <Button
+                        size="small"
+                        icon="bx bx-moon"
+                        text={t("caius.wind_down")}
+                        onClick={() => void startCaiusConversation(caiusOpener("winddown", key))}
+                    />
+                </div>
+            )}
         </div>
     );
 }
@@ -184,6 +211,8 @@ interface PlanData {
     lanes: { lane: CaiusLane; total: number; tasks: CaiusOpenTask[] }[];
     /** The note's headings, where Accept can put a suggested item. */
     sections: string[];
+    /** The Context in force on a viewed day; `null` for a week or month. */
+    context: CaiusContextLine[] | null;
 }
 
 /**
@@ -204,9 +233,10 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
 
     const load = useCallback(async () => {
         try {
-            const [ plan, open ] = await Promise.all([
+            const [ plan, open, context ] = await Promise.all([
                 caiusApi.plan(kind, key),
-                caiusApi.open(undefined, OPEN_TASKS_LIMIT)
+                caiusApi.open(undefined, OPEN_TASKS_LIMIT),
+                kind === "day" ? caiusApi.context(key) : null
             ]);
             const lanes = PULL_IN_LANES.map((lane) => {
                 const tasks = open.tasks.filter((task) => task.lane === lane);
@@ -215,7 +245,7 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
             const note = plan.noteId ? await froca.getNote(plan.noteId) : null;
             const html = await note?.getContent();
             const sections = typeof html === "string" ? acceptSections(html) : [];
-            setData({ plan, lanes, sections });
+            setData({ plan, lanes, sections, context: context?.context ?? null });
             setError(null);
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -263,16 +293,28 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
     useEffect(() => () => clearTimeout(timer.current), []);
 
     useTriliumEvent("entitiesReloaded", useCallback(({ loadResults }) => {
-        const changesJournal = loadResults.getNoteIds().some((noteId) => {
-            const changed = froca.notes[noteId];
-            return !!changed && isJournalNote(changed);
-        });
-        if (changesJournal) {
+        if (touchesJournal(loadResults)) {
             refresh();
         }
     }, [ refresh ]));
 
     return { data, error, reload: () => void reload(), refresh };
+}
+
+/**
+ * Whether the changes touch a Journal note the client holds: the note itself, one of its labels (a
+ * Caius write such as `#caiusFocus` changes no note row) or a child added under it (a brief, a new
+ * day note under its week).
+ */
+function touchesJournal(loadResults: LoadResults) {
+    const journal = (noteId: string | undefined) => {
+        const note = noteId ? froca.notes[noteId] : undefined;
+        return !!note && isJournalNote(note);
+    };
+
+    return loadResults.getNoteIds().some(journal)
+        || loadResults.getAttributeRows().some((row) => journal(row.noteId))
+        || loadResults.getBranchRows().some((row) => journal(row.parentNoteId));
 }
 
 /**

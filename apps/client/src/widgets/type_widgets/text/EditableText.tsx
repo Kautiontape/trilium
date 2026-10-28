@@ -27,7 +27,7 @@ import getTemplates, { updateTemplateCache } from "./snippets.js";
 import linkEmbedService from "../../../services/link_embed";
 import { usesClassicToolbar } from "./toolbar";
 import {
-    loadIncludedNote, refreshIncludedNote, setDataKeepingSelection, setupImageOpening
+    loadIncludedNote, refreshChangedIncludes, refreshIncludedNote, setDataKeepingSelection, setupImageOpening
 } from "./utils";
 
 /**
@@ -271,6 +271,11 @@ export default function EditableText({ note, parentComponent, ntxId, noteContext
     useTriliumEvent("refreshIncludedNote", ({ noteId }) => {
         if (!containerRef.current) return;
         refreshIncludedNote(containerRef.current, noteId);
+    });
+
+    useTriliumEvent("entitiesReloaded", ({ loadResults }) => {
+        if (!containerRef.current) return;
+        void refreshChangedIncludes(containerRef.current, loadResults);
     });
 
     useTriliumEvent("executeWithTextEditor", async ({ callback, resolve, ntxId: eventNtxId }) => {

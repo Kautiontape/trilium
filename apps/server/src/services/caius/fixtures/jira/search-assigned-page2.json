@@ -1,0 +1,61 @@
+{
+  "issues": [
+    {
+      "key": "ZAP-103",
+      "fields": {
+        "summary": "Rotate the webhook signing key",
+        "status": {
+          "name": "Dev Verify",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "resolution": {
+          "name": "Done"
+        },
+        "assignee": {
+          "displayName": "Sam Example"
+        },
+        "updated": "2026-10-25T10:00:00.000-0400",
+        "statuscategorychangedate": "2026-10-14T09:00:00.000-0400"
+      }
+    },
+    {
+      "key": "ZAP-110",
+      "fields": {
+        "summary": "Review the import mapper change",
+        "status": {
+          "name": "Code Review",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "resolution": null,
+        "assignee": {
+          "displayName": "Sam Example"
+        },
+        "updated": "2026-10-26T09:00:00.000-0400",
+        "statuscategorychangedate": "2026-10-25T10:00:00.000-0400"
+      }
+    },
+    {
+      "key": "ZAP-111",
+      "fields": {
+        "summary": "Check the invoice export in QA",
+        "status": {
+          "name": "QA Testing",
+          "statusCategory": {
+            "key": "indeterminate"
+          }
+        },
+        "resolution": null,
+        "assignee": {
+          "displayName": "Sam Example"
+        },
+        "updated": "2026-10-26T09:00:00.000-0400",
+        "statuscategorychangedate": "2026-10-24T09:00:00.000-0400"
+      }
+    }
+  ],
+  "isLast": true
+}

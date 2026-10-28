@@ -411,6 +411,137 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         ]);
     });
 
+    it("keeps a Plan my day or Wind down conversation off the generic note write tools, and leaves other chats alone", async () => {
+        scriptAgent([successResult()]);
+        const provider = new ClaudeAgentProvider();
+        await collect(provider.chatChunks([{ role: "user", content: "Plan my day 2026-11-04" }], { enableNoteTools: true }));
+        const options = queryMock.mock.calls[0][0].options;
+        expect(options.disallowedTools).toEqual(expect.arrayContaining([
+            "mcp__trilium__set_note_content", "mcp__trilium__append_to_note", "mcp__trilium__edit_note_content", "mcp__trilium__create_note",
+            "mcp__trilium__delete_note", "mcp__trilium__set_attribute", "mcp__trilium__move_note"
+        ]));
+        expect(options.disallowedTools).not.toContain("mcp__trilium__get_note_content");
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([
+            { role: "user", content: "Wind down 2026-11-04" }, { role: "assistant", content: "…" }, { role: "user", content: "laundry" }
+        ], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[1][0].options.disallowedTools).toEqual(options.disallowedTools);
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: [ { type: "text", text: "Plan my day 2026-11-05" } ] }], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[2][0].options.disallowedTools).toEqual(options.disallowedTools);
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[3][0].options.disallowedTools).toBeUndefined();
+    });
+
+    it("tells a Plan my day or Wind down conversation the Caius clock's date in dev, and no other chat", async () => {
+        const promptOf = async (content: string, call: number) => {
+            scriptAgent([successResult()]);
+            await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content }], { enableNoteTools: true }));
+            return queryMock.mock.calls[call][0].options.systemPrompt as string;
+        };
+        vi.stubEnv("TRILIUM_ENV", "dev");
+        vi.stubEnv("CAIUS_NOW", "2026-11-05T09:30");
+        expect(await promptOf("Plan my day 2026-11-05", 0)).toContain("Today's date is 2026-11-05, by the planning clock.");
+        expect(await promptOf("hi", 1)).not.toContain("planning clock");
+        vi.stubEnv("TRILIUM_ENV", "production");
+        expect(await promptOf("Wind down 2026-11-05", 2)).not.toContain("planning clock");
+        vi.unstubAllEnvs();
+    });
+
+    it("leaves a Plan my day or Wind down conversation only the step and apply tools of Caius, with the skill and the note reads", async () => {
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-06" }], { enableNoteTools: true }));
+        const disallowed: string[] = queryMock.mock.calls[0][0].options.disallowedTools;
+        const caius = disallowed.filter((name) => name.startsWith("mcp__trilium__caius_")).map((name) => name.slice("mcp__trilium__".length));
+        expect(caius.sort()).toEqual([
+            "caius_accept", "caius_add", "caius_assign_ids", "caius_brief_write", "caius_context", "caius_context_add", "caius_context_keep",
+            "caius_dismiss", "caius_explain", "caius_finished", "caius_forward", "caius_header", "caius_inputs", "caius_meetings",
+            "caius_open", "caius_plan", "caius_set_state", "caius_skip_catchup"
+        ]);
+        for (const kept of [ "caius_planday", "caius_winddown", "caius_plan_apply", "caius_winddown_apply", "load_skill", "get_note", "get_note_content", "search_notes" ]) {
+            expect(disallowed, kept).not.toContain(`mcp__trilium__${kept}`);
+        }
+        // Every registered Caius tool is either kept or disallowed by name.
+        const { caiusTools } = await import("../../caius/tools.js");
+        const kept = [ "caius_planday", "caius_winddown", "caius_plan_apply", "caius_winddown_apply" ];
+        expect([ ...caiusTools ].map(([ name ]) => name).filter((name) => !kept.includes(name)).sort()).toEqual(caius.sort());
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "what's on my plan today?" }], { enableNoteTools: true }));
+        expect(queryMock.mock.calls[1][0].options.disallowedTools).toBeUndefined();
+    });
+
+    it("builds a Plan my day or Wind down conversation's MCP server without the tools it denies, so the agent never sees them", async () => {
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-02" }], { enableNoteTools: true }));
+        const omitted: string[] = (createMcpServerMock.mock.calls[0] as unknown as [ { omit: string[] } ])[0].omit;
+        const disallowed: string[] = queryMock.mock.calls[0][0].options.disallowedTools;
+        expect(omitted.map((name) => `mcp__trilium__${name}`).sort()).toEqual([ ...disallowed ].sort());
+        expect(omitted).toEqual(expect.arrayContaining([ "caius_forward", "caius_context_add", "caius_brief_write" ]));
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
+        expect((createMcpServerMock.mock.calls[1] as unknown as [ { omit: string[] } ])[0].omit).toEqual([]);
+    });
+
+    it("shows a Plan my day or Wind down conversation only its replies: no narration before a tool call, no thinking, no failed call", async () => {
+        const event = (body: object) => ({ type: "stream_event", parent_tool_use_id: null, session_id: "sess-1", event: body });
+        const toolCall = (id: string, input: object) => [
+            event({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id, name: "mcp__trilium__caius_plan_apply" } }),
+            event({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{" } }),
+            event({ type: "message_stop" }),
+            { type: "assistant", parent_tool_use_id: null, session_id: "sess-1", message: { content: [ { type: "tool_use", id, name: "mcp__trilium__caius_plan_apply", input } ] } }
+        ];
+        const result = (id: string, text: string, isError: boolean) => ({
+            type: "user", parent_tool_use_id: null, session_id: "sess-1",
+            message: { content: [ { type: "tool_result", tool_use_id: id, content: [ { type: "text", text } ], is_error: isError } ] }
+        });
+        scriptAgent([
+            event({ type: "message_start" }),
+            event({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "pondering…" } }),
+            textDelta("No question is posed by the step, so I'll just note the meeting change. "),
+            ...toolCall("toolu_1", { date: "2026-11-03" }),
+            result("toolu_1", "Input validation error: Too small", true),
+            event({ type: "message_start" }),
+            textDelta("I need to supply exactly 3 acts."),
+            ...toolCall("toolu_2", { date: "2026-11-03", said: "" }),
+            result("toolu_2", "{\"say\":\"The brief is written.\"}", false),
+            event({ type: "message_start" }),
+            textDelta("The brief is written."),
+            event({ type: "message_stop" }),
+            successResult()
+        ]);
+        const chunks = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Plan my day 2026-11-03" }], { enableNoteTools: true }));
+        expect(chunks.filter((chunk) => chunk.type !== "usage")).toEqual([
+            { type: "tool_use", toolCallId: "toolu_2", toolName: "caius_plan_apply", toolInput: { date: "2026-11-03", said: "" } },
+            { type: "tool_result", toolCallId: "toolu_2", toolName: "caius_plan_apply", result: "{\"say\":\"The brief is written.\"}", isError: false },
+            { type: "text", content: "The brief is written." },
+            { type: "done" }
+        ]);
+
+        // A turn whose only text came before a tool call still shows that text, rather than nothing.
+        scriptAgent([
+            event({ type: "message_start" }),
+            textDelta("Monday is closed out."),
+            ...toolCall("toolu_4", { date: "2026-11-03", said: "" }),
+            result("toolu_4", "{}", false),
+            event({ type: "message_start" }),
+            event({ type: "message_stop" }),
+            successResult()
+        ]);
+        const quiet = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-02" }], { enableNoteTools: true }));
+        expect(quiet.filter((chunk) => chunk.type === "text")).toEqual([ { type: "text", content: "Monday is closed out." } ]);
+
+        // Any other chat streams as it did.
+        scriptAgent([ event({ type: "message_start" }), textDelta("Let me look. "), ...toolCall("toolu_3", {}), result("toolu_3", "x", true), successResult() ]);
+        const plain = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
+        expect(plain.map((chunk) => chunk.type)).toEqual([ "text", "tool_input_start", "tool_input_delta", "tool_use", "tool_result", "usage", "done" ]);
+    });
+
     it("wires Trilium's in-process MCP server instance and disables built-in tools", async () => {
         scriptAgent([successResult()]);
         const provider = new ClaudeAgentProvider();

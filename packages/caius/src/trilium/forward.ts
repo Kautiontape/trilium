@@ -13,7 +13,7 @@
 import { label, type NoteReader, type NoteStore, type StoreNote } from './store.js';
 import { loadStateSymbols } from './journal.js';
 import { isPeriodKey, PERIODS, periodQuery, type PeriodKind } from './plan-read.js';
-import { periodLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
+import { backLinkTarget, periodLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
 import type { StateSymbols } from './markdown.js';
 
 export interface ForwardRequest {
@@ -121,6 +121,11 @@ async function forwardOne(
 
   const sourceKey = periodKey(source);
   const sourceLabel = sourceKey ? periodLabel(sourceKey, yearOf(req.to)) : source.title;
+  // A task forwarded before keeps its link to where it started, written again with that note's label.
+  const backId = backLinkTarget(sourceHtml, req.listItemId);
+  const backNote = backId ? await api.note(backId).catch(() => null) : null;
+  const backKey = backNote ? periodKey(backNote) : undefined;
+  const backLinkLabel = backKey ? periodLabel(backKey, yearOf(req.to)) : undefined;
   const base = { states: opts.states, stateId: opts.stateId };
 
   const marked = markRescheduled(sourceHtml, req.listItemId, {
@@ -143,6 +148,7 @@ async function forwardOne(
       ...base,
       sourceNoteId: source.noteId,
       sourceLabel,
+      ...(backLinkLabel ? { backLinkLabel } : {}),
       newId: opts.newId,
     });
     if (!inserted.ok) return skip(inserted.reason);

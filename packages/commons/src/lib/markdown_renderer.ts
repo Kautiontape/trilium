@@ -332,13 +332,16 @@ function extractFormulas(text: string): { processedText: string; placeholderMap:
     // another `$` — and the body may not contain a `$`. This mirrors GitHub: mismatched
     // runs like `$$e=mc^2$` stay literal text rather than producing a malformed formula
     // (a stray `$` inside the body would otherwise crash KaTeX with "Can't use '$'").
+    // Inline math follows pandoc's `tex_math_dollars`: the opening `$` is followed and the closing
+    // `$` preceded by a non-space, and the closing `$` is not followed by a digit, so prices like
+    // `$2 to $3` stay text.
     let processedText = noCodeText
         .replace(/(?<![\\$])\$\$(?!\$)((?:(?!\n{2,})[^$])+?)\$\$(?!\$)/g, (_, formula: string) => {
             const key = `<!--FORMULA_BLOCK_${timestamp}_${id++}-->`;
             formulaMap.set(key, `<span class="math-tex">\\[${escapeMathFormula(formula)}\\]</span>`);
             return key;
         })
-        .replace(/(?<![\\$])\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, formula: string) => {
+        .replace(/(?<![\\$])\$(?!\$)([^\s$](?:[^$\n]*?[^\s$])?)\$(?![$\d])/g, (_, formula: string) => {
             const key = `<!--FORMULA_INLINE_${timestamp}_${id++}-->`;
             formulaMap.set(key, `<span class="math-tex">\\(${escapeMathFormula(formula)}\\)</span>`);
             return key;

@@ -20,7 +20,7 @@ export type { SectionKind } from './sections.js';
 export { readPlan, buildPlanView, findPeriodNote, dismissedKeys, isPeriodKey, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './plan-read.js';
 export type { PlanView, PlanTask, PlanSection, Capacity, PeriodKind } from './plan-read.js';
 export { buildDoc } from './journal.js';
-export { addTasks, acceptTasks, dismissTasks, setStates } from './plan.js';
+export { addTasks, acceptTasks, dismissTasks, EVENING_REASON, setStates } from './plan.js';
 export type { AddRequest, AcceptRequest, ItemRequest, PlanResult, PlanOptions, PlanSkip } from './plan.js';
 export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './keys.js';
 export { placeTask, setTaskState, takeSuggested } from './plan-html.js';

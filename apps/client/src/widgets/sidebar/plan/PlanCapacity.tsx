@@ -16,7 +16,7 @@ const UNESTIMATED_MINUTES = 30;
 /** How far past the top of the target the bar reaches, so that an overfull plan shows as one. */
 const METER_HEADROOM = 1.25;
 
-/** The planned minutes against the period's target, and the tasks still without an estimate. */
+/** The planned minutes against the period's target, the evening's minutes, and the tasks still without an estimate. */
 export default function PlanCapacity({ plan, onOpen }: {
     plan: CaiusPlan;
     onOpen: (task: PlanTaskRef) => void;
@@ -42,20 +42,27 @@ export default function PlanCapacity({ plan, onOpen }: {
                         />
                         <div className="plan-capacity-summary">
                             {t("caius.plan.capacity_of_target", {
-                                total: capacity.totalMinutes, min: target.min, max: target.max
+                                total: formatDuration(capacity.totalMinutes),
+                                range: formatRange(target.min, target.max)
                             })}
                         </div>
                     </>
                 ) : (
                     <div className="plan-capacity-summary">
-                        {t("caius.plan.capacity_total", { total: capacity.totalMinutes })}
+                        {t("caius.plan.capacity_total", { total: formatDuration(capacity.totalMinutes) })}
+                    </div>
+                )}
+                {capacity.eveningMinutes > 0 && (
+                    <div className="plan-capacity-evening">
+                        {t("caius.plan.capacity_evening", { total: formatDuration(capacity.eveningMinutes) })}
                     </div>
                 )}
                 {capacity.unestimatedCount > 0 && (
                     <LinkButton
                         className="plan-capacity-unestimated"
                         text={t("caius.plan.unestimated", {
-                            count: capacity.unestimatedCount, minutes: UNESTIMATED_MINUTES
+                            count: capacity.unestimatedCount,
+                            duration: formatDuration(UNESTIMATED_MINUTES)
                         })}
                         onClick={() => setListShown(!listShown)}
                     />
@@ -75,4 +82,27 @@ export default function PlanCapacity({ plan, onOpen }: {
             </div>
         </RightPanelWidget>
     );
+}
+
+/** `220` → "3 h 40 m", `45` → "45 m", `240` → "4 h", `0` → "0 m". */
+function formatDuration(minutes: number) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h === 0) {
+        return t("caius.plan.duration_m", { m });
+    }
+
+    return m === 0 ? t("caius.plan.duration_h", { h }) : t("caius.plan.duration_hm", { h, m });
+}
+
+/** `180, 240` → "3–4 h", and one figure for equal ends; ends that are not whole hours are written out in full. */
+function formatRange(min: number, max: number) {
+    if (min === max) {
+        return formatDuration(min);
+    }
+    if (min % 60 === 0 && max % 60 === 0) {
+        return t("caius.plan.range_hours", { min: min / 60, max: max / 60 });
+    }
+
+    return t("caius.plan.range", { min: formatDuration(min), max: formatDuration(max) });
 }

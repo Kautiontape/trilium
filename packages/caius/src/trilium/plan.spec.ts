@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptTasks, addTasks, dismissTasks, setStates } from './plan.js';
+import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, setStates } from './plan.js';
 import { parseSource, taskKeys, textHash } from './keys.js';
 import { readPlan } from './plan-read.js';
 import { fakeTrilium, li, periodNote, STATES, TEMPLATE, ul } from './helpers.js';
@@ -175,6 +175,34 @@ describe('addTasks', () => {
   });
 });
 
+describe('moveTasks', () => {
+  const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One'), li('e2', 'Two'), li('e3', 'Three')) + '<h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es1', 'Maybe'));
+  const order = (html: string | undefined) => [...(html ?? '').matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1]);
+
+  it('puts an item of his main list first, before or after another one, in the order named', async () => {
+    const f = fakeTrilium(seed(day));
+    const out = await moveTasks(f.api, [{ noteId: 'd', listItemId: 'e3', first: true }, { noteId: 'd', listItemId: 'e1', after: 'e2' }], base);
+    expect(out.map((r) => r.status)).toEqual(['moved', 'moved']);
+    expect(order(f.html.d)).toEqual(['e3', 'e2', 'e1', 'ev1', 'es1']);
+    await moveTasks(f.api, [{ noteId: 'd', listItemId: 'e1', before: 'e3' }], base);
+    expect(order(f.html.d)).toEqual(['e1', 'e3', 'e2', 'ev1', 'es1']);
+  });
+  it('is unchanged when the item is already there, and skips an item or an anchor outside his main list', async () => {
+    const f = fakeTrilium(seed(day));
+    const out = await moveTasks(f.api, [
+      { noteId: 'd', listItemId: 'e1', first: true },
+      { noteId: 'd', listItemId: 'ev1', first: true },
+      { noteId: 'd', listItemId: 'e2', before: 'es1' },
+      { noteId: 'd', listItemId: 'e2', after: 'e2' },
+      { noteId: 'd', listItemId: 'e2' },
+    ], base);
+    expect(out.map((r) => [r.status, 'reason' in r ? r.reason : undefined])).toEqual([
+      ['unchanged', undefined], ['skipped', 'not_in_main_list'], ['skipped', 'not_in_main_list'], ['skipped', 'bad_request'], ['skipped', 'bad_request'],
+    ]);
+    expect(f.html.d).toBe(day);
+  });
+});
+
 describe('acceptTasks', () => {
   const html = '<h3>Work</h3>' + ul(li('e1', 'One'), li('e2', 'Two')) + '<h2>Suggested</h2>' + ul(li('es1', 'Maybe A'), li('es2', 'Maybe B'));
 
@@ -183,11 +211,81 @@ describe('acceptTasks', () => {
     await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'Work' }, { noteId: 'd', listItemId: 'es2', section: 'Work', position: 1 }], base);
     const order = [...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1]);
     expect(order).toEqual(['es2', 'e1', 'e2', 'es1']);
-    expect(f.html.d).toContain('<h2>Suggested</h2>');
+    // The last accept empties Suggested, so its heading goes too.
+    expect(f.html.d).not.toContain('Suggested');
     const g = fakeTrilium(seed(html));
     await acceptTasks(g.api, [{ noteId: 'd', listItemId: 'es1', critical: true }], base);
     expect(g.html.d!.startsWith('<aside class="admonition important">')).toBe(true);
     expect(g.html.d).toContain('Maybe A');
+  });
+  it('without a section, appends to his main list in the order named, and adds no heading', async () => {
+    const day = '<h3>Meetings</h3><ul><li>10:00 Standup</li></ul><h2>☑️ Tasks</h2>' + ul(li('e1', 'One'), li('e2', 'Two')) + '<h2>Suggested</h2>' + ul(li('es1', 'Maybe A'), li('es2', 'Maybe B'));
+    const f = fakeTrilium(seed(day));
+    const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es2' }, { noteId: 'd', listItemId: 'es1' }], base);
+    expect(out.map((r) => r.status)).toEqual(['accepted', 'accepted']);
+    expect([...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1])).toEqual(['e1', 'e2', 'es2', 'es1']);
+    expect(f.html.d?.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks']);
+  });
+  it('without a section, skips an Evening list and goes straight under the Tasks heading, creating its list', async () => {
+    const day = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es9', 'Get ZAP-9 Fix it done: because x (~45m)'));
+    const f = fakeTrilium(seed(day));
+    expect((await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es9' }], base))[0]).toMatchObject({ status: 'accepted' });
+    expect(f.html.d!.startsWith('<h2>☑️ Tasks</h2><ul class="todo-list"><li data-list-item-id="es9">')).toBe(true);
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections.map((s) => [s.name, s.tasks.map((t) => t.text)])).toEqual([['☑️ Tasks', ['ZAP-9 Fix it']], ['Evening', ['Laundry']]]);
+  });
+  it('without a section, puts an evening suggestion under the evening heading, made above Suggested when there is none', async () => {
+    const line = `Something away from screens, a chore or a Recharge item: because ${EVENING_REASON} (~45m)`;
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h3>Recharge</h3>' + ul(li('ev1', 'Read')) + '<h2>Suggested</h2>' + ul(li('es1', line));
+    const f = fakeTrilium(seed(day));
+    expect((await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base))[0]).toMatchObject({ status: 'accepted' });
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections.map((s) => [s.name, s.tasks.map((t) => [t.text, t.estMinutes])])).toEqual([
+      ['☑️ Tasks', [['One', null]]], ['Recharge', [['Read', null], ['Something away from screens, a chore or a Recharge item', 45]]],
+    ]);
+    expect(plan.capacity.totalMinutes).toBe(30);
+    const g = fakeTrilium(seed('<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(li('es1', line), li('es2', 'Maybe B'))));
+    await acceptTasks(g.api, [{ noteId: 'd', listItemId: 'es1' }], base);
+    expect(g.html.d).toMatch(/<h2>☑️ Tasks<\/h2><ul[^>]*><li data-list-item-id="e1">.*<h\d>Evening<\/h\d><ul[^>]*><li data-list-item-id="es1">.*<h2>Suggested<\/h2>/s);
+  });
+  it('turns an accepted suggestion into a plain task: its key link and title, then its estimate as a token', async () => {
+    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-111">ZAP-111</a>';
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
+      li('es1', `Get ${link} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
+      li('es2', 'Get Book the venue done: because the quote expires Friday (~15m)'),
+    );
+    const f = fakeTrilium(seed(day));
+    await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }, { noteId: 'd', listItemId: 'es2' }], base);
+    expect(f.html.d).toContain(`<span class="todo-list__label__description">${link} Check the invoice export in QA ~45m</span>`);
+    expect(f.html.d).toContain('<span class="todo-list__label__description">Book the venue ~15m</span>');
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections[0]!.tasks.map((t) => [t.text, t.estMinutes])).toEqual([
+      ['One', null],
+      [`[ZAP-111](https://zeroedin.atlassian.net/browse/ZAP-111) Check the invoice export in QA`, 45],
+      ['Book the venue', 15],
+    ]);
+  });
+  it("turns an accepted ask into a plain task: 'Answer X's question on KEY: because Y (~15m)' keeps its words and its estimate as a token", async () => {
+    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-105">ZAP-105</a>';
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
+      li('es1', `Answer Jordan Placeholder's question on ${link}: because Jordan Placeholder asked on Sunday (~15m)`),
+    );
+    const f = fakeTrilium(seed(day));
+    await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base);
+    expect(f.html.d).toContain(`<span class="todo-list__label__description">Answer Jordan Placeholder's question on ${link} ~15m</span>`);
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections[0]?.tasks.map((t) => t.estMinutes)).toEqual([null, 15]);
+  });
+  it('unwraps a suggestion that CKEditor saved with non-breaking spaces', async () => {
+    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-2">ZAP-2</a>';
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
+      li('es1', `Get&nbsp;${link} Fix done:&nbsp;because it waits (~30m)`),
+      li('es2', 'Get Book the venue done: because it waits (~15m)&nbsp;'),
+    );
+    const f = fakeTrilium(seed(day));
+    await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }, { noteId: 'd', listItemId: 'es2' }], base);
+    expect(f.html.d).toContain(`<span class="todo-list__label__description">${link} Fix ~30m</span>`);
+    expect(f.html.d).toContain('<span class="todo-list__label__description">Book the venue ~15m</span>');
   });
   it('keeps Suggested last when accepting into a new section', async () => {
     const f = fakeTrilium(seed(html));
@@ -212,7 +310,7 @@ describe('acceptTasks', () => {
   });
   it('rejects bad requests', async () => {
     const f = fakeTrilium(seed(html));
-    const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }, { noteId: 'd', listItemId: 'es1', section: 'W', position: 0 }, { noteId: '', listItemId: 'x', critical: true }], base);
+    const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'W', critical: true }, { noteId: 'd', listItemId: 'es1', section: 'W', position: 0 }, { noteId: '', listItemId: 'x', critical: true }], base);
     expect(out.every((o) => o.status === 'skipped' && o.reason === 'bad_request')).toBe(true);
   });
 });

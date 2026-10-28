@@ -1,0 +1,51 @@
+{
+  "total": 2,
+  "comments": [
+    {
+      "id": "1",
+      "author": {
+        "accountId": "acc-riley-0002",
+        "displayName": "Riley Sample"
+      },
+      "created": "2026-10-23T10:00:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Is this ready to ship?"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2",
+      "author": {
+        "accountId": "acc-sam-0001",
+        "displayName": "Sam Example"
+      },
+      "created": "2026-10-24T09:30:00.000-0400",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Yes, it shipped on Friday."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
