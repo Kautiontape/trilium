@@ -191,6 +191,23 @@ describe('renderDayTerrain', () => {
     expect(svg).toContain('>Laundry</text>');
   });
 
+  it('labels a task split around a meeting once, and draws evening calendar events as meeting dots', () => {
+    // Round 2, Mon 2 Nov: ZAP-101 split around Sprint Planning read as two tasks; Call Mom is a calendar event.
+    const meetings = [
+      { start: '10:00', end: '10:15', title: 'Standup' },
+      { start: '10:45', end: '12:00', title: 'Sprint Planning' },
+      { start: '18:00', end: '18:30', title: 'Call Mom' },
+      { start: '19:00', end: '21:00', title: 'Climbing gym' },
+    ];
+    const { work } = layoutWork(T13A_RHYTHM, meetings, [{ label: 'ZAP-111', minutes: 15 }, { label: 'ZAP-101', minutes: 60 }]);
+    expect(work.filter((block) => block.start >= '10:30' && block.end <= '13:00')).toHaveLength(2);
+    const svg = renderDayTerrain({ ...T13A_RHYTHM, events: meetings, work });
+    expect(svg.match(/>ZAP-101<\/text>/g)).toHaveLength(1);
+    expect(svg.match(/<rect /g)).toHaveLength(3);
+    expect(svg.match(/<circle /g)).toHaveLength(4);
+    for (const title of ['Call Mom', 'Climbing gym']) expect(svg).toContain(`font-weight="600" fill="#85837a">${title}</text>`);
+  });
+
   it('sizes every font for at least 11 px when shown 700 px wide', () => {
     for (const day of [NORMAL_DAY, HEAVY_DAY, OPEN_DAY, LATE_HEAVY_DAY]) {
       const svg = renderDayTerrain(day);
