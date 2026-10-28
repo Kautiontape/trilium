@@ -497,7 +497,10 @@ describe("a done task closes its own ticket only", () => {
 
 describe("where a Context line goes", () => {
     const day = "2026-11-25";
-    const lines = async (period: string, date: string) => (await call("caius_plan", { period, date })).context.map((line: any) => [ line.text, line.until ?? null ]);
+    const lines = async (period: string, date: string) => {
+        const plan = await call("caius_plan", { period, date });
+        return [ ...plan.context, ...plan.pendingContext ].map((line: any) => [ line.text, line.until ?? null ]);
+    };
     // The reviewer's examples: where each line lands, and when it ends.
     const DAY: string[] = [
         "Riley is out today", "Heads down until lunch", "Pair with Sam on ZAP-110 at 14:00",

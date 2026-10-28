@@ -2,6 +2,8 @@
 
 export interface ContextLine {
   text: string;
+  /** `YYYY-MM-DD`: the first day the line is in force. */
+  from?: string;
   /** `YYYY-MM-DD`: the last day the line is in force. */
   until?: string;
 }
@@ -14,7 +16,7 @@ export function sameContext(text: string): string {
   return text.replace(/\s+/g, ' ').trim().replace(/[\s.!?,;:…]+$/, '').toLowerCase();
 }
 
-const UNTIL = /\s*\(\s*until\s+([^()]*?)\s*\)\s*$/i;
+const UNTIL = /\s*\(\s*(?:from\s+([^()]*?)\s+until\s+([^()]*?)|until\s+([^()]*?)|from\s+([^()]*?))\s*\)\s*$/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const DAY_MS = 86_400_000;
 const MAX_AHEAD_DAYS = 300;
@@ -24,21 +26,35 @@ const dateKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const utcMs = (key: string) => Date.parse(`${key}T00:00:00Z`);
 
 /**
- * Splits Context bullets into the lines in force on `planDate` and the expired ones. A trailing
- * `(until Fri 6 Nov)`, `(until 6 Nov)` or `(until 2026-11-06)` is taken off the text and kept as
- * `until`, resolved against `noteDate` (a year-less date is the next occurrence, or the previous when that is over 300 days ahead); any other suffix stays in the text.
- * A line whose `until` is before `planDate` is expired.
+ * Splits Context bullets into the lines in force on `planDate`, the expired ones and those not
+ * started yet. A trailing `(until Fri 6 Nov)`, `(from Thu 5 Nov until Fri 6 Nov)` or `(from Thu 5
+ * Nov)`, each date also as `6 Nov` or `2026-11-06`, is taken off the text and kept as `from` and
+ * `until`, resolved against `noteDate` (a year-less date is the next occurrence, or the previous when
+ * that is over 300 days ahead); any other suffix stays in the text. A line whose `until` is before
+ * `planDate` is expired, and one whose `from` is after it is pending.
  */
-export function parseContext(lines: string[], noteDate: string, planDate: string = noteDate): { context: ContextLine[]; expiredContext: ContextLine[] } {
+export function parseContext(
+  lines: string[],
+  noteDate: string,
+  planDate: string = noteDate,
+): { context: ContextLine[]; expiredContext: ContextLine[]; pendingContext: ContextLine[] } {
   const context: ContextLine[] = [];
   const expiredContext: ContextLine[] = [];
+  const pendingContext: ContextLine[] = [];
   for (const line of lines) {
     const match = UNTIL.exec(line);
-    const until = match?.[1] ? resolveDate(match[1], noteDate) : null;
-    const entry: ContextLine = match && until ? { text: line.slice(0, match.index).trim(), until } : { text: line.trim() };
-    (until && until < planDate ? expiredContext : context).push(entry);
+    const fromText = match?.[1] ?? match?.[4];
+    const untilText = match?.[2] ?? match?.[3];
+    const from = fromText ? resolveDate(fromText, noteDate) : null;
+    const until = untilText ? resolveDate(untilText, noteDate) : null;
+    const read = match && (fromText === undefined || from) && (untilText === undefined || until);
+    const entry: ContextLine = read
+      ? { text: line.slice(0, match.index).trim(), ...(from ? { from } : {}), ...(until ? { until } : {}) }
+      : { text: line.trim() };
+    const list = entry.until && entry.until < planDate ? expiredContext : entry.from && entry.from > planDate ? pendingContext : context;
+    list.push(entry);
   }
-  return { context, expiredContext };
+  return { context, expiredContext, pendingContext };
 }
 
 /** `Fri 6 Nov`, `6 November`, `6 Nov 2026` or `2026-11-06` as `YYYY-MM-DD`, or null. */

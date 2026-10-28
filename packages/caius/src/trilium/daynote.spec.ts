@@ -126,6 +126,28 @@ describe('until', () => {
   });
 });
 
+describe('Context ranges', () => {
+  const range = 'Sam is out Thu–Fri (from Thu 5 Nov until Fri 6 Nov)';
+
+  it('reads (from … until …) and (from …), and holds the line only inside its range', () => {
+    const lines = [range, 'Freeze (from 9 Nov)'];
+    const sam = { text: 'Sam is out Thu–Fri', from: '2026-11-05', until: '2026-11-06' };
+    const freeze = { text: 'Freeze', from: '2026-11-09' };
+    expect(parseContext(lines, '2026-11-02', '2026-11-04')).toEqual({ context: [], expiredContext: [], pendingContext: [sam, freeze] });
+    expect(parseContext(lines, '2026-11-02', '2026-11-05')).toEqual({ context: [sam], expiredContext: [], pendingContext: [freeze] });
+    expect(parseContext(lines, '2026-11-02', '2026-11-09')).toEqual({ context: [freeze], expiredContext: [sam], pendingContext: [] });
+  });
+
+  it('writes both ends, refuses a start after the end, and keeps the start when the end is rewritten', async () => {
+    const fake = fakeTrilium({ w: [periodNote('w', 'weekNote', '2026-W45'), TASKS] });
+    const added = await addContext(fake.api, { week: '2026-W45', text: 'Sam is out Thu–Fri', from: '2026-11-05', until: '2026-11-06' }, { now: NOW });
+    expect(added).toMatchObject({ status: 'added', line: range });
+    expect(await addContext(fake.api, { week: '2026-W45', text: 'x', from: '2026-11-06', until: '2026-11-05' }, { now: NOW })).toMatchObject({ status: 'skipped', reason: 'bad_request' });
+    const kept = await addContext(fake.api, { week: '2026-W45', text: 'Sam is out Thu–Fri', until: '2026-11-08' }, { now: new Date(2026, 10, 5, 9) });
+    expect(kept).toMatchObject({ status: 'updated', line: 'Sam is out Thu–Fri (from Thu 5 Nov until Sun 8 Nov)' });
+  });
+});
+
 describe('replaceMeetings', () => {
   const lines = ['09:30 Standup', 'a & b <c>'];
   const block = '<ul><li>09:30 Standup</li><li>a &amp; b &lt;c&gt;</li></ul>';

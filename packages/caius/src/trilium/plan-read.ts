@@ -104,6 +104,8 @@ export interface PlanView {
   context: ContextLine[];
   /** Context lines whose `(until …)` date is before the plan's date. */
   expiredContext: ContextLine[];
+  /** Context lines whose `(from …)` date is after the plan's date. */
+  pendingContext: ContextLine[];
 }
 
 const TARGETS: Record<PeriodKind, { min: number; max: number } | null> = {
@@ -241,6 +243,7 @@ function emptyView(period: PeriodKind, key: string): PlanView {
     meetings: [],
     context: [],
     expiredContext: [],
+    pendingContext: [],
   };
 }
 

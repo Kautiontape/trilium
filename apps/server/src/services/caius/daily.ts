@@ -273,13 +273,17 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const jira = unraised(read.inputs.jira, day.raised);
     const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
     const asked = await askedAbout(store, date);
-    const headsUp = headsUpOf(day.plan.meetings, failedCalendar(read) ? null : meetingLines(read.inputs.calendar));
+    const headsUp = [
+        ...headsUpOf(day.plan.meetings, failedCalendar(read) ? null : meetingLines(read.inputs.calendar)),
+        ...read.context.filter((line) => line.from === date).map((line) => line.text)
+    ];
     return { day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp };
 }
 
 /**
- * The Heads-up lines: what changed outside since the day's Meetings block was written, a meeting
+ * The calendar's Heads-up lines: what changed since the day's Meetings block was written, a meeting
  * moved, added or gone. Nothing on the first plan of a day, when there is no block to compare.
+ * `planOffer` adds the Context lines whose range starts that day.
  */
 export function headsUpOf(current: string[], lines: string[] | null): string[] {
     if (!lines || !current.length) return [];

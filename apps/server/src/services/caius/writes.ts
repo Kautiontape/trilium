@@ -30,7 +30,8 @@ export const TERRAIN_TITLE = "terrain.svg";
 export async function contextAddOn(store: NoteStore, { dryRun, ...req }: ContextAddInput, now: Date) {
     const place = req.date === undefined ? null : weekPlace(req.text, req.date);
     const until = req.until ?? place?.until;
-    const target = place ? { week: place.week, text: req.text, ...(until ? { until } : {}) } : req;
+    const from = place?.from;
+    const target = place ? { week: place.week, text: req.text, ...(from ? { from } : {}), ...(until ? { until } : {}) } : req;
     return { result: await addContext(store, target, { dryRun, now }), moved: place !== null };
 }
 
@@ -91,19 +92,19 @@ const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ]
  * Where a Context line written for `date` goes when it isn't about that day alone: the week note to
  * write it to, and the day it ends on when the line itself doesn't say. Null keeps it on the day.
  * - A clock time, or today, tonight, this morning, this afternoon or this evening: the day.
- * - Next week: next week's note. A weekday range ("Thu-Fri"): this week's, until its last day.
+ * - Next week: next week's note. A weekday range ("Thu-Fri"): this week's, from its first day until its last.
  * - This week, all week, or until a weekday or a date: this week's, with no end of its own.
  * - A ticket key: this week's, with no end, so "ZAP-2590 is open" doesn't lapse.
  * - A person's or a one-day state (is open, out, off or down; away, on leave, covering, freeze,
  *   on PTO, vacation or holiday): this week's, ending on `date`.
  */
-export function weekPlace(text: string, date: string): { week: string; until?: string } | null {
+export function weekPlace(text: string, date: string): { week: string; from?: string; until?: string } | null {
     if (/\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?[ap]m\b|\b(?:today|tonight|this (?:morning|afternoon|evening))\b/i.test(text)) return null;
     const at = new Date(`${date}T00:00:00Z`);
     const week = isoWeekKey(at);
     if (/\bnext week\b/i.test(text)) return { week: isoWeekKey(new Date(at.getTime() + 7 * 86_400_000)) };
-    const range = new RegExp(`\\b${WEEKDAY}\\s*(?:-|–|to)\\s*(${WEEKDAY})\\b`, "i").exec(text);
-    if (range?.[1]) return { week, until: weekdayOf(date, range[1]) };
+    const range = new RegExp(`\\b(${WEEKDAY})\\s*(?:-|–|to)\\s*(${WEEKDAY})\\b`, "i").exec(text);
+    if (range?.[1] && range[2]) return { week, from: weekdayOf(date, range[1]), until: weekdayOf(date, range[2]) };
     const untilWhen = new RegExp(`\\buntil\\s+(?:${WEEKDAY}\\b|\\d|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\s+\\d)`, "i");
     if (/\b(?:this week|all week)\b/i.test(text) || untilWhen.test(text)) return { week };
     if (/\b[A-Z][A-Z0-9]+-\d+\b/.test(text)) return { week };

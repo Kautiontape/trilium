@@ -156,7 +156,7 @@ export type ContextAddResult =
  */
 export async function addContext(
   api: NoteStore,
-  req: { date?: string; week?: string; text: string; until?: string },
+  req: { date?: string; week?: string; text: string; from?: string; until?: string },
   opts: { dryRun?: boolean; now?: Date } = {},
 ): Promise<ContextAddResult> {
   const period = req.date !== undefined ? 'day' : 'week';
@@ -164,13 +164,18 @@ export async function addContext(
   if ((req.date === undefined) === (req.week === undefined) || !isPeriodKey(period, key)) {
     return { status: 'skipped', reason: 'bad_request', detail: 'give exactly one of date (YYYY-MM-DD) or week (YYYY-Www) that exists' };
   }
-  const parsed = parseContext([req.text], periodSpan(period, key).start).context[0];
+  const { context, expiredContext, pendingContext } = parseContext([req.text], periodSpan(period, key).start);
+  const parsed = context[0] ?? expiredContext[0] ?? pendingContext[0];
   const text = parsed?.text ?? '';
   const until = req.until ?? parsed?.until;
+  const from = req.from ?? parsed?.from;
   const noteDate = periodSpan(period, key).start;
   if (!text) return { status: 'skipped', reason: 'bad_request', detail: 'text is required' };
   if (until !== undefined && (!isPeriodKey('day', until) || until < noteDate)) {
     return { status: 'skipped', reason: 'bad_request', detail: `until must be a YYYY-MM-DD on or after ${noteDate}` };
+  }
+  if (from !== undefined && (!isPeriodKey('day', from) || (until !== undefined && from > until))) {
+    return { status: 'skipped', reason: 'bad_request', detail: 'from must be a YYYY-MM-DD on or before until' };
   }
 
   let note: StoreNote | null = await findPeriodNote(api, period, key);
@@ -189,11 +194,11 @@ export async function addContext(
     // week), the line is written to the note asked for instead, where it is the newer copy.
     const where = 'noteId' in hit ? (hit as ContextEntry) : note ? { period: 'week' as const, key, noteId: note.noteId } : null;
     if (where && where.noteId === note?.noteId) {
-      return extendUntil(api, where, hit.text, until, opts.dryRun);
+      return extendUntil(api, where, hit.text, hit.from ?? from, until, opts.dryRun);
     }
   }
 
-  const line = until ? `${text} (until ${formatUntil(until, noteDate)})` : text;
+  const line = contextLine(text, from, until, noteDate);
   let created = false;
   if (!note && !opts.dryRun) {
     note = period === 'day' ? await api.calendarDay(key) : await api.calendarWeek(key);
@@ -212,16 +217,23 @@ export async function addContext(
   return { status: 'added', writtenNoteId: noteId, line, ...(created ? { detail: `created the ${period} note` } : {}) };
 }
 
-/** Rewrites the `(until …)` of the Context line `text` in a note: to `until`, or away when there is none. */
+/** A Context line with its range: `text (from Thu 5 Nov until Fri 6 Nov)`, either end left out when there is none. */
+function contextLine(text: string, from: string | undefined, until: string | undefined, noteDate: string): string {
+  const ends = [from ? `from ${formatUntil(from, noteDate)}` : '', until ? `until ${formatUntil(until, noteDate)}` : ''].filter(Boolean);
+  return ends.length ? `${text} (${ends.join(' ')})` : text;
+}
+
+/** Rewrites the `(until …)` of the Context line `text` in a note: to `until`, or away when there is none, keeping its `from`. */
 async function extendUntil(
   api: NoteStore,
   where: { period: 'day' | 'week'; key: string; noteId: string },
   text: string,
+  from: string | undefined,
   until: string | undefined,
   dryRun?: boolean,
 ): Promise<ContextAddResult> {
   const noteDate = periodSpan(where.period, where.key).start;
-  const line = until ? `${text} (until ${formatUntil(until, noteDate)})` : text;
+  const line = contextLine(text, from, until, noteDate);
   const before = await api.content(where.noteId);
   const after = setContextLine(before, text, line, noteDate);
   if (after === null) return { status: 'skipped', reason: 'edited', detail: `${where.key} changed meanwhile; nothing written` };
@@ -243,8 +255,8 @@ export function setContextLine(html: string, text: string, line: string, noteDat
   const copies = (block?.inside ?? [])
     .flatMap((el) => el.querySelectorAll('li'))
     .map((item) => {
-      const { context, expiredContext } = parseContext([item.text.replace(/\s+/g, ' ').trim()], noteDate);
-      return { item, parsed: context[0] ?? expiredContext[0] };
+      const { context, expiredContext, pendingContext } = parseContext([item.text.replace(/\s+/g, ' ').trim()], noteDate);
+      return { item, parsed: context[0] ?? expiredContext[0] ?? pendingContext[0] };
     })
     .filter(({ parsed }) => sameContext(parsed?.text ?? '') === sameContext(text));
   // A copy without an until outlasts any with one.

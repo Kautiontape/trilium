@@ -93,6 +93,15 @@ describe('gatherContext', () => {
     expect(friday.context.find((c) => c.text === 'Jaco out')).toMatchObject({ period: 'week', key: '2026-W45' });
   });
 
+  it('reads a ranged line only inside its range, with its start', async () => {
+    const fake = fakeTrilium({ w: week('2026-W45', 'Sam is out Thu–Fri (from Thu 5 Nov until Fri 6 Nov)') });
+    expect(ids(await gatherContext(fake.api, '2026-11-04'))).toEqual([]);
+    expect((await gatherContext(fake.api, '2026-11-05')).context).toEqual([
+      { text: 'Sam is out Thu–Fri', from: '2026-11-05', until: '2026-11-06', period: 'week', key: '2026-W45', noteId: 'w2026-W45' },
+    ]);
+    expect(ids(await gatherContext(fake.api, '2026-11-09'))).toEqual([]);
+  });
+
   it('lets a newer expired line hide the older open-ended one', async () => {
     const fake = fakeTrilium({
       a: week('2026-W45', 'Jaco out'),

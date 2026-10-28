@@ -319,3 +319,22 @@ describe("Heads-up comes only from outside events", () => {
         expect(brief).not.toContain("Jaco");
     });
 });
+
+describe("a Context line can hold over a range of days", () => {
+    it("'Sam is out Thu–Fri', written on Monday, holds on Thursday and Friday only, and is Thursday's Heads-up", async () => {
+        at("2026-11-30T17:30");
+        const added = await call("caius_context_add", { date: "2026-11-30", text: "Sam is out Thu–Fri" });
+        expect(added.results[0]).toMatchObject({ status: "added", line: "Sam is out Thu–Fri (from Thu 3 Dec until Fri 4 Dec)", detail: "moved to the week note" });
+        const inForce = async (date: string) => (await call("caius_context", { date })).context.map((c: any) => c.text).includes("Sam is out Thu–Fri");
+        expect([ await inForce("2026-12-01"), await inForce("2026-12-02"), await inForce("2026-12-03"), await inForce("2026-12-04"), await inForce("2026-12-07") ])
+            .toEqual([ false, false, true, true, false ]);
+
+        at("2026-12-03T09:30");
+        const thursday = await call("caius_planday", { date: "2026-12-03", step: "inputs", refresh: true });
+        expect(thursday.data.headsUp).toEqual([ "Sam is out Thu–Fri" ]);
+        const applied = await call("caius_plan_apply", { date: "2026-12-03", brief: prose });
+        expect(await cls.init(() => store.content(applied.briefNoteId))).toContain("Sam is out Thu–Fri");
+        at("2026-12-04T09:30");
+        expect((await call("caius_planday", { date: "2026-12-04", step: "inputs", refresh: true })).data.headsUp).toEqual([]);
+    });
+});
