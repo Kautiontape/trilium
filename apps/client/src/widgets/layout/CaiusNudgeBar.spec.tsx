@@ -88,6 +88,15 @@ describe("CaiusNudgeBar", () => {
         expect(h.startCaiusConversation).toHaveBeenLastCalledWith("Wind down 2026-11-02");
     });
 
+    it("names last week's days with their dates on a Monday", async () => {
+        vi.setSystemTime(new Date(2026, 10, 2, 9, 40));
+        const monday = buildNote({ id: "mon2", title: "2", "#dateNote": "2026-11-02" });
+        h.nudge.mockResolvedValue({ ...CATCHUP, date: "2026-11-02", lastWorkday: "2026-10-30", days: [ "2026-10-28", "2026-10-29", "2026-10-30" ] });
+        expect(text(await mount(monday))).toBe("Wed 28 Oct, Thu 29 Oct and Fri 30 Oct have 3 open tasks.");
+        h.nudge.mockResolvedValue({ ...CATCHUP, date: "2026-11-02", lastWorkday: "2026-10-30", days: [ "2026-10-30" ] });
+        expect(text(await mount(monday))).toBe("Fri 30 Oct has 3 open tasks.");
+    });
+
     it("offers the catch-up of the last workday: move all to today, review, or skip", async () => {
         h.nudge.mockResolvedValue(CATCHUP);
         const bar = await mount(today);

@@ -313,7 +313,7 @@ describe("caius_planday", () => {
         const answer = await planday({ date: MONDAY, step: "catchup" });
         expect(answer).toMatchObject({ step: "catchup", date: MONDAY, next: "inputs" });
         // Thursday was never closed either, so its tasks come with Friday's.
-        expect(answer.question).toBe("Thursday and Friday have 4 open tasks. Move all to today, review them, or skip?");
+        expect(answer.question).toBe("Thu 5 Nov and Fri 6 Nov have 4 open tasks. Move all to today, review them, or skip?");
         expect(answer.data).toMatchObject({ lastWorkday: FRIDAY, days: [ THURSDAY, FRIDAY ], moveTo: MONDAY, skipped: false });
         expect(answer.data.tasks.map((task: any) => task.listItemId)).toEqual([ "o1", "o2", "f1", "f3" ]);
 

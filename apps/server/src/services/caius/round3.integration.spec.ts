@@ -305,3 +305,24 @@ describe("a wound-down day says so", () => {
         expect(await stamps()).toEqual([ `${DAY}T17:20:00` ]);
     });
 });
+
+describe("the catch-up names days across a weekend", () => {
+    it("Mon 11 Jan: last week's days come with their dates, and this week's by weekday", async () => {
+        await cls.init(async () => {
+            for (const [ date, id ] of [ [ "2027-01-06", "dwed" ], [ "2027-01-07", "dthu" ], [ "2027-01-08", "dfri" ] ]) {
+                const day = await store.calendarDay(date);
+                await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li(id, `Open on ${date}`))}`);
+            }
+        });
+        at("2027-01-11T09:40");
+        expect((await call("caius_planday", { date: "2027-01-11", step: "catchup" })).question)
+            .toBe("Wed 6 Jan, Thu 7 Jan and Fri 8 Jan have 3 open tasks. Move all to today, review them, or skip?");
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-01-11");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("dmon", "Open on Monday"))}`);
+        });
+        at("2027-01-12T09:40");
+        expect((await call("caius_planday", { date: "2027-01-12", step: "catchup" })).question)
+            .toBe("Wed 6 Jan, Thu 7 Jan, Fri 8 Jan and Monday have 4 open tasks. Move all to today, review them, or skip?");
+    });
+});

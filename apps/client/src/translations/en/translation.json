@@ -4553,7 +4553,22 @@
       "planned_untimed": "Planned.",
       "planned_on": "Planned {{weekday}} {{time}}.",
       "wound_down": "Wound down {{time}}.",
-      "wound_down_untimed": "Wound down."
+      "wound_down_untimed": "Wound down.",
+      "day_label": "{{- weekday}} {{day}} {{- month}}",
+      "short_months": {
+        "january": "Jan",
+        "february": "Feb",
+        "march": "Mar",
+        "april": "Apr",
+        "may": "May",
+        "june": "Jun",
+        "july": "Jul",
+        "august": "Aug",
+        "september": "Sep",
+        "october": "Oct",
+        "november": "Nov",
+        "december": "Dec"
+      }
     },
     "chat_unavailable": "Open the sidebar chat from a regular note to start Caius."
   }

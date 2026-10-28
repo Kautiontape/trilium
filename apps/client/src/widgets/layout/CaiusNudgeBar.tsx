@@ -78,7 +78,7 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
         case "catchup": {
             const movable = shown.tasks.filter((task): task is MovableTask => !!task.listItemId);
             const days = shown.days?.length ? shown.days : [ shown.lastWorkday ];
-            const names = days.map(weekdayName);
+            const names = days.map((day) => dayName(day, date));
             text = names.length > 1
                 ? t("caius.nudge.catchup_days", { weekdays: t("caius.nudge.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: shown.tasks.length })
                 : t("caius.nudge.catchup", { weekday: names[0], count: shown.tasks.length });
@@ -226,6 +226,25 @@ const WEEKDAYS = [ "sunday", "monday", "tuesday", "wednesday", "thursday", "frid
 function weekdayName(date: string) {
     return t(`i18n.${WEEKDAYS[weekdayOf(date)]}`);
 }
+
+/**
+ * A catch-up day as the bar names it: its weekday in the week of `date`, "Tuesday", and with its
+ * date in an earlier week, "Fri 30 Oct", so a Monday's bar never reads last Friday as this one.
+ */
+function dayName(day: string, date: string) {
+    const [ year, month, dayOfMonth ] = day.split("-").map(Number);
+    return day < mondayOf(date)
+        ? t("caius.nudge.day_label", { weekday: shortWeekday(day), day: dayOfMonth, month: t(`caius.nudge.short_months.${MONTHS[month - 1]}`), year })
+        : weekdayName(day);
+}
+
+/** The Monday of the week of a `YYYY-MM-DD`, as `YYYY-MM-DD`. */
+function mondayOf(date: string) {
+    const [ year, month, day ] = date.split("-").map(Number);
+    return dayKey(new Date(year, month - 1, day - (weekdayOf(date) + 6) % 7));
+}
+
+const MONTHS = [ "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december" ];
 
 /** The short weekday of a `YYYY-MM-DD` in the UI's language: "Tue". */
 function shortWeekday(date: string) {

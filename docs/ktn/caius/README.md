@@ -59,7 +59,7 @@ Today's day note (today by the Caius clock) shows a slim bar under its journal n
 | State | When | Bar | Actions |
 |---|---|---|---|
 | Wound down | Today was wound down (`#caiusWoundDown` on today's note, holding the time) | "Wound down 17:20." | none |
-| Catch-up | Today wasn't wound down, a workday since the last closed one still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks.", or "Tuesday and Wednesday have 5 open tasks." | **Move all to today**, **Review**, **Skip** |
+| Catch-up | Today wasn't wound down, a workday since the last closed one still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks.", or "Tuesday and Wednesday have 5 open tasks."; a day in an earlier week has its date: "Wed 28 Oct, Thu 29 Oct and Fri 30 Oct have 9 open tasks." | **Move all to today**, **Review**, **Skip** |
 | Not planned | Today wasn't wound down, no catch-up is due, and today has no Morning Brief, or its brief was planned on an earlier day | "No plan yet." | **Plan my day** |
 | Planned | Today wasn't wound down and has a Morning Brief planned today | "Planned 08:40." ("Planned Fri 17:20." for a plan made on another day) | **Refresh** |
 
@@ -169,7 +169,7 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
 
 **Plan my day** plans `date`:
 
-1. **`catchup`.** When the workdays since the last closed one still have live tasks, as the nudge bar counts them: "Friday has 2 open tasks. Move all to today, review them, or skip?", or "Tuesday and Wednesday have 5 open tasks…". `data.days` lists them, oldest first, and `data.oldestDay` is the one Review winds down. After `caius_skip_catchup` for the day, it no longer asks.
+1. **`catchup`.** When the workdays since the last closed one still have live tasks, as the nudge bar counts them: "Friday has 2 open tasks. Move all to today, review them, or skip?", or "Tuesday and Wednesday have 5 open tasks…"; a day in an earlier week than `date` is named with its date ("Fri 30 Oct has 2 open tasks…"). `data.days` lists them, oldest first, and `data.oldestDay` is the one Review winds down. After `caius_skip_catchup` for the day, it no longer asks.
 2. **`inputs`.**
    - **Candidates:** as in Wind down, but only what is new since the day's brief was last planned (`#caiusPlannedAt`).
    - **Meetings:** the Meetings block to write from the calendar, beside the current one.

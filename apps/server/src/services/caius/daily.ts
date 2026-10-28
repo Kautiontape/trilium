@@ -219,10 +219,10 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             standing: await deps.standing(),
             catchup: await catchupOf(deps.store, date, deps.now)
         }));
-        const names = days.map(weekdayName);
+        const names = days.map((day) => catchupDayName(day, date));
         const question = !tasks.length ? null : names.length > 1
             ? t("caius.daily.catchup_days", { weekdays: t("caius.daily.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: tasks.length })
-            : t("caius.daily.catchup", { weekday: names[0] ?? weekdayName(last), count: tasks.length });
+            : t("caius.daily.catchup", { weekday: names[0] ?? catchupDayName(last, date), count: tasks.length });
         return reply(standing, { lastWorkday: last, days, oldestDay: days[0] ?? null, moveTo: date, skipped, tasks }, question, "inputs");
     }
 
@@ -282,6 +282,11 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         },
         errors: read.inputs.errors
     }, null, null);
+}
+
+/** A catch-up day as the question names it: by weekday in the week of `date`, with its date in an earlier week ("Fri 30 Oct"). */
+function catchupDayName(day: string, date: string): string {
+    return isoWeekKey(utcDay(day)) < isoWeekKey(utcDay(date)) ? dateLabel(day) ?? day : weekdayName(day);
 }
 
 /**
