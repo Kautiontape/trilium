@@ -38,7 +38,7 @@ export const RAISED_LABEL = "caiusRaised";
 export const ASKED_LABEL = "caiusAsked";
 /** On a day note being wound down: an item a wind-down of that day ticked, moved or dropped, by its listItemId; a re-run's answer can name it. */
 export const SETTLED_LABEL = "caiusSettled";
-/** On a day note being wound down: an open item an ambiguous answer matched, by its listItemId; it gets no fate until he names it. */
+/** On a day note being wound down: an open item an ambiguous answer matched, as `<listItemId>@<period>` with the period of the note it lives on; it gets no fate until he names it. */
 export const HELD_LABEL = "caiusHeld";
 /** On a day note being wound down: the items one ambiguous answer held together, space-separated; once it narrows to one, that one is released. */
 export const HELD_GROUP_LABEL = "caiusHeldGroup";

@@ -505,17 +505,19 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         held.unshift(...live.filter((task) => task.listItemId && holding.has(task.listItemId)));
         if (skippedHere) break;
     }
-    // A held task is asked about every morning until he names it, wherever it lives and however long
-    // ago its day was closed; a day he skipped the catch-up of is quiet until the next.
-    if (holding.size && !skipped) {
-        const docs = (await loadJournal(store)).docs;
-        for (const task of openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, now))) {
-            if (!task.listItemId || !holding.has(task.listItemId) || task.parentListItemId) continue;
-            // A day's own items are its plan, not its catch-up; a week or month item counts from its first day, since `2027-W45` sorts after every date.
-            if (PERIODS.day.pattern.test(task.period) ? task.period >= date : periodStart(task.period) > date) continue;
-            if (held.some((h) => h.listItemId === task.listItemId)) continue;
-            held.push({ noteId: task.noteId, listItemId: task.listItemId, text: task.text, section: task.section, critical: task.critical, period: task.period });
-            if (PERIODS.day.pattern.test(task.period) && !days.includes(task.period)) days.push(task.period);
+    // A held task is asked about every morning until he names it, however long ago its day was closed;
+    // a day he skipped the catch-up of is quiet until the next. Only the notes the held items live on are read.
+    const periods = skipped ? [] : [ ...new Set(holding.values()) ];
+    for (const period of periods) {
+        const kind = periodKind(period);
+        // A day's own items are its plan, not its catch-up; a week or month item counts from its first day, since `2027-W45` sorts after every date.
+        if (!kind || (kind === "day" ? period >= date : periodStart(period) > date)) continue;
+        const periodNote = await findPeriodNote(store, kind, period);
+        if (!periodNote || periodNote.type !== "text" || periodNote.isProtected) continue;
+        for (const task of mainTasks(await readPlan(store, kind, period, now))) {
+            if (!task.listItemId || holding.get(task.listItemId) !== period || held.some((h) => h.listItemId === task.listItemId)) continue;
+            held.push({ noteId: task.noteId, listItemId: task.listItemId, text: task.text, section: task.section, critical: task.critical, period });
+            if (kind === "day" && !days.includes(period)) days.push(period);
         }
     }
     days.sort();
@@ -523,13 +525,36 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
     return { lastWorkday: last, days, note, skipped, tasks, held };
 }
 
-/** Every list item held (`#caiusHeld`) anywhere in the Journal, whichever day note the hold was given on. The caller holds the lock. */
-export async function allHeld(store: NoteStore): Promise<Set<string>> {
-    const held = new Set<string>();
+/**
+ * Every list item held (`#caiusHeld`) anywhere in the Journal, whichever day note the hold was given
+ * on, with the period of the note the item lives on. The caller holds the lock.
+ */
+export async function allHeld(store: NoteStore): Promise<Map<string, string>> {
+    const held = new Map<string, string>();
     for (const note of await store.search(`#${HELD_LABEL}`)) {
-        for (const a of note.attributes) if (a.type === "label" && a.name === HELD_LABEL) held.add(a.value);
+        const day = label(note, PERIODS.day.label) ?? "";
+        for (const a of note.attributes) {
+            if (a.type !== "label" || a.name !== HELD_LABEL) continue;
+            const { id, period } = heldValueOf(a.value);
+            held.set(id, period ?? day);
+        }
     }
     return held;
+}
+
+/**
+ * A `#caiusHeld` value, `<listItemId>@<period>`, as the item's id and the period of the note it lives
+ * on. A value without a period, from before periods were kept, gives null.
+ */
+export function heldValueOf(value: string): { id: string; period: string | null } {
+    const at = value.lastIndexOf("@");
+    const period = at > 0 ? value.slice(at + 1) : "";
+    return periodKind(period) ? { id: value.slice(0, at), period } : { id: value, period: null };
+}
+
+/** The kind of a day, ISO week or month key, or null for anything else. */
+function periodKind(key: string): "day" | "week" | "month" | null {
+    return ([ "day", "week", "month" ] as const).find((kind) => PERIODS[kind].pattern.test(key)) ?? null;
 }
 
 /** The day notes that carry a hold (`#caiusHeld` or `#caiusHeldGroup`), by their day. The caller holds the lock. */

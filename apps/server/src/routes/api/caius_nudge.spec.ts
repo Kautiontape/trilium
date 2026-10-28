@@ -1,8 +1,15 @@
+import { loadJournal, scanDocs } from "@triliumnext/caius";
 import { becca, cls } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type ApiTestContext, bootLoggedInApp } from "../../../spec/support/internal_api.js";
-import { createBeccaStore, createChildNote, setLabel } from "../../services/caius/store.js";
+import { createBeccaStore, createChildNote, removeLabel, setLabel } from "../../services/caius/store.js";
+
+// The Journal readers pass through to the real ones, so a test can tell whether a nudge read the whole Journal.
+vi.mock("@triliumnext/caius", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@triliumnext/caius")>();
+    return { ...actual, loadJournal: vi.fn(actual.loadJournal), scanDocs: vi.fn(actual.scanDocs) };
+});
 
 const li = (id: string, text: string, checked = false) =>
     `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox"${checked ? " checked=\"checked\"" : ""} disabled="disabled">`
@@ -124,11 +131,35 @@ describe("Caius nudge route", () => {
             await store.putContent(week.noteId, `<h3>Work</h3>${ul(li("wk1", "Week export check"))}`);
             const wed = await store.calendarDay("2033-08-17");
             await store.putContent(wed.noteId, `<h3>Work</h3>${ul(li("wd1", "Day export check"))}`);
-            await store.addLabel(wed.noteId, "caiusHeld", "wk1");
-            await store.addLabel(wed.noteId, "caiusHeld", "wd1");
+            await store.addLabel(wed.noteId, "caiusHeld", "wk1@2033-W33");
+            await store.addLabel(wed.noteId, "caiusHeld", "wd1@2033-08-17");
         });
         const { body } = await nudge("2033-08-18").expect(200);
         expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "wk1", "wd1" ]));
+    });
+
+    it("G4: with one hold, reads the notes its items live on, never the whole Journal", async () => {
+        await cls.init(async () => {
+            for (const note of await store.search("#caiusHeld")) {
+                for (const a of note.attributes) if (a.type === "label" && a.name === "caiusHeld") removeLabel(note.noteId, "caiusHeld", a.value);
+            }
+            const mon = await store.calendarDay("2033-09-05");
+            await store.putContent(mon.noteId, `<h3>Work</h3>${ul(li("jw1", "Check the export"))}`);
+            const tue = await store.calendarDay("2033-09-06");
+            await store.putContent(tue.noteId, `<h3>Work</h3>${ul(li("jw3", "Tuesday thing", true))}`);
+            setLabel(tue.noteId, "caiusWoundDown", "2033-09-06");
+            const wed = await store.calendarDay("2033-09-07");
+            await store.putContent(wed.noteId, `<h3>Work</h3>${ul(li("jw2", "Verify the export"))}`);
+            await store.addLabel(wed.noteId, "caiusHeld", "jw1@2033-09-05");
+            await store.addLabel(wed.noteId, "caiusHeld", "jw2@2033-09-07");
+        });
+        vi.mocked(loadJournal).mockClear();
+        vi.mocked(scanDocs).mockClear();
+        const { body } = await nudge("2033-09-08").expect(200);
+        expect(loadJournal).not.toHaveBeenCalled();
+        expect(scanDocs).not.toHaveBeenCalled();
+        expect(body).toMatchObject({ state: "catchup", days: [ "2033-09-05", "2033-09-07" ], tasks: [] });
+        expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual([ "jw1", "jw2" ]);
     });
 
     it("walks past a missing day to the open one before it", async () => {

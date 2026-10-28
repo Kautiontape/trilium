@@ -40,6 +40,7 @@ import {
     closingLines,
     closingPeriods,
     heldDays,
+    heldValueOf,
     dateLabel,
     proposedForward,
     dayKey,
@@ -194,7 +195,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // planAsks is filled here and read by `answer`, which runs after.
         const planAsks: HoldGroup[] = [];
         for (const day of await heldDays(store)) {
-            const settled = await settleHolds(store, day, liveIds, new Map(input.done.map((id) => [ id, "done" ] as const)), []);
+            const settled = await settleHolds(store, day, liveIds, new Map(input.done.map((id) => [ id, "done" ] as const)), [], (id) => items.find((item) => item.id === id)?.period);
             for (const id of settled.held) kept.add(id);
             planAsks.push(...settled.asks);
         }
@@ -364,11 +365,12 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
         // A hold's items can live on several days, so whether one is still open is read across the Journal.
         const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
-        const { held, asks: holdAsks, released } = await settleHolds(store, date, liveIds, namedNow, input.heldGroups);
+        const periodOf = (id: string) => journalItem(id)?.period;
+        const { held, asks: holdAsks, released } = await settleHolds(store, date, liveIds, namedNow, input.heldGroups, periodOf);
         // An item an earlier wind-down held stays held too, settled on the note the hold was given on.
         const heldElsewhere: string[] = [];
         for (const day of (await heldDays(store)).filter((day) => day !== date)) {
-            const settled = await settleHolds(store, day, liveIds, namedNow, []);
+            const settled = await settleHolds(store, day, liveIds, namedNow, [], periodOf);
             heldElsewhere.push(...settled.held);
             holdAsks.push(...settled.asks);
             released.push(...settled.released);
@@ -989,12 +991,13 @@ const ID_SHAPED = /^(?:[a-z]?[0-9a-f]{8,}|[oclx][0-9a-f]{5}|[dw]\d+|[lo][0-9a-f]
  * The items held on the day note of `date` after a call that named `named` and held `added`: the
  * earlier holds he didn't name and the new ones, among `live`, less the rest of an earlier group
  * once he named one of its items or it narrowed to one, which are `released`. Rewrites the note's
- * hold labels to match.
+ * hold labels to match; a new hold records the period `periodOf` gives the note its item lives on.
  */
-async function settleHolds(store: NoteStore, date: string, live: Set<string>, named: Map<string, string>, added: HoldGroup[]): Promise<{ held: string[]; asks: HoldGroup[]; released: string[] }> {
+async function settleHolds(store: NoteStore, date: string, live: Set<string>, named: Map<string, string>, added: HoldGroup[], periodOf: (id: string) => string | undefined): Promise<{ held: string[]; asks: HoldGroup[]; released: string[] }> {
     const note = await findPeriodNote(store, "day", date);
     const labels = (name: string) => note ? note.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) : [];
-    const heldBefore = labels(HELD_LABEL);
+    const heldValues = labels(HELD_LABEL);
+    const heldBefore = heldValues.map((value) => heldValueOf(value).id);
     const groupsBefore = labels(HELD_GROUP_LABEL);
     const fresh = new Set(added.flatMap((group) => group.ids));
     let held = [ ...new Set([ ...heldBefore.filter((id) => !named.has(id)), ...fresh ]) ].filter((id) => live.has(id));
@@ -1020,10 +1023,13 @@ async function settleHolds(store: NoteStore, date: string, live: Set<string>, na
     const groups = [ ...groupsBefore.map((value) => narrowed.get(value) ?? value), ...added.map((group) => [ group.intent, ...group.ids ].join(" ")) ]
         .filter((value) => holdGroupOf(value).ids.some((id) => held.includes(id)));
     if (note) {
-        for (const id of heldBefore.filter((id) => !held.includes(id))) removeLabel(note.noteId, HELD_LABEL, id);
+        for (const value of heldValues.filter((value) => !held.includes(heldValueOf(value).id))) removeLabel(note.noteId, HELD_LABEL, value);
         for (const value of groupsBefore.filter((value) => !groups.includes(value))) removeLabel(note.noteId, HELD_GROUP_LABEL, value);
     }
-    await labelDay(store, date, HELD_LABEL, held);
+    await labelDay(store, date, HELD_LABEL, held.filter((id) => !heldBefore.includes(id)).map((id) => {
+        const period = periodOf(id);
+        return period ? `${id}@${period}` : id;
+    }));
     await labelDay(store, date, HELD_GROUP_LABEL, groups);
     return { held, asks, released: heldBefore.filter((id) => !held.includes(id) && !named.has(id) && live.has(id)) };
 }
