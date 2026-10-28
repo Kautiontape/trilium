@@ -230,7 +230,7 @@ describe("caius_brief_write", () => {
         const [ attachment ] = header?.getAttachments() ?? [];
         expect(attachment).toMatchObject({ role: "image", title: "terrain.svg" });
         const headerHtml = String(header?.getContent());
-        expect(headerHtml).toMatch(/^<p>Thursday · November 12 2026<\/p><h2>Ship the fix, then review<\/h2><p><img src="api\/attachments\/[^/]+\/image\/terrain\.svg" alt="[^"]+"><\/p><figure class="table">/);
+        expect(headerHtml).toMatch(/^<p>Thursday · November 12 2026<\/p><h2>Ship the fix, then review<\/h2><p><img class="image_resized" style="width:100%;" src="api\/attachments\/[^/]+\/image\/terrain\.svg" alt="[^"]+"><\/p><figure class="table">/);
         expect(headerHtml.match(/<td>/g)).toHaveLength(3);
 
         const body = String(briefNote?.getContent());

@@ -33,7 +33,7 @@ describe('withInclude replacing a stale header', () => {
 });
 
 describe('headerHtml', () => {
-  it('writes the date line, the headline, the drawing and the acts as a 3-column table, escaped', () => {
+  it('writes the date line, the headline, the drawing at the full width and the acts as a 3-column table, escaped', () => {
     const html = headerHtml({
       dateLine: 'Monday · November 9 2026',
       headline: 'Ship <the> fix & review',
@@ -46,7 +46,7 @@ describe('headerHtml', () => {
     });
     expect(html).toBe(
       '<p>Monday · November 9 2026</p><h2>Ship &lt;the&gt; fix &amp; review</h2>'
-      + '<p><img src="api/attachments/a1/image/terrain.svg" alt="The day"></p>'
+      + '<p><img class="image_resized" style="width:100%;" src="api/attachments/a1/image/terrain.svg" alt="The day"></p>'
       + '<figure class="table"><table><tbody><tr>'
       + '<td><p><strong>10:00 to 12:00</strong></p><p>Standup, then the fix.</p></td>'
       + '<td><p><strong>12:00 to 18:00</strong></p><p>Review &amp; tests.</p></td>'

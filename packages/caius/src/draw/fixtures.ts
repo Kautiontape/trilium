@@ -55,3 +55,49 @@ export const LATE_HEAVY_DAY: TerrainInput = {
   work: [{ start: '13:00', end: '14:30', label: 'ZAP-9', focus: true }],
   weather: { code: 95, label: 'Thunderstorm' },
 };
+
+const rhythm = { start: '10:00', end: '23:00', workEnd: '18:00' };
+
+/**
+ * The days of the T13A simulation, from `runs/build-2026-10-27/T12/ical/work.ics` and
+ * `personal.ics` in `daily-brief` as `caius_inputs` reads them, with the work the simulation drew
+ * laid out by `layoutWork`: Tue 3 Nov, at 09:35 and after the Customer Call moved to 15:00; Thu 5
+ * Nov with laundry in the evening; and Mon 9 Nov, four short tickets on an empty calendar.
+ */
+export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks: { label: string; minutes: number; evening?: boolean }[] }[] = [
+  {
+    name: 'Tue 3 Nov',
+    meetings: [
+      { start: '10:00', end: '10:30', title: 'Weekly Planning Sync' },
+      { start: '11:00', end: '11:30', title: 'Customer Call' },
+    ],
+    tasks: [{ label: 'ZAP-105', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'ZAP-110', minutes: 30 }],
+  },
+  {
+    name: 'Tue 3 Nov, 11:05',
+    meetings: [
+      { start: '10:00', end: '10:30', title: 'Weekly Planning Sync' },
+      { start: '15:00', end: '15:30', title: 'Customer Call' },
+    ],
+    tasks: [{ label: 'ZAP-105', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }],
+  },
+  {
+    name: 'Thu 5 Nov',
+    meetings: [
+      { start: '10:00', end: '10:15', title: 'Daily Standup' },
+      { start: '10:30', end: '11:30', title: 'Incident Review' },
+      { start: '11:00', end: '12:00', title: 'Vendor Onboarding' },
+      { start: '13:00', end: '14:00', title: 'Roadmap Review' },
+      { start: '14:00', end: '15:30', title: 'Design Workshop' },
+      { start: '16:00', end: '16:30', title: 'Interview Panel' },
+    ],
+    tasks: [{ label: 'ZAP-110', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'Laundry', minutes: 45, evening: true }],
+  },
+  {
+    name: 'Mon 9 Nov',
+    meetings: [],
+    tasks: [{ label: 'ZAP-110', minutes: 30 }, { label: 'ZAP-101', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'ZAP-105', minutes: 30 }],
+  },
+];
+
+export const T13A_RHYTHM = rhythm;

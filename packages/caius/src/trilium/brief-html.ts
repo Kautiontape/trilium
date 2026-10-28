@@ -49,14 +49,18 @@ export interface BriefAct {
   text: string;
 }
 
-/** The header note: the date line, the headline, the drawing and the three acts as one table row. */
+/**
+ * The header note: the date line, the headline, the drawing and the three acts as one table row.
+ * The drawing is an inline image resized to 100% as CKEditor stores one, since its SVG is 640 wide
+ * and an `<img>` without a width shows it at that size.
+ */
 export function headerHtml(header: { dateLine: string; headline: string; image: { src: string; alt: string }; acts: BriefAct[] }): string {
   const cells = header.acts
     .map((act) => `<td><p><strong>${escapeHtml(act.range)}</strong></p><p>${escapeHtml(act.text)}</p></td>`)
     .join('');
   return (
     `<p>${escapeHtml(header.dateLine)}</p><h2>${escapeHtml(header.headline)}</h2>` +
-    `<p><img src="${escapeHtml(header.image.src)}" alt="${escapeHtml(header.image.alt).replace(/"/g, '&quot;')}"></p>` +
+    `<p><img class="image_resized" style="width:100%;" src="${escapeHtml(header.image.src)}" alt="${escapeHtml(header.image.alt).replace(/"/g, '&quot;')}"></p>` +
     `<figure class="table"><table><tbody><tr>${cells}</tr></tbody></table></figure>`
   );
 }

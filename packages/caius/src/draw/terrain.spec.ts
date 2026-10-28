@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { HEAVY_DAY, LATE_HEAVY_DAY, NORMAL_DAY, OPEN_DAY } from './fixtures.js';
+import { layoutWork } from '../daily/blocks.js';
+import { HEAVY_DAY, LATE_HEAVY_DAY, NORMAL_DAY, OPEN_DAY, T13A_DAYS, T13A_RHYTHM } from './fixtures.js';
 import { renderDayTerrain, type TerrainInput, weatherIcon } from './terrain.js';
 
 describe('renderDayTerrain', () => {
@@ -56,9 +57,9 @@ describe('renderDayTerrain', () => {
   });
 
   it('shifts a label that would be cut by the edge inward, keeping the dot on the line', () => {
-    const title = 'Quarterly planning offsite'; // 26 characters: clamp at 3.7 * 26 + 4 = 100.2
+    const title = 'Quarterly planning offsite'; // 26 characters at 14 px bold: clamp at 26 * 14 * 0.68 / 2 + 2 = 125.8
     const svg = renderDayTerrain({ ...OPEN_DAY, events: [{ start: '10:00', end: '10:15', title }] });
-    expect(svg).toMatch(new RegExp(`<text x="100\\.2" [^>]*>${title}<`));
+    expect(svg).toMatch(new RegExp(`<text x="125\\.8" [^>]*>${title}<`));
     expect(svg).toMatch(/<circle cx="31\.\d"/);
   });
 
@@ -135,6 +136,59 @@ describe('renderDayTerrain', () => {
         }
       }
     }
+  });
+
+  it('prints no label over another, a dot, the line, a bar or a leader on the T13A days, at a glyph width wider than the drawing assumes', () => {
+    for (const day of T13A_DAYS) {
+      const { work } = layoutWork(T13A_RHYTHM, day.meetings, day.tasks);
+      const svg = renderDayTerrain({ ...T13A_RHYTHM, events: day.meetings, work, weather: { code: 0, label: 'Clear' } });
+      // DejaVu Sans, the usual sans-serif on Linux, averages about 0.6 em, and 0.66 em in bold.
+      const boxes: Box[] = [...svg.matchAll(/<text x="([\d.]+)" y="([\d.]+)" text-anchor="(\w+)"[^>]*font-size="([\d.]+)"([^>]*)>([^<]*)<\/text>/g)].map(
+        ([, x, y, anchor, size, rest, raw]) => {
+          const width = (rest?.includes('font-weight="600"') ? 0.68 : 0.62) * Number(size) * unescape(raw ?? '').length;
+          const x0 = anchor === 'middle' ? Number(x) - width / 2 : anchor === 'end' ? Number(x) - width : Number(x);
+          return { name: unescape(raw ?? ''), x0, x1: x0 + width, y0: Number(y) - 0.8 * Number(size), y1: Number(y) + 0.25 * Number(size) };
+        },
+      );
+      // The weather icon's own circle is drawn in the icon's coordinates, so it is left out of the dots.
+      const dots = [...svg.replace(/<g data-part="weather".*?<\/text><\/g>/s, '').matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)].map(([, cx, cy, r]) => ({
+        name: `dot at ${cx}`, x0: Number(cx) - Number(r), x1: Number(cx) + Number(r), y0: Number(cy) - Number(r), y1: Number(cy) + Number(r),
+      }));
+      const bars = [...svg.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/g)].map(([, x, y, w, h]) => ({
+        name: `bar at ${x}`, x0: Number(x), x1: Number(x) + Number(w), y0: Number(y), y1: Number(y) + Number(h),
+      }));
+      const leaders = [...svg.matchAll(/<path d="M([\d.]+),([\d.]+) L([\d.]+),([\d.]+)" stroke="[^"]+" stroke-width="1.2"/g)].map(([, x0, y0, x1, y1]) => ({
+        name: `leader at ${x0}`, x0: Math.min(Number(x0), Number(x1)) - 0.6, x1: Math.max(Number(x0), Number(x1)) + 0.6, y0: Math.min(Number(y0), Number(y1)), y1: Math.max(Number(y0), Number(y1)),
+      }));
+      const line = [...(svg.match(/<path d="(M[^"]+)" fill="none"/)?.[1] ?? '').matchAll(/([\d.]+),([\d.]+)/g)].map(([, px, py]) => [Number(px), Number(py)]);
+      const inBars = boxes.filter((b) => bars.some((bar) => b.y0 >= bar.y0 && b.y1 <= bar.y1 + 6 && b.x0 >= bar.x0 - 1 && b.x1 <= bar.x1 + 1));
+      for (const text of boxes) {
+        const where = `${day.name}: ${text.name}`;
+        for (const dot of dots) expect.soft(hitsBox(text, dot), `${where} overlaps the ${dot.name}`).toBe(false);
+        for (const leader of leaders) expect.soft(hitsBox(text, leader), `${where} is crossed by the ${leader.name}`).toBe(false);
+        if (!inBars.includes(text)) for (const bar of bars) expect.soft(hitsBox(text, bar), `${where} overlaps the ${bar.name}`).toBe(false);
+        const through = line.find(([px, py]) => px > text.x0 && px < text.x1 && py > text.y0 && py < text.y1);
+        expect.soft(through, `${where} is crossed by the line`).toBeUndefined();
+        expect.soft(text.x0, `${where} is cut by the left`).toBeGreaterThanOrEqual(0);
+        expect.soft(text.x1, `${where} is cut by the right`).toBeLessThanOrEqual(640);
+      }
+      for (const [i, a] of boxes.entries()) {
+        for (const b of boxes.slice(i + 1)) expect.soft(hitsBox(a, b), `${day.name}: ${a.name} overlaps ${b.name}`).toBe(false);
+      }
+    }
+  });
+
+  it('draws evening tasks as bars after the end of work', () => {
+    const thursday = T13A_DAYS.find((day) => day.name === 'Thu 5 Nov');
+    if (!thursday) throw new Error('no Thursday');
+    const { work } = layoutWork(T13A_RHYTHM, thursday.meetings, thursday.tasks);
+    const svg = renderDayTerrain({ ...T13A_RHYTHM, events: thursday.meetings, work });
+    const divider = Number(svg.match(/data-part="work-end" d="M([\d.]+),/)?.[1]);
+    const laundry = work.find((block) => block.label === 'Laundry');
+    expect(laundry).toMatchObject({ start: '18:00', end: '18:45' });
+    const bar = [...svg.matchAll(/<rect x="([\d.]+)"/g)].map((m) => Number(m[1])).find((x) => x >= divider);
+    expect(bar).toBeDefined();
+    expect(svg).toContain('>Laundry</text>');
   });
 
   it('sizes every font for at least 11 px when shown 700 px wide', () => {

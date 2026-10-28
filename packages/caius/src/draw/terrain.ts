@@ -46,9 +46,17 @@ const GROUND = 150;
 const PEAK = 88;
 const BAR_Y = 178;
 const BAR_H = 30;
+/** Rows kept under the bars for labels that don't fit in their bar; more are added as needed. */
 const LANES = 2;
-const HEIGHT = BAR_Y + BAR_H + 22 * LANES + 28;
+/** Rows a label under the bars may drop to while it looks for a clear place. */
+const MAX_LANES = 5;
 const DEFAULT_WORK_END = '18:00';
+/**
+ * Glyph widths in em, used to keep labels apart. DejaVu Sans, the usual sans-serif on Linux,
+ * averages about 0.6 em and 0.66 em in bold, so these err wide.
+ */
+const EM = 0.62;
+const EM_BOLD = 0.68;
 
 interface Item {
   s: number;
@@ -103,9 +111,9 @@ export function renderDayTerrain(input: TerrainInput): string {
       const mid = (ev.s + ev.e) / 2;
       const cx = x(mid);
       const cy = GROUND - height(mid);
-      const half = 4.6 * ev.title.length + 6;
+      const half = textWidth(ev.title, 14, true) / 2 + 4;
       // The dot stays on the line; the label shifts inward so it is never cut by the edge.
-      const edge = 3.7 * ev.title.length + 4;
+      const edge = textWidth(ev.title, 14, true) / 2 + 2;
       let tx = Math.min(Math.max(cx, edge), W - edge);
       const boxAt = (at: number, rise: number): Box => ({ x0: at - half, x1: at + half, y0: cy - 16 - rise - 14, y1: cy - 16 - rise + 4 });
       let lift = 0;
@@ -131,9 +139,13 @@ export function renderDayTerrain(input: TerrainInput): string {
     labels = layout(top);
   }
 
+  const below = belowLabels(work.map((w) => ({ x0: x(w.s), x1: x(w.e), label: w.label ?? '' })));
+  const lanes = Math.max(LANES, ...below.map((l) => (l ? l.row + 1 : 0)));
+  const canvasHeight = BAR_Y + BAR_H + 22 * lanes + 28;
+
   const out: string[] = [];
   out.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-top} ${W} ${HEIGHT + top}" width="${W}" height="${HEIGHT + top}" role="img" aria-label="${esc(describe(events, work))}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-top} ${W} ${canvasHeight + top}" width="${W}" height="${canvasHeight + top}" role="img" aria-label="${esc(describe(events, work))}">`,
   );
 
   const workEnd = mins(input.workEnd ?? DEFAULT_WORK_END);
@@ -163,12 +175,11 @@ export function renderDayTerrain(input: TerrainInput): string {
     const hx = x(m).toFixed(1);
     out.push(`<path d="M${hx},${BAR_Y - 12} L${hx},${BAR_Y - 6}" stroke="${SOFT}" stroke-width="1.5"/>`);
     out.push(
-      `<text x="${hx}" y="${HEIGHT - 6}" text-anchor="middle" font-family="sans-serif" font-size="13" fill="${SOFT}">${fmt12(m)}</text>`,
+      `<text x="${hx}" y="${canvasHeight - 6}" text-anchor="middle" font-family="sans-serif" font-size="13" fill="${SOFT}">${fmt12(m)}</text>`,
     );
   }
 
-  const below: [number, number, number][] = [];
-  for (const w of work) {
+  for (const [i, w] of work.entries()) {
     const x0 = x(w.s);
     const x1 = x(w.e);
     const colour = w.focus ? CLAY : INK;
@@ -176,31 +187,16 @@ export function renderDayTerrain(input: TerrainInput): string {
       `<rect x="${x0.toFixed(1)}" y="${BAR_Y}" width="${(x1 - x0).toFixed(1)}" height="${BAR_H}" rx="7" fill="${colour}" fill-opacity="${w.focus ? '0.9' : '0.28'}" stroke="${colour}" stroke-width="1.5"/>`,
     );
     const label = w.label ?? '';
-    if (label && x1 - x0 > 7.8 * label.length + 6) {
+    const under = below[i];
+    if (under) {
+      // Too narrow for its label: a leader drops to a row under the bars.
+      out.push(`<path d="M${under.cx.toFixed(1)},${BAR_Y + BAR_H + 2} L${under.cx.toFixed(1)},${leaderEnd(under.row)}" stroke="${INK}" stroke-width="1.2"/>`);
       out.push(
-        `<text x="${((x0 + x1) / 2).toFixed(1)}" y="${BAR_Y + 20}" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="${w.focus ? '#ffffff' : INK}">${esc(label)}</text>`,
+        `<text x="${under.tx.toFixed(1)}" y="${baseline(under.row)}" text-anchor="${under.anchor}" font-family="sans-serif" font-size="14" fill="${INK}">${esc(label)}</text>`,
       );
     } else if (label) {
-      // Too narrow for its label: a leader drops to a row under the bars; rows stagger.
-      const cx = (x0 + x1) / 2;
-      const half = 3.9 * label.length + 6;
-      let row = 0;
-      while (
-        row < LANES - 1 &&
-        below.some(
-          ([px, ph, pr]) =>
-            (row === pr && Math.abs(cx - px) < half + ph) ||
-            (pr < row && Math.abs(cx - px) < ph + 4) ||
-            (pr > row && Math.abs(cx - px) < half + 4),
-        )
-      )
-        row++;
-      row = Math.min(row, LANES - 1);
-      below.push([cx, half, row]);
-      const ly = BAR_Y + BAR_H + 18 + 22 * row;
-      out.push(`<path d="M${cx.toFixed(1)},${BAR_Y + BAR_H + 2} L${cx.toFixed(1)},${ly - 13}" stroke="${INK}" stroke-width="1.2"/>`);
       out.push(
-        `<text x="${cx.toFixed(1)}" y="${ly}" text-anchor="middle" font-family="sans-serif" font-size="14" fill="${INK}">${esc(label)}</text>`,
+        `<text x="${((x0 + x1) / 2).toFixed(1)}" y="${BAR_Y + 20}" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="${w.focus ? '#ffffff' : INK}">${esc(label)}</text>`,
       );
     }
   }
@@ -208,6 +204,76 @@ export function renderDayTerrain(input: TerrainInput): string {
   if (input.weather) out.push(weatherMark(input.weather.code, input.weather.label, top));
   out.push('</svg>');
   return out.join('\n') + '\n';
+}
+
+interface BelowLabel {
+  /** The bar's middle, where the leader drops. */
+  cx: number;
+  tx: number;
+  anchor: 'middle' | 'start' | 'end';
+  row: number;
+  box: Box;
+}
+
+/**
+ * Where each work label too wide for its bar goes: a row under the bars, centred under the bar or
+ * set to one side of its leader, so that no two labels overlap and no leader crosses a label.
+ * Adjacent short bars need their rows staggered, so the rows are searched with backtracking,
+ * shallowest first, and a search that runs too long falls back to the first clear place for each
+ * label in turn. Labels that fit in their bar answer null.
+ */
+function belowLabels(bars: { x0: number; x1: number; label: string }[]): (BelowLabel | null)[] {
+  const options = bars.map(({ x0, x1, label }) => {
+    if (!label || x1 - x0 > textWidth(label, 13, true) + 6) return null;
+    const cx = (x0 + x1) / 2;
+    const width = textWidth(label, 14);
+    const at = (row: number, anchor: BelowLabel['anchor']): BelowLabel => {
+      const tx = anchor === 'middle' ? Math.min(Math.max(cx, width / 2 + 2), W - width / 2 - 2) : anchor === 'start' ? cx + 3 : cx - 3;
+      const left = anchor === 'middle' ? tx - width / 2 : anchor === 'start' ? tx : tx - width;
+      const y = baseline(row);
+      return { cx, tx, anchor, row, box: { x0: left - 3, x1: left + width + 3, y0: y - 0.8 * 14 - 2, y1: y + 0.25 * 14 + 2 } };
+    };
+    const all = Array.from({ length: MAX_LANES }, (_, row) => (['middle', 'start', 'end'] as const).map((anchor) => at(row, anchor))).flat();
+    return { all, onCanvas: all.filter((c) => c.box.x0 >= 0 && c.box.x1 <= W) };
+  });
+  const apart = (p: BelowLabel, c: BelowLabel) =>
+    !hits(p.box, c.box) &&
+    !(p.cx > c.box.x0 && p.cx < c.box.x1 && c.box.y0 < leaderEnd(p.row)) &&
+    !(c.cx > p.box.x0 && c.cx < p.box.x1 && p.box.y0 < leaderEnd(c.row));
+
+  const chosen: (BelowLabel | null)[] = bars.map(() => null);
+  let budget = 20_000;
+  const place = (i: number): boolean => {
+    if (i === options.length) return true;
+    const option = options[i];
+    if (!option) return place(i + 1);
+    for (const c of option.onCanvas) {
+      if (--budget < 0) return false;
+      if (!chosen.every((p) => !p || apart(p, c))) continue;
+      chosen[i] = c;
+      if (place(i + 1)) return true;
+      chosen[i] = null;
+    }
+    return false;
+  };
+  if (place(0)) return chosen;
+
+  const placed: BelowLabel[] = [];
+  return options.map((option) => {
+    if (!option) return null;
+    const c = option.onCanvas.find((o) => placed.every((p) => apart(p, o))) ?? option.all.at(-3) ?? option.all[0];
+    if (c) placed.push(c);
+    return c ?? null;
+  });
+}
+
+/** The baseline of a row of labels under the bars, and where a leader to it ends. */
+const baseline = (row: number) => BAR_Y + BAR_H + 18 + 22 * row;
+const leaderEnd = (row: number) => baseline(row) - 13;
+
+/** The estimated width of `text` at `size` px. */
+function textWidth(text: string, size: number, bold = false): number {
+  return text.length * size * (bold ? EM_BOLD : EM);
 }
 
 /** The icon for a WMO weather code; an unknown code reads as cloud. */
@@ -242,7 +308,7 @@ const hits = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.
 
 /** The corner the weather mark takes: its icon, its label, and a margin. */
 function weatherArea(label: string, top: number): Box {
-  return { x0: W - PAD - 28 - 8 - 0.6 * 13 * label.length - 6, x1: W, y0: -top, y1: 36 - top };
+  return { x0: W - PAD - 28 - 8 - textWidth(label, 13) - 6, x1: W, y0: -top, y1: 36 - top };
 }
 
 /** The icon at the right edge and its label to the left of it, in the hour labels' style. */
