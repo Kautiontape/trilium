@@ -1066,3 +1066,21 @@ describe("fix round 3: a three-way hold narrowed by one", () => {
         expect((await tasksOf("2027-11-11")).map((task: any) => task.text)).toEqual([ "ZAP-101 Verify the export retry on staging", "ZAP-120 Fix the export columns" ]);
     });
 });
+
+describe("fix round 3: an answer of another intent settles only what it names", () => {
+    it("F2 (S10): 'the export is done' holds both; the Review's 'drop 101' drops 101 and keeps 111 held, asking about it by name", async () => {
+        const DAY = "2027-11-17";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "the export" ] });
+        at("2027-11-18T09:40");
+        const review = await call("caius_winddown_apply", { date: DAY, fates: [ { listItemId: "101", drop: "not needed" } ] });
+        expect(review.skipped).toEqual([]);
+        expect(review.say).toContain("And ZAP-111: is that the one that's done?");
+        expect((await tasksOf(DAY)).slice(0, 2).map((task: any) => task.state)).toEqual([ "open", "cancelled" ]);
+        expect((await tasksOf("2027-11-18")).map((task: any) => task.text).join()).not.toContain("ZAP-111");
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([ `${DAY}-111` ]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
+        await clearHolds(DAY);
+    });
+});

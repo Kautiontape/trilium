@@ -161,8 +161,11 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         /** The result with `say`, its entries named by their text first. */
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
             withTexts([ ...result.written, ...result.skipped ], pools, known, followed);
-            const stillHeld = heldTasks.filter((task) => task.listItemId && !input.done.includes(task.listItemId)).map((task) => task.text);
-            return withDateLabels({ ...result, say: sayOf(result, { day: date, held: stillHeld, already: input.already }) });
+            const askedIds = new Set(planAsks.flatMap((ask) => ask.ids));
+            const stillHeld = heldTasks.filter((task) => task.listItemId && !input.done.includes(task.listItemId) && !askedIds.has(task.listItemId)).map((task) => task.text);
+            const textOf = (id: string) => heldTasks.find((task) => task.listItemId === id)?.text ?? "";
+            const asking = planAsks.map((ask) => ({ intent: ask.intent, texts: ask.ids.map(textOf).filter((text) => text !== "") }));
+            return withDateLabels({ ...result, say: sayOf(result, { day: date, held: stillHeld, asking, already: input.already }) });
         };
 
         // What he finished is ticked where it is, his list or a catch-up day, before the catch-up moves anything.
@@ -186,7 +189,13 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // every note they were given on, against what is open anywhere in the Journal.
         const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
         const kept = new Set<string>();
-        for (const day of await heldDays(store)) for (const id of await settleHolds(store, day, liveIds, new Set(input.done), [])) kept.add(id);
+        // planAsks is filled here and read by `answer`, which runs after.
+        const planAsks: HoldGroup[] = [];
+        for (const day of await heldDays(store)) {
+            const settled = await settleHolds(store, day, liveIds, new Map(input.done.map((id) => [ id, "done" ] as const)), []);
+            for (const id of settled.held) kept.add(id);
+            planAsks.push(...settled.asks);
+        }
         for (const task of [ ...heldTasks ]) if (task.listItemId && !kept.has(task.listItemId)) heldTasks.splice(heldTasks.indexOf(task), 1);
 
         if (asked.acts) skipped.push({ kind: "acts", reason: "not_a_move", detail: "Acts go with a call that only moves items of his list" });
@@ -343,14 +352,21 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 
         // An item an ambiguous answer matched stays where it is, on this call and later ones, until a
         // call names it: he named it, but which one is unclear.
-        const namedNow = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.move.map((ref) => ref.listItemId) ]);
+        const namedNow = new Map<string, string>([
+            ...input.done.map((id) => [ id, "done" ] as const), ...input.fates.map((fate) => [ fate.listItemId, "fate" ] as const),
+            ...input.move.map((ref) => [ ref.listItemId, "move" ] as const)
+        ]);
         const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
         // A hold's items can live on several days, so whether one is still open is read across the Journal.
         const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
-        const held = await settleHolds(store, date, liveIds, namedNow, input.heldGroups);
+        const { held, asks: holdAsks } = await settleHolds(store, date, liveIds, namedNow, input.heldGroups);
         // An item an earlier wind-down held stays held too, settled on the note the hold was given on.
         const heldElsewhere: string[] = [];
-        for (const day of (await heldDays(store)).filter((day) => day !== date)) heldElsewhere.push(...await settleHolds(store, day, liveIds, namedNow, []));
+        for (const day of (await heldDays(store)).filter((day) => day !== date)) {
+            const settled = await settleHolds(store, day, liveIds, namedNow, []);
+            heldElsewhere.push(...settled.held);
+            holdAsks.push(...settled.asks);
+        }
         const allHeld = [ ...held, ...heldElsewhere ];
         // A fate he named, then the proposed one for every item he didn't name and isn't held.
         const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...allHeld ]);
@@ -439,8 +455,11 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
         withTexts([ ...written, ...skipped ], pools, known, followed);
-        const heldTexts = allHeld.map((id) => open.items.find((item) => item.listItemId === id)?.text ?? "");
-        const say = sayOf({ written, skipped }, { day: targetDay, held: heldTexts, already: input.already });
+        const textOf = (id: string) => open.items.find((item) => item.listItemId === id)?.text ?? "";
+        const askedIds = new Set(holdAsks.flatMap((ask) => ask.ids));
+        const heldTexts = allHeld.filter((id) => !askedIds.has(id)).map(textOf).filter((text) => text !== "");
+        const asking = holdAsks.map((ask) => ({ intent: ask.intent, texts: ask.ids.map(textOf).filter((text) => text !== "") }));
+        const say = sayOf({ written, skipped }, { day: targetDay, held: heldTexts, asking, already: input.already });
         return {
             ...withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null, say: morning ? `${say} ${t("caius.say.next_planday")}` : say }),
             ...(morning ? { nextCall: { tool: "caius_planday", date: targetDay } } : {})
@@ -707,7 +726,7 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
 function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Copies = new Map(), collided: Map<string, RefEntry[]> = new Map()) {
     const held = new Set<string>();
     /** The items each holding answer matched, together. */
-    const groups: string[][] = [];
+    const groups: HoldGroup[] = [];
     const follows = new Map<string, { source: string; period: string; text: string }>();
     /** The answers found already settled, which `say` names: what, and how it was settled. */
     const already: Already[] = [];
@@ -763,7 +782,7 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
             skipped.push({ kind, text: value, reason: "ambiguous", detail: found.ambiguous.join("; ") });
             if (hold) {
                 for (const id of found.ids) held.add(id);
-                groups.push(found.ids);
+                groups.push({ intent: kind, ids: found.ids });
             }
             return null;
         }
@@ -841,7 +860,7 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
  * Wind down's answers with every name read as the id it names; an ambiguous one is left out,
  * skipped, and the open items it matched are `held`: they keep no proposed fate either.
  */
-function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): WindDownApplyInput & { held: string[]; heldGroups: string[][]; follows: Follows; already: Already[] } {
+function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): WindDownApplyInput & { held: string[]; heldGroups: HoldGroup[]; follows: Follows; already: Already[] } {
     const { read, place, held, groups, follows, already } = nameReader(skipped, table, copies, collided);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
@@ -864,7 +883,7 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
             // An item he sent somewhere unclear stays held: it never falls back to its proposed fate.
             if (to === null && id !== null) {
                 held.add(id);
-                groups.push([ id ]);
+                groups.push({ intent: "fate", ids: [ id ] });
             }
             if (id === null || to === null) return [];
             // A moved item already where he sends it is in place: its source answers unchanged.
@@ -888,7 +907,7 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         notToday: input.notToday.flatMap(candidate("not_today")),
         dismiss: input.dismiss.flatMap(candidate("dismiss")),
         held: [ ...held ].filter((id) => open.has(id)),
-        heldGroups: groups.map((group) => group.filter((id) => open.has(id))).filter((group) => group.length > 0),
+        heldGroups: groups.map((group) => ({ ...group, ids: group.ids.filter((id) => open.has(id)) })).filter((group) => group.ids.length > 0),
         follows,
         already
     };
@@ -952,27 +971,47 @@ const ID_SHAPED = /^(?:[a-z]?[0-9a-f]{8,}|[oclx][0-9a-f]{5}|[dw]\d+|[lo][0-9a-f]
  * once he named one of its items or it narrowed to one, which are released. Rewrites the note's
  * hold labels to match.
  */
-async function settleHolds(store: NoteStore, date: string, live: Set<string>, named: Set<string>, added: string[][]): Promise<string[]> {
+async function settleHolds(store: NoteStore, date: string, live: Set<string>, named: Map<string, string>, added: HoldGroup[]): Promise<{ held: string[]; asks: HoldGroup[] }> {
     const note = await findPeriodNote(store, "day", date);
     const labels = (name: string) => note ? note.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) : [];
     const heldBefore = labels(HELD_LABEL);
     const groupsBefore = labels(HELD_GROUP_LABEL);
-    const fresh = new Set(added.flat());
+    const fresh = new Set(added.flatMap((group) => group.ids));
     let held = [ ...new Set([ ...heldBefore.filter((id) => !named.has(id)), ...fresh ]) ].filter((id) => live.has(id));
+    const asks: HoldGroup[] = [];
     for (const value of groupsBefore) {
-        const group = value.split(" ");
+        const { intent, ids: group } = holdGroupOf(value);
         const left = group.filter((id) => held.includes(id) && !fresh.has(id));
-        // Naming one member answers the which-question, and a group left with one item has nothing to ask: the rest are released.
-        if (group.length > 1 && (group.some((id) => named.has(id)) || left.length === 1)) held = held.filter((id) => !left.includes(id));
+        const answers = group.filter((id) => named.has(id)).map((id) => named.get(id));
+        if (group.length < 2 || !left.length) continue;
+        // An answer of the hold's own intent says which one he meant, so the rest are released. One of
+        // another intent settles only what it names: the rest stay held and are asked about by name,
+        // never given a fate by elimination. A group left with one item and no answer has nothing to ask.
+        if (answers.length && answers.every((answer) => answer === intent)) held = held.filter((id) => !left.includes(id));
+        else if (answers.length) asks.push({ intent, ids: left });
+        else if (left.length === 1) held = held.filter((id) => !left.includes(id));
     }
-    const groups = [ ...groupsBefore, ...added.map((group) => group.join(" ")) ].filter((value) => value.split(" ").some((id) => held.includes(id)));
+    const groups = [ ...groupsBefore, ...added.map((group) => [ group.intent, ...group.ids ].join(" ")) ]
+        .filter((value) => holdGroupOf(value).ids.some((id) => held.includes(id)));
     if (note) {
         for (const id of heldBefore.filter((id) => !held.includes(id))) removeLabel(note.noteId, HELD_LABEL, id);
         for (const value of groupsBefore.filter((value) => !groups.includes(value))) removeLabel(note.noteId, HELD_GROUP_LABEL, value);
     }
     await labelDay(store, date, HELD_LABEL, held);
     await labelDay(store, date, HELD_GROUP_LABEL, groups);
-    return held;
+    return { held, asks };
+}
+
+/** The items one ambiguous answer held together, and what that answer asked for: `done`, a `fate` or a `move`. */
+interface HoldGroup {
+    intent: string;
+    ids: string[];
+}
+
+/** A `#caiusHeldGroup` value, `done e111 e101`, as its intent and ids; a value from before intents were kept reads as done. */
+function holdGroupOf(value: string): HoldGroup {
+    const [ first = "", ...rest ] = value.split(" ");
+    return [ "done", "fate", "move" ].includes(first) ? { intent: first, ids: rest } : { intent: "done", ids: value.split(" ") };
 }
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */

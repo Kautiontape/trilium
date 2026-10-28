@@ -14,7 +14,7 @@ import { dateLabel, plainText, weekdayName, withoutMoveLinks } from "./daily.js"
  * with one plain question when an answer held items for being ambiguous, or `held` holds the texts
  * of items an earlier call held.
  */
-export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [], already = [] }: { day: string; held?: string[]; already?: { text: string; how: string }[] }): string {
+export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [], asking = [], already = [] }: { day: string; held?: string[]; asking?: { intent: string; texts: string[] }[]; already?: { text: string; how: string }[] }): string {
     const made = written.filter((entry) => entry.status === "written");
     const of = (...kinds: string[]) => made.filter((entry) => kinds.includes(entry.kind));
     const labels = (entries: { text?: string; id?: string }[]) => unique(entries.map((entry) => labelOf(entry.text ?? entry.id ?? "")));
@@ -71,6 +71,13 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
             return noun ? t("caius.say.which", { noun, matches }) : t("caius.say.which_held", { matches });
         }))
         : [ heldQuestion(held) ].filter((question): question is string => question !== null);
+    // Items left held after an answer of another intent are asked about by name.
+    const named = asking.filter((ask) => ask.texts.length).map((ask) => {
+        const items = unique(ask.texts.map(labelOf));
+        const what = t(`caius.say.intent_${ask.intent}`);
+        return items.length > 1 ? t("caius.say.and_which", { items: orList(items), what }) : t("caius.say.and_is_it", { item: items[0], what });
+    });
+    questions.push(...named);
     const sentences = [ wrote, missed ].filter((clauses) => clauses.length).map((clauses) => `${capitalized(andList(clauses))}.`);
     if (!sentences.length && !questions.length) return t("caius.say.nothing");
     return [ ...sentences, ...questions ].join(" ");
