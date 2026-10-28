@@ -4065,6 +4065,8 @@
     "models_select_all": "Select all",
     "models_select_none": "Select none",
     "models_reset_defaults": "Reset to defaults",
+    "models_default": "Default",
+    "models_make_default": "Make default",
     "provider_model_count_one": "{{count}} model",
     "provider_model_count_other": "{{count}} models",
     "configured_providers": "Configured Providers",
