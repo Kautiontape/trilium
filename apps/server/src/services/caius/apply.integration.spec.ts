@@ -118,7 +118,7 @@ describe("caius_plan_apply", () => {
             context: [ "Riley covers the deploy today" ],
             brief: {
                 headline: "Two hand-offs around Sprint Planning",
-                acts: [ { range: "10:00 to 12:00", text: "Standup, then ZAP-111 before planning." }, { range: "12:00 to 18:00", text: "ZAP-101 after lunch." }, { range: "Evening", text: "Call Mom, then laundry." } ],
+                acts: [ { range: "10:00 to 12:00", text: "Standup, then ZAP-111 before planning." }, { range: "12:00 to 18:00", text: "ZAP-101 after lunch." }, { range: "Evening", text: "Something away from screens." } ],
                 sections: [ { title: "Heads-up", markdown: "Sprint Planning runs long." }, { title: "Follow up", markdown: "Jordan said something about a runbook." } ]
             }
         };
@@ -163,6 +163,15 @@ describe("caius_plan_apply", () => {
         expect(brief).toContain("Sprint Planning runs long.");
         const header = await cls.init(() => store.content(result.headerNoteId));
         expect(header).toContain("Two hand-offs around Sprint Planning");
+        // The Evening act names the evening's own items, not a generic line.
+        expect(header).toContain("Call Mom, then Laundry.");
+        expect(header).not.toContain("away from screens");
+        // Laundry sits under its own ### Evening, after his tasks and before Suggested, and is drawn after work.
+        const html = await cls.init(() => store.content(plan.noteId));
+        expect(html.indexOf("<h3>Evening</h3>")).toBeGreaterThan(html.indexOf("ZAP-101"));
+        expect(html.indexOf("<h3>Evening</h3>")).toBeLessThan(html.indexOf("Suggested"));
+        const drawn = (await call("caius_planday", { date: MON, step: "brief" })).data.header.work.find((block: any) => block.label === "Laundry");
+        expect(drawn).toMatchObject({ start: "18:30", end: "19:00" });
         const svg = String(await cls.init(() => becca.getAttachmentOrThrow(result.attachmentId).getContent()));
         expect(svg).toContain("data-part=\"weather\"");
         expect(svg).toContain(">Call Mom</text>");

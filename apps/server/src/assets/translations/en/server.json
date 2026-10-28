@@ -597,6 +597,8 @@
       "picks_title": "Get done today",
       "pick": "{{- text}}: because {{- because}} (~{{estimate}})",
       "pick_plain": "{{- text}} (~{{estimate}})",
+      "evening_act": "{{- items}}.",
+      "evening_then": ", then ",
       "image_alt": "The day: meetings on a line, planned work as bars under it"
     },
     "daily": {

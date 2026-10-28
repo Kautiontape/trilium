@@ -267,6 +267,19 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
 
 const EVENING = "Evening";
 
+/**
+ * Gives the day note a `### Evening` heading when it has none: after his tasks, above Suggested, so
+ * an evening task never lands in the work list and is drawn after work ends.
+ */
+async function eveningHeading(store: NoteStore, date: string) {
+    const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
+    const before = await store.content(note.noteId);
+    if (/<h[1-6][^>]*>\s*Evening\s*<\/h[1-6]>/i.test(before)) return;
+    const suggested = /<h[1-6][^>]*>\s*Suggested\s*<\/h[1-6]>/i.exec(before);
+    const at = suggested ? suggested.index : before.length;
+    await store.putContent(note.noteId, `${before.slice(0, at)}<h3>${EVENING}</h3>${before.slice(at)}`, before);
+}
+
 /** Adds each value of `name` not on the day note of `date` yet, creating the note if missing. */
 async function labelDay(store: NoteStore, date: string, name: string, values: string[]) {
     if (!values.length) return;
@@ -350,6 +363,7 @@ async function eveningAndContext(store: NoteStore, date: string, now: Date, inpu
             written.push({ kind: "evening", text, status: "unchanged" });
             continue;
         }
+        await eveningHeading(store, date);
         const [ result ] = await addTasks(store, [ { date, section: EVENING, text } ], { now });
         record(written, skipped, { kind: "evening", text }, result);
     }
@@ -444,6 +458,20 @@ async function noteOf(store: NoteStore, listItemId: string): Promise<string | nu
     return null;
 }
 
+/**
+ * The acts with the third naming the evening's own items, its calendar events and his evening
+ * tasks in time order ("Call Mom, then Laundry."); the agent's words stay only for an empty evening.
+ */
+function withEveningAct(acts: PlanApplyInput["brief"]["acts"], plan: Awaited<ReturnType<typeof readPlan>>, header: { workEnd: string; events: { start: string; title: string }[]; work: { start: string; label: string }[] }) {
+    const tasks = listOf(plan).filter((task) => task.evening)
+        .map((task) => ({ at: header.work.find((block) => block.label === task.label)?.start ?? "99:99", name: task.text }));
+    const events = header.events.filter((event) => event.start >= header.workEnd).map((event) => ({ at: event.start, name: event.title }));
+    const items = [ ...events, ...tasks ].sort((a, b) => a.at.localeCompare(b.at)).map((item) => item.name);
+    const [ first, second, third ] = acts;
+    if (!items.length || !first || !second || !third) return acts;
+    return [ first, second, { ...third, text: t("caius.brief.evening_act", { items: items.join(t("caius.brief.evening_then")) }) } ];
+}
+
 /** A ticket candidate as its Suggested line, the one shape `caius_add` writes. */
 function suggestedLine(candidate: Candidate): string {
     return `Get ${candidate.key ? `${candidate.key} ` : ""}${candidate.title ?? candidate.text} done: because ${candidate.because} (~${candidate.minutes}m)`;
@@ -487,7 +515,7 @@ async function briefOf(deps: ApplyDeps, input: PlanApplyInput, read: DayRead, re
         render: deps.render,
         plannedAt: deps.plannedAt
     }, {
-        date: input.date, headline: input.brief.headline, acts: input.brief.acts, picks, sections, header,
+        date: input.date, headline: input.brief.headline, acts: withEveningAct(input.brief.acts, plan, header), picks, sections, header,
         followUps: followUps.map(({ key, commentId }) => ({ key, commentId }))
     });
     if (result.error !== undefined) return { error: result.error, detail: result.detail };
