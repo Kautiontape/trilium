@@ -1275,7 +1275,7 @@ function yesChecks(said: string, answered: boolean, offered: string[]): Check[] 
 
 /**
  * The parks his reply seems to ask for that the call leaves out: each clause with "park" in it names
- * the stale items whose words it has, or, with one stale item, that one. A park needs the item's
+ * the stale items whose words it has, or, naming none, every stale item. A park needs the item's
  * fate to its month in the call.
  */
 function parkChecks(said: string, stale: Map<string, { month: string }>, items: { listItemId: string | null; text: string }[], input: { fates: { listItemId: string; to?: string }[]; done: string[] }): Check[] {
@@ -1285,7 +1285,7 @@ function parkChecks(said: string, stale: Map<string, { month: string }>, items: 
     });
     return clausesNaming(said, [ "park" ]).flatMap((clause) => {
         const named = offered.filter((item) => saidNames(clause, namesOf({ text: item.text })));
-        return (named.length ? named : offered.length === 1 ? offered : [])
+        return (named.length ? named : offered)
             .filter((item) => !input.done.includes(item.id) && !input.fates.some((fate) => fate.listItemId === item.id && fate.to === item.month))
             .map((item) => ({ item: item.text, said: clause, missing: "fate" as const, message: t("caius.check.fate", { item: item.text, clause }) }));
     });

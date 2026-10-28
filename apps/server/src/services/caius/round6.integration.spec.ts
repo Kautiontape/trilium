@@ -369,6 +369,25 @@ describe("a stale errand", () => {
         expect(await textsOf("month", "2030-07")).toEqual([]);
     });
 
+    it("'sure, park it' with two items on offer and neither named nor given its fate is a check naming both", async () => {
+        const days = [ "2030-10-07", "2030-10-08", "2030-10-09", "2030-10-10", "2030-10-11" ];
+        const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
+        const BULBS = "Order the spare bulbs for the porch";
+        await dayWith(days[0] ?? "", `<h2>☑️ Tasks</h2>${ul(li("two-dave", DAVE), li("two-bulbs", BULBS))}`);
+        for (const day of days.slice(0, 3)) {
+            at(`${day}T17:30`);
+            expect((await call("caius_winddown_apply", { date: day, said: "" })).skipped).toEqual([]);
+        }
+        at(`${THU}T17:30`);
+        const open = await call("caius_winddown", { date: THU, step: "open" });
+        expect(open.data.items.filter((item: any) => item.park).length).toBe(2);
+        const result = await call("caius_winddown_apply", { date: THU, said: "sure, park it" });
+        expect(result.check?.map((entry: any) => ({ item: entry.item, missing: entry.missing }))).toEqual([ { item: DAVE, missing: "fate" }, { item: BULBS, missing: "fate" } ]);
+        expect(result.written).toEqual([]);
+        expect(await textsOf("day", FRI)).toEqual([]);
+        expect(await textsOf("month", "2030-10")).toEqual([]);
+    });
+
     it("asOffered doesn't park: a park needs his month fate", async () => {
         const days = [ "2030-06-03", "2030-06-04", "2030-06-05", "2030-06-06", "2030-06-07" ];
         const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
