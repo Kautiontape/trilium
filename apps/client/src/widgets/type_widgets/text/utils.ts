@@ -4,6 +4,7 @@ import appContext from "../../../components/app_context";
 import content_renderer from "../../../services/content_renderer";
 import froca from "../../../services/froca";
 import link, { ViewScope } from "../../../services/link";
+import type LoadResults from "../../../services/load_results";
 import utils from "../../../services/utils";
 
 export async function loadIncludedNote(noteId: string, $el: JQuery<HTMLElement>, boxSize?: string) {
@@ -63,6 +64,7 @@ export async function loadIncludedNote(noteId: string, $el: JQuery<HTMLElement>,
     // Unmount any interactive widgets from a previous render of this include (e.g. on a box-size
     // change or refreshIncludedNote) before $el.empty() discards their DOM — otherwise their
     // standalone Preact roots (collections, web views) would leak.
+    applyAttachmentVersions($wrapper);
     content_renderer.disposeInteractiveContent($el);
     $el.empty().append(isWrapper ? $wrapper.children() : $wrapper);
 }
@@ -71,6 +73,51 @@ export function refreshIncludedNote(container: HTMLDivElement, noteId: string) {
     const includedNotes = container.querySelectorAll(`section[data-note-id="${noteId}"]`);
     for (const includedNote of includedNotes) {
         loadIncludedNote(noteId, $(includedNote as HTMLElement));
+    }
+}
+
+/**
+ * Re-renders each include-note in `container` whose note's content or attachments `loadResults`
+ * changed. It renders into the section's `.include-note-wrapper`, so CKEditor's widget handles
+ * in the section stay.
+ */
+export function refreshChangedIncludes(container: HTMLElement, loadResults: LoadResults) {
+    const attachmentOwners = new Set<string>();
+    for (const row of loadResults.getAttachmentRows()) {
+        attachmentOwners.add(row.ownerId);
+        if (row.attachmentId) {
+            attachmentVersions.set(row.attachmentId, Date.now());
+        }
+    }
+
+    const loaded: Promise<void>[] = [];
+    for (const section of container.querySelectorAll<HTMLElement>("section.include-note[data-note-id]")) {
+        const noteId = section.dataset.noteId;
+        if (!noteId || !(loadResults.isNoteContentReloaded(noteId) || attachmentOwners.has(noteId))) {
+            continue;
+        }
+
+        const wrapper = section.querySelector<HTMLElement>(":scope > .include-note-wrapper");
+        loaded.push(loadIncludedNote(noteId, $(wrapper ?? section)));
+    }
+    return Promise.all(loaded);
+}
+
+/**
+ * When each attachment changed in this session, by id. The browser reuses an image it already
+ * loaded from the same URL, so an included note's image of a changed attachment gets a
+ * `timestamp` query.
+ */
+const attachmentVersions = new Map<string, number>();
+
+function applyAttachmentVersions($content: JQuery<HTMLElement>) {
+    for (const image of $content.find("img")) {
+        const src = image.getAttribute("src");
+        const attachmentId = src?.match(/^api\/attachments\/([^/?]+)\//)?.[1];
+        const version = attachmentId && attachmentVersions.get(attachmentId);
+        if (src && version) {
+            image.setAttribute("src", `${src.split("?")[0]}?timestamp=${version}`);
+        }
     }
 }
 

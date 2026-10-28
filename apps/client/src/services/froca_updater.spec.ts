@@ -114,6 +114,34 @@ describe("froca_updater - note changes", () => {
         expect(loadResults.isNoteContentReloaded(note.noteId)).toBeTruthy();
     });
 
+    it("registers a content change whose blobId a tree load already brought into froca", async () => {
+        const note = buildNote({ title: "Day" });
+        note.blobId = "oldBlob";
+        froca.blobPromises[`notes-${note.noteId}`] = Promise.resolve(null);
+        const row = {
+            noteId: note.noteId,
+            title: "Day",
+            isProtected: false,
+            type: "text",
+            mime: "text/html",
+            blobId: "newBlob"
+        };
+
+        // A `tree/load` for another note returns this one as an ancestor, read after the write.
+        froca.addResp({ notes: [ row as any ], branches: [], attributes: [] });
+        expect(`notes-${note.noteId}` in froca.blobPromises).toBe(false);
+
+        await process([ec({ entityName: "notes", entityId: note.noteId, componentId: "mcp", entity: row as any })]);
+        const loadResults = triggerSpy.mock.calls[0][1].loadResults as LoadResults;
+        expect(loadResults.isNoteContentReloaded(note.noteId)).toBeTruthy();
+
+        // The trace is consumed: a later row with the same blobId is no content change.
+        triggerSpy.mockClear();
+        await process([ec({ entityName: "notes", entityId: note.noteId, componentId: "mcp", entity: row as any })]);
+        const later = triggerSpy.mock.calls[0][1].loadResults as LoadResults;
+        expect(later.isNoteContentReloaded(note.noteId)).toBeFalsy();
+    });
+
     it("does not register content change when protection status changed", async () => {
         const note = buildNote({ title: "Prot" });
         note.blobId = "oldBlob";
