@@ -181,7 +181,7 @@ describe("caius_winddown", () => {
         // A Context override keeps a ticket Jira calls Done on offer.
         expect(answer.data.candidates[2]).toMatchObject({ overridden: true });
         expect(answer.data.capacity).toMatchObject({ plannedMinutes: 60 });
-        expect(answer.data.overlaps).toEqual([ { first: "Release call", second: "Review", at: "12:30" } ]);
+        expect(answer.data.overlaps).toEqual([ { first: "Release call", second: "Review", at: "12:30", overlapId: expect.stringMatching(/^o[0-9a-f]{10}$/) } ]);
         expect(answer.data.evening).toEqual({ hasTask: false });
         expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Anything for the evening?");
     });
@@ -342,7 +342,7 @@ describe("caius_planday", () => {
         });
         expect(answer.data.forwardSuggestion).toBeNull();
         // Friday's wind-down never ran, so last week's lines are offered too.
-        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Keep 'Sam is out' and 'Release branch is cut' going?");
+        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Keep 'Sam is out' and 'Release branch is cut' going? Anything for the evening?");
     });
 
     it("inputs: on a day half booked or more whose work fits the focus target, says so and offers no move, least of all an evening task's", async () => {
@@ -350,7 +350,7 @@ describe("caius_planday", () => {
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
         expect(answer.data.forwardSuggestion).toBeNull();
         expect(answer.data.summary).toBe("Small thing fits; that's the day.");
-        expect(answer.question).toBe("Keep 'Vendor demo prep' going?");
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything for the evening?");
     });
 
     it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
@@ -435,13 +435,13 @@ describe("carrying Context", () => {
             { kind: "carry", line: "Sam is out", until: "2026-11-11", ref: "x1" },
             { kind: "carry", line: "Release branch is cut", ref: "x2" }
         ]);
-        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going?");
+        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going? Anything for the evening?");
     });
 
     it("Plan my day offers Thursday's line on Wednesday after a missed Tuesday, after the step's other questions", async () => {
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
         expect(plain(answer.data.carry)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13", ref: "x1" } ]);
-        expect(answer.question).toBe("Keep 'Vendor demo prep' going?");
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything for the evening?");
     });
 
     it("neither conversation offers a line already carried into a note the day reads", async () => {

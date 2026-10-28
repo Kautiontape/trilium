@@ -216,10 +216,10 @@ describe("an answer stays answered", () => {
     const carried = (answer: any) => answer.data.carry.map((c: any) => c.line);
 
     it("Tue 3 Nov: a carry he let pass on Monday morning isn't asked again at Monday's refresh, Monday night or Tuesday", async () => {
-        // Monday's apply above recorded the two carry lines it was shown, kept or not.
+        // Monday's apply above recorded the two carry lines it was shown, kept or not, and the evening.
         at(`${MON}T09:40`);
         const note = await cls.init(async () => store.note((await call("caius_plan", { period: "day", date: MON })).noteId));
-        expect(note.attributes.filter((a) => a.name === "caiusAsked")).toHaveLength(2);
+        expect(note.attributes.filter((a) => a.name === "caiusAsked").map((a) => a.value)).toEqual([ expect.stringMatching(/^l/), expect.stringMatching(/^l/), "evening" ]);
         at(`${MON}T11:05`);
         expect(carried(await call("caius_planday", { date: MON, step: "inputs" }))).toEqual([]);
         at(`${MON}T17:30`);

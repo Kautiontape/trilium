@@ -41,6 +41,7 @@ import {
     dateLabel,
     dayKey,
     type DayRead,
+    EVENING_ID,
     drawnEvents,
     failedCalendar,
     followUpsOf,
@@ -50,6 +51,7 @@ import {
     listOf,
     mainTasks,
     namedDays,
+    nextAsked,
     plainText,
     localDay,
     nextOffer,
@@ -132,7 +134,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
 
         // Every question the step asked is answered now, whatever he said, so it isn't asked again.
         await labelDay(store, date, ASKED_LABEL, [
-            ...offer.carry.map((line) => line.lineId), ...offer.overlaps.map((pair) => pair.overlapId), ...(offer.forwardSuggestion ? [ HEAVY_ID ] : [])
+            ...offer.carry.map((line) => line.lineId), ...offer.overlaps.map((pair) => pair.overlapId), ...(offer.forwardSuggestion ? [ HEAVY_ID ] : []),
+            ...(offer.askEvening ? [ EVENING_ID ] : [])
         ]);
         // A forward may name only a task the steps showed, and only a day, week or month they listed.
         const catchupTasks = (await catchupOf(store, date, now)).tasks;
@@ -265,9 +268,11 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const written: Written[] = [];
         const skipped: Skipped[] = [];
         const open = await stillOpen(store, date, targetDay);
-        const { facts, candidates } = await nextOffer(store, targetDay, now, read);
+        const { facts, candidates, asks } = await nextOffer(store, targetDay, now, read);
         const lines = await closingLines(store, date, targetDay, read);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
+        // The next step's questions are about the next workday, so they are answered on its note.
+        await labelDay(store, targetDay, ASKED_LABEL, nextAsked(asks));
         const known = new Map([
             ...dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: [ ...facts.plan.dismissed, ...facts.closed ] }).map(present),
             ...candidates

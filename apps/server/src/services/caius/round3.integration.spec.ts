@@ -85,7 +85,7 @@ describe("a Context line he gave is settled until the week boundary", () => {
         expect(monday.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "context", text: "ZAP-2590 is open", status: "written" }) ]));
 
         const unasked = (answer: any, when: string) => {
-            expect(answer.question, when).toBeNull();
+            expect(answer.question ?? "", when).not.toContain("ZAP-2590");
             expect(answer.data.carry ?? answer.data.noticed, when).toEqual([]);
         };
         at(`${TUE}T09:35`);

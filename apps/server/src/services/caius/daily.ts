@@ -104,19 +104,15 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
 
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
-        const { facts, candidates, jira } = await deps.locked("caius_winddown", () => nextOffer(deps.store, targetDay, deps.now, read));
-        const plannedMinutes = workMinutes(facts);
-        const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
+        const { facts, candidates, jira, asks } = await deps.locked("caius_winddown", () => nextOffer(deps.store, targetDay, deps.now, read));
+        const { plannedMinutes, candidateMinutes, over, overlaps, askEvening } = asks;
         const targetMinutes = read.inputs.capacity.targetMinutes;
-        const overlaps = overlapPairs(read.inputs.calendar);
         const evening = { hasTask: facts.evening };
-        // Without the calendar, the target is that of a day with no meetings, so the day is not weighed.
         const calendarFailed = failedCalendar(read);
-        const over = calendarFailed ? 0 : plannedMinutes + candidateMinutes - targetMinutes;
         const questions = [
             ...(over > 0 ? [ t("caius.daily.over", { day: weekdayName(targetDay), hours: Math.max(0.5, Math.round(over / 30) / 2) }) ] : []),
             ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
-            ...(evening.hasTask ? [] : [ t("caius.daily.evening") ])
+            ...(askEvening ? [ t("caius.daily.evening") ] : [])
         ];
         const summary = calendarFailed
             ? { summary: t("caius.daily.capacity_unknown", { day: weekdayName(targetDay) }) }
@@ -142,13 +138,34 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
 
 /**
  * What the wind-down's `next` step offers for `targetDay`, which `caius_winddown_apply` reads again:
- * the day's facts, the candidates and the Jira answer its follow-ups come from. A raised ask stays
- * on offer; only the Follow up leaves it out (`unraised`). The caller holds the lock.
+ * the day's facts, the candidates, the Jira answer its follow-ups come from and what it asks
+ * (`asks`). A raised ask stays on offer; only the Follow up leaves it out (`unraised`). The caller
+ * holds the lock.
  */
 export async function nextOffer(store: NoteStore, targetDay: string, now: Date, read: DayRead) {
     const facts = await dayFacts(store, targetDay, now);
     const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
-    return { facts, candidates, jira: unraised(read.inputs.jira, facts.raised) };
+    const asked = new Set(await dayLabels(store, targetDay, ASKED_LABEL));
+    return { facts, candidates, jira: unraised(read.inputs.jira, facts.raised), asks: nextAsks(read, facts, candidates, asked) };
+}
+
+/**
+ * The questions the wind-down asks about `targetDay`, each only while `asked` (its `#caiusAsked`
+ * values) doesn't hold it: how far the day is over the focus target (as `heavy`), its overlaps and,
+ * when its evening has no task, the evening.
+ */
+function nextAsks(read: DayRead, facts: { plan: PlanView; eveningMinutes: number; evening: boolean }, candidates: { minutes: number }[], asked: Set<string>) {
+    const plannedMinutes = workMinutes(facts);
+    const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
+    // Without the calendar, the target is that of a day with no meetings, so the day is not weighed.
+    const over = failedCalendar(read) || asked.has(HEAVY_ID) ? 0 : plannedMinutes + candidateMinutes - read.inputs.capacity.targetMinutes;
+    const overlaps = overlapPairs(read.inputs.calendar).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) })).filter((pair) => !asked.has(pair.overlapId));
+    return { plannedMinutes, candidateMinutes, over, overlaps, askEvening: !facts.evening && !asked.has(EVENING_ID) };
+}
+
+/** The `#caiusAsked` values of what the wind-down's `next` step asks, answered once the apply runs. */
+export function nextAsked(asks: ReturnType<typeof nextAsks>): string[] {
+    return [ ...asks.overlaps.map((pair) => pair.overlapId), ...(asks.over > 0 ? [ HEAVY_ID ] : []), ...(asks.askEvening ? [ EVENING_ID ] : []) ];
 }
 
 /**
@@ -232,7 +249,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
-        const { day: facts, plannedAt, candidates, carry, jira, headsUp, overlaps, forwardSuggestion, fits } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
+        const { day: facts, plannedAt, candidates, carry, jira, headsUp, overlaps, forwardSuggestion, fits, askEvening } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines
             ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
@@ -244,7 +261,8 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             ...(forwardSuggestion ? [ t("caius.daily.heavy", {
                 percent: Math.round(read.inputs.capacity.bookedRatio * 100), task: forwardSuggestion.text, day: weekdayName(nextDay)
             }) ] : []),
-            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
+            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : []),
+            ...(askEvening ? [ t("caius.daily.evening") ] : [])
         ];
         return reply(read.standing, {
             plannedAt, list: withRefs(listItems(facts.plan), "l"), candidates: withRefs(candidates, "c"), meetings, overlaps,
@@ -307,7 +325,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const jira = unraised(read.inputs.jira, day.raised);
     const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
     const asked = await askedAbout(store, date);
-    // An overlap or the heavy day's move is asked once on its own day: a refresh asks only what's new.
+    // An overlap, the heavy day's move or the evening is asked once for its day: a refresh asks only what's new.
     const askedToday = new Set(await dayLabels(store, date, ASKED_LABEL));
     const overlaps = overlapPairs(read.inputs.calendar).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) })).filter((pair) => !askedToday.has(pair.overlapId));
     // On a heavy day the work is weighed against the focus target: over it, the last work task is
@@ -330,7 +348,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     ];
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
-        overlaps, forwardSuggestion, fits
+        overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID)
     };
 }
 
@@ -350,6 +368,8 @@ function workMinutes(facts: { plan: PlanView; eveningMinutes: number }): number 
 
 /** The `#caiusAsked` value of the heavy day's question. */
 export const HEAVY_ID = "heavy";
+/** The `#caiusAsked` value of the evening question. */
+export const EVENING_ID = "evening";
 
 /** An overlap's id for `#caiusAsked`: a hash of its two meetings and its time. */
 export function overlapIdOf(pair: { first: string; second: string; at: string }): string {

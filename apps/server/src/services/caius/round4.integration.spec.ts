@@ -276,3 +276,57 @@ describe("the result is the recap", () => {
         expect(applied.say).toBe("ZAP-161 is on your list, ZAP-160 is in Suggested and the brief is written.");
     });
 });
+
+describe("a question answered once stays answered", () => {
+    const EVENING = "Anything for the evening?";
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+
+    it("Tue 09:35 then 11:05: the plan asks about the evening, and the refresh doesn't ask again, in that conversation or a later one", async () => {
+        const DAY = "2027-01-12";
+        at(`${DAY}T09:35`);
+        expect((await call("caius_planday", { date: DAY, step: "inputs", refresh: true })).question).toContain(EVENING);
+        await call("caius_plan_apply", { date: DAY, brief: prose });
+        expect(await labelsOf(DAY, "caiusAsked")).toContain("evening");
+
+        at(`${DAY}T11:05`);
+        calendars[DAY] = [ event("15:00", "16:00", "Customer Call") ];
+        const refresh = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(refresh.question).toBeNull();
+        expect(refresh.data.headsUp).toEqual([]);
+        delete calendars[DAY];
+    });
+
+    it("Mon 17:30: the wind-down asks about Tuesday's evening, so Tuesday's plan doesn't", async () => {
+        at("2027-01-04T17:30");
+        expect((await call("caius_winddown", { date: "2027-01-04", step: "next" })).question).toContain(EVENING);
+        await call("caius_winddown_apply", { date: "2027-01-04", evening: [ "Pack the climbing gym bag" ] });
+        at("2027-01-05T09:35");
+        expect((await call("caius_planday", { date: "2027-01-05", step: "inputs", refresh: true })).question).toBeNull();
+    });
+
+    it("Wed 11 09:45: the Review of Monday asks about Wednesday's evening once, and the plan after it doesn't", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-01-18");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("m-dave", "Message Dave about the lights"))}<h3>Evening</h3>${ul(li("m-groc", "Groceries"))}`);
+        });
+        at("2027-01-20T09:45");
+        const next = await call("caius_winddown", { date: "2027-01-18", step: "next" });
+        expect(next.question).toContain(EVENING);
+        await call("caius_winddown_apply", { date: "2027-01-18", done: [ "groceries" ] });
+        const inputs = await call("caius_planday", { date: "2027-01-20", step: "inputs", refresh: true });
+        expect(inputs.question).toBeNull();
+    });
+
+    it("Wed 17:45: an overlap on Thursday asked in the wind-down isn't asked again in Thursday's plan", async () => {
+        const THURSDAY = "2027-01-28";
+        calendars[THURSDAY] = [ event("11:00", "12:00", "Incident Review"), event("11:00", "11:30", "Vendor Onboarding") ];
+        at("2027-01-27T17:45");
+        expect((await call("caius_winddown", { date: "2027-01-27", step: "next" })).question).toContain("Incident Review overlaps Vendor Onboarding");
+        await call("caius_winddown_apply", { date: "2027-01-27", context: [ "Taking Incident Review over Vendor Onboarding at 11:00" ] });
+        at(`${THURSDAY}T09:30`);
+        const inputs = await call("caius_planday", { date: THURSDAY, step: "inputs", refresh: true });
+        expect(inputs.data.overlaps).toEqual([]);
+        expect(inputs.question).toBeNull();
+        delete calendars[THURSDAY];
+    });
+});

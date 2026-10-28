@@ -63,6 +63,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Name each item in an answer by its `ref` from the step data (`o1`, `c1`, `l1`, `x1`, `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
         "A ref holds only for the reply it came in; after an apply, name items by his words.",
         "the heavy-day move question (if any)",
+        "Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.",
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
         "and the heavy-day move as suggested",
         "Never ask permission for anything the apply tool does.",
@@ -107,7 +108,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
     ]) expect(openers, name).not.toMatch(new RegExp(`${name}(?![a-z_])`));
     expect(openers).not.toContain("generic note tools");
-    for (const old of [ "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
+    for (const old of [ "and \"Anything for the evening?\"", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
     }
     expect(sheet).not.toMatch(/Shawn(?!\")/);
