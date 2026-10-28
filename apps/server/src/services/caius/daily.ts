@@ -898,8 +898,9 @@ export function workBlocks(plan: PlanView, day: { start: string; end: string; wo
 
 /**
  * The main list as the drawing and the picks read it: each live task's bar label, text, minutes,
- * keys, whether it is an evening task and whether it is work: not an evening or chore task, nor a
- * task without a ticket under a personal heading (Home, Personal, Family, Errands).
+ * keys, whether it is an evening task and whether it is work: a task with a ticket, whatever its
+ * heading, or one without under neither an evening, a chore nor a personal heading (Home, Personal,
+ * Family, Errands).
  */
 export function listOf(plan: PlanView) {
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
@@ -907,10 +908,11 @@ export function listOf(plan: PlanView) {
         const keys = keysOf(withoutMoveLinks(task.text));
         const evening = eveningSections.has(task.section);
         const heading = normName(task.section ?? "");
-        const personal = /chore/.test(heading) || (PERSONAL_SECTIONS.has(heading) && !keys.some((key) => JIRA_KEY.test(key)));
+        const ticket = keys.some((key) => JIRA_KEY.test(key));
+        const personal = /chore/.test(heading) || PERSONAL_SECTIONS.has(heading);
         return {
             label: workLabel(withoutMoveLinks(task.text)), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
-            evening, work: !evening && !personal, keys
+            evening, work: ticket || (!evening && !personal), keys
         };
     });
 }

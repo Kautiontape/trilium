@@ -348,6 +348,17 @@ describe("a stale errand", () => {
         expect(brief.indexOf("ZAP-801")).toBeLessThan(brief.indexOf("Message Dave"));
     });
 
+    it("a task with a ticket is work under any heading: ZAP-821 under Admin chores stays the top pick", async () => {
+        const DAY = "2030-06-11";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Admin chores</h3>${ul(li("c-821", `${zap("ZAP-821", "Submit the expense report")} ~15m`))}`
+            + `<h3>Work</h3>${ul(li("c-822", `${zap("ZAP-822", "Fix the export retry")} ~30m`))}`);
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Expense report on ZAP-821, then the export retry.", acts: [
+            { range: "", text: "x" }, { range: "", text: "y" }
+        ] } });
+        expect(planned.topPick).toContain("ZAP-821");
+    });
+
     it("the agent's headline is written as sent, an evening task's words in it or not", async () => {
         const DAY = "2029-05-08";
         const HEADLINE = "Call Jordan about the ZAP-811 export retry first.";
