@@ -865,3 +865,24 @@ describe("fix round 1: a hold survives the catch-up", () => {
         expect(finished.say).toMatch(/What about ZAP-101\?$/);
     });
 });
+
+describe("fix round 2: copies of one carried item are one item", () => {
+    it("N2: Monday carries the memo and the plumber to Tuesday; re-runs by words on Tuesday find them, never 'Write the memo or Write the memo?', and close the day", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-09-13");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("n-memo", "Write the memo"), li("n-plumb", "Call the plumber ~15m"))}`);
+        });
+        at("2027-09-13T17:30");
+        await call("caius_winddown_apply", { date: "2027-09-13" });
+        at("2027-09-14T17:30");
+        const answer = { date: "2027-09-14", done: [ "the memo" ], fates: [ { listItemId: "plumber", drop: "not needed" } ] };
+        const partial = await call("caius_winddown_apply", { ...answer, done: [ "the memo", "laundry" ] });
+        expect(partial.skipped).toEqual([ expect.objectContaining({ kind: "done", reason: "not_offered" }) ]);
+        for (const run of [ "re-run", "again" ]) {
+            const again = await call("caius_winddown_apply", answer);
+            expect(again.skipped, run).toEqual([]);
+            expect(again.say, run).not.toContain("Which");
+        }
+        expect(await labelsOf("2027-09-14", "caiusWoundDown")).toHaveLength(1);
+    });
+});

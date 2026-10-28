@@ -154,7 +154,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // A held task can be named, to settle it, but no catch-up moves it.
         const pools = planPools(offer, [ ...catchupTasks, ...heldTasks ], listed.days);
         const { table, items, copies } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
-        pools.settled = settledOf(items, new Set([ date ]));
+        pools.settled = settledOf(items, new Set([ date ]), copies);
         const input = planAnswers(asked, pools, skipped, table, copies);
         const followed = new Map([ ...input.follows ].map(([ id, copy ]) => [ id, copy.text ]));
         /** The result with `say`, its entries named by their text first. */
@@ -313,7 +313,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         };
         const { table, items, copies } = await refTable(store, now, known, facts.live, [ ...lines.keep, ...lines.carry ].map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         const closing = closingPeriods(date).all;
-        pools.settled = settledOf(items, closing);
+        pools.settled = settledOf(items, closing, copies);
         const input = windDownAnswers(asked, pools, skipped, table, copies);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
@@ -561,8 +561,25 @@ function planPools(offer: Awaited<ReturnType<typeof planOffer>>, catchupTasks: A
 }
 
 /** The items of `periods` that are settled, done, moved or dropped, as names a re-run's answer can give. */
-function settledOf(items: (RefEntry & { period: string })[], periods: Set<string>): Named[] {
-    return items.filter((item) => item.settled && periods.has(item.period)).map(({ id, text }) => ({ id, ref: "", text }));
+function settledOf(items: (RefEntry & { period: string })[], periods: Set<string>, copies: Copies): Named[] {
+    const byId = new Map(items.map((item) => [ item.id, item ]));
+    // A carried item and its copies are one item: one name for each chain, whichever copy it ends at.
+    const chains = new Map<string, Named>();
+    for (const item of items.filter((candidate) => candidate.settled && periods.has(candidate.period))) {
+        const end = chainEnd(item, byId, copies)?.id ?? item.id;
+        if (!chains.has(end)) chains.set(end, { id: item.id, ref: "", text: item.text });
+    }
+    return [ ...chains.values() ];
+}
+
+/** Where a moved item's forwards lead: the last copy along its back links, or the item itself when it wasn't moved. */
+function chainEnd(entry: RefEntry, byId: Map<string, RefEntry>, copies: Copies): RefEntry | undefined {
+    let at: RefEntry | undefined = entry;
+    for (let hops = 0; at?.item?.moved && hops < 5; hops++) {
+        const copy = copies.get(copyKey(at.item.noteId, at.text));
+        at = copy ? byId.get(copy.id) : undefined;
+    }
+    return at;
 }
 
 /** The days and weeks an answer can send a task to, by ref or his words. */
@@ -617,8 +634,11 @@ interface RefEntry {
 /** The live copies of moved items, by the note their back link points at and their words. */
 type Copies = Map<string, { id: string; period: string; text: string }>;
 
-/** A copy's key: the note it came from and its words without an estimate, which a moved source keeps in its text. */
-const copyKey = (from: string, text: string) => `${from}\n${text.replace(/\s+~\d+(?:h\d*m?|m)\b/g, "").trim()}`;
+/**
+ * A copy's key: the note it came from and its words without an estimate, which a moved source keeps
+ * in its text, or the reason a drop adds to it (`_not needed_`).
+ */
+const copyKey = (from: string, text: string) => `${from}\n${text.replace(/\s+_[^_]+_$/, "").replace(/\s+~\d+(?:h\d*m?|m)\b/g, "").trim()}`;
 
 /**
  * Every item a step's ref could have named, by ref, whatever happened to it since: each list item
@@ -671,25 +691,27 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
      * done answer; a moved one is followed to its live copy; a candidate on his list or a line in
      * force is in place. Null for anything else, which is stale.
      */
-    const settle = (entry: RefEntry, kind: string): string | null => {
+    const settle = (entry: RefEntry, intent: string): string | null => {
         if (!entry.item) return entry.settled ? entry.id : null;
-        let at: RefEntry | undefined = entry;
-        for (let hops = 0; at?.item && at.settled && hops < 5; hops++) {
-            if (!at.item.moved) return at.item.state === "done" && kind === "done" && at === entry ? at.id : null;
-            const copy = copies.get(copyKey(at.item.noteId, at.text));
-            if (!copy) return null;
-            follows.set(copy.id, { source: entry.id, period: copy.period, text: copy.text });
-            at = byId.get(copy.id);
+        const at = chainEnd(entry, byId, copies);
+        if (!at?.item) return null;
+        if (!at.settled) {
+            if (at !== entry) follows.set(at.id, { source: entry.id, period: at.item.period, text: at.text });
+            return at.id;
         }
-        return at && !at.settled ? at.id : null;
+        // The chain ends settled: in place only when that is what he asks for, a done item called done or a dropped one dropped.
+        if (at.item.moved) return null;
+        if (at.item.state === "done" && intent === "done") return at.id;
+        if (at.item.state === "cancelled" && intent === "drop") return at.id;
+        return null;
     };
-    const read = (kind: string, value: string, pools: Named[][], fallback: Named[][] = [], hold = false): string | null => {
+    const read = (kind: string, value: string, pools: Named[][], fallback: Named[][] = [], hold = false, intent = kind): string | null => {
         // A ref that isn't in its pool any more names a settled item, which the write finds in place
         // or follows to its copy, or one the step showed and that has left since: never another item.
         const ref = value.trim().toLowerCase();
         if (isRef(ref) && !pools.some((pool) => pool.some((item) => item.ref.toLowerCase() === ref))) {
             const entry = table.get(ref);
-            const id = entry ? settle(entry, kind) : null;
+            const id = entry ? settle(entry, intent) : null;
             if (id) return id;
             skipped.push({ kind, ...(entry ? { text: entry.text } : {}), reason: "stale" });
             return null;
@@ -704,7 +726,7 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
         }
         if (found && !open) {
             const entry = byId.get(found.id);
-            const id = entry ? settle(entry, kind) : found.id;
+            const id = entry ? settle(entry, intent) : found.id;
             if (id) return id;
             skipped.push({ kind, text: entry?.text ?? value, reason: "stale" });
             return null;
@@ -785,7 +807,7 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         done,
         finished,
         fates: input.fates.flatMap((fate) => {
-            const id = read("fate", fate.listItemId, [ pools.open ], [ pools.settled ], true);
+            const id = read("fate", fate.listItemId, [ pools.open ], [ pools.settled ], true, fate.drop ? "drop" : "fate");
             const to = fate.to === undefined ? undefined : read("fate", fate.to, [ pools.days ]);
             // An item he sent somewhere unclear stays held: it never falls back to its proposed fate.
             if (to === null && id !== null) held.add(id);
