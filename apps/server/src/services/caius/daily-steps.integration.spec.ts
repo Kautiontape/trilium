@@ -376,6 +376,23 @@ describe("caius_planday", () => {
         expect(inputsCalls.at(-1)?.keys).toEqual([ "ZAP-130", "ZAP-140" ]);
     });
 
+    it("reads the day without week keys when the week note is protected", async () => {
+        const day = "2026-11-18";
+        const week = await cls.init(() => store.calendarWeek("2026-W47"));
+        const note = becca.notes[week.noteId];
+        if (!note) throw new Error("no week note");
+        note.isProtected = true;
+        try {
+            const brief = await call("caius_planday", { date: day, step: "brief", refresh: true });
+            expect(brief).toMatchObject({ step: "brief", date: day });
+            expect(inputsCalls.at(-1)).toMatchObject({ date: day, keys: [] });
+            const meetings = await call("caius_meetings", { date: day, dryRun: true });
+            expect(meetings).toMatchObject({ date: day, source: "calendar" });
+        } finally {
+            note.isProtected = false;
+        }
+    });
+
     it("brief: draws the meetings the other feeds returned when one feed failed, and leaves the Meetings block alone", async () => {
         errorsByDate[TUESDAY] = [ { source: "calendar", error: "feed_1_timeout" } ];
         try {

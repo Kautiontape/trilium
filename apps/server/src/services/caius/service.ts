@@ -153,7 +153,7 @@ export function createCaiusService(
         const { context, standing, week } = await withCaiusLock("caius_day_read", async () => ({
             context: (await gatherContext(store, date)).context,
             standing: await readStanding(),
-            week: mainTasks(await readPlan(store, "week", isoWeekKey(new Date(`${date}T00:00:00Z`)), caiusNow()))
+            week: await weekTasks(isoWeekKey(new Date(`${date}T00:00:00Z`)))
         }));
         const rhythm = readRhythm(standing.markdown);
         const lines = context.map((line) => line.text);
@@ -162,6 +162,13 @@ export function createCaiusService(
             .sort();
         const input: InputsInput = { date, context: lines, keys, workStart: rhythm.start, workEnd: rhythm.workEnd };
         return { inputs: await cachedInputs(input, refresh), context, standing, rhythm };
+    }
+
+    /** The live tasks of a week note; none when it is protected or not a text note, which `gatherContext` skips too. The caller holds the lock. */
+    async function weekTasks(week: string) {
+        const note = await findPeriodNote(store, "week", week);
+        if (note && (note.type !== "text" || note.isProtected)) return [];
+        return mainTasks(await readPlan(store, "week", week, caiusNow()));
     }
 
     const stepDeps = (): StepDeps => ({ store, now: caiusNow(), locked: withCaiusLock, dayRead, standing: readStanding });
