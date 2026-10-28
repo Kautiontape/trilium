@@ -701,3 +701,16 @@ describe("fix round 1: a finished key that two open items carry", () => {
         expect(applied.say).toMatch(/Which ZAP-106: Confirm the bucket or Write the rollout note\?$/);
     });
 });
+
+describe("fix round 1: finished in Plan my day reaches the catch-up", () => {
+    it("P3: Thu 09:30 'move them all over, 111 is finished': ZAP-111 is ticked on Wednesday and isn't moved; the rest come over", async () => {
+        await wednesday("2027-07-14");
+        at("2027-07-15T09:30");
+        const applied = await call("caius_plan_apply", { date: "2027-07-15", catchup: "move_all", finished: [ "ZAP-111" ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect((await tasksOf("2027-07-14"))[0]).toEqual({ text: "ZAP-111 Check the invoice export in QA", state: "done" });
+        const thursday = (await tasksOf("2027-07-15")).map((task: any) => task.text);
+        expect(thursday).not.toContain("ZAP-111 Check the invoice export in QA");
+        expect(thursday).toEqual(expect.arrayContaining([ "ZAP-101 Verify the export retry on staging", "Pack the climbing gym bag" ]));
+    });
+});

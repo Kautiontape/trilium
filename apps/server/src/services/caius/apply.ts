@@ -161,25 +161,27 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             return withDateLabels({ ...result, say: sayOf(result, { day: date }) });
         };
 
-        await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
-
-        // What the catch-up moves here can be placed by the id it had on its own day.
-        const moved = new Map(input.catchup === "move_all" ? catchupTasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, { text: task.text, noteId: task.noteId } ] as const ] : []) : []);
-        await acceptAll(store, date, now, input, { known, moved }, written, skipped);
-
-        const onList = new Set(listItems(offer.day.plan).map((item) => item.listItemId));
+        // What he finished is ticked where it is, his list or a catch-up day, before the catch-up moves anything.
+        const onList = new Set([ ...listItems(offer.day.plan).map((item) => item.listItemId), ...catchupTasks.map((task) => task.listItemId) ]);
         await guarded({ kind: "done" }, skipped, async () => {
             const states = await loadStateSymbols(store);
             for (const listItemId of input.done) {
                 const noteId = onList.has(listItemId) ? await noteOf(store, listItemId) : null;
                 if (!noteId) {
-                    skipped.push({ kind: "done", text: listItemId, reason: "not_on_list" });
+                    if (pools.settled.some((item) => item.id === listItemId)) written.push({ kind: "done", id: listItemId, status: "unchanged" });
+                    else skipped.push({ kind: "done", text: listItemId, reason: "not_on_list" });
                     continue;
                 }
                 const [ result ] = await setStates(store, "done", [ { noteId, listItemId } ], { states });
                 record(written, skipped, { kind: "done", id: listItemId }, result);
             }
         });
+
+        await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
+
+        // What the catch-up moves here can be placed by the id it had on its own day.
+        const moved = new Map(input.catchup === "move_all" ? catchupTasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, { text: task.text, noteId: task.noteId } ] as const ] : []) : []);
+        await acceptAll(store, date, now, input, { known, moved }, written, skipped);
 
         await guarded({ kind: "keep" }, skipped, async () => { for (const { lineId } of input.keep) {
             const line = offer.carry.find((c) => c.lineId === lineId);
@@ -605,12 +607,12 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>) {
 
 /**
  * Plan my day's answers with every name read as the id it names; an ambiguous one is left out,
- * skipped. `done` holds the items of his list that `finished` names: by a ticket key, or by anything
- * else he called done.
+ * skipped. `done` holds the items of his list or the catch-up that `finished` names: by a ticket
+ * key, or by anything else he called done.
  */
 function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>): PlanApplyInput & { done: string[] } {
     const { read, place } = nameReader(skipped, table);
-    const { done, finished } = doneOf([], input.finished, [ pools.list ], [ pools.settled ], read);
+    const { done, finished } = doneOf([], input.finished, [ pools.list, pools.open ], [ pools.settled ], read);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
