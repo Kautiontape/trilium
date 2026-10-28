@@ -216,15 +216,12 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     const events = read.inputs.calendar
         .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
         .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
-    const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
-    const notBefore = date === dayKey(deps.now) ? quarterAfter(deps.now) : undefined;
-    const { work, unplaced } = layoutWork({ start, end, workEnd, notBefore }, events, mainTasks(plan).map((task) => ({
-        label: workLabel(task.text), minutes: task.estMinutes ?? DEFAULT_ESTIMATE, evening: eveningSections.has(task.section)
-    })));
+    const { work, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now);
     const header = { start, end, workEnd, events, work };
     const coordinates = read.rhythm.latitude === undefined ? {} : { latitude: read.rhythm.latitude, longitude: read.rhythm.longitude };
     return reply(read.standing, {
         day: { start, end, workEnd, from },
+        list: listOf(plan).map(({ keys: _keys, ...task }) => task),
         header,
         unplaced,
         briefRules: sectionOf(read.standing.markdown, "Brief rules"),
@@ -363,10 +360,49 @@ export function carryQuestion(lines: string[], sameWeek: boolean): string {
     return sameWeek ? t("caius.daily.carry_day", { lines: list }) : t("caius.daily.carry_week", { lines: list });
 }
 
+/**
+ * The day's work bars: the main list in his order, laid out between `events` from standup, or from
+ * the time now when `date` is today.
+ */
+export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date) {
+    const notBefore = date === dayKey(now) ? quarterAfter(now) : undefined;
+    return layoutWork({ ...day, notBefore }, events, listOf(plan).map(({ label: bar, minutes, evening }) => ({ label: bar, minutes, evening })));
+}
+
+/** The main list as the drawing and the picks read it: each live task's bar label, text, minutes, keys and whether it is an evening task. */
+function listOf(plan: PlanView) {
+    const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
+    return mainTasks(plan).map((task) => ({
+        label: workLabel(task.text), text: plainText(task.text), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
+        evening: eveningSections.has(task.section), keys: keysOf(task.text)
+    }));
+}
+
+/**
+ * The picks that name a live task of the main list, in the list's order, and those that don't. A
+ * pick names a task by a Jira key they share, or by holding the task's text.
+ */
+export function listPicks<P extends { text: string }>(plan: PlanView, picks: P[]): { kept: P[]; dropped: P[] } {
+    const list = listOf(plan);
+    const jira = (keys: string[]) => keys.filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key));
+    const placeOf = (pick: P) => list.findIndex((task) => jira(keysOf(pick.text)).some((key) => task.keys.includes(key))
+        || (task.text !== "" && sameText(pick.text).includes(sameText(task.text))));
+    const placed = picks.map((pick) => ({ pick, at: placeOf(pick) }));
+    return {
+        kept: placed.filter(({ at }) => at >= 0).sort((a, b) => a.at - b.at).map(({ pick }) => pick),
+        dropped: placed.filter(({ at }) => at < 0).map(({ pick }) => pick)
+    };
+}
+
+/** A task's text without its links' markup. */
+function plainText(text: string): string {
+    return text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
+}
+
 /** A work bar's label: the task's first Jira key, else its text cut to `LABEL_LENGTH`. */
 function workLabel(text: string): string {
     const key = keysOf(text).find((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k));
-    const plain = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
+    const plain = plainText(text);
     return key ?? (plain.length > LABEL_LENGTH ? `${plain.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : plain);
 }
 

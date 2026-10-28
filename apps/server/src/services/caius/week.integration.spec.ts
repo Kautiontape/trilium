@@ -345,3 +345,33 @@ describe("weather by date", () => {
         expect(weatherCalls.at(-1)).toEqual([ 39.95, -75.17, THU ]);
     });
 });
+
+describe("the brief follows his list", () => {
+    it("Fri 09:30: the picks and the work bars are his accepted tasks in his order; a candidate he left isn't a pick", async () => {
+        await cls.init(() => dayNote(FRI, `<h2>☑️ Tasks</h2>${ul(
+            li("x1", `${jiraLink("ZAP-140")} — Confirm the staging bucket ~30m`),
+            li("x2", `${jiraLink("ZAP-141")} — Review the mapper change ~45m`)
+        )}<h3>Suggested</h3>${ul(li("x3", `Get ${jiraLink("ZAP-142")} Check the export done: because it waits (~30m)`))}`));
+        calendars[FRI] = [];
+        at(`${FRI}T09:30`);
+        const brief = await call("caius_planday", { date: FRI, step: "brief" });
+        expect(brief.data.list.map((task: any) => [ task.label, task.minutes ])).toEqual([ [ "ZAP-140", 30 ], [ "ZAP-141", 45 ] ]);
+
+        const written = await call("caius_brief_write", {
+            ...brief.data.shape, headline: "Clear the handoffs",
+            header: { ...brief.data.shape.header, work: [ { start: "12:00", end: "14:00", label: "Handoff queue" } ] },
+            picks: [
+                { text: "Get ZAP-142 Check the export done", because: "it waits", minutes: 30 },
+                { text: "Get ZAP-141 Review the mapper change done", because: "Riley waits on it", minutes: 45 },
+                { text: "Get ZAP-140 Confirm the staging bucket done", because: "the runbook needs it", minutes: 30 }
+            ]
+        });
+        expect(written.droppedPicks).toEqual([ "Get ZAP-142 Check the export done" ]);
+        expect(written.work.map((block: any) => [ block.start, block.end, block.label ])).toEqual([ [ "10:00", "10:30", "ZAP-140" ], [ "10:30", "11:15", "ZAP-141" ] ]);
+        const body = await cls.init(() => store.content(written.briefNoteId));
+        expect([ ...body.matchAll(/<li[^>]*>([^<]*)<\/li>/g) ].map((m) => m[1])).toEqual([
+            "Get ZAP-140 Confirm the staging bucket done: because the runbook needs it (~30m)",
+            "Get ZAP-141 Review the mapper change done: because Riley waits on it (~45m)"
+        ]);
+    });
+});

@@ -193,7 +193,7 @@ describe("caius_brief_write", () => {
             work: [ { start: "10:15", end: "11:00", label: "ZAP-101", focus: true } ]
         }
     };
-    const DAY_HTML = `<h3>Meetings</h3><ul><li data-list-item-id="em1">10:00 Standup</li></ul><h2>☑️ Tasks</h2>${ul(li("bt1", "Brief day thing"))}`;
+    const DAY_HTML = `<h3>Meetings</h3><ul><li data-list-item-id="em1">10:00 Standup</li></ul><h2>☑️ Tasks</h2>${ul(li("bt1", "Fix ZAP-101 ~30m"), li("bt2", "The review ~1h30m"))}`;
     let dayId = "";
 
     beforeAll(async () => {
@@ -316,7 +316,7 @@ describe("caius_brief_write", () => {
     it("keeps the brief's lines out of the lanes", async () => {
         const open = await call("caius_open", {});
         expect(open.tasks.map((t: any) => t.text).join("\n")).not.toContain("Get ZAP-101 done");
-        expect(open.tasks.map((t: any) => t.text)).toContain("Brief day thing");
+        expect(open.tasks.map((t: any) => t.text)).toContain("Fix ZAP-101");
     });
 
     it("takes three acts, and latitude with longitude", () => {

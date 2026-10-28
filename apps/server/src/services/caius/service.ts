@@ -82,7 +82,7 @@ import {
     type WindDownInput
 } from "./schemas.js";
 import { findBrief, PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, mainTasks, planDay, type Standing, type StepDeps, windDown } from "./daily.js";
+import { catchupOf, type DayRead, listPicks, mainTasks, planDay, type Standing, type StepDeps, windDown, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -410,16 +410,27 @@ export function createCaiusService(
 
         /**
          * Writes the day's Morning Brief, its `Header` child with the drawing, and the header's
-         * include-note at the top of the day note. The weather is fetched before the lock.
+         * include-note at the top of the day note. The picks are those that name a task of the
+         * day's main list, in its order (`droppedPicks` names the rest), and the drawing's work
+         * bars are that list laid out again. The weather is fetched before the lock.
          */
         briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
             const weather = input.dryRun || latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude, input.date);
-            return withCaiusLock("caius_brief_write", () => writeBrief({
-                store,
-                draw: (noteId) => drawHeader(noteId, input.header, weather).attachmentId,
-                render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
-                plannedAt: localIso(caiusNow())
-            }, input));
+            return withCaiusLock("caius_brief_write", async () => {
+                // The picks and the work bars follow the main list as it stands, whatever the input says.
+                const now = caiusNow();
+                const day = await findPeriodNote(store, "day", input.date);
+                const plan = day && (day.type !== "text" || day.isProtected) ? null : await readPlan(store, "day", input.date, now);
+                const { kept, dropped } = plan ? listPicks(plan, input.picks) : { kept: input.picks, dropped: [] };
+                const header = plan ? { ...input.header, work: workBlocks(plan, input.header, input.header.events, input.date, now).work } : input.header;
+                const result = await writeBrief({
+                    store,
+                    draw: (noteId) => drawHeader(noteId, header, weather).attachmentId,
+                    render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
+                    plannedAt: localIso(now)
+                }, { ...input, picks: kept, header });
+                return { ...result, droppedPicks: dropped.map((pick) => pick.text), work: header.work };
+            });
         },
 
         assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
