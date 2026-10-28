@@ -91,7 +91,7 @@ In these conversations only these tools are available; every other Caius tool an
 | `caius_winddown_apply` | Wind down's one write. |
 | `load_skill`, note reads | This sheet, and reading a note when the step data points at one. |
 
-`Plan my day 2026-11-09` plans that day; `Wind down 2026-11-06` closes that day against the next workday. Each conversation is one question set, then one apply call that makes every write. You read, ask, pass his answers through as ids, and write the brief's prose. The tool does the rest. A correction he makes after the apply ("111 was later this week", "also ZAP-2590 is open") is one more call of the same apply tool for the same date, with only what he corrected: never another tool. It changes only what it names, and repeating it changes nothing.
+`Plan my day 2026-11-09` plans that day; `Wind down 2026-11-06` closes that day against the next workday. Each conversation is one question set, then one apply call that makes every write. You read, ask, pass his answers through as ids, and write the brief's prose. The tool does the rest. A correction he makes after the apply ("111 was later this week", "also ZAP-2590 is open") is one more call of the same apply tool for the same date, with his correction in `said` and only what he corrected (in Plan my day, with the brief's prose again): never another tool. It changes only what it names, and repeating it changes nothing.
 
 ### Plan my day
 
@@ -106,7 +106,7 @@ When the catch-up step asks about held items (`data.held`), one he says is done 
 
 On `catchup: "review"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day: call `catchup` again and go on from there.
 
-On a refresh (the day already has a brief), the step asks only what is new; with no question, call `caius_plan_apply` with an empty answer and the brief's prose.
+On a refresh (the day already has a brief), the step asks only what is new; with no question, call `caius_plan_apply` with `said: ""`, no other answer and the brief's prose.
 
 ### Wind down
 
@@ -131,10 +131,10 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 - Never narrate tools, ids, protocol or data quality. Never mention ids, steps, tools, arrays, fields, permissions or "the wrong value", in the message or while you work: no "I need the candidateId", no "no keep/carry lines".
 - The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it; a meeting that moved is a fact in your message, not a question.
 - Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral: "Taking Vendor Onboarding, not Incident Review", "the 6pm call covers it". Never name him in the third person.
-- A Context line skipped as `third_person` is not written: reword it in his voice and call the same apply again with only that line in `context` and nothing else, no `brief`, then reply.
+- A Context line skipped as `third_person` is not written: reword it in his voice and call the same apply again with `said` and only that line in `context`, no `brief`, then reply.
 - Map "first", "after 105" or "before the report" onto the accept's `first`, `before` or `after`. Name the other item, of his list or a candidate taken in the same call, by its ref or his words. Without a place, an accepted item joins the end of his list.
 - Never refuse a reorder he asks for: an item already on his list moves with `move` (the item and `first`, `before` or `after`), within his main list. Use `move` only when he asks for an order.
-- "Put X first" or "X after Y", at any point in the conversation, even after the plan is written, is one `caius_plan_apply` call with only `move`: no `brief`, nothing else. It reorders his list and, when the picks change, writes the brief's picks, the drawing and the acts again. Whenever a move changes the order of the picks, send a fresh `headline` and two `acts` with it, in the new order. Otherwise the tool writes plain ones.
+- "Put X first" or "X after Y", at any point in the conversation, even after the plan is written, is one `caius_plan_apply` call with `said` and only `move`: no `brief`, no other answer. It reorders his list and, when the picks change, writes the brief's picks, the drawing and the acts again. Whenever a move changes the order of the picks, send a fresh `headline` and two `acts` with it, in the new order. Otherwise the tool writes plain ones.
 - State capacity only as the step's `data.capacity.sentence` words it, as it is: its focus figure is the one the Plan tab shows. Never work out or round another figure. When the step gives a `summary`, say it as it is.
 - An evening calendar event is not a task: for "evening is just mom" with an evening Call Mom on the calendar, pass nothing in `evening`; the Evening act names the event. The apply skips such a line as `calendar_event`, and writes as a task a line with more in it than the event ("Call Mom about the flights"); `say` names the skip ("Call Mom is already on the calendar").
 - Never ask what else to do when the step returns no candidates: say the shelf is empty in one clause and write the plan.

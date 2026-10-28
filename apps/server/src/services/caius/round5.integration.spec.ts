@@ -390,3 +390,28 @@ describe("'fine' takes what was offered", () => {
         expect((await tasksOf("day", "2027-03-02")).map((task: any) => task.text)).toEqual([ "ZAP-503 Ship the fix" ]);
     });
 });
+
+describe("a correction after the plan", () => {
+    it("Tue 09:40 'oh, I answered jordan in chat' after the plan: one more plan apply with said, the answer and the brief again; a bare one is refused; a repeat changes nothing", async () => {
+        const DAY = "2027-03-09";
+        jira.asks.push({
+            ticket: ticket("ZAP-605", { summary: "Confirm the bucket" }), author: "Jordan Placeholder", created: "2027-03-01T15:00:00.000-0500",
+            commentId: "c605", excerpt: "Is the bucket name right?"
+        });
+        at("2027-03-08T09:40");
+        await call("caius_plan_apply", { date: "2027-03-08", said: "nothing today", brief: prose });
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "no", brief: prose });
+        expect(await cls.init(() => store.content(planned.briefNoteId))).toContain("ZAP-605");
+
+        await expect((async () => call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605" } ] }))()).rejects.toThrow(/Give brief/);
+        const fixed = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605" } ], brief: prose });
+        expect(fixed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-605", status: "written" }) ]));
+        expect(await cls.init(() => store.content(fixed.briefNoteId))).not.toContain("ZAP-605");
+
+        const before = await journal();
+        const again = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605" } ], brief: prose });
+        expect(again.written.filter((entry: any) => entry.status === "written")).toEqual([]);
+        expect(await journal()).toEqual(before);
+    });
+});
