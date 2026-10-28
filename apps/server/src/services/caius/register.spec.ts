@@ -152,7 +152,7 @@ it("says the evening is covered only when the step shows evening items, and neve
 it("parks a stale item only on his word, and keeps a personal errand out of the headline", () => {
     const sheet = sheetOnce();
     expect(sheet).toContain("An item with `park` has been carried on three workdays or more, and the `open` question asks to park it in that month. Only his word parks it: pass its fate with `to` set to `park.month`. Without it, the item goes on as proposed.");
-    expect(sheet).toContain("The headline names his work: never a chore, an evening task or a personal errand while his list has work.");
+    expect(sheet).toContain("The headline names his first work task: never a personal errand or an evening task when work is on his list. The tool writes your headline as you send it");
 });
 
 /** The sheet's text, read while the skill is registered for that read alone. */

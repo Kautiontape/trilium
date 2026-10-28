@@ -605,8 +605,7 @@
       "act_range": "{{start}} to {{end}}",
       "act_text": "{{- items}}.",
       "open_time": "Open time.",
-      "order_headline": "{{- first}} first, then {{- rest}}.",
-      "start_headline": "Start with {{- first}}."
+      "order_headline": "{{- first}} first, then {{- rest}}."
     },
     "check": {
       "fate": "His reply seems to give {{- item}} a place ('{{- clause}}') that this call leaves out. Pass it in fates, or call again with checked: true if he didn't mean that.",

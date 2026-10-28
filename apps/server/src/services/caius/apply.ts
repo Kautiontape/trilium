@@ -327,7 +327,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         else written.push({ kind: "brief", status: changed ? "written" : "unchanged" });
         return answer({
             date, written, skipped,
-            headline: brief.headline, topPick: brief.picks[0]?.text ?? null,
+            headline: prose.headline, topPick: brief.picks[0]?.text ?? null,
             briefNoteId: brief.briefNoteId, headerNoteId: brief.headerNoteId, attachmentId: brief.attachmentId,
             link: `#root/${brief.briefNoteId}`, plannedAt: brief.plannedAt
         });
@@ -625,7 +625,7 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
             });
             // The acts he sent are kept where they name the drawing's work; the headline follows the new order.
             const given = (asked.acts ?? []).map((act) => typeof act === "string" ? { text: act } : act);
-            const header = { acts: (drawn: ReturnType<typeof headerOf>) => drawnActs(drawn, given, titlesOf(plan)), headline: (drawn: ReturnType<typeof headerOf>) => workHeadline(asked.headline ?? orderHeadline(drawn), plan) };
+            const header = { acts: (drawn: ReturnType<typeof headerOf>) => drawnActs(drawn, given, titlesOf(plan)), headline: (drawn: ReturnType<typeof headerOf>) => asked.headline ?? orderHeadline(drawn) };
             if (failedCalendar(read)) skipped.push({ kind: "header", id: date, reason: "calendar_unavailable" });
             else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, weather, written, skipped, header));
         }
@@ -733,29 +733,6 @@ function orderHeadline(header: ReturnType<typeof headerOf>): string | undefined 
     const tail = rest.at(-1) ?? "";
     return t("caius.brief.order_headline", { first, rest: rest.length > 1 ? t("caius.daily.list_and", { head: rest.slice(0, -1).join(", "), last: tail }) : tail });
 }
-
-/**
- * The headline as written: `headline`, unless it names a task of his list that isn't work while the
- * list has work; then the work in his order, "ZAP-801 first, then ZAP-802." or "Start with ZAP-801.".
- */
-function workHeadline(headline: string | undefined, plan: Awaited<ReturnType<typeof readPlan>>): string | undefined {
-    const tasks = listOf(plan);
-    const work = tasks.filter((task) => task.work).map((task) => task.label);
-    const wordsOf = (text: string): string[] => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-    const said = new Set(wordsOf(headline ?? ""));
-    // A task is named by its key, or by a word of four letters or more that is its alone and not a common one.
-    const names = (task: (typeof tasks)[number]) => task.keys.some((key) => JIRA_KEY.test(key) && (headline ?? "").toUpperCase().includes(key))
-        || wordsOf(task.text).some((word) => word.length >= 4 && said.has(word) && !COMMON_WORDS.has(word)
-            && !tasks.some((other) => other !== task && wordsOf(other.text).includes(word)));
-    if (!headline || !work.length || !tasks.some((task) => !task.work && names(task))) return headline;
-    const [ first, ...rest ] = work;
-    if (!rest.length) return t("caius.brief.start_headline", { first });
-    const tail = rest.at(-1) ?? "";
-    return t("caius.brief.order_headline", { first, rest: rest.length > 1 ? t("caius.daily.list_and", { head: rest.slice(0, -1).join(", "), last: tail }) : tail });
-}
-
-/** Words of four letters or more too common in a headline to name a task by. */
-const COMMON_WORDS = new Set([ "about", "after", "before", "then", "with", "from", "into", "over", "that", "this", "their", "there", "which", "until", "while", "first", "later", "today", "tonight", "evening", "morning", "afternoon", "work" ]);
 
 /** The brief's picks of a plan as they read, in order: the first work tasks of his list. */
 function picksOf(plan: Awaited<ReturnType<typeof readPlan>>): string {
@@ -1839,7 +1816,6 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
     const { store, now } = deps;
     const plan = await readPlan(store, "day", input.date, now);
     const picks = picksFor(plan, reasons);
-    const headline = workHeadline(input.brief.headline, plan) ?? input.brief.headline;
     const followUps = followUpsOf(jira);
     // Follow up and Heads-up are written from the step data, in place of anything the agent wrote under them.
     const followUpTitle = t("caius.daily.follow_up");
@@ -1857,12 +1833,12 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
         plannedAt: deps.plannedAt,
         ...(weather ? { weather } : {})
     }, {
-        date: input.date, headline, picks, sections, header,
+        date: input.date, headline: input.brief.headline, picks, sections, header,
         acts: withEveningAct(fromNow(drawnActs(header, input.brief.acts, titlesOf(plan)), planFromOf(input.date, now, read.rhythm.start).planFrom), plan, header),
         followUps: followUps.map(({ key, commentId }) => ({ key, commentId }))
     });
     if (result.error !== undefined) return { error: result.error, detail: result.detail };
     if (!("writes" in result) || !result.writes) return { error: "failed", detail: "the brief was not written" };
     const { briefNoteId, headerNoteId, attachmentId, plannedAt, writes } = result;
-    return { briefNoteId, headerNoteId, attachmentId, plannedAt, writes, picks, headline };
+    return { briefNoteId, headerNoteId, attachmentId, plannedAt, writes, picks };
 }

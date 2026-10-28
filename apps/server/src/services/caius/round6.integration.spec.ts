@@ -307,44 +307,29 @@ describe("a stale errand", () => {
         expect((await call("caius_plan", { period: "day", date: "2029-04-09" })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
     });
 
-    it("the plan's top pick and headline are work when his list has work: a chore or a ticketless personal item never leads", async () => {
+    it("the plan's top pick is work when his list has work: a chore or a ticketless personal item never leads it", async () => {
         const DAY = "2029-05-07";
         await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Home</h3>${ul(li("p-dave", "Message Dave about the lights"))}<h3>Chores</h3>${ul(li("p-bins", "Take the bins out"))}`
             + `<h3>Work</h3>${ul(li("p-801", `${zap("ZAP-801", "Verify the export retry")} ~30m`), li("p-802", `${zap("ZAP-802", "Check the invoice export")} ~30m`))}`);
         at(`${DAY}T09:40`);
-        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Chase Dave about the lights, then the export retry.", acts: [
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Verify the export retry, then the invoice check.", acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
         ] } });
         expect(planned.skipped).toEqual([]);
         expect(planned.topPick).toContain("ZAP-801");
-        expect(planned.headline).toBe("ZAP-801 first, then ZAP-802.");
-        const header = await contentOf(planned.headerNoteId);
-        expect(header).toContain("<h2>ZAP-801 first, then ZAP-802.</h2>");
-        expect(header).not.toContain("Chase Dave");
         const brief = await contentOf(planned.briefNoteId);
         expect(brief.indexOf("ZAP-801")).toBeLessThan(brief.indexOf("Message Dave"));
-
-        // A headline that names the work stays as he'd read it.
-        const kept = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Verify the export retry, then the invoice check.", acts: [
-            { range: "", text: "x" }, { range: "", text: "y" }
-        ] } });
-        expect(kept.headline).toBe("Verify the export retry, then the invoice check.");
     });
 
-    it("a headline that shares only a common word with a task that isn't work stays as sent", async () => {
+    it("the agent's headline is written as sent, an evening task's words in it or not", async () => {
         const DAY = "2029-05-08";
+        const HEADLINE = "Call Jordan about the ZAP-811 export retry first.";
         await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${zap("ZAP-811", "Verify the export retry")} ~30m`))}<h3>Evening</h3>${ul(li("q-mom", "Call Mom about the flights"))}`);
         at(`${DAY}T09:40`);
-        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Verify the export retry, then think about the invoice.", acts: [
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: HEADLINE, acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
         ] } });
-        expect(planned.headline).toBe("Verify the export retry, then think about the invoice.");
-
-        // A ticket under Chores is no work, and named by its key.
-        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${zap("ZAP-811", "Verify the export retry")} ~30m`))}<h3>Chores</h3>${ul(li("q-812", `${zap("ZAP-812", "Tidy the board")} ~15m`))}`);
-        const keyed = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "ZAP-812 then the export retry.", acts: [
-            { range: "", text: "x" }, { range: "", text: "y" }
-        ] } });
-        expect(keyed.headline).toBe("Start with ZAP-811.");
+        expect(planned.headline).toBe(HEADLINE);
+        expect(await contentOf(planned.headerNoteId)).toContain(`<h2>${HEADLINE}</h2>`);
     });
 });
