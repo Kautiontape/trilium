@@ -443,6 +443,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         if (!held.length && !skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
             const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
             if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
+            // A closed day needs no record for a re-run's words any more.
+            const fresh = await findPeriodNote(store, "day", date);
+            for (const a of fresh?.attributes ?? []) if (a.type === "label" && a.name === SETTLED_LABEL) removeLabel(fresh?.noteId ?? "", SETTLED_LABEL, a.value);
         }
         // The closed day is drawn as it was worked, its done tasks included; the next workday as it stands.
         for (const [ day, { read: dayRead, fetched } ] of briefed) {

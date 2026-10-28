@@ -1084,3 +1084,30 @@ describe("fix round 3: an answer of another intent settles only what it names", 
         await clearHolds(DAY);
     });
 });
+
+describe("fix round 3: hold and settled labels are cleaned up", () => {
+    it("F3 (S9): he ticks both held exports by hand; the next apply takes their hold labels off", async () => {
+        const DAY = "2027-11-24";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "the export" ] });
+        const plan = await call("caius_plan", { period: "day", date: DAY });
+        await call("caius_set_state", { items: [ `${DAY}-111`, `${DAY}-101` ].map((listItemId) => ({ noteId: plan.noteId, listItemId, state: "done" })) });
+        at("2027-11-25T09:40");
+        await call("caius_plan_apply", { date: "2027-11-25", brief: prose });
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([]);
+        expect(await labelsOf(DAY, "caiusHeldGroup")).toEqual([]);
+    });
+
+    it("F4: a day wound down with no hold left keeps no #caiusSettled labels", async () => {
+        const DAY = "2027-12-01";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const first = await call("caius_winddown_apply", { date: DAY, done: [ "111", "laundry" ] });
+        expect(first.skipped).toEqual([ expect.objectContaining({ reason: "not_offered" }) ]);
+        expect(await labelsOf(DAY, "caiusSettled")).not.toEqual([]);
+        await call("caius_winddown_apply", { date: DAY, done: [ "111", "the bag" ] });
+        expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+        expect(await labelsOf(DAY, "caiusSettled")).toEqual([]);
+    });
+});
