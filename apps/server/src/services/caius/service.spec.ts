@@ -46,8 +46,9 @@ describe("the caius service writing Meetings", () => {
 
     it("replaces the block under the lock and leaves the task list alone", async () => {
         const service = createCaiusService(store);
-        const answer = await service.setMeetings({ date: "2026-11-06", lines: [ "10:00 Standup" ] });
-        expect(answer.results).toEqual([ { date: "2026-11-06", status: "updated", writtenNoteId: "d" } ]);
+        const answer = await service.meetings({ date: "2026-11-06", items: [ "10:00 Standup" ] });
+        expect(answer).toMatchObject({ source: "items", lines: [ "10:00 Standup" ] });
+        expect("results" in answer && answer.results).toEqual([ { date: "2026-11-06", status: "updated", writtenNoteId: "d" } ]);
         expect(html.d).toMatch(/^<h3>Meetings<\/h3><ul><li data-list-item-id="e[0-9a-f]{32}">10:00 Standup<\/li><\/ul><h2>Tasks<\/h2>/);
         expect(html.d).toContain("<ul class=\"todo-list\"><li");
     });

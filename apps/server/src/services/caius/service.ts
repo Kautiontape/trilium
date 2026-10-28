@@ -267,12 +267,6 @@ export function createCaiusService(
             })).map((r) => presentResult(r)));
         }),
 
-        /** Replaces the Meetings block of a day note; no tool or route reaches it yet. */
-        setMeetings: ({ date, lines, dryRun }: { date: string; lines: string[]; dryRun?: boolean }) => withCaiusLock("caius_set_meetings", async () => {
-            const result = await setMeetings(store, { date, lines }, { dryRun });
-            return withBlobIds([ result ]);
-        }),
-
         /**
          * Writes the Meetings block of a day note: `items` when given, else the day's calendar as
          * clock lines. A calendar that could not be read writes nothing, so a feed that fails never
