@@ -30,7 +30,7 @@ export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './tri
 export { placeTask, setTaskState, takeSuggested } from './trilium/plan-html.js';
 export type { StateAction, Target } from './trilium/plan-html.js';
 export { now as caiusClock, clockOverride } from './clock.js';
-export { nextWorkday, lastWorkday } from './workday.js';
+export { nextWorkday, lastWorkday, workdayKey, workdayNow, workdayMinutes, workdayClock, DEFAULT_ROLLOVER } from './workday.js';
 export { contextNotes, gatherContext } from './trilium/context.js';
 export type { ContextEntry } from './trilium/context.js';
 export { addContext, addContextLine, formatUntil, replaceMeetings, setContextLine, setMeetings } from './trilium/daynote.js';
