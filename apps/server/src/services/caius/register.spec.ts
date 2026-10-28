@@ -125,6 +125,25 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(readSkill("caius")).toBeNull();
 });
 
+it("opens a planning message with its first question, never a preamble of its own", () => {
+    const sheet = sheetOnce();
+    const openers = sheet.slice(sheet.indexOf("## Wind down and Plan my day"), sheet.indexOf("## Reading results"));
+    expect(openers).toContain("Start the message with its first question or item: no preamble of your own about what follows");
+    for (const filler of [ "\"Here's everything in one message:\"", "\"Here's my one question for you:\"" ]) expect(openers, filler).toContain(filler);
+    // The steps' own words open some questions; the ban never makes the agent reword them.
+    expect(openers).toContain("A step's own words, such as the `open` question's \"Here's what's left\", are not a preamble: keep them as they are.");
+});
+
+/** The sheet's text, read while the skill is registered for that read alone. */
+function sheetOnce(): string {
+    const unregister = registerCaiusSkill();
+    try {
+        return readSkill("caius") ?? "";
+    } finally {
+        unregister();
+    }
+}
+
 it("registers the caius skill when the tools load, and not when they fail to", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
