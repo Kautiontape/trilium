@@ -617,15 +617,34 @@ describe("fix round 1: a re-run by his words finds what the first run did", () =
         expect(again.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", id: "ZAP-174", status: "unchanged" }) ]));
     });
 
-    it("a partial first run, then a re-run by words: 111 already done counts as answered, and the day ends wound down", async () => {
+    it("a partial first run, then a re-run by words: 111 already done counts as answered, the bag and Dave are settled where they now sit, and the day ends wound down", async () => {
         const DAY = "2027-05-19";
         await wednesday(DAY);
         at(`${DAY}T17:45`);
         const first = await call("caius_winddown_apply", { date: DAY, done: [ "111", "laundry" ] });
         expect(first.skipped).toEqual([ expect.objectContaining({ kind: "done", reason: "not_offered" }) ]);
         expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
-        const second = await call("caius_winddown_apply", { date: DAY, done: [ "111", "the bag" ] });
+        // The first run forwarded the bag and Dave to Thursday as proposed; the re-run settles those copies.
+        const second = await call("caius_winddown_apply", { date: DAY, done: [ "111", "the bag" ], fates: [ { listItemId: "dave", drop: "not needed" } ] });
         expect(second.skipped).toEqual([]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+        const thursday = Object.fromEntries((await tasksOf("2027-05-20")).map((task: any) => [ task.text, task.state ]));
+        expect(thursday["Pack the climbing gym bag"]).toBe("done");
+        expect(thursday["Message Dave if he knows anyone who will hang lights as a small job _not needed_"]).toBe("cancelled");
+    });
+
+    it("the same partial run, then a re-run by the open step's refs: the refs follow the bag and Dave to Thursday's copies", async () => {
+        const DAY = "2027-09-08";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const open = await call("caius_winddown", { date: DAY, step: "open" });
+        const ref = (word: string) => open.data.items.find((item: any) => item.text.includes(word)).ref;
+        await call("caius_winddown_apply", { date: DAY, done: [ ref("ZAP-111"), "laundry" ] });
+        const second = await call("caius_winddown_apply", { date: DAY, done: [ ref("ZAP-111"), ref("climbing") ], fates: [ { listItemId: ref("Dave"), drop: "not needed" } ] });
+        expect(second.skipped).toEqual([]);
+        const thursday = Object.fromEntries((await tasksOf("2027-09-09")).map((task: any) => [ task.text, task.state ]));
+        expect(thursday["Pack the climbing gym bag"]).toBe("done");
+        expect(thursday["Message Dave if he knows anyone who will hang lights as a small job _not needed_"]).toBe("cancelled");
         expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
     });
 });
