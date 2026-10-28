@@ -102,6 +102,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "On an `edited` skip, run the same apply call once more with the same answers, each item named by his words",
         "If a Caius tool fails, say so in one clause and stop that item.",
         "The day is whatever the step data says; never compare it with any other date you know; always call the step first.",
+        "At the end of a wind-down, never offer to run Plan my day for another day.",
         "Never run Plan my day for a future day: only the step says a day is later than today, by answering `not_today`."
     ]) expect(sheet, rule).toContain(rule);
     // The opener conversations have only the step and apply tools, so their section names no other.
