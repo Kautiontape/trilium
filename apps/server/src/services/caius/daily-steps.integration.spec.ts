@@ -357,7 +357,7 @@ describe("caius_planday", () => {
     it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
         const answer = await planday({ date: MONDAY, step: "brief" });
         expect(answer).toMatchObject({ step: "brief", question: null, next: null });
-        expect(answer.data.day).toEqual({ start: "10:00", end: "23:00", workEnd: "18:00", from: { start: "rhythm", end: "rhythm", workEnd: "default" } });
+        expect(answer.data.day).toEqual({ start: "10:00", end: "23:00", workEnd: "18:00", from: { start: "rhythm", end: "rhythm", workEnd: "default", rollover: "default" } });
         expect(answer.data.header).toEqual({
             start: "10:00", end: "23:00", workEnd: "18:00",
             events: [

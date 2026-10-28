@@ -160,6 +160,7 @@ An item with `park` has been carried on three workdays or more, and the `open` q
 - `standing` is his "How I work" note: follow its Brief rules. When it is null, say `standingMissing` in one line.
 - Say only what the step data says about people and tickets. Never guess pronouns.
 - The day is whatever the step data says; never compare it with any other date you know; always call the step first.
+- Today is his workday: before the rollover in his Rhythm (04:00 unless it says otherwise) it is still the day he started, and times in those hours read past 24:00 (`25:30` is 1:30 AM). Use the date in his opener; don't work out today from the calendar.
 - Never run Plan my day for a future day: only the step says a day is later than today, by answering `not_today`. A wind-down sets the next day up; it doesn't plan it.
 
 ## Reading results

@@ -13,6 +13,7 @@ import {
     dayCandidates,
     dayCapacity,
     DEFAULT_ESTIMATE,
+    DEFAULT_ROLLOVER,
     EVENING_REASON,
     findPeriodNote,
     formatHours,
@@ -30,6 +31,7 @@ import {
     type NoteStore,
     openTasks,
     overlapPairs,
+    parseClock,
     PERIODS,
     periodSpan,
     type PlanTask,
@@ -39,7 +41,8 @@ import {
     sameContext,
     scanDocs,
     sectionOf,
-    TRILIUM_CONFIG
+    TRILIUM_CONFIG,
+    workdayMinutes
 } from "@triliumnext/caius";
 import { createHash } from "crypto";
 import { t } from "i18next";
@@ -68,6 +71,7 @@ export interface DayRead {
 
 export interface StepDeps {
     store: NoteStore;
+    /** The moment as its workday sees it (`workdayNow`): before the rollover, still the day before. */
     now: Date;
     /** Runs `fn` under the Caius lock. */
     locked: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
@@ -362,7 +366,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x", (line) => line.lineId),
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, evening: offer.evening, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
-            ...planFromOf(date, deps.now, read.rhythm.start)
+            ...planFromOf(date, deps.now, read.rhythm)
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
@@ -375,7 +379,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
     const followUps = followUpsOf(unraised(splitAsks(read.inputs.jira, seen, live).followed, raised));
     const { start, end, workEnd, from } = read.rhythm;
     const events = drawnEvents(read);
-    const { work, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now);
+    const { work, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now, rolloverOf(read.rhythm));
     const header = { start, end, workEnd, events, work };
     const coordinates = read.rhythm.latitude === undefined ? {} : { latitude: read.rhythm.latitude, longitude: read.rhythm.longitude };
     return reply(read.standing, {
@@ -896,8 +900,8 @@ export function carryQuestion(lines: string[], sameWeek: boolean): string {
  * The day's work bars: the main list in his order, laid out between `events` from standup, or from
  * the time now when `date` is today.
  */
-export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date) {
-    const notBefore = date === dayKey(now) ? quarterAfter(now) : undefined;
+export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date, rollover: number) {
+    const notBefore = date === dayKey(now) ? quarterAfter(now, rollover) : undefined;
     return layoutWork({ ...day, notBefore }, events, listOf(plan).map(({ label: bar, minutes, evening }) => ({ label: bar, minutes, evening })));
 }
 
@@ -970,14 +974,17 @@ function workLabel(text: string): string {
  * `planFrom`, where the plan of a day already under way starts: the next quarter hour from now on
  * `date` when it is today and that is after `start`, as the work bars are laid out; else nothing.
  */
-export function planFromOf(date: string, now: Date, start: string): { planFrom?: string } {
-    const from = quarterAfter(now);
-    return date === dayKey(now) && from > start ? { planFrom: from } : {};
+export function planFromOf(date: string, now: Date, rhythm: Pick<Rhythm, "start" | "rollover">): { planFrom?: string } {
+    const from = quarterAfter(now, rolloverOf(rhythm));
+    return date === dayKey(now) && from > rhythm.start ? { planFrom: from } : {};
 }
 
-/** The local time of `at` rounded up to the quarter hour, `HH:MM`; at most `23:59`. */
-function quarterAfter(at: Date): string {
-    const minutes = Math.min(23 * 60 + 59, Math.ceil((at.getHours() * 60 + at.getMinutes()) / 15) * 15);
+/** The rollover of a Rhythm in minutes after midnight. */
+export const rolloverOf = (rhythm: Pick<Rhythm, "rollover">) => parseClock(rhythm.rollover) ?? DEFAULT_ROLLOVER;
+
+/** The workday time of `at` rounded up to the quarter hour, `HH:MM`; in the small hours past `24:00`, and at most a minute short of the rollover the next morning. */
+function quarterAfter(at: Date, rollover: number): string {
+    const minutes = Math.min(24 * 60 + rollover - 1, Math.ceil(workdayMinutes(at, rollover) / 15) * 15);
     return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
