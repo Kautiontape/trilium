@@ -57,14 +57,14 @@ describe("Caius nudge route", () => {
         });
     });
 
-    it("answers unplanned once the catch-up is skipped, and planned with the time once a brief exists", async () => {
+    it("answers unplanned once the catch-up is skipped, and planned with the date and time once a brief exists", async () => {
         expect((await skip(MONDAY).expect(200)).body).toMatchObject({ date: MONDAY, status: "updated" });
         expect(becca.getNoteOrThrow(noteIds.monday).getLabelValue("caiusSkipCatchup")).toBe(MONDAY);
         expect((await nudge(MONDAY).expect(200)).body).toEqual({ date: MONDAY, state: "unplanned", lastWorkday: FRIDAY });
 
         // Monday's only task is done, so Tuesday has nothing to catch up.
         expect((await nudge(TUESDAY).expect(200)).body).toEqual({
-            date: TUESDAY, state: "planned", lastWorkday: MONDAY, plannedAt: `${TUESDAY}T08:40:00`
+            date: TUESDAY, state: "planned", lastWorkday: MONDAY, plannedAt: `${TUESDAY}T08:40:00`, plannedDate: TUESDAY, plannedTime: "08:40"
         });
     });
 

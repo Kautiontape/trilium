@@ -377,7 +377,8 @@ export function createCaiusService(
         /**
          * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and
          * the brief lookup of `caius_brief_write`: `catchup` while the last workday has live tasks,
-         * then `planned` once the day has a brief, else `unplanned`. Reads only.
+         * then `planned` once the day has a brief, with the date and time it was planned, else
+         * `unplanned`. Reads only.
          */
         nudge: ({ date }: NudgeInput) => withCaiusLock("caius_nudge", async () => {
             const { lastWorkday, note, tasks } = await catchupOf(store, date, caiusNow());
@@ -385,8 +386,9 @@ export function createCaiusService(
                 return { date, state: "catchup", lastWorkday, tasks: tasks.map(({ noteId, listItemId, text }) => ({ noteId, listItemId, text })) };
             }
             const brief = note ? await findBrief(store, note.noteId, date) : null;
+            const plannedAt = brief ? label(brief, PLANNED_AT_LABEL) ?? null : null;
             return brief
-                ? { date, state: "planned", lastWorkday, plannedAt: label(brief, PLANNED_AT_LABEL) ?? null }
+                ? { date, state: "planned", lastWorkday, plannedAt, plannedDate: plannedAt?.slice(0, 10) ?? null, plannedTime: plannedAt?.slice(11, 16) ?? null }
                 : { date, state: "unplanned", lastWorkday };
         }),
 

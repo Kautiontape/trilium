@@ -302,3 +302,14 @@ describe("follow-ups are raised once", () => {
         expect(followUps(await call("caius_planday", { date: "2026-11-10", step: "brief", refresh: true }))).toContain("ZAP-104:2");
     });
 });
+
+describe("never plan another day from a wind-down", () => {
+    it("Fri 17:20: Plan my day refuses Monday, and still plans a missed morning", async () => {
+        at(`${FRI}T17:20`);
+        for (const step of [ "catchup", "inputs", "brief" ]) {
+            expect(await call("caius_planday", { date: MON9, step }), step).toMatchObject({ step, date: MON9, error: "not_today" });
+        }
+        expect(await call("caius_planday", { date: THU, step: "catchup" })).toMatchObject({ step: "catchup", date: THU, next: "inputs" });
+        expect(await call("caius_planday", { date: FRI, step: "catchup" })).toMatchObject({ step: "catchup", date: FRI, next: "inputs" });
+    });
+});

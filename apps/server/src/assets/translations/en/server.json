@@ -614,6 +614,7 @@
       "evening": "Anything for the evening?",
       "fits": "{{- day}} holds {{- planned}} of work against about {{- focus}} of focus time. Fits.",
       "capacity_unknown": "The calendar for {{- day}} couldn't be read, so whether the day fits couldn't be judged.",
+      "not_today": "{{- day}} is after today ({{today}}). Plan it on its own morning; a wind-down only sets it up.",
       "keep": "Keep '{{- line}}'?",
       "context": "Anything to know for {{- day}}?",
       "catchup_one": "{{- weekday}} has {{count}} open task. Move all to today, review them, or skip?",

@@ -150,6 +150,11 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         step, date, data, question, next,
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
+    // A later day is planned on its own morning; a missed earlier one can still be planned.
+    const today = dayKey(deps.now);
+    if (date > today) {
+        return { step, date, error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today }) };
+    }
 
     if (step === "catchup") {
         const { standing, catchup: { lastWorkday: last, skipped, tasks } } = await deps.locked("caius_planday", async () => ({
