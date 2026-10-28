@@ -202,9 +202,12 @@ describe("his words decide", () => {
     });
 
     it("his words never move an item: negations, questions and another item's words give a check or nothing, and checked: true writes only the proposed fates", async () => {
-        const replies = [ "111 not this week", "can't do 101 friday", "should 111 go thursday?", "call mom friday", "message mom tuesday", "ZAP-111 later this week" ];
+        const replies = [
+            "111 not this week", "can't do 101 friday", "should 111 go thursday?", "call mom friday", "message mom tuesday", "ZAP-111 later this week",
+            "dave not tuesday", "I'll message dave tuesday myself, keep it off the list", "111 isn't happening this week"
+        ];
         for (const [ i, said ] of replies.entries()) {
-            const MON = [ "2027-04-05", "2027-04-12", "2027-04-19", "2027-04-26", "2027-05-03", "2027-05-10" ][i] ?? "";
+            const MON = [ "2027-04-05", "2027-04-12", "2027-04-19", "2027-04-26", "2027-05-03", "2027-05-10", "2027-11-08", "2027-11-15", "2027-11-22" ][i] ?? "";
             const TUE = `${MON.slice(0, 8)}${String(Number(MON.slice(8)) + 1).padStart(2, "0")}`;
             await cls.init(async () => {
                 const day = await store.calendarDay(MON);
@@ -510,6 +513,64 @@ describe("fix round 1: the review's remaining scenarios", () => {
     });
 });
 
+describe("fix round 1: the review's phrases", () => {
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+    const jordanAsk = (key: string, commentId: string, created: string) => jira.asks.push({
+        ticket: ticket(key, { summary: "Confirm the bucket" }), author: "Jordan Placeholder", created, commentId, excerpt: "Is the bucket right?"
+    });
+
+    it("I2: none of the review's replies closes Jordan's follow-up without a dismiss: a check or nothing, never a dismissal or an answered record", async () => {
+        jordanAsk("ZAP-105", "c1105", "2028-01-02T15:00:00.000-0500");
+        at("2028-01-03T09:40");
+        await call("caius_plan_apply", { date: "2028-01-03", said: "no", brief: prose });
+        at("2028-01-04T09:35");
+        for (const said of [
+            "not yet answered jordan", "still haven't replied to jordan", "jordan replied in chat", "I dropped the ball on jordan",
+            "the deploy got cancelled, 105 still open", "nope, haven't handled 105"
+        ]) {
+            const result = await call("caius_plan_apply", { date: "2028-01-04", said, brief: prose });
+            expect(result.written.map((entry: any) => entry.kind), said).not.toContain("dismiss");
+            expect(await answeredValues(), said).not.toContain("ZAP-105:c1105");
+        }
+    });
+
+    it("I4: 'not sure about incident review yet, ask me tomorrow' in a wind-down is a check, and nothing is declined", async () => {
+        const WED = "2028-01-05";
+        const THU = "2028-01-06";
+        calendars[THU] = [ event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding") ];
+        at(`${WED}T17:45`);
+        const result = await call("caius_winddown_apply", { date: WED, said: "not sure about incident review yet, ask me tomorrow" });
+        expect(result.written).toEqual([]);
+        expect(result.check).toEqual([ expect.objectContaining({ missing: "overlap" }) ]);
+        const kept = await call("caius_winddown_apply", { date: WED, said: "not sure about incident review yet, ask me tomorrow", checked: true });
+        expect(kept.written.map((entry: any) => entry.kind)).not.toContain("overlap");
+        at(`${THU}T09:30`);
+        expect((await call("caius_planday", { date: THU, step: "inputs", refresh: true })).data.meetings.lines).toEqual([ "10:30 Incident Review", "11:00 Vendor Onboarding" ]);
+        delete calendars[THU];
+    });
+
+    it("I5: a dismissal his reply names is written whatever word he uses; one named only in a negated clause is checked first", async () => {
+        for (const [ i, said ] of [ "got back to jordan", "took care of jordan", "dealt with jordan's question" ].entries()) {
+            const key = `ZAP-81${i}`;
+            const day = `2028-01-${String(10 + i).padStart(2, "0")}`;
+            jira.asks.length = 0;
+            jordanAsk(key, `c81${i}`, "2028-01-09T15:00:00.000-0500");
+            at(`${day}T09:40`);
+            const result = await call("caius_plan_apply", { date: day, said, dismiss: [ { candidateId: key, answered: true } ], brief: prose });
+            expect(result.check, said).toBeUndefined();
+            expect(result.written, said).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: key, status: "written" }) ]));
+        }
+        jira.asks.length = 0;
+        jira.handoff.push({ ...ticket("ZAP-805", { summary: "Ship the widget" }), daysInStatus: 2 });
+        at("2028-01-17T09:40");
+        const said = "805 won't happen, take it off";
+        const checked = await call("caius_plan_apply", { date: "2028-01-17", said, dismiss: [ { candidateId: "ZAP-805" } ], brief: prose });
+        expect(checked.check).toEqual([ expect.objectContaining({ missing: "dismiss" }) ]);
+        const written = await call("caius_plan_apply", { date: "2028-01-17", said, checked: true, dismiss: [ { candidateId: "ZAP-805" } ], brief: prose });
+        expect(written.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-805", status: "written" }) ]));
+    });
+});
+
 describe("acts stay inside the work window", () => {
     const cells = async (noteId: string) => [ ...(await cls.init(() => store.content(noteId))).matchAll(/<td><p><strong>([^<]*)<\/strong><\/p><p>([^<]*)<\/p><\/td>/g) ].map((m) => [ m[1], m[2] ]);
     const day = async (date: string, tasks: string[]) => cls.init(async () => {
@@ -598,6 +659,36 @@ describe("a Review goes straight on", () => {
         expect(wound.planday.catchup).toMatchObject({ step: "catchup", date: WED, question: null });
         expect(wound.planday.inputs).toMatchObject({ step: "inputs", date: WED, question: null });
         expect(wound.planday.inputs.data.list.map((item: any) => item.text)).toEqual([ "Message Dave about the lights" ]);
+    });
+});
+
+describe("a Review whose plan steps fail", () => {
+    it("keeps the wind-down's writes and answers with the nextCall to make, not a tool error", async () => {
+        const MON = "2028-02-07";
+        const WED = "2028-02-09";
+        await cls.init(async () => {
+            const day = await store.calendarDay(MON);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("rf-dave", "Message Dave about the gutters"))}`);
+        });
+        const failing = createBeccaStore();
+        const search = failing.search.bind(failing);
+        // The standing note is read as often as an evening apply reads it, then fails: the next read is Plan my day's.
+        let standingReads = 0;
+        let limit = Infinity;
+        failing.search = async (query) => {
+            if (query === "#assistantContext" && ++standingReads > limit) throw new Error("standing note unreadable");
+            return search(query);
+        };
+        const fragile = createCaiusTools(failing, async () => undefined, stubInputs);
+        const run = (args: object) => cls.init(() => [ ...fragile ].find(([ n ]) => n === "caius_winddown_apply")?.[1].execute(args)) as Promise<any>;
+        at("2028-01-31T17:30");
+        await run({ date: "2028-01-31", said: "" });
+        limit = standingReads * 2;
+        at(`${WED}T09:45`);
+        const wound = await run({ date: MON, said: "carry it" });
+        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", detail: WED, status: "written" }) ]));
+        expect(wound.planday).toBeUndefined();
+        expect(wound.nextCall).toEqual({ tool: "caius_planday", date: WED });
     });
 });
 
