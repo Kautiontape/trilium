@@ -477,3 +477,14 @@ describe("finished clears Suggested", () => {
         expect(await suggested("2026-11-20")).not.toContain("f20");
     });
 });
+
+describe("a done task closes its own ticket only", () => {
+    it("\"Reply to Riley on ZAP-180, unblocks ZAP-181\" done closes ZAP-180 and leaves ZAP-181 on offer", async () => {
+        jira.handoff.push({ ...ticket("ZAP-180"), daysInStatus: 2 }, { ...ticket("ZAP-181"), daysInStatus: 2 });
+        await cls.init(() => dayNote("2026-11-23", `<h2>☑️ Tasks</h2>${ul(li("r1", "Reply to Riley on ZAP-180, unblocks ZAP-181", { checked: true }))}`));
+        at("2026-11-24T09:30");
+        const offered = sources(await call("caius_planday", { date: "2026-11-24", step: "inputs" }));
+        expect(offered).not.toContain("ZAP-180");
+        expect(offered).toContain("ZAP-181");
+    });
+});

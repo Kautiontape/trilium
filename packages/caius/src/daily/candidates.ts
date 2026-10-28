@@ -82,8 +82,8 @@ export const FINISHED_DAYS = 30;
 export const FINISHED_LABEL = 'caiusFinished';
 
 /**
- * The keys never to offer on the day of `now`, whatever Jira says: those of tasks done or
- * cancelled in a Journal note whose period ends no more than `CLOSED_DAYS` before that day, unless
+ * The keys never to offer on the day of `now`, whatever Jira says: the first key of each task done
+ * or cancelled in a Journal note whose period ends no more than `CLOSED_DAYS` before that day, unless
  * the key is live again (a forwarded task's copy); those dismissed on any period note that recent;
  * and those labelled `#caiusFinished` on a period note no more than `FINISHED_DAYS` back. A done
  * mark carries no date, so the note's period dates it; a note of a later period counts too.
@@ -96,7 +96,9 @@ export async function closedKeys(store: NoteReader, docs: TriliumDoc[], now: Dat
   for (const task of scanDocs(docs, TRILIUM_CONFIG, now).tasks) {
     if (task.state !== 'done' && task.state !== 'cancelled') continue;
     if (!recent(pathPeriod(task.file), CLOSED_DAYS)) continue;
-    for (const key of keysOf(task.text)) if (!live.has(key)) closed.add(key);
+    // Only the task's own key, the one a dismissal of it would record; a ticket it mentions stays open.
+    const key = keysOf(task.text)[0];
+    if (key && !live.has(key)) closed.add(key);
   }
   for (const [name, days] of [[DISMISSED_LABEL, CLOSED_DAYS], [FINISHED_LABEL, FINISHED_DAYS]] as const) {
     for (const note of await store.search(`#${name}`)) {
