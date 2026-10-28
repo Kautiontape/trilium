@@ -242,6 +242,17 @@ export function inspectSuggested(html: string, id: string): ({ ok: true } & Sugg
   return { ok: true, ...itemFacts(html, found.li) };
 }
 
+/**
+ * A Suggested item's markup as a task of his list: `Get X done: because Y (~30m)` becomes `X ~30m`,
+ * keeping the markup inside X, such as a key's link, so the estimate is a token again. Markup of any
+ * other shape comes back unchanged.
+ */
+export function asListTask(markup: string): string {
+  const inSpan = '(?:(?!</span>)[\\s\\S])';
+  const wrapped = new RegExp(`(<span class="todo-list__label__description">)Get\\s+(${inSpan}*?)\\s+done: because ${inSpan}*\\(~(\\d+)m\\)(</span>)`);
+  return markup.replace(wrapped, (_, open: string, subject: string, minutes: string, close: string) => `${open}${subject} ~${minutes}m${close}`);
+}
+
 /** Remove a Suggested item (and its list, if it was the last one). */
 export function takeSuggested(html: string, id: string): ({ ok: true; html: string } & SuggestedItem) | { ok: false; reason: TakeProblem } {
   const root = parse(html, { comment: true });

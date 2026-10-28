@@ -409,3 +409,29 @@ describe("accepting into his list", () => {
         expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.listItemId) ])).toEqual([ [ "☑️ Tasks", [ "a1", "as2", "as1" ] ] ]);
     });
 });
+
+describe("an accepted suggestion reads like his own task", () => {
+    it("counts its estimate, keeps a clean bar label, and still matches its pick", async () => {
+        const day = "2026-11-16";
+        const noteId = await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("b1", "His own first thing ~30m"))}<h3>Suggested</h3>${ul(
+            li("bs1", `Get ${jiraLink("ZAP-111")} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
+            li("bs2", "Get Book the venue done: because the quote expires Friday (~15m)")
+        )}`));
+        calendars[day] = [];
+        at(`${day}T09:30`);
+        await call("caius_accept", { items: [ { noteId, listItemId: "bs1" }, { noteId, listItemId: "bs2" } ] });
+
+        expect((await call("caius_plan", { period: "day", date: day })).capacity).toMatchObject({ totalMinutes: 90, unestimatedCount: 0 });
+        const brief = await call("caius_planday", { date: day, step: "brief" });
+        expect(brief.data.list.map((task: any) => [ task.label, task.text, task.minutes ])).toEqual([
+            [ "His own first thing", "His own first thing", 30 ],
+            [ "ZAP-111", "ZAP-111 Check the invoice export in QA", 45 ],
+            [ "Book the venue", "Book the venue", 15 ]
+        ]);
+        const written = await call("caius_brief_write", { ...brief.data.shape, headline: "Venue and the export", picks: [
+            { text: "Get Book the venue done", because: "the quote expires Friday", minutes: 15 }
+        ] });
+        expect(written.droppedPicks).toEqual([]);
+        expect(written.work.map((block: any) => block.label)).toEqual([ "His own first thing", "ZAP-111", "Book the venue" ]);
+    });
+});

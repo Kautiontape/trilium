@@ -197,6 +197,23 @@ describe('acceptTasks', () => {
     expect([...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1])).toEqual(['e1', 'e2', 'es2', 'es1']);
     expect(f.html.d!.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks', '<h2>Suggested']);
   });
+  it('turns an accepted suggestion into a plain task: its key link and title, then its estimate as a token', async () => {
+    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-111">ZAP-111</a>';
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
+      li('es1', `Get ${link} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
+      li('es2', 'Get Book the venue done: because the quote expires Friday (~15m)'),
+    );
+    const f = fakeTrilium(seed(day));
+    await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }, { noteId: 'd', listItemId: 'es2' }], base);
+    expect(f.html.d).toContain(`<span class="todo-list__label__description">${link} Check the invoice export in QA ~45m</span>`);
+    expect(f.html.d).toContain('<span class="todo-list__label__description">Book the venue ~15m</span>');
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections[0]!.tasks.map((t) => [t.text, t.estMinutes])).toEqual([
+      ['One', null],
+      [`[ZAP-111](https://zeroedin.atlassian.net/browse/ZAP-111) Check the invoice export in QA`, 45],
+      ['Book the venue', 15],
+    ]);
+  });
   it('keeps Suggested last when accepting into a new section', async () => {
     const f = fakeTrilium(seed(html));
     await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'Home' }], base);
