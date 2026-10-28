@@ -86,9 +86,11 @@ For `Wind down` and `Plan my day` openers, follow only this section. The Daily p
 ### Plan my day
 
 1. Call `caius_planday` steps `catchup`, then `inputs`.
-2. Send **one message**: the catch-up question (if any), the candidates with their `because` and size, the keep or carry question (if any), the overlap question (if any), and "Anything for the evening?".
+2. Send **one message**: the catch-up question (if any), the candidates with their `because` and size, the keep or carry question (if any), the overlap question (if any), the heavy-day move question (if any), and "Anything for the evening?".
 3. Take his reply, map it to the ids in the step data, and call `caius_plan_apply` **once**: `catchup` (`move_all`, `skip` or `review`), `accept` (his order), `keep`, `finished`, `notToday`, `dismiss`, `evening`, `context`, `forward`, and `brief` with the `headline` (14 words or fewer, naming the work; say so when the day is over 60% booked), three `acts` (grouped by what fits around the meetings; the third is the evening) and any extra `sections`. The tool writes the picks, the Follow up, the Heads-up, the drawing and the weather.
 4. Reply with two lines, the headline and the top pick, and the link from the result.
+
+On `catchup: "review"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day: call `catchup` again and go on from there.
 
 On a refresh (the day already has a brief), the step asks only what is new; with no question, call `caius_plan_apply` with an empty answer and the brief's prose.
 
@@ -108,7 +110,7 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 - Never say something was done unless the apply result says so.
 - Never narrate tools, ids, protocol or data quality.
 - On a skipped item, say it in one plain clause.
-- A vague reply ("fine", "yeah") accepts the proposals as offered: the candidates in the order shown, keeps yes, and everything else as proposed.
+- A vague reply ("fine", "yeah") accepts the proposals as offered: the candidates in the order shown, keeps yes, and the heavy-day move as suggested, and everything else as proposed.
 - Only "drop", "cancel" or "not doing" drops a task or dismisses a candidate; anything vaguer ("skip that", "not now") is `notToday` for a candidate, and the proposed fate for an open item. A drop takes his reason.
 - Never offer to drop a Context line.
 - In these conversations never use the generic note tools (edit, rewrite, create, append) on Journal notes; only the `caius_*` tools write. If a Caius tool fails, say so in one clause and stop that item.
