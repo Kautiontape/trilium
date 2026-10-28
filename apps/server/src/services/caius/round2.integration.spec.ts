@@ -263,3 +263,35 @@ describe("the ZAP-2590 line is asked about only at the week boundary", () => {
         expect(lines(await call("caius_winddown", { date: FRI, step: "context" }))).toContain("ZAP-2590 is open; Jira's Done is a mistake");
     });
 });
+
+describe("only his explicit words drop, cancel or dismiss", () => {
+    it("Tue 3 Nov 11:10 (sim B R1.3) 'I saw Jordan's note, drop that one': ZAP-105 is dismissed, and its Follow up goes with it", async () => {
+        at(`${TUE}T11:10`);
+        const inputs = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
+        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toContain("ZAP-105");
+        const applied = await call("caius_plan_apply", { date: TUE, dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", status: "written" }) ]));
+        const tuesday = await call("caius_plan", { period: "day", date: TUE });
+        expect(tuesday.suggested.map((t: any) => t.text).join()).not.toContain("ZAP-105");
+        const note = await cls.init(() => store.note(tuesday.noteId));
+        expect(note.attributes.filter((a) => a.name === "caiusDismissed").map((a) => a.value)).toEqual([ "ZAP-105" ]);
+        expect((await call("caius_planday", { date: TUE, step: "brief" })).data.followUps.map((f: any) => f.key)).not.toContain("ZAP-105");
+        at(`${WED}T09:40`);
+        expect((await call("caius_planday", { date: WED, step: "inputs", refresh: true })).data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-105");
+    });
+
+    it("Mon night (sim B R2.1) 'dave skip that': an open item he doesn't name is moved as proposed, never cancelled; a drop needs his reason; no Context line is removed", async () => {
+        await cls.init(async () => {
+            const day = await store.calendarDay("2026-11-23");
+            await store.putContent(day.noteId, `<h3>Context</h3>${bullets("Vendor call moved to Thursday")}<h2>☑️ Tasks</h2>${ul(li("dave23", "Message Dave about hanging lights"))}`);
+        });
+        at("2026-11-23T17:30");
+        const applied = await call("caius_winddown_apply", { date: "2026-11-23", context: [ "Riley covers the release" ] });
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", id: "dave23", detail: "2026-11-24" }) ]));
+        const monday = await call("caius_plan", { period: "day", date: "2026-11-23" });
+        expect(monday.sections.flatMap((s: any) => s.tasks).map((t: any) => t.text)).toEqual([ expect.stringContaining("_scheduled [Tuesday 24]") ]);
+        expect(monday.context.map((c: any) => c.text)).toEqual([ "Vendor call moved to Thursday" ]);
+        await expect(async () => call("caius_winddown_apply", { date: "2026-11-23", fates: [ { listItemId: "dave23", drop: "" } ] })).rejects.toThrow(/too_small|>=1/);
+    });
+});

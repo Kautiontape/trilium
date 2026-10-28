@@ -9,6 +9,7 @@ import {
     acceptTasks,
     addTasks,
     dayCandidates,
+    dismissTasks,
     findPeriodNote,
     forwardTasks,
     keysOf,
@@ -128,6 +129,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         await finish(store, date, now, input.finished, written, skipped);
 
         await putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written);
+        await dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
         await shelve(store, date, now, offer.candidates, input, written, skipped);
         await eveningAndContext(store, date, now, input, written, skipped);
 
@@ -256,6 +258,7 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         }
         await finish(store, targetDay, now, input.finished, written, skipped);
         await putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written);
+        await dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
         await shelve(store, targetDay, now, candidates, input, written, skipped);
         await eveningAndContext(store, targetDay, now, input, written, skipped);
         return withDateLabels({ date, targetDay, written, skipped });
@@ -296,9 +299,41 @@ async function putOff(store: NoteStore, date: string, now: Date, ids: string[], 
     }
 }
 
+/**
+ * Dismisses candidates he said to dismiss: from the day's Suggested, put there first when it isn't,
+ * with `#caiusDismissed`, so the key is off every list for 14 days and its asks leave the Follow up.
+ */
+async function dismiss(store: NoteStore, date: string, now: Date, ids: string[], known: Map<string, Candidate>, written: Written[], skipped: Skipped[]) {
+    for (const candidateId of ids) {
+        const candidate = known.get(candidateId);
+        const entry = { kind: "dismiss", id: candidateId, ...(candidate ? { text: candidate.text } : {}) };
+        let plan = await readPlan(store, "day", date, now);
+        if (plan.dismissed.includes(candidateId)) {
+            written.push({ ...entry, status: "unchanged" });
+            continue;
+        }
+        let item = plan.suggested.find((task) => keysOf(task.text).includes(candidateId));
+        if (!item && candidate?.key && candidate.kind !== "week") {
+            const [ added ] = await addTasks(store, [ { date, suggested: true, text: suggestedLine(candidate), source: candidate.key } ], { now });
+            if (added?.status !== "added") {
+                record(written, skipped, entry, added);
+                continue;
+            }
+            plan = await readPlan(store, "day", date, now);
+            item = plan.suggested.find((task) => task.listItemId === added.listItemId);
+        }
+        if (!item?.listItemId || !plan.noteId) {
+            skipped.push({ ...entry, reason: candidate ? "not_suggested" : "not_offered" });
+            continue;
+        }
+        const [ result ] = await dismissTasks(store, [ { noteId: item.noteId ?? plan.noteId, listItemId: item.listItemId } ]);
+        record(written, skipped, entry, result);
+    }
+}
+
 /** What was offered and not named stays on the shelf: each ticket candidate goes to the day's Suggested. */
-async function shelve(store: NoteStore, date: string, now: Date, offered: Candidate[], input: { accept: { candidateId: string }[]; notToday: { candidateId: string }[]; finished: string[] }, written: Written[], skipped: Skipped[]) {
-    const named = new Set([ ...input.accept, ...input.notToday ].map((c) => c.candidateId).concat(input.finished));
+async function shelve(store: NoteStore, date: string, now: Date, offered: Candidate[], input: { accept: { candidateId: string }[]; notToday: { candidateId: string }[]; dismiss: { candidateId: string }[]; finished: string[] }, written: Written[], skipped: Skipped[]) {
+    const named = new Set([ ...input.accept, ...input.notToday, ...input.dismiss ].map((c) => c.candidateId).concat(input.finished));
     for (const candidate of offered) {
         if (candidate.kind === "week" || named.has(candidate.candidateId) || !candidate.key) continue;
         const [ result ] = await addTasks(store, [ { date, suggested: true, text: suggestedLine(candidate), source: candidate.key } ], { now });

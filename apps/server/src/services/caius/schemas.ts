@@ -165,6 +165,7 @@ const planApply = z.object({
     keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
     finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): offered again on the next workday. Not a dismissal"),
+    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing: kept off every list for 14 days"),
     evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
     context: answerTexts("What the user said is worth knowing, such as an overlap's answer, each written as a Context line"),
     forward: z.array(z.object({
@@ -194,6 +195,7 @@ const windDownApply = z.object({
     carry: z.array(lineRef).default([]).describe("Carry lines the user said yes to"),
     finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday; offered again the workday after. Not a dismissal"),
+    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing: kept off every list for 14 days"),
     evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),
     context: answerTexts("What the user said is worth knowing for the next workday, each a Context line")
 });
