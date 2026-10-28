@@ -513,3 +513,19 @@ describe("a re-run with a range line", () => {
         expect(week.pendingContext.map((c: any) => c.text)).toEqual([ "Sam is out Thu–Fri" ]);
     });
 });
+
+describe("re-accepting a week item", () => {
+    it("Mon 15 Feb: a re-run of a week item's accept answers unchanged", async () => {
+        await cls.init(async () => {
+            const week = await store.calendarWeek("2027-W07");
+            await store.putContent(week.noteId, `<h2>☑️ Tasks</h2>${ul(li("wk7", "Sort the shared drive ~45m"))}`);
+        });
+        at("2027-02-15T09:40");
+        const tidy = (await call("caius_planday", { date: "2027-02-15", step: "inputs" })).data.candidates.find((c: any) => c.kind === "week");
+        const input = { date: "2027-02-15", accept: [ { candidateId: tidy.candidateId } ], brief: prose };
+        expect((await call("caius_plan_apply", input)).written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", status: "written" }) ]));
+        const again = await call("caius_plan_apply", input);
+        expect(again.skipped).toEqual([]);
+        expect(again.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", id: tidy.candidateId, status: "unchanged" }) ]));
+    });
+});

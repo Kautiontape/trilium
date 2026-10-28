@@ -541,7 +541,7 @@ export function listOf(plan: PlanView) {
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
     return mainTasks(plan).map((task) => ({
         label: workLabel(task.text), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
-        evening: eveningSections.has(task.section), keys: keysOf(task.text)
+        evening: eveningSections.has(task.section), keys: keysOf(withoutMoveLinks(task.text))
     }));
 }
 
