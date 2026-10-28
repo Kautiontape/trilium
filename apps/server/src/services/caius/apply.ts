@@ -41,6 +41,7 @@ import {
     closingPeriods,
     heldDays,
     dateLabel,
+    proposedForward,
     dayKey,
     type DayRead,
     EVENING_ID,
@@ -332,8 +333,11 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
         pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
         const input = windDownAnswers(asked, pools, skipped, table, copies, collided);
-        // The open items carry their note; only an id from elsewhere needs the Journal searched.
-        const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
+        // The ref table covers the Journal, so a held item that lives outside the window is read from it.
+        const journalItem = (id: string) => items.find((item) => item.id === id);
+        // The open items and the ref table carry their note; only an id from elsewhere needs the Journal searched.
+        const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId
+            ?? journalItem(listItemId)?.item?.noteId ?? await noteOf(store, listItemId);
         // A moved item he named is followed to its live copy, which the writes act on as if shown.
         const followed = new Map([ ...input.follows ].map(([ id, copy ]) => [ id, copy.text ]));
         for (const id of followed.keys()) shownItems.add(id);
@@ -360,22 +364,30 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
         // A hold's items can live on several days, so whether one is still open is read across the Journal.
         const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
-        const { held, asks: holdAsks } = await settleHolds(store, date, liveIds, namedNow, input.heldGroups);
+        const { held, asks: holdAsks, released } = await settleHolds(store, date, liveIds, namedNow, input.heldGroups);
         // An item an earlier wind-down held stays held too, settled on the note the hold was given on.
         const heldElsewhere: string[] = [];
         for (const day of (await heldDays(store)).filter((day) => day !== date)) {
             const settled = await settleHolds(store, day, liveIds, namedNow, []);
             heldElsewhere.push(...settled.held);
             holdAsks.push(...settled.asks);
+            released.push(...settled.released);
         }
         const allHeld = [ ...held, ...heldElsewhere ];
         // A fate he named, then the proposed one for every item he didn't name and isn't held.
         const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...allHeld ]);
+        // A released item outside the window gets the fate its own window would propose.
+        const freed = released.filter((id) => !openIds.has(id) && !given.has(id)).flatMap((id) => {
+            const to = proposedForward(journalItem(id)?.period ?? "", targetDay);
+            return to ? [ { listItemId: id, to, proposed: true } ] : [];
+        });
+        for (const fate of freed) shownItems.add(fate.listItemId);
         const putOffWeek: string[] = [];
         const fates = [
             ...input.fates,
             ...open.items.filter((item) => item.listItemId && !given.has(item.listItemId) && "forward" in item.fate)
-                .map((item) => ({ listItemId: item.listItemId ?? "", to: (item.fate as { forward: string }).forward, proposed: true }))
+                .map((item) => ({ listItemId: item.listItemId ?? "", to: (item.fate as { forward: string }).forward, proposed: true })),
+            ...freed
         ];
         await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {
             const noteId = await noteFor(fate.listItemId);
@@ -459,11 +471,11 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         }
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
-        withTexts([ ...written, ...skipped ], pools, known, followed);
-        const textOf = (id: string) => open.items.find((item) => item.listItemId === id)?.text ?? "";
+        withTexts([ ...written, ...skipped ], pools, known, new Map([ ...followed, ...freed.map((fate) => [ fate.listItemId, journalItem(fate.listItemId)?.text ?? fate.listItemId ] as const) ]));
+        const textOf = (id: string) => journalItem(id)?.text ?? "";
         const askedIds = new Set(holdAsks.flatMap((ask) => ask.ids));
         const heldTexts = allHeld.filter((id) => !askedIds.has(id)).flatMap((id) => {
-            const item = open.items.find((candidate) => candidate.listItemId === id);
+            const item = journalItem(id);
             return item ? [ { text: item.text, period: item.period } ] : [];
         });
         const asking = holdAsks.map((ask) => ({ intent: ask.intent, texts: ask.ids.map(textOf).filter((text) => text !== "") }));
@@ -976,10 +988,10 @@ const ID_SHAPED = /^(?:[a-z]?[0-9a-f]{8,}|[oclx][0-9a-f]{5}|[dw]\d+|[lo][0-9a-f]
 /**
  * The items held on the day note of `date` after a call that named `named` and held `added`: the
  * earlier holds he didn't name and the new ones, among `live`, less the rest of an earlier group
- * once he named one of its items or it narrowed to one, which are released. Rewrites the note's
+ * once he named one of its items or it narrowed to one, which are `released`. Rewrites the note's
  * hold labels to match.
  */
-async function settleHolds(store: NoteStore, date: string, live: Set<string>, named: Map<string, string>, added: HoldGroup[]): Promise<{ held: string[]; asks: HoldGroup[] }> {
+async function settleHolds(store: NoteStore, date: string, live: Set<string>, named: Map<string, string>, added: HoldGroup[]): Promise<{ held: string[]; asks: HoldGroup[]; released: string[] }> {
     const note = await findPeriodNote(store, "day", date);
     const labels = (name: string) => note ? note.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) : [];
     const heldBefore = labels(HELD_LABEL);
@@ -1013,7 +1025,7 @@ async function settleHolds(store: NoteStore, date: string, live: Set<string>, na
     }
     await labelDay(store, date, HELD_LABEL, held);
     await labelDay(store, date, HELD_GROUP_LABEL, groups);
-    return { held, asks };
+    return { held, asks, released: heldBefore.filter((id) => !held.includes(id) && !named.has(id) && live.has(id)) };
 }
 
 /** The items one ambiguous answer held together, and what that answer asked for: `done`, a `fate` or a `move`. */

@@ -831,6 +831,16 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
 
 const GROUPS = [ "today", "recent", "week" ];
 
+/**
+ * Where a wind-down that closes on `targetDay` proposes an open item of `period` goes: a week item to
+ * the target week, anything else to `targetDay`; null for an item of the target week, which stays.
+ */
+export function proposedForward(period: string, targetDay: string): string | null {
+    if (!PERIODS.week.pattern.test(period)) return targetDay;
+    const targetWeek = isoWeekKey(utcDay(targetDay));
+    return period === targetWeek ? null : targetWeek;
+}
+
 /** The periods a wind-down of `date` closes: the day, the last `RECENT_WORKDAYS` workdays before it and its ISO week. */
 export function closingPeriods(date: string): { recent: string[]; all: Set<string> } {
     const recent: string[] = [];

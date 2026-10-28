@@ -1240,3 +1240,44 @@ describe("fix round 3: a day with a held item isn't closed", () => {
         await clearHolds("2028-01-05");
     });
 });
+
+describe("fix round 4: a hold settled from a day whose window doesn't reach the item", () => {
+    /** Monday's 111 and Wednesday's 101, held together by Wednesday's "the export is done". */
+    async function heldAcrossDays(mon: string, wed: string, prefix: string) {
+        await cls.init(async () => {
+            const monday = await store.calendarDay(mon);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${prefix}-111`, `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`);
+            const wednesday = await store.calendarDay(wed);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${prefix}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`), li(`${prefix}-dave`, "Message Dave about the lights"))}`);
+        });
+        at(`${wed}T17:45`);
+        const held = await call("caius_winddown_apply", { date: wed, done: [ "the export" ] });
+        expect(held.say).toMatch(/Which export: ZAP-1\d\d or ZAP-1\d\d\?$/);
+    }
+
+    it("G2 (N1c): Friday's 'ZAP-101 is done' releases Monday's 111, which goes on to Monday and is said", async () => {
+        const MO = "2028-03-06", WE = "2028-03-08", FR = "2028-03-10", NEXT = "2028-03-13";
+        await heldAcrossDays(MO, WE, "nc");
+        await cls.init(async () => {
+            const friday = await store.calendarDay(FR);
+            await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("nc-x", "Water the office plants"))}`);
+        });
+        at(`${FR}T17:45`);
+        const friday = await call("caius_winddown_apply", { date: FR, done: [ "ZAP-101", "nc-x" ] });
+        expect(friday.skipped).toEqual([]);
+        expect(friday.written).toContainEqual(expect.objectContaining({ kind: "fate", id: "nc-111", detail: NEXT, status: "written" }));
+        expect(friday.say).toMatch(/ZAP-111 moved to Mon 13 Mar/);
+        expect(await labelsOf(WE, "caiusHeld")).toEqual([]);
+        expect(await tasksOf(NEXT)).toContainEqual({ text: "ZAP-111 Check the invoice export in QA", state: "open" });
+    });
+
+    it("G2 (N2b): Monday's Review, 'move 111 to Friday', asks about Wednesday's 101 in the same call", async () => {
+        const MO = "2028-03-20", WE = "2028-03-22";
+        await heldAcrossDays(MO, WE, "nb");
+        at("2028-03-23T09:30");
+        const review = await call("caius_winddown_apply", { date: MO, fates: [ { listItemId: "ZAP-111", to: "2028-03-24" } ] });
+        expect(review.say).toMatch(/^ZAP-111 moved to Fri 24 Mar\. And ZAP-101: is that the one that's done\?/);
+        expect(await labelsOf(WE, "caiusHeld")).toEqual([ "nb-101" ]);
+        await clearHolds(WE);
+    });
+});
