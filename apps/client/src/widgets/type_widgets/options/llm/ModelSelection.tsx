@@ -69,10 +69,16 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
 
     const isSelected = useCallback((model: LlmModelInfo) => selected.some(s => s.id === model.id), [selected]);
 
+    const defaultId = defaultModelId(selected);
+
     const toggle = useCallback((model: LlmModelInfo, checked: boolean) => {
         onChange(checked
-            ? [...selected, model]
+            ? [...selected, keepDefault(model, defaultId)]
             : selected.filter(s => s.id !== model.id));
+    }, [selected, onChange, defaultId]);
+
+    const makeDefault = useCallback((id: string) => {
+        onChange(selected.map(model => ({ ...model, isDefault: model.id === id })));
     }, [selected, onChange]);
 
     if (loading) {
@@ -100,20 +106,28 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => onChange(defaultSelectedModels(models))}>
                         {t("llm.models_reset_defaults")}
                     </button>
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => onChange(allSelected ? [] : [...models])}>
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => onChange(allSelected ? [] : models.map(model => selected.find(s => s.id === model.id) ?? keepDefault(model, defaultId)))}>
                         {allSelected ? t("llm.models_select_none") : t("llm.models_select_all")}
                     </button>
                 </div>
             </div>
             <div className="model-selection-list">
                 {models.map(model => (
-                    <FormCheckbox
-                        key={model.id}
-                        name={`model-${model.id}`}
-                        currentValue={isSelected(model)}
-                        onChange={checked => toggle(model, checked)}
-                        label={<ModelLabel model={model} />}
-                    />
+                    <div key={model.id} className="model-selection-row">
+                        <FormCheckbox
+                            name={`model-${model.id}`}
+                            currentValue={isSelected(model)}
+                            onChange={checked => toggle(model, checked)}
+                            label={<ModelLabel model={model} />}
+                        />
+                        {model.id === defaultId
+                            ? <span className="model-selection-default">{t("llm.models_default")}</span>
+                            : isSelected(model) && (
+                                <button type="button" className="btn btn-link btn-sm model-selection-make-default" onClick={() => makeDefault(model.id)}>
+                                    {t("llm.models_make_default")}
+                                </button>
+                            )}
+                    </div>
                 ))}
             </div>
         </div>
@@ -127,6 +141,22 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
  */
 function defaultSelectedModels(models: LlmModelInfo[]): LlmModelInfo[] {
     return models.filter(model => model.recommended);
+}
+
+/**
+ * The model a new chat starts on: the first selected one marked default, else the first selected —
+ * the same rule the chat applies (useLlmChat), so the row marked "Default" is the one it opens with.
+ */
+function defaultModelId(selected: LlmModelInfo[]): string | undefined {
+    return (selected.find(model => model.isDefault) ?? selected[0])?.id;
+}
+
+/**
+ * A model being added to the selection, without the server's own default flag when the user already
+ * has a default: picking Opus as well must not move the default off the model they chose.
+ */
+function keepDefault(model: LlmModelInfo, defaultId: string | undefined): LlmModelInfo {
+    return model.isDefault && defaultId !== undefined && defaultId !== model.id ? { ...model, isDefault: false } : model;
 }
 
 /** Row label: model name plus a cost hint (per-Mtok price / subscription) when known. */

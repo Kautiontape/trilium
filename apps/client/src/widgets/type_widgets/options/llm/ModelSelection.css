@@ -30,6 +30,25 @@
     gap: 0.25em;
 }
 
+.model-selection-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.model-selection-default {
+    color: var(--muted-text-color);
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+.model-selection-make-default {
+    padding: 0;
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
 .model-selection-label {
     display: inline-flex;
     align-items: center;

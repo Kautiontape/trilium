@@ -124,6 +124,39 @@ describe("ModelSelection", () => {
         expect(onChange).toHaveBeenLastCalledWith(MODELS);
     });
 
+    it("marks the default among the selected models, falling back to the first", async () => {
+        const el = await renderSelection({ query: { provider: "openai" }, selected: [MODELS[2], MODELS[0]], onChange: vi.fn() });
+        expect(el.querySelector(".model-selection-row:nth-child(1) .model-selection-default")?.textContent).toBe("llm.models_default");
+        expect(el.querySelectorAll(".model-selection-default")).toHaveLength(1);
+
+        const none = await renderSelection({ query: { provider: "openai" }, selected: [MODELS[2]], onChange: vi.fn() });
+        expect(none.querySelector(".model-selection-row:nth-child(3) .model-selection-default")).not.toBeNull();
+    });
+
+    it("make-default moves the default flag to that model and keeps the selection", async () => {
+        const onChange = vi.fn();
+        const el = await renderSelection({ query: { provider: "openai" }, selected: [MODELS[0], MODELS[2]], onChange });
+
+        const make = el.querySelector<HTMLButtonElement>(".model-selection-row:nth-child(3) .model-selection-make-default");
+        act(() => make?.click());
+        expect(onChange).toHaveBeenLastCalledWith([
+            { ...MODELS[0], isDefault: false },
+            { ...MODELS[2], isDefault: true }
+        ]);
+    });
+
+    it("adding the server's default model keeps the user's chosen default", async () => {
+        const onChange = vi.fn();
+        const chosen = { ...MODELS[2], isDefault: true };
+        const el = await renderSelection({ query: { provider: "openai" }, selected: [chosen], onChange });
+
+        act(() => checkboxHandlers.get("model-gpt-4.1")?.(true));
+        expect(onChange).toHaveBeenLastCalledWith([chosen, { ...MODELS[0], isDefault: false }]);
+
+        act(() => buttonByLabel(el, "llm.models_select_all")?.click());
+        expect(onChange).toHaveBeenLastCalledWith([{ ...MODELS[0], isDefault: false }, MODELS[1], chosen]);
+    });
+
     it("reset-to-defaults re-applies the recommended selection, dropping the rest", async () => {
         const onChange = vi.fn();
         // Start with everything selected, including the non-recommended model.
