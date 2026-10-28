@@ -159,7 +159,7 @@ it("maps his yes onto asOffered or the fields, since the tool writes nothing fro
     const sheet = sheetOnce();
     expect(sheet).toContain("Map his yes or fine onto the call: `asOffered: true` for everything offered (the candidates in the order shown, every keep or carry line), or the specific fields for what it answers. The heavy-day move is a `forward` with the suggestion's `listItemId` and `to`, and a park is the item's month fate: `asOffered` makes neither. The tool writes nothing from his words alone: a bare yes or fine with neither is a `check`. Never read a yes as a skip.");
     expect(sheet).not.toContain("accepts the proposals as offered");
-    expect(sheet).toContain("A bare yes to a set with one yes/no question in it (the park, the heavy-day move, a keep line, an overlap) answers that question only: pass its field alone, without `asOffered`.");
+    expect(sheet).toContain("A bare yes to a set with one yes/no question in it (the park, the heavy-day move, a keep line) answers that question only: pass its field alone, without `asOffered`.");
 });
 
 /** The sheet's text, read while the skill is registered for that read alone. */
