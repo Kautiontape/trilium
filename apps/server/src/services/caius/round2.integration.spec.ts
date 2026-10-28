@@ -338,3 +338,37 @@ describe("a Context line can hold over a range of days", () => {
         expect((await call("caius_planday", { date: "2026-12-04", step: "inputs", refresh: true })).data.headsUp).toEqual([]);
     });
 });
+
+describe("a refresh keeps the morning", () => {
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+    const DAY = "2026-11-19";
+
+    it("11:05 (round 2, sim B R1.3): his picks and the Follow up stay, the settled overlap isn't asked again, only the new one is", async () => {
+        jira.asks.push({ ticket: ticket("ZAP-140"), author: "Riley Sample", created: "2026-11-18T15:00:00.000Z", commentId: "70", excerpt: "Is the bucket confirmed?" });
+        calendars[DAY] = [ event("10:00", "10:15", "Standup"), event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding") ];
+        at(`${DAY}T09:35`);
+        const morning = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(morning.question).toContain("Incident Review overlaps Vendor Onboarding");
+        const first = await call("caius_plan_apply", {
+            date: DAY, accept: [ { candidateId: "ZAP-110" } ], context: [ "Take Incident Review over Vendor Onboarding at 11:00" ], brief: prose
+        });
+        expect(first.skipped).toEqual([]);
+        const before = await cls.init(() => store.content(first.briefNoteId));
+        expect(before).toContain("ZAP-110");
+        expect(before).toContain("(ZAP-140)");
+
+        calendars[DAY] = [ ...calendars[DAY] ?? [], event("14:00", "15:00", "Roadmap Review"), event("14:30", "15:30", "Design Workshop") ];
+        at(`${DAY}T11:05`);
+        const refresh = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(refresh.data.candidates).toEqual([]);
+        expect(refresh.data.carry).toEqual([]);
+        expect(refresh.question).toBe("Roadmap Review overlaps Design Workshop at 14:30. Which one do you take?");
+        const second = await call("caius_plan_apply", { date: DAY, brief: prose });
+        const after = await cls.init(() => store.content(second.briefNoteId));
+        expect(after).toContain("ZAP-110");
+        expect(after).toContain("(ZAP-140)");
+
+        at(`${DAY}T11:30`);
+        expect((await call("caius_planday", { date: DAY, step: "inputs", refresh: true })).question).toBeNull();
+    });
+});

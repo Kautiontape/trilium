@@ -35,6 +35,7 @@ import {
     type DayRead,
     drawnEvents,
     followUpsOf,
+    HEAVY_ID,
     lineIdOf,
     listOf,
     plainText,
@@ -106,8 +107,10 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
             ...offer.candidates
         ].map((candidate) => [ candidate.candidateId, candidate ]));
 
-        // Every line the step asked about is answered now, whatever he said, so it isn't asked again.
-        await labelDay(store, date, ASKED_LABEL, offer.carry.map((line) => line.lineId));
+        // Every question the step asked is answered now, whatever he said, so it isn't asked again.
+        await labelDay(store, date, ASKED_LABEL, [
+            ...offer.carry.map((line) => line.lineId), ...offer.overlaps.map((pair) => pair.overlapId), ...(offer.forwardSuggestion ? [ HEAVY_ID ] : [])
+        ]);
 
         await catchup(store, date, now, input.catchup, written, skipped);
 
@@ -423,6 +426,7 @@ async function accept(store: NoteStore, date: string, now: Date, candidate: Cand
         record(written, skipped, entry, result);
         return;
     }
+    let shelf = plan;
     let item = plan.suggested.find((task) => keysOf(task.text).includes(candidateId));
     if (!item?.listItemId && candidate.key) {
         const [ added ] = await addTasks(store, [ { date, suggested: true, text: suggestedLine(candidate), source: candidate.key } ], { now });
@@ -430,13 +434,16 @@ async function accept(store: NoteStore, date: string, now: Date, candidate: Cand
             record(written, skipped, entry, added);
             return;
         }
-        item = (await readPlan(store, "day", date, now)).suggested.find((task) => task.listItemId === added.listItemId);
+        // The add can create the day note, so its id comes from a fresh read.
+        shelf = await readPlan(store, "day", date, now);
+        item = shelf.suggested.find((task) => task.listItemId === added.listItemId);
     }
-    if (!item?.listItemId || !plan.noteId) {
+    const noteId = item?.noteId ?? shelf.noteId;
+    if (!item?.listItemId || !noteId) {
         skipped.push({ ...entry, reason: "not_found" });
         return;
     }
-    const [ result ] = await acceptTasks(store, [ { noteId: item.noteId ?? plan.noteId, listItemId: item.listItemId } ]);
+    const [ result ] = await acceptTasks(store, [ { noteId, listItemId: item.listItemId } ]);
     record(written, skipped, entry, result);
 }
 
