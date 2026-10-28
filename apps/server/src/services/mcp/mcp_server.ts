@@ -48,7 +48,8 @@ function registerTool(server: McpServer, name: string, def: ToolDefinition) {
     });
 }
 
-export async function createMcpServer(): Promise<McpServer> {
+/** Trilium's MCP server with every registered tool but those named in `omit`, which it never lists. */
+export async function createMcpServer({ omit = [] }: { omit?: string[] } = {}): Promise<McpServer> {
     // Host-registered registries (the User Guide tools) load lazily; the array
     // is complete only after this resolves.
     await resolveToolRegistries();
@@ -60,6 +61,7 @@ export async function createMcpServer(): Promise<McpServer> {
 
     for (const registry of allToolRegistries) {
         for (const [name, def] of registry) {
+            if (omit.includes(name)) continue;
             registerTool(server, name, def);
         }
     }

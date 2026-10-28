@@ -475,6 +475,60 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect(queryMock.mock.calls[1][0].options.disallowedTools).toBeUndefined();
     });
 
+    it("builds a Plan my day or Wind down conversation's MCP server without the tools it denies, so the agent never sees them", async () => {
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-02" }], { enableNoteTools: true }));
+        const omitted: string[] = (createMcpServerMock.mock.calls[0] as unknown as [ { omit: string[] } ])[0].omit;
+        const disallowed: string[] = queryMock.mock.calls[0][0].options.disallowedTools;
+        expect(omitted.map((name) => `mcp__trilium__${name}`).sort()).toEqual([ ...disallowed ].sort());
+        expect(omitted).toEqual(expect.arrayContaining([ "caius_forward", "caius_context_add", "caius_brief_write" ]));
+
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
+        expect((createMcpServerMock.mock.calls[1] as unknown as [ { omit: string[] } ])[0].omit).toEqual([]);
+    });
+
+    it("shows a Plan my day or Wind down conversation only its replies: no narration before a tool call, no thinking, no failed call", async () => {
+        const event = (body: object) => ({ type: "stream_event", parent_tool_use_id: null, session_id: "sess-1", event: body });
+        const toolCall = (id: string, input: object) => [
+            event({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id, name: "mcp__trilium__caius_plan_apply" } }),
+            event({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{" } }),
+            event({ type: "message_stop" }),
+            { type: "assistant", parent_tool_use_id: null, session_id: "sess-1", message: { content: [ { type: "tool_use", id, name: "mcp__trilium__caius_plan_apply", input } ] } }
+        ];
+        const result = (id: string, text: string, isError: boolean) => ({
+            type: "user", parent_tool_use_id: null, session_id: "sess-1",
+            message: { content: [ { type: "tool_result", tool_use_id: id, content: [ { type: "text", text } ], is_error: isError } ] }
+        });
+        scriptAgent([
+            event({ type: "message_start" }),
+            event({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "pondering…" } }),
+            textDelta("No question is posed by the step, so I'll just note the meeting change. "),
+            ...toolCall("toolu_1", { date: "2026-11-03" }),
+            result("toolu_1", "Input validation error: Too small", true),
+            event({ type: "message_start" }),
+            textDelta("I need to supply exactly 3 acts."),
+            ...toolCall("toolu_2", { date: "2026-11-03", said: "" }),
+            result("toolu_2", "{\"say\":\"The brief is written.\"}", false),
+            event({ type: "message_start" }),
+            textDelta("The brief is written."),
+            event({ type: "message_stop" }),
+            successResult()
+        ]);
+        const chunks = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Plan my day 2026-11-03" }], { enableNoteTools: true }));
+        expect(chunks.filter((chunk) => chunk.type !== "usage")).toEqual([
+            { type: "tool_use", toolCallId: "toolu_2", toolName: "caius_plan_apply", toolInput: { date: "2026-11-03", said: "" } },
+            { type: "tool_result", toolCallId: "toolu_2", toolName: "caius_plan_apply", result: "{\"say\":\"The brief is written.\"}", isError: false },
+            { type: "text", content: "The brief is written." },
+            { type: "done" }
+        ]);
+
+        // Any other chat streams as it did.
+        scriptAgent([ event({ type: "message_start" }), textDelta("Let me look. "), ...toolCall("toolu_3", {}), result("toolu_3", "x", true), successResult() ]);
+        const plain = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true }));
+        expect(plain.map((chunk) => chunk.type)).toEqual([ "text", "tool_input_start", "tool_input_delta", "tool_use", "tool_result", "usage", "done" ]);
+    });
+
     it("wires Trilium's in-process MCP server instance and disables built-in tools", async () => {
         scriptAgent([successResult()]);
         const provider = new ClaudeAgentProvider();

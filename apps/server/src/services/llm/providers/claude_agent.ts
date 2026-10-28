@@ -452,6 +452,12 @@ export class ClaudeAgentProvider implements LlmProvider {
             const active = session;
             held = active;
             await pushUserTurn(active.input, prompt);
+            // In a Plan my day or Wind down conversation only the replies show: a message's text waits for
+            // the message's end and is dropped when it called a tool, thinking is never shown, and a tool
+            // call shows once its result is in, and not at all when it failed.
+            let pendingText = "";
+            let calledTool = false;
+            const pendingCalls = new Map<string, Record<string, unknown>>();
 
             // Manual iteration on purpose: `for await (…) { break }` calls
             // iterator.return(), which closes the query and kills the process
@@ -472,21 +478,39 @@ export class ClaudeAgentProvider implements LlmProvider {
                             break; // subagent traffic — not part of the visible reply
                         }
                         const event = message.event;
-                        if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+                        if (event.type === "message_start") {
+                            pendingText = "";
+                            calledTool = false;
+                        } else if (event.type === "message_stop") {
+                            if (caius && !calledTool && pendingText) {
+                                assistantText += pendingText;
+                                yield { type: "text", content: pendingText };
+                            }
+                            pendingText = "";
+                        } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
                             toolIdsByBlockIndex.set(event.index, event.content_block.id);
                             toolNamesById.set(event.content_block.id, event.content_block.name);
-                            yield {
-                                type: "tool_input_start",
-                                toolCallId: event.content_block.id,
-                                toolName: friendlyToolName(event.content_block.name)
-                            };
+                            if (caius) {
+                                calledTool = true;
+                                pendingText = "";
+                            } else {
+                                yield {
+                                    type: "tool_input_start",
+                                    toolCallId: event.content_block.id,
+                                    toolName: friendlyToolName(event.content_block.name)
+                                };
+                            }
                         } else if (event.type === "content_block_delta") {
                             if (event.delta.type === "text_delta") {
-                                assistantText += event.delta.text;
-                                yield { type: "text", content: event.delta.text };
+                                if (caius) {
+                                    if (!calledTool) pendingText += event.delta.text;
+                                } else {
+                                    assistantText += event.delta.text;
+                                    yield { type: "text", content: event.delta.text };
+                                }
                             } else if (event.delta.type === "thinking_delta") {
-                                yield { type: "thinking", content: event.delta.thinking };
-                            } else if (event.delta.type === "input_json_delta") {
+                                if (!caius) yield { type: "thinking", content: event.delta.thinking };
+                            } else if (event.delta.type === "input_json_delta" && !caius) {
                                 const toolCallId = toolIdsByBlockIndex.get(event.index);
                                 if (toolCallId) {
                                     yield { type: "tool_input_delta", toolCallId, delta: event.delta.partial_json };
@@ -508,7 +532,10 @@ export class ClaudeAgentProvider implements LlmProvider {
                         // Text/thinking already streamed via stream_events; only
                         // the completed tool calls are emitted from the full message.
                         for (const block of message.message.content) {
-                            if (block.type === "tool_use") {
+                            if (block.type === "tool_use" && caius) {
+                                toolNamesById.set(block.id, block.name);
+                                pendingCalls.set(block.id, (block.input ?? {}) as Record<string, unknown>);
+                            } else if (block.type === "tool_use") {
                                 toolNamesById.set(block.id, block.name);
                                 yield {
                                     type: "tool_use",
@@ -539,6 +566,12 @@ export class ClaudeAgentProvider implements LlmProvider {
                             if (toolName === undefined) {
                                 continue;
                             }
+                            if (caius) {
+                                const toolInput = pendingCalls.get(block.tool_use_id);
+                                pendingCalls.delete(block.tool_use_id);
+                                if (block.is_error === true || !toolInput) continue;
+                                yield { type: "tool_use", toolCallId: block.tool_use_id, toolName: friendlyToolName(toolName), toolInput };
+                            }
                             yield {
                                 type: "tool_result",
                                 toolCallId: block.tool_use_id,
@@ -551,6 +584,12 @@ export class ClaudeAgentProvider implements LlmProvider {
                     }
 
                     case "result": {
+                        // A last message whose end never came still shows, unless it called a tool.
+                        if (caius && !calledTool && pendingText) {
+                            assistantText += pendingText;
+                            yield { type: "text", content: pendingText };
+                            pendingText = "";
+                        }
                         if (message.subtype !== "success") {
                             const errors = "errors" in message && message.errors.length > 0
                                 ? message.errors.join("; ")
@@ -729,14 +768,16 @@ export class ClaudeAgentProvider implements LlmProvider {
             // over its stdio control channel — no localhost HTTP endpoint, no
             // open port, and no dependency on the user-facing `mcpEnabled`
             // toggle (which exists to expose notes to *external* clients).
+            // In Plan my day and Wind down every Journal write goes through the Caius apply tools,
+            // and the agent reads only through the steps, so it asks only the questions they return.
+            // The server leaves those tools out, so the agent never calls one and meets a denial.
+            const denied = caius ? [ ...await genericNoteWrites(), ...CAIUS_CONVERSATION_DISALLOWED ] : [];
             options.mcpServers = {
-                trilium: { type: "sdk", name: "trilium", instance: await createMcpServer() }
+                trilium: { type: "sdk", name: "trilium", instance: await createMcpServer({ omit: denied }) }
             };
             // Bare server prefix auto-allows every tool from that server.
             allowedTools.push("mcp__trilium");
-            // In Plan my day and Wind down every Journal write goes through the Caius apply tools,
-            // and the agent reads only through the steps, so it asks only the questions they return.
-            if (caius) options.disallowedTools = [ ...await genericNoteWrites(), ...CAIUS_CONVERSATION_DISALLOWED.map((name) => `mcp__trilium__${name}`) ];
+            if (caius) options.disallowedTools = denied.map((name) => `mcp__trilium__${name}`);
         }
 
         options.allowedTools = allowedTools;
@@ -769,7 +810,7 @@ function isCaiusConversation(messages: LlmMessage[]): boolean {
 }
 
 /**
- * The generic note tools that write, as the agent names them: every mutating tool of the note,
+ * The generic note tools that write, by their registered names: every mutating tool of the note,
  * attribute, hierarchy and attachment registries. Loaded only for a Caius conversation.
  */
 async function genericNoteWrites(): Promise<string[]> {
@@ -777,7 +818,7 @@ async function genericNoteWrites(): Promise<string[]> {
     return [ noteTools, attributeTools, hierarchyTools, attachmentTools ]
         .flatMap((registry) => [ ...registry ])
         .filter(([ , def ]) => def.mutates)
-        .map(([ name ]) => `mcp__trilium__${name}`);
+        .map(([ name ]) => name);
 }
 
 /**
