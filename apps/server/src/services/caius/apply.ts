@@ -986,6 +986,8 @@ async function settleHolds(store: NoteStore, date: string, live: Set<string>, na
     const fresh = new Set(added.flatMap((group) => group.ids));
     let held = [ ...new Set([ ...heldBefore.filter((id) => !named.has(id)), ...fresh ]) ].filter((id) => live.has(id));
     const asks: HoldGroup[] = [];
+    /** Groups narrowed by an answer of another intent, by old label value: the label with only the items still held. */
+    const narrowed = new Map<string, string>();
     for (const value of groupsBefore) {
         const { intent, ids: group } = holdGroupOf(value);
         const left = group.filter((id) => held.includes(id) && !fresh.has(id));
@@ -995,10 +997,14 @@ async function settleHolds(store: NoteStore, date: string, live: Set<string>, na
         // another intent settles only what it names: the rest stay held and are asked about by name,
         // never given a fate by elimination. A group left with one item and no answer has nothing to ask.
         if (answers.length && answers.every((answer) => answer === intent)) held = held.filter((id) => !left.includes(id));
-        else if (answers.length) asks.push({ intent, ids: left });
+        else if (answers.length) {
+            // The group keeps only what is still held, so it never later narrows to one by itself and releases the rest.
+            asks.push({ intent, ids: left });
+            narrowed.set(value, [ intent, ...left ].join(" "));
+        }
         else if (left.length === 1) held = held.filter((id) => !left.includes(id));
     }
-    const groups = [ ...groupsBefore, ...added.map((group) => [ group.intent, ...group.ids ].join(" ")) ]
+    const groups = [ ...groupsBefore.map((value) => narrowed.get(value) ?? value), ...added.map((group) => [ group.intent, ...group.ids ].join(" ")) ]
         .filter((value) => holdGroupOf(value).ids.some((id) => held.includes(id)));
     if (note) {
         for (const id of heldBefore.filter((id) => !held.includes(id))) removeLabel(note.noteId, HELD_LABEL, id);

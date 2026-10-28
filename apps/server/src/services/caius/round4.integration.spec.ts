@@ -1081,6 +1081,14 @@ describe("fix round 3: an answer of another intent settles only what it names", 
         expect((await tasksOf("2027-11-18")).map((task: any) => task.text).join()).not.toContain("ZAP-111");
         expect(await labelsOf(DAY, "caiusHeld")).toEqual([ `${DAY}-111` ]);
         expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
+
+        // The next call answers nothing about the exports: 111 stays held, unmoved, and asked about.
+        at("2027-11-18T09:45");
+        const planned = await call("caius_plan_apply", { date: "2027-11-18", catchup: "move_all", brief: prose });
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([ `${DAY}-111` ]);
+        expect((await tasksOf(DAY))[0]).toEqual({ text: "ZAP-111 Check the invoice export in QA", state: "open" });
+        expect((await tasksOf("2027-11-18")).map((task: any) => task.text).join()).not.toContain("ZAP-111");
+        expect(planned.say).toMatch(/ZAP-111\?$/);
         await clearHolds(DAY);
     });
 });
