@@ -22,7 +22,7 @@ export const NUDGE_REFRESH_DELAY_MS = 300;
 
 /**
  * The slim bar at the top of today's day note (today by the Caius clock) that offers the next step of
- * the day: the last workday's catch-up, Plan my day, Refresh once the day is planned, or when it was wound down. It shows on
+ * the day: the last workday's catch-up with Plan my day beside it, Plan my day, Refresh once the day is planned, or when it was wound down. It shows on
  * no other note, on no protected note, not on mobile and not while Caius is off, and hides for the
  * day when dismissed.
  */
@@ -91,7 +91,9 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
                 ...(movable.length ? [ { label: t("caius.nudge.move_all"), onClick: () => void moveAll(movable) } ] : []),
                 { label: t("caius.nudge.review"), onClick: () => start(caiusOpener("winddown", oldest)) },
                 // With only held tasks left, a skip would hide a question he hasn't answered.
-                ...(shown.tasks.length ? [ { label: t("caius.nudge.skip"), onClick: () => void skip() } ] : [])
+                ...(shown.tasks.length ? [ { label: t("caius.nudge.skip"), onClick: () => void skip() } ] : []),
+                // Plan my day asks the catch-up itself, so he can start there too.
+                { label: t("caius.plan_my_day"), onClick: () => start(caiusOpener("plan", date)) }
             ];
             break;
         }
