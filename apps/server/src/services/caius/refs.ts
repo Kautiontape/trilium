@@ -175,32 +175,6 @@ function namedIn(text: string, pool: Named[]): string[] {
     return ids;
 }
 
-/**
- * Whether `said` holds his word to close something: dismiss, drop, cancel, not doing, or that he
- * answered, replied or handled it, not negated ("don't dismiss 105").
- */
-export function hisWord(said: string): boolean {
-    const text = said.toLowerCase();
-    for (const match of text.matchAll(/\b(?:dismiss\w*|drop\w*|cancel\w*|not doing|answered|replied|handled)\b/g)) {
-        const before = text.slice(0, match.index).trim().split(/\s+/).slice(-2).join(" ");
-        if (!/(?:^|\s)(?:not|never|no|don'?t|do not|didn'?t)$/.test(before)) return true;
-    }
-    return false;
-}
-
-/**
- * The keys of the follow-ups `said` says he answered: with his word (`hisWord`), each follow-up whose
- * key, its number or its author's name is in it, or the only one when it names none of them.
- */
-export function saidAnswered(said: string, followUps: { key: string; author: string }[]): string[] {
-    if (!hisWord(said)) return [];
-    const heard = new Set(words(said));
-    const named = followUps.filter((followUp) => heard.has(followUp.key.toLowerCase()) || heard.has(followUp.key.split("-")[1] ?? "")
-        || words(followUp.author).some((name) => name.length > 2 && heard.has(name)));
-    const [ only ] = followUps;
-    return named.length ? named.map((followUp) => followUp.key) : followUps.length === 1 && only && heard.has("chat") ? [ only.key ] : [];
-}
-
 /** Whether `said` holds every word of `phrase`, in order and together, such as "incident review" for Incident Review. */
 export function saysPhrase(said: string, phrase: string): boolean {
     const wanted = words(phrase).join(" ");

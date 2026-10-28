@@ -457,7 +457,7 @@ describe("an emptied Suggested goes", () => {
             )}`);
         });
         at(`${DAY}T09:40`);
-        const applied = await call("caius_plan_apply", { date: DAY, said: "I answered Jordan in chat", dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+        const applied = await call("caius_plan_apply", { date: DAY, said: "I answered Jordan in chat", dismiss: [ { candidateId: "ZAP-105", answered: true } ], brief: prose });
         expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", status: "written" }) ]));
         const plan = await call("caius_plan", { period: "day", date: DAY });
         expect(await cls.init(() => store.content(plan.noteId))).not.toContain("Suggested");

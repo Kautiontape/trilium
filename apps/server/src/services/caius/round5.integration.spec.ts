@@ -67,6 +67,12 @@ async function journal() {
     });
 }
 
+/** Every `#caiusAnswered` value in the Journal. */
+async function answeredValues() {
+    const notes = await cls.init(() => store.search("#caiusAnswered"));
+    return notes.flatMap((note) => note.attributes.filter((a) => a.type === "label" && a.name === "caiusAnswered").map((a) => a.value));
+}
+
 /** Monday as it stood at 17:30: his three tickets in the order he took them. */
 async function monday(date: string) {
     await cls.init(async () => {
@@ -186,21 +192,38 @@ describe("his words decide", () => {
         }
     });
 
-    it("nothing is dismissed without his word: 'don't dismiss 105' or 'fine' leaves Jordan's ask on the shelf; 'answered jordan in chat' dismisses it", async () => {
-        const DAY = "2026-11-18";
-        const ask = () => jira.asks.push({
-            ticket: ticket("ZAP-105", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created: "2026-11-15T15:00:00.000-0500",
-            commentId: "c105", excerpt: "@Sam Example the rollout note is in the runbook now."
+    it("nothing is dismissed without his word: each dismissed item must be named in his reply, never in a negated clause; any closing word will do", async () => {
+        const ask = (key: string, commentId: string) => jira.asks.push({
+            ticket: ticket(key, { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created: "2026-11-15T15:00:00.000-0500",
+            commentId, excerpt: "@Sam Example the rollout note is in the runbook now."
         });
-        ask();
+        const handoff = (key: string) => jira.handoff.push({ ...ticket(key, { summary: "Tidy the gate" }), daysInStatus: 2 });
+        const DAY = "2026-11-18";
+        ask("ZAP-105", "c105");
+        handoff("ZAP-120");
         at(`${DAY}T09:40`);
-        const refused = await call("caius_plan_apply", { date: DAY, said: "fine. and don't dismiss 105", dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
-        expect(refused.skipped).toEqual([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", reason: "not_his_word" }) ]);
-        expect((await call("caius_plan", { period: "day", date: DAY })).suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-105") ]);
+        const before = await journal();
+        for (const said of [ "fine", "fine. and don't dismiss 105", "do not drop 105" ]) {
+            const refused = await call("caius_plan_apply", { date: DAY, said, dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+            expect(refused.written, said).toEqual([]);
+            expect(refused.check, said).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-105"), missing: "dismiss" }) ]);
+        }
+        // One dismiss word, two dismissals, only one item named: the other is checked.
+        const half = await call("caius_plan_apply", { date: DAY, said: "dismiss 105", dismiss: [ { candidateId: "ZAP-105" }, { candidateId: "ZAP-120" } ], brief: prose });
+        expect(half.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-120"), missing: "dismiss" }) ]);
+        expect(await journal()).toEqual(before);
 
-        const dismissed = await call("caius_plan_apply", { date: DAY, said: "answered jordan in chat", dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
-        expect(dismissed.skipped).toEqual([]);
-        expect(dismissed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", status: "written" }) ]));
+        // Any words of his that name the item: kill, forget, remove.
+        for (const [ i, verb ] of [ "kill", "forget", "remove" ].entries()) {
+            const key = `ZAP-13${i}`;
+            jira.handoff.length = 0;
+            handoff(key);
+            const day = `2027-06-${String(7 + i).padStart(2, "0")}`;
+            at(`${day}T09:40`);
+            const dismissed = await call("caius_plan_apply", { date: day, said: `${verb} 13${i}`, dismiss: [ { candidateId: key } ], brief: prose });
+            expect(dismissed.check, verb).toBeUndefined();
+            expect(dismissed.written, verb).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: key, status: "written" }) ]));
+        }
     });
 });
 
@@ -210,7 +233,7 @@ describe("answered in Chat", () => {
         commentId, excerpt: "@Sam Example the rollout note is in the runbook now."
     });
 
-    it("Tue 09:35 'answered jordan in chat' closes the Follow up for good: not at 11:05, not two weeks on, back only with a newer comment", async () => {
+    it("Tue 09:35 'answered jordan in chat': the agent's round-5 call is checked; dismiss with answered closes it for good, until a newer comment", async () => {
         const MON = "2026-11-23";
         const TUE = "2026-11-24";
         jordan("c205", "2026-11-22T15:00:00.000-0500");
@@ -219,10 +242,12 @@ describe("answered in Chat", () => {
 
         at(`${TUE}T09:35`);
         expect((await call("caius_planday", { date: TUE, step: "inputs", refresh: true })).data.followUps.map((f: any) => f.key)).toEqual([ "ZAP-205" ]);
+        const said = "111 not today. answered jordan in chat. ZAP-2590 is open, Jira's Done is wrong";
         // The agent's round-5 call: no dismiss, only his words.
-        const planned = await call("caius_plan_apply", {
-            date: TUE, said: "111 not today. answered jordan in chat. ZAP-2590 is open, Jira's Done is wrong", context: [ "ZAP-2590 is open" ], brief: prose
-        });
+        const checked = await call("caius_plan_apply", { date: TUE, said, context: [ "ZAP-2590 is open" ], brief: prose });
+        expect(checked.written).toEqual([]);
+        expect(checked.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-205"), said: "answered jordan in chat", missing: "answered" }) ]);
+        const planned = await call("caius_plan_apply", { date: TUE, said, dismiss: [ { candidateId: "ZAP-205", answered: true } ], context: [ "ZAP-2590 is open" ], brief: prose });
         expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-205", status: "written" }) ]));
         expect(await cls.init(() => store.content(planned.briefNoteId))).not.toContain("ZAP-205");
 
@@ -236,9 +261,35 @@ describe("answered in Chat", () => {
         expect(later.data.followUps).toEqual([]);
         expect(later.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-205");
 
-        jordan("c206", "2026-12-08T15:00:00.000-0500");
         // A newer comment is a new ask: offered again, first as a candidate.
+        jordan("c206", "2026-12-08T15:00:00.000-0500");
         expect((await call("caius_planday", { date: "2026-12-09", step: "inputs", refresh: true })).data.candidates.map((c: any) => c.candidateId)).toContain("ZAP-205");
+    });
+
+    it("his words never close a follow-up: 'haven't answered jordan yet' is checked, 'I answered nothing in chat' closes nothing, and a plain dismissal lasts 14 days", async () => {
+        const ask = (key: string, commentId: string) => jira.asks.push({
+            ticket: ticket(key, { summary: "Confirm the bucket" }), author: "Riley Example", created: "2027-05-17T15:00:00.000-0500", commentId, excerpt: "Is the bucket right?"
+        });
+        const MON = "2027-05-17";
+        const TUE = "2027-05-18";
+        ask("ZAP-705", "c705");
+        at(`${MON}T09:40`);
+        await call("caius_plan_apply", { date: MON, said: "no", brief: prose });
+        at(`${TUE}T09:35`);
+        const yet = await call("caius_plan_apply", { date: TUE, said: "haven't answered riley yet, will do after lunch", brief: prose });
+        expect(yet.written).toEqual([]);
+        expect(yet.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-705"), missing: "answered" }) ]);
+        const kept = await call("caius_plan_apply", { date: TUE, said: "haven't answered riley yet, will do after lunch", checked: true, brief: prose });
+        expect(kept.written.map((entry: any) => entry.kind)).not.toContain("dismiss");
+        const nothing = await call("caius_plan_apply", { date: TUE, said: "I answered nothing in chat", brief: prose });
+        expect(nothing.check).toBeUndefined();
+        expect(nothing.written.map((entry: any) => entry.kind)).not.toContain("dismiss");
+        expect(await answeredValues()).not.toContain("ZAP-705:c705");
+
+        // 'responded to riley' with the answered flag records it; a plain 'drop' does not.
+        const responded = await call("caius_plan_apply", { date: TUE, said: "responded to riley", dismiss: [ { candidateId: "ZAP-705", answered: true } ], brief: prose });
+        expect(responded.check).toBeUndefined();
+        expect(await answeredValues()).toContain("ZAP-705:c705");
     });
 });
 
@@ -435,13 +486,13 @@ describe("a correction after the plan", () => {
         const planned = await call("caius_plan_apply", { date: DAY, said: "no", brief: prose });
         expect(await cls.init(() => store.content(planned.briefNoteId))).toContain("ZAP-605");
 
-        await expect((async () => call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605" } ] }))()).rejects.toThrow(/Give brief/);
-        const fixed = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605" } ], brief: prose });
+        await expect((async () => call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605", answered: true } ] }))()).rejects.toThrow(/Give brief/);
+        const fixed = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605", answered: true } ], brief: prose });
         expect(fixed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-605", status: "written" }) ]));
         expect(await cls.init(() => store.content(fixed.briefNoteId))).not.toContain("ZAP-605");
 
         const before = await journal();
-        const again = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605" } ], brief: prose });
+        const again = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605", answered: true } ], brief: prose });
         expect(again.written.filter((entry: any) => entry.status === "written")).toEqual([]);
         expect(await journal()).toEqual(before);
     });

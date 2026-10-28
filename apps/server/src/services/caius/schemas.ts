@@ -169,6 +169,9 @@ const place = {
     after: z.string().min(1).optional().describe(`Put it just after this item of his list or a candidate taken in the same call: ${NAMED}`)
 };
 const placed = (item: { first?: boolean; before?: string; after?: string }) => [ item.first || undefined, item.before, item.after ].filter((v) => v !== undefined).length;
+const dismissRef = candidateRef.extend({
+    answered: z.boolean().optional().describe("true when he says he answered it in Chat: its ask never comes back as a Follow up, until a newer comment. Without it a dismissal holds 14 days")
+});
 const acceptRef = candidateRef.extend(place).refine((item) => placed(item) <= 1, "Give at most one of first, before or after");
 const moveRef = z.object({ listItemId: z.string().min(1).describe(`An item of his main list: ${NAMED}`), ...place })
     .refine((item) => placed(item) === 1, "Give exactly one of first, before or after");
@@ -199,7 +202,7 @@ const planApply = z.object({
     keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
     finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): a ticket or week item is offered again on the next workday, an ask comes back as a Follow up. Not a dismissal"),
-    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key and never comes back, unless a newer comment does"),
+    dismiss: z.array(dismissRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key with answered: true. Each must be named in said (its key, number, author or a word of it), or the call answers a check"),
     evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
     context: answerTexts("What the user said is worth knowing, each written as a Context line"),
     overlaps: overlapAnswers,
@@ -252,7 +255,7 @@ const windDownApply = z.object({
     carry: z.array(lineRef).default([]).describe("Carry lines the user said yes to"),
     finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday: a ticket or week item is offered again the workday after, an ask comes back as a Follow up. Not a dismissal"),
-    dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key and never comes back, unless a newer comment does"),
+    dismiss: z.array(dismissRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key with answered: true. Each must be named in said (its key, number, author or a word of it), or the call answers a check"),
     evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),
     context: answerTexts("What the user said is worth knowing for the next workday, each a Context line"),
     overlaps: overlapAnswers

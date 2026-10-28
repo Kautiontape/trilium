@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hisWord, isRef, numbered, refOf, resolveIn, resolveName, saidAnswered, saidPlaces, vagueYes, withRefs } from "./refs.js";
+import { isRef, namesOf, numbered, refOf, resolveIn, resolveName, saidCloses, saidNames, saidPlaces, vagueYes, withRefs } from "./refs.js";
 
 const open = withRefs([
     { id: "e111", text: "ZAP-111 Check the invoice export in QA" },
@@ -86,30 +86,25 @@ describe("saidPlaces", () => {
     });
 });
 
-describe("hisWord", () => {
-    it("finds his word to dismiss, drop or close in his reply, and none in a negated one", () => {
-        expect(hisWord("answered jordan in chat")).toBe(true);
-        expect(hisWord("111 not today. answered jordan in chat. ZAP-2590 is open")).toBe(true);
-        expect(hisWord("dismiss 105")).toBe(true);
-        expect(hisWord("drop the bucket question, not doing it")).toBe(true);
-        expect(hisWord("111 was later this week, not tomorrow. and don't dismiss 105.")).toBe(false);
-        expect(hisWord("110 is done. 111 later this week. evening pack the climbing gym bag")).toBe(false);
-        expect(hisWord("fine")).toBe(false);
-        expect(hisWord("")).toBe(false);
+describe("saidCloses and saidNames", () => {
+    const jordan = { id: "ZAP-105", names: namesOf({ key: "ZAP-105", author: "Jordan Placeholder", text: "" }) };
+    const gate = { id: "ZAP-120", names: namesOf({ key: "ZAP-120", text: "Tidy the gate" }) };
+    const closes = (said: string) => saidCloses(said, [ jordan, gate ]).map(({ id, answered }) => [ id, answered ]);
+
+    it("hears every item a clause with a closing or answering word names, negated or not, for the apply to check", () => {
+        expect(closes("111 not today. answered jordan in chat")).toEqual([ [ "ZAP-105", true ] ]);
+        expect(closes("haven't answered jordan yet")).toEqual([ [ "ZAP-105", true ] ]);
+        expect(closes("responded to jordan, kill 120")).toEqual([ [ "ZAP-105", true ], [ "ZAP-120", false ] ]);
+        expect(closes("don't dismiss 105")).toEqual([ [ "ZAP-105", false ] ]);
+        expect(closes("I answered nothing in chat")).toEqual([]);
+        expect(closes("fine")).toEqual([]);
     });
-});
 
-describe("saidAnswered", () => {
-    const jordan = { key: "ZAP-105", author: "Jordan Placeholder" };
-    const riley = { key: "ZAP-120", author: "Riley Example" };
-
-    it("names the follow-ups he says he answered, by author, key or number, or the only one when he says chat", () => {
-        expect(saidAnswered("111 not today. answered jordan in chat. ZAP-2590 is open", [ jordan, riley ])).toEqual([ "ZAP-105" ]);
-        expect(saidAnswered("replied on 120", [ jordan, riley ])).toEqual([ "ZAP-120" ]);
-        expect(saidAnswered("answered it in chat", [ jordan ])).toEqual([ "ZAP-105" ]);
-        expect(saidAnswered("answered it in chat", [ jordan, riley ])).toEqual([]);
-        expect(saidAnswered("don't dismiss 105", [ jordan ])).toEqual([]);
-        expect(saidAnswered("fine", [ jordan ])).toEqual([]);
+    it("finds an item named by its key, number, author or a longer word of it", () => {
+        expect(saidNames("forget 120", gate.names)).toBe(true);
+        expect(saidNames("zap-120 can go", gate.names)).toBe(true);
+        expect(saidNames("ask jordan's question later", jordan.names)).toBe(true);
+        expect(saidNames("fine", jordan.names)).toBe(false);
     });
 });
 

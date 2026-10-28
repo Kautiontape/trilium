@@ -609,7 +609,11 @@
     },
     "check": {
       "fate": "His reply seems to give {{- item}} a place ('{{- clause}}') that this call leaves out. Pass it in fates, or call again with checked: true if he didn't mean that.",
-      "fate_other": "His reply seems to give {{- item}} a place ('{{- clause}}') other than the one this call sends it to. Fix the fate, or call again with checked: true if he didn't mean that."
+      "fate_other": "His reply seems to give {{- item}} a place ('{{- clause}}') other than the one this call sends it to. Fix the fate, or call again with checked: true if he didn't mean that.",
+      "dismiss_unnamed": "This call dismisses {{- item}}, but his reply doesn't seem to name it. Leave it out of dismiss, or call again with checked: true if he did mean it.",
+      "dismiss_negated": "This call dismisses {{- item}}, but his reply seems to say not to ('{{- clause}}'). Leave it out of dismiss, or call again with checked: true if he did mean it.",
+      "dismiss": "His reply seems to dismiss {{- item}} ('{{- clause}}'), which this call leaves out. Pass it in dismiss, or call again with checked: true if he didn't mean that.",
+      "answered": "His reply seems to say he answered {{- item}} in Chat ('{{- clause}}'), which this call doesn't record. Pass it in dismiss with answered: true, or call again with checked: true if he didn't mean that."
     },
     "daily": {
       "standing_missing": "No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.",
