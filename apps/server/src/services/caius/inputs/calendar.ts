@@ -222,7 +222,7 @@ function mergeDuplicates(events: CalendarEvent[]): CalendarEvent[] {
 }
 
 /** Marks every pair of non-declined timed events that overlap; back-to-back events don't. */
-function flagOverlaps(events: CalendarEvent[]): CalendarEvent[] {
+export function flagOverlaps(events: CalendarEvent[]): CalendarEvent[] {
     const timed = events.filter((event) => !event.allDay && !event.declined);
     for (const [ i, a ] of timed.entries()) {
         for (const b of timed.slice(i + 1)) {

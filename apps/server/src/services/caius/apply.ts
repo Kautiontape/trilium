@@ -22,6 +22,7 @@ import {
     nextWorkday,
     normName,
     type NoteStore,
+    overlapPairs,
     openTasks,
     PERIODS,
     readPlan,
@@ -34,7 +35,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_LABEL, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -42,6 +43,7 @@ import {
     heldDays,
     heldValueOf,
     dateLabel,
+    dayLabels,
     proposedForward,
     dayKey,
     type DayRead,
@@ -62,18 +64,20 @@ import {
     planFromOf,
     localDay,
     nextOffer,
+    overlapIdOf,
     planOffer,
     present,
     type StepDeps,
     stillOpen,
     weekdayName,
     windDownTarget,
+    withTaken,
     withDateLabels,
     withoutMoveLinks,
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidAnswered, saidFates, withRefs } from "./refs.js";
+import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidAnswered, saidFates, saysPhrase, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment, removeLabel } from "./store.js";
@@ -239,6 +243,12 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEvents(read) }));
+        // A meeting he isn't taking leaves the Meetings block and the drawing written below.
+        let taken = read;
+        await guarded({ kind: "overlap" }, skipped, async () => {
+            const declined = await takeOverlaps(store, date, now, read, asked.said, input.overlaps, written, skipped);
+            taken = { ...read, inputs: withTaken(read.inputs, declined, read.rhythm) };
+        });
 
         await guarded({ kind: "forward" }, skipped, async () => { for (const { listItemId, to } of input.forward ?? []) {
             if (!shown.has(listItemId)) {
@@ -262,7 +272,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             skipped.push({ kind: "meetings", reason: "calendar_unavailable" });
         } else {
             await guarded({ kind: "meetings" }, skipped, async () => {
-                record(written, skipped, { kind: "meetings" }, await setMeetings(store, { date, lines: meetingLines(read.inputs.calendar) }, {}));
+                record(written, skipped, { kind: "meetings" }, await setMeetings(store, { date, lines: meetingLines(taken.inputs.calendar) }, {}));
             });
         }
 
@@ -270,7 +280,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
         const answered = new Set(written.filter((entry) => entry.kind === "dismiss" && entry.id).map((entry) => entry.id));
-        const brief = await briefOf(deps, { date, brief: prose }, read, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, offer.headsUp, weather)
+        const brief = await briefOf(deps, { date, brief: prose }, taken, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, offer.headsUp, weather)
             .catch((e: unknown) => ({ error: "failed", detail: e instanceof Error ? e.message : String(e) }));
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
@@ -477,6 +487,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
+        await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, asked.said, input.overlaps, written, skipped));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
         // A day keeps open while a hold given on it remains, or one given elsewhere covers an item that lives on it.
@@ -1497,6 +1508,38 @@ function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, dat
 function suggestedLine(candidate: Candidate): string {
     if (candidate.kind === "ask") return `${candidate.text}: because ${candidate.because} (~${candidate.minutes}m)`;
     return `Get ${candidate.key ? `${candidate.key} ` : ""}${candidate.title ?? candidate.text} done: because ${candidate.because} (~${candidate.minutes}m)`;
+}
+
+/**
+ * The overlaps of `day` he answered, in `answers` or in `said` naming one meeting of a pair: each
+ * written as "Taking X, not Y, at 11:00" in the day's Context, with Y declined for the day
+ * (`#caiusDeclined`). Answers the titles declined. The pairs are read with his own declines undone,
+ * so a re-run finds the pair it answered.
+ */
+async function takeOverlaps(store: NoteStore, day: string, now: Date, read: DayRead, said: string, answers: { overlapId: string; take: string }[], written: Written[], skipped: Skipped[]): Promise<string[]> {
+    const his = new Set((await dayLabels(store, day, DECLINED_LABEL)).map(normName));
+    const pairs = overlapPairs(read.inputs.calendar.map((event) => his.has(normName(event.title)) ? { ...event, declined: false } : event))
+        .map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) }));
+    const heard = pairs.filter((pair) => !answers.some((answer) => answer.overlapId === pair.overlapId)).flatMap((pair) => {
+        const named = [ pair.first, pair.second ].filter((title) => saysPhrase(said, title));
+        return named.length === 1 && named[0] ? [ { overlapId: pair.overlapId, take: named[0] } ] : [];
+    });
+    const declined: string[] = [];
+    for (const { overlapId, take } of [ ...answers, ...heard ]) {
+        const pair = pairs.find((candidate) => candidate.overlapId === overlapId);
+        const taken = pair && [ pair.first, pair.second ].find((title) => normName(title) === normName(take) || saysPhrase(take, title));
+        if (!pair || !taken) {
+            skipped.push({ kind: "overlap", id: overlapId, text: take, reason: "not_offered" });
+            continue;
+        }
+        const other = taken === pair.first ? pair.second : pair.first;
+        const text = t("caius.daily.overlap_taken", { take: taken, other, time: pair.at });
+        const { result } = await contextAddOn(store, { date: day, text }, now);
+        record(written, skipped, { kind: "overlap", id: overlapId, text, detail: taken }, result);
+        await labelDay(store, day, DECLINED_LABEL, [ other ]);
+        declined.push(other);
+    }
+    return declined;
 }
 
 /** Files a library result under written (a write, or `duplicate`/`already_moved`/`unchanged`: already there) or skipped. */

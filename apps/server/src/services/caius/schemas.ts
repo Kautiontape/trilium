@@ -177,6 +177,11 @@ const moves = z.array(moveRef).default([]).describe("Only when the user asks to 
 const said = z.string().describe("His reply this call answers, word for word, such as \"110 is done. 111 later this week\": a fate he named there that the call leaves out is applied as he named it, and a dismissal needs his word (dismiss, drop, cancel, not doing, answered) in it. \"\" only for a call no reply of his asked for, such as a refresh");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
 
+const overlapAnswers = z.array(z.object({
+    overlapId: z.string().min(1).describe("The overlap's overlapId from the step data"),
+    take: z.string().trim().min(1).describe("The meeting he takes, by its title as the step gives it")
+})).default([]).describe("His answer to each overlap question: the meeting he takes. Written as \"Taking X, not Y, at 11:00\" in the day's Context, and the other meeting leaves the day's Meetings, drawing and capacity");
+
 const planApply = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
     said,
@@ -188,7 +193,8 @@ const planApply = z.object({
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): a ticket or week item is offered again on the next workday, an ask comes back as a Follow up. Not a dismissal"),
     dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key and never comes back, unless a newer comment does"),
     evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
-    context: answerTexts("What the user said is worth knowing, such as an overlap's answer, each written as a Context line"),
+    context: answerTexts("What the user said is worth knowing, each written as a Context line"),
+    overlaps: overlapAnswers,
     forward: z.array(z.object({
         listItemId: z.string().min(1).describe(`A task: ${NAMED}`),
         to: z.string().min(1).describe(DESTINATION)
@@ -203,18 +209,18 @@ const planApply = z.object({
         .describe("Only with a call that just moves: the header's three acts in the new order, sent when the move changes the first task, each a sentence or { range, text }; a sentence takes the drawing's range. The tool writes the third, the evening")
 }).refine((input) => input.brief !== undefined || onlyMoves(input) || onlyContext(input), "Give brief, unless the call only moves items of his list or only adds Context lines");
 
-type Answers = { move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; forward?: unknown[] };
+type Answers = { move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; overlaps: unknown[]; forward?: unknown[] };
 
 /** Whether a Plan my day answer only reorders his list: `move` and nothing else. */
 export function onlyMoves(input: Answers): boolean {
     return input.move.length > 0 && input.catchup === undefined && !input.forward?.length
-        && [ input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.context ].every((answers) => answers.length === 0);
+        && [ input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.context, input.overlaps ].every((answers) => answers.length === 0);
 }
 
 /** Whether a Plan my day answer only adds Context lines, as the retry of a line skipped as third person does. */
 export function onlyContext(input: Answers): boolean {
     return input.context.length > 0 && input.catchup === undefined && !input.forward?.length
-        && [ input.move, input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening ].every((answers) => answers.length === 0);
+        && [ input.move, input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.overlaps ].every((answers) => answers.length === 0);
 }
 
 const windDownApply = z.object({
@@ -235,7 +241,8 @@ const windDownApply = z.object({
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday: a ticket or week item is offered again the workday after, an ask comes back as a Follow up. Not a dismissal"),
     dismiss: z.array(candidateRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key and never comes back, unless a newer comment does"),
     evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),
-    context: answerTexts("What the user said is worth knowing for the next workday, each a Context line")
+    context: answerTexts("What the user said is worth knowing for the next workday, each a Context line"),
+    overlaps: overlapAnswers
 });
 
 const writes = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item).min(1), dryRun, html });

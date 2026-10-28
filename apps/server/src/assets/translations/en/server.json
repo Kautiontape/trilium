@@ -620,6 +620,7 @@
       "nothing_open": "Nothing is open: the day's list is closed and nothing has slipped.",
       "over": "{{- day}} is over by about {{hours}} h. Which of these can wait?",
       "overlap": "{{- first}} overlaps {{- second}} at {{time}}. Which one do you take?",
+      "overlap_taken": "Taking {{- take}}, not {{- other}}, at {{time}}",
       "evening": "Anything for the evening?",
       "fits": "{{- day}} holds {{- planned}} of work against about {{- focus}} of focus time. Fits.",
       "capacity_unknown": "The calendar for {{- day}} couldn't be read, so whether the day fits couldn't be judged.",

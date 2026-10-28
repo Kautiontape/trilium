@@ -147,6 +147,12 @@ export function saidAnswered(said: string, followUps: { key: string; author: str
     return named.length ? named.map((followUp) => followUp.key) : followUps.length === 1 && only && heard.has("chat") ? [ only.key ] : [];
 }
 
+/** Whether `said` holds every word of `phrase`, in order and together, such as "incident review" for Incident Review. */
+export function saysPhrase(said: string, phrase: string): boolean {
+    const wanted = words(phrase).join(" ");
+    return wanted !== "" && ` ${words(said).join(" ")} `.includes(` ${wanted} `);
+}
+
 /** A clause that says where something doesn't go. */
 const NEGATION = /^\s*(?:not|no|never|don'?t)\b/;
 

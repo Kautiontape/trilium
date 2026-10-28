@@ -48,7 +48,7 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         ...clause("dismissed", of("dismiss")),
         ...clause("finished", of("finished").filter((entry) => !done.includes(labelOf(entry.id ?? "")))),
         ...(of("evening").length ? [ t("caius.say.evening", { items: andList(labels(of("evening"))), count: labels(of("evening")).length, weekday: weekdayName(day) }) ] : []),
-        ...clause("noted", of("context"), true),
+        ...clause("noted", of("context", "overlap"), true),
         ...clause("kept", of("keep", "carry"), true),
         ...(of("meetings").length ? [ t("caius.say.meetings") ] : []),
         ...(of("brief").length ? [ t("caius.say.brief") ] : [])

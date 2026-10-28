@@ -11,6 +11,7 @@ import {
     type ContextEntry,
     contextNotes,
     dayCandidates,
+    dayCapacity,
     DEFAULT_ESTIMATE,
     findPeriodNote,
     formatHours,
@@ -42,7 +43,8 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, DECLINED_LABEL, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { flagOverlaps } from "./inputs/calendar.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -375,9 +377,12 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const fits = heavy && !over && labels.length
         ? t("caius.daily.heavy_fits", { tasks: labels.length > 1 ? t("caius.daily.list_and", { head: labels.slice(0, -1).join(", "), last: labels.at(-1) }) : labels[0], count: labels.length })
         : null;
+    // His answer to an overlap is news for the day it is about, as a line whose range starts that day is.
+    const declined = await dayLabels(store, date, DECLINED_LABEL);
     const headsUp = [
         ...headsUpOf(day.plan.meetings, failedCalendar(read) ? null : meetingLines(read.inputs.calendar)),
-        ...read.context.filter((line) => line.from === date).map((line) => line.text)
+        ...read.context.filter((line) => line.from === date || (line.period === "day" && line.key === date && declined.some((title) => line.text.includes(title))))
+            .map((line) => line.text)
     ];
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
@@ -448,6 +453,17 @@ async function askedAbout(store: NoteStore, date: string): Promise<Set<string>> 
 export async function dayLabels(store: NoteStore, date: string, name: string): Promise<string[]> {
     const note = await findPeriodNote(store, "day", date);
     return note?.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) ?? [];
+}
+
+/**
+ * `inputs` with the meetings he isn't taking (`declined`, by title: `#caiusDeclined` on the day note)
+ * declined, so the Meetings block, the drawing and the overlaps leave them out, and the capacity read again.
+ */
+export function withTaken(inputs: CaiusInputs, declined: string[], rhythm: { start: string; workEnd: string }): CaiusInputs {
+    if (!declined.length) return inputs;
+    const out = new Set(declined.map(normName));
+    const calendar = flagOverlaps(inputs.calendar.map(({ overlap: _overlap, ...event }) => out.has(normName(event.title)) ? { ...event, declined: true } : event));
+    return { ...inputs, calendar, capacity: dayCapacity(calendar, { workStart: rhythm.start, workEnd: rhythm.workEnd }) };
 }
 
 /**

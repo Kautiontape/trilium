@@ -46,6 +46,8 @@ export const HELD_GROUP_LABEL = "caiusHeldGroup";
 export const ASK_SEEN_LABEL = "caiusAskSeen";
 /** On a day note: an ask he answered in Chat, as `KEY:commentId`; it is never a Follow up or a candidate again, until a newer comment. */
 export const ANSWERED_LABEL = "caiusAnswered";
+/** On a day note: a meeting he isn't taking that day, by its title, from his answer to an overlap; the day's calendar reads it as declined. */
+export const DECLINED_LABEL = "caiusDeclined";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
 export const NOT_TODAY_LABEL = "caiusNotToday";
 /** On a day note: the day was wound down, at `YYYY-MM-DDTHH:mm:ss`, so the catch-up looks no further back than it. */

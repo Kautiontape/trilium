@@ -81,8 +81,8 @@ import {
     type WindDownInput
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
-import { findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, listPicks, mainTasks, planDay, type Standing, type StepDeps, weekdayName, windDown, workBlocks } from "./daily.js";
+import { DECLINED_LABEL, findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { catchupOf, type DayRead, dayLabels, listPicks, mainTasks, planDay, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -156,11 +156,12 @@ export function createCaiusService(
      * notes are read under the lock, the sources outside it.
      */
     async function dayRead(date: string, refresh = false, extraKeys: string[] = []): Promise<DayRead> {
-        const { context, standing, week, closed } = await withCaiusLock("caius_day_read", async () => ({
+        const { context, standing, week, closed, declined } = await withCaiusLock("caius_day_read", async () => ({
             context: (await gatherContext(store, date)).context,
             standing: await readStanding(),
             week: await weekTasks(isoWeekKey(new Date(`${date}T00:00:00Z`))),
-            closed: await closedNow()
+            closed: await closedNow(),
+            declined: await dayLabels(store, date, DECLINED_LABEL)
         }));
         const rhythm = readRhythm(standing.markdown);
         const lines = context.map((line) => line.text);
@@ -168,7 +169,7 @@ export function createCaiusService(
             .filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key))
             .sort();
         const input: InputsInput = { date, context: lines, keys, workStart: rhythm.start, workEnd: rhythm.workEnd };
-        return { inputs: withoutClosed(await cachedInputs(input, refresh), closed), context, standing, rhythm };
+        return { inputs: withTaken(withoutClosed(await cachedInputs(input, refresh), closed), declined, rhythm), context, standing, rhythm };
     }
 
     /**
