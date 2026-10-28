@@ -1,5 +1,11 @@
 .plan-tab .plan-suggested {
-    .plan-task-text {
+    .plan-task-text,
+    .plan-task-reason {
         display: block;
+    }
+
+    .plan-task-reason {
+        font-size: 0.85em;
+        color: var(--muted-text-color);
     }
 }

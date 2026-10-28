@@ -98,6 +98,20 @@ export function taskLabel(text: string) {
     return text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
 }
 
+/**
+ * A Suggested item's label split into what to do and why, at its "because". A size in brackets at
+ * the end stays with what to do: "Get X done: because Y (~30m)" reads as "Get X done (~30m)" and
+ * "because Y". A label without a "because" after some text is all title.
+ */
+export function splitReason(label: string): { title: string; reason: string | null } {
+    const match = /^(.*?\S):?\s+(because\s.*?)(\s*\(~\d+[hm](?:\d+m)?\))?$/i.exec(label);
+    if (!match) {
+        return { title: label, reason: null };
+    }
+
+    return { title: `${match[1]}${match[3] ?? ""}`, reason: match[2] };
+}
+
 export function isLive(task: Pick<CaiusPlanTask, "state">) {
     return task.state === "open" || task.state === "in_progress";
 }

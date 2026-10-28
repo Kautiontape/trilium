@@ -5,7 +5,7 @@ import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
     acceptSections, capacityStatus, closeCandidates, closeFates, endsSoon, fateTarget, groupFates,
-    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, stepPeriod, taskLabel,
+    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, splitReason, stepPeriod, taskLabel,
     unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
 
@@ -248,5 +248,23 @@ describe("endsSoon", () => {
         // A Friday: a line until Sunday lapses before Monday.
         expect(endsSoon({ until: "2026-11-01" }, "2026-10-30")).toBe(true);
         expect(endsSoon({ until: "2026-11-02" }, "2026-10-30")).toBe(false);
+    });
+});
+
+describe("splitReason", () => {
+    it("splits a Suggested line into what to do, with its size, and why", () => {
+        expect(splitReason("Get ZAP-101 Verify the export retry done: because sitting in Dev Verify for 6 days (~30m)")).toEqual({
+            title: "Get ZAP-101 Verify the export retry done (~30m)",
+            reason: "because sitting in Dev Verify for 6 days"
+        });
+        expect(splitReason("Get the review done: because Sam asked on Tuesday (~1h30m)"))
+            .toEqual({ title: "Get the review done (~1h30m)", reason: "because Sam asked on Tuesday" });
+        expect(splitReason("Get ZAP-110 done because it blocks the release"))
+            .toEqual({ title: "Get ZAP-110 done", reason: "because it blocks the release" });
+
+        // The formats without a reason stay on one line.
+        for (const text of [ "ZAP-101 — Verify the export retry on staging", "ZAP-111", "ZAP-111 (QA Testing, 3 days)", "Because of the freeze" ]) {
+            expect(splitReason(text)).toEqual({ title: text, reason: null });
+        }
     });
 });

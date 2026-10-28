@@ -406,6 +406,20 @@ describe("PlanTab", () => {
         expect(api.apply).toHaveBeenCalledTimes(1);
     });
 
+    it("shows a Suggested item's reason on a line of its own under what to do", async () => {
+        api.plan.mockResolvedValue({
+            ...dayPlan(),
+            suggested: [
+                planTask({ listItemId: "s1", text: "Get [ZAP-101](https://jira/ZAP-101) Verify the export done: because sitting in Dev Verify for 6 days (~30m)", section: "Suggested" }),
+                planTask({ listItemId: "s2", text: "ZAP-111", section: "Suggested" })
+            ]
+        });
+        const tab = await mount();
+
+        expect(texts(tab, "#plan-suggested .plan-task-text")).toEqual([ "Get ZAP-101 Verify the export done (~30m)", "ZAP-111" ]);
+        expect(texts(tab, "#plan-suggested .plan-task-reason")).toEqual([ "because sitting in Dev Verify for 6 days" ]);
+    });
+
     it("lists the Context in force for the viewed day under Capacity, with when each line ends", async () => {
         api.plan.mockImplementation(async (period: string, key: string) => ({ ...dayPlan(), period, key }));
         api.context.mockResolvedValue({
