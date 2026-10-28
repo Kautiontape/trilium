@@ -48,6 +48,7 @@ Most write tools take an `items` list, `dryRun`, and `html: true` on a dry run t
 | `caius_winddown` | One step of Wind down: `open`, `next`, `context`. Returns the data and the question to ask. | `{ "date": "2026-11-06", "step": "open" }` |
 | `caius_planday` | One step of Plan my day: `catchup`, `inputs`, `brief`. Returns the data and the question to ask. | `{ "date": "2026-11-09", "step": "catchup" }` |
 | `caius_plan_apply` | Every write of Plan my day in one call, from his answers mapped to the step data's ids. | `{ "date": "2026-11-09", "accept": [{ "candidateId": "ZAP-111" }], "brief": { "headline": "…", "acts": […], "sections": [] } }` |
+| `caius_winddown_apply` | Every write of Wind down in one call, from his answers mapped to the step data's ids. | `{ "date": "2026-11-06", "done": ["e123"], "fates": [{ "listItemId": "e456", "to": "2026-W46" }] }` |
 | `caius_header` | Draw the day as terrain, from standup to bedtime, and attach it to a note as `terrain.svg`. A second call updates the same attachment. Returns `attachmentId` and the `<img>` `snippet` to put in the note; the note's text is not changed. Give `latitude` and `longitude` to add the weather. | `{ "noteId": "…", "start": "10:00", "end": "23:00", "events": [{ "start": "10:00", "end": "10:15", "title": "Standup" }], "work": [{ "start": "13:00", "end": "14:00", "label": "ZAP-1", "focus": true }] }` |
 
 `noteId` and `listItemId` always come from `caius_plan` or `caius_open`. Never guess them.

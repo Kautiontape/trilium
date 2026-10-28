@@ -231,3 +231,64 @@ describe("an answer stays answered", () => {
         expect(await week("2026-11-05")).toEqual([ "Tidy the backlog" ]);
     });
 });
+
+describe("caius_winddown_apply", () => {
+    let input: any;
+    const textOf = (task: any) => String(task.text);
+
+    it("Mon 17:30: one call marks ZAP-111 done, sends ZAP-101 to later this week, moves the rest as proposed, and writes laundry", async () => {
+        at(`${MON}T17:30`);
+        const open = await call("caius_winddown", { date: MON, step: "open" });
+        const item = (word: string) => open.data.items.find((i: any) => textOf(i).includes(word));
+        expect(item("Dave")).toMatchObject({ group: "today", fate: { forward: "2026-11-03", forwardLabel: "Tue 3 Nov" } });
+        // Tuesday's own apply above already put ZAP-110 and ZAP-105 in its Suggested, so nothing is new for it.
+        expect((await call("caius_winddown", { date: MON, step: "next" })).data.candidates.filter((c: any) => c.kind !== "week")).toEqual([]);
+        await call("caius_winddown", { date: MON, step: "context" });
+
+        input = {
+            date: MON,
+            done: [ item("ZAP-111").listItemId ],
+            fates: [ { listItemId: item("ZAP-101").listItemId, to: "2026-W45" } ],
+            evening: [ "Laundry" ],
+            context: [ "ZAP-2590 is open; Jira's Done is a mistake" ]
+        };
+        const result = await call("caius_winddown_apply", input);
+        expect(result.skipped).toEqual([]);
+        expect(result.written.map((w: any) => [ w.kind, w.status ])).toEqual(expect.arrayContaining([
+            [ "done", "written" ], [ "fate", "written" ], [ "evening", "unchanged" ], [ "context", "unchanged" ]
+        ]));
+        expect(result).toMatchObject({ targetDay: "2026-11-03", targetDayLabel: "Tue 3 Nov" });
+
+        const monday = await call("caius_plan", { period: "day", date: MON });
+        // Every item is closed: ZAP-111 done, the rest forwarded with a "scheduled" link.
+        const closed = monday.sections.flatMap((s: any) => s.tasks).map((t: any) => [ t.state, /_scheduled \[(Tuesday 3|week 45)\]/.exec(textOf(t))?.[1] ?? null, textOf(t).slice(0, 12) ]);
+        expect(closed).toEqual([
+            [ "done", "Tuesday 3", "Message Dave" ], [ "done", null, "[ZAP-111](ht" ], [ "done", "week 45", "[ZAP-101](ht" ], [ "done", "Tuesday 3", "Laundry _sch" ]
+        ]);
+        const tuesday = await call("caius_plan", { period: "day", date: "2026-11-03" });
+        expect(tuesday.sections.flatMap((s: any) => s.tasks).filter((t: any) => t.state === "open").map(textOf)).toEqual([
+            expect.stringContaining("Message Dave"), "Laundry [from Monday 2](#root/" + monday.noteId + ")"
+        ]);
+        expect(tuesday.suggested.map(textOf)).toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-110"), expect.stringContaining("ZAP-105") ]));
+        expect((await call("caius_plan", { period: "week", date: "2026-W45" })).sections.flatMap((s: any) => s.tasks).map(textOf))
+            .toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-101") ]));
+    });
+
+    it("Mon 17:30: running it again changes no note", async () => {
+        at(`${MON}T17:30`);
+        const before = await snapshot();
+        const again = await call("caius_winddown_apply", input);
+        expect(again.skipped).toEqual([]);
+        expect(again.written.filter((w: any) => w.status !== "unchanged")).toEqual([]);
+        expect(await snapshot()).toEqual(before);
+    });
+
+    it("ZAP-101, sent to later this week on Monday night, isn't offered for Tuesday and is on Wednesday", async () => {
+        at(`${MON}T17:40`);
+        const forTuesday = await call("caius_winddown", { date: MON, step: "next" });
+        expect(forTuesday.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-101");
+        at("2026-11-04T09:40");
+        const wednesday = await call("caius_planday", { date: "2026-11-04", step: "inputs" });
+        expect(wednesday.data.candidates.filter((c: any) => c.kind === "week").map((c: any) => c.candidateId)).toContain("ZAP-101");
+    });
+});

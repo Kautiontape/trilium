@@ -77,9 +77,10 @@ import {
     type PlanInput,
     type SetStateInput,
     type SkipCatchupInput,
+    type WindDownApplyInput,
     type WindDownInput
 } from "./schemas.js";
-import { type ApplyDeps, planApply } from "./apply.js";
+import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { findBrief, PLANNED_AT_LABEL, writeBrief } from "./brief.js";
 import { catchupOf, type DayRead, listPicks, mainTasks, planDay, type Standing, type StepDeps, weekdayName, windDown, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
@@ -395,6 +396,8 @@ export function createCaiusService(
         planday: (input: PlanDayInput) => planDay(stepDeps(), input),
 
         planApply: (input: PlanApplyInput) => planApply(applyDeps(), input),
+
+        windDownApply: (input: WindDownApplyInput) => windDownApply(applyDeps(), input),
 
         /**
          * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and

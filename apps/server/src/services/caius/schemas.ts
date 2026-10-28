@@ -179,6 +179,25 @@ const planApply = z.object({
     }).describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes")
 });
 
+const windDownApply = z.object({
+    date: periodKey("day").describe("The day being closed, YYYY-MM-DD; the rest works against the next workday"),
+    done: z.array(z.string().min(1)).default([]).describe("The listItemIds of the open items the user says are done"),
+    fates: z.array(z.object({
+        listItemId: z.string().min(1).describe("An open item's listItemId from the open step"),
+        to: z.string().refine((to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to), "Give a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM").optional()
+            .describe("Where the user sends it: a day, an ISO week (\"later this week\") or a month"),
+        drop: z.string().trim().min(1).optional().describe("Only when the user says drop, cancel or not doing: the user's reason")
+    }).refine((fate) => (fate.to === undefined) !== (fate.drop === undefined), "Give exactly one of to or drop")).default([])
+        .describe("Fates the user named. Every open item not named keeps the fate the open step proposed"),
+    accept: z.array(candidateRef).default([]).describe("Candidates the user took for the next workday, in the user's order"),
+    keep: z.array(lineRef).default([]).describe("Keep lines the user said yes to"),
+    carry: z.array(lineRef).default([]).describe("Carry lines the user said yes to"),
+    finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),
+    notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday; offered again the workday after. Not a dismissal"),
+    evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),
+    context: answerTexts("What the user said is worth knowing for the next workday, each a Context line")
+});
+
 const writes = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item).min(1), dryRun, html });
 
 const reads = {
@@ -273,6 +292,7 @@ export const toolInputs = {
     winddown,
     planday,
     planApply,
+    windDownApply,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -327,6 +347,7 @@ export type NudgeInput = z.infer<typeof nudge>;
 export type WindDownInput = z.infer<typeof winddown>;
 export type PlanDayInput = z.infer<typeof planday>;
 export type PlanApplyInput = z.output<typeof planApply>;
+export type WindDownApplyInput = z.output<typeof windDownApply>;
 export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;

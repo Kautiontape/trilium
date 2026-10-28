@@ -173,6 +173,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.planApply, service.planApply)
         },
 
+        caius_winddown_apply: {
+            description: "Make every write of a Wind down conversation in one call, after the user has answered the one question set: what is done, the fates the user named (a forward, or a drop only on the user's word drop, cancel or not doing, with the reason), the proposed fate for every open item not named, the next workday's candidates the user took in order, the keep and carry lines, finished tickets, candidates put off (not a dismissal), evening tasks and Context lines for the next workday. Every id comes from caius_winddown's step data. No dry run: the user has answered. Answers what was written and what was skipped, with a reason; a re-run changes nothing.",
+            inputSchema: toolInputs.windDownApply,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.windDownApply, service.windDownApply)
+        },
+
         caius_header: {
             description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add today's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,

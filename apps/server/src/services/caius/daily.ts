@@ -103,10 +103,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
 
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
-        const facts = await deps.locked("caius_winddown", () => dayFacts(deps.store, targetDay, deps.now));
-        // A raised ask stays on offer; only the Follow up leaves it out (`unraised`).
-        const jira = unraised(read.inputs.jira, facts.raised);
-        const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
+        const { facts, candidates, jira } = await deps.locked("caius_winddown", () => nextOffer(deps.store, targetDay, deps.now, read));
         const { eveningMinutes } = facts;
         const plannedMinutes = facts.plan.capacity.totalMinutes - eveningMinutes;
         const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
@@ -133,23 +130,41 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         }, questions.length ? questions.join(" ") : null, "context");
     }
 
-    // A line in force today that lapses before the target day and keeps a ticket open: Jira's own
-    // answer is not consulted, since `done` leaves out every key a Context line calls open.
-    const { today, asked } = await deps.locked("caius_winddown", async () => ({
-        today: await gatherContext(deps.store, date), asked: await askedAbout(deps.store, date)
-    }));
-    const keep = today.context
-        .filter((line) => line.until !== undefined && line.until < targetDay)
-        .map((line) => ({ kind: "keep" as const, line: line.text, lineId: lineIdOf(line.text), until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
-        .filter((line) => line.keys.length && !asked.has(line.lineId))
-        .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
+    const { keep, carry } = await deps.locked("caius_winddown", () => closingLines(deps.store, date, targetDay, read));
     const targetWeek = isoWeekKey(utcDay(targetDay));
-    const carry = carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId));
     const noticed = [ ...keep, ...carry ];
     const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
     const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
     const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
     return reply(read.standing, { context: read.context, targetWeek, keepDate: targetDay, noticed }, question, null);
+}
+
+/**
+ * What the wind-down's `next` step offers for `targetDay`, which `caius_winddown_apply` reads again:
+ * the day's facts, the candidates and the Jira answer its follow-ups come from. A raised ask stays
+ * on offer; only the Follow up leaves it out (`unraised`). The caller holds the lock.
+ */
+export async function nextOffer(store: NoteStore, targetDay: string, now: Date, read: DayRead) {
+    const facts = await dayFacts(store, targetDay, now);
+    const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
+    return { facts, candidates, jira: unraised(read.inputs.jira, facts.raised) };
+}
+
+/**
+ * The lines the wind-down of `date` asks about, neither asked that day nor on the last workday:
+ * `keep`, a line in force today that lapses before `targetDay` and keeps a ticket open (Jira's own
+ * answer is not consulted, since `done` leaves out every key a Context line calls open), and `carry`,
+ * a line `targetDay` won't read. The caller holds the lock.
+ */
+export async function closingLines(store: NoteStore, date: string, targetDay: string, read: DayRead) {
+    const today = await gatherContext(store, date);
+    const asked = await askedAbout(store, date);
+    const keep = today.context
+        .filter((line) => line.until !== undefined && line.until < targetDay)
+        .map((line) => ({ kind: "keep" as const, line: line.text, lineId: lineIdOf(line.text), until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
+        .filter((line) => line.keys.length && !asked.has(line.lineId))
+        .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
+    return { keep, carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
 }
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";
@@ -498,7 +513,7 @@ const RECENT_WORKDAYS = 3;
  * week, or the target day's week when the week ends first. A sub-item goes with its listed parent.
  * Older overdue tasks are only counted, with the start of the oldest one's period.
  */
-async function stillOpen(store: NoteStore, date: string, targetDay: string) {
+export async function stillOpen(store: NoteStore, date: string, targetDay: string) {
     const docs = (await loadJournal(store)).docs;
     const week = isoWeekKey(utcDay(date));
     const targetWeek = isoWeekKey(utcDay(targetDay));
