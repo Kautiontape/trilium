@@ -95,7 +95,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "| `caius_winddown_apply` | Wind down's one write. |",
         "State capacity only as the step's `data.capacity.sentence` words it, as it is",
         "When the apply answers with `planday`, a morning Review of an older day closed it against today, and Plan my day's `catchup` and `inputs` steps have already run for today",
-        "Never ask whether to plan, and never call those steps again.",
+        "Never ask whether to plan or whether to write the brief, and never call those steps again.",
         "Never ask what else to do when the step returns no candidates",
         "say so when the day is half booked or more",
         "The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it",
@@ -132,6 +132,14 @@ it("opens a planning message with its first question, never a preamble of its ow
     for (const filler of [ "\"Here's everything in one message:\"", "\"Here's my one question for you:\"" ]) expect(openers, filler).toContain(filler);
     // The steps' own words open some questions; the ban never makes the agent reword them.
     expect(openers).toContain("A step's own words, such as the `open` question's \"Here's what's left\", are not a preamble: keep them as they are.");
+});
+
+it("writes the brief in the plan's first turn when there is nothing to ask, after a Review as after the bar", () => {
+    const sheet = sheetOnce();
+    expect(sheet).toContain("When no step has a question and `data.candidates` is empty, there is nothing to ask: send no message. Call `caius_plan_apply` at once with `said: \"\"` and the brief's prose, then reply as step 4 says.");
+    expect(sheet).toContain("With nothing to ask in `planday`, call `caius_plan_apply` at once, as Plan my day's step 2 says, and reply with the wind-down's `say`, then the plan's `say`, headline and top pick.");
+    expect(sheet).toContain("Never ask whether to plan or whether to write the brief");
+    expect(sheet).not.toContain("then take his reply to `caius_plan_apply` (its step 3). Never ask whether to plan");
 });
 
 /** The sheet's text, read while the skill is registered for that read alone. */
