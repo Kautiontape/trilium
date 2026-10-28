@@ -142,6 +142,13 @@ it("writes the brief in the plan's first turn when there is nothing to ask, afte
     expect(sheet).not.toContain("then take his reply to `caius_plan_apply` (its step 3). Never ask whether to plan");
 });
 
+it("says the evening is covered only when the step shows evening items, and never drops the evening question", () => {
+    const sheet = sheetOnce();
+    expect(sheet).toContain("`data.evening` is the evening: his evening tasks, the calendar's evening events and `suggestion`, the line the apply puts in Suggested while the evening has neither.");
+    expect(sheet).toContain("Say the evening is covered only when `data.evening` has a task or an event. With neither, name the suggestion in one clause; never say no evening ask is needed.");
+    expect(sheet).toContain("Ask every question a step's `question` holds: never fold one into a summary of what there is nothing to decide, such as \"no evening tasks to decide on\".");
+});
+
 /** The sheet's text, read while the skill is registered for that read alone. */
 function sheetOnce(): string {
     const unregister = registerCaiusSkill();

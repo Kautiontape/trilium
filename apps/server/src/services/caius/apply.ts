@@ -50,6 +50,7 @@ import {
     dayKey,
     type DayRead,
     EVENING_ID,
+    eveningEventTitles,
     drawnEvents,
     failedCalendar,
     focusOf,
@@ -265,7 +266,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
-        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEvents(read) }));
+        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEventTitles(read) }));
+        await guarded({ kind: "suggested" }, skipped, () => suggestEvening(store, date, now, offer.evening.suggestion, written, skipped));
         // A meeting he isn't taking leaves the Meetings block and the drawing written below.
         let taken = read;
         let headsUp = offer.headsUp;
@@ -527,7 +529,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
-        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
+        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEventTitles(read) }));
         await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, input.overlaps, written, skipped));
         if (!failedCalendar(read)) await recordFocus(store, targetDay, read);
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
@@ -1457,9 +1459,14 @@ type Candidate = ReturnType<typeof present>;
 /** The brief's prose as the agent writes it. */
 type Prose = NonNullable<PlanApplyInput["brief"]>;
 
-/** The titles of the day's timed calendar events that start at or after the end of work. */
-function eveningEvents(read: DayRead): string[] {
-    return read.inputs.calendar.filter((e) => !e.allDay && !e.declined && e.start >= read.rhythm.workEnd).map((e) => e.title);
+/**
+ * The plan's evening suggestion (`eveningOf`'s line) in the day's Suggested, when the evening still
+ * has no task once his answers are written: he can accept it or leave it.
+ */
+async function suggestEvening(store: NoteStore, date: string, now: Date, line: string | null, written: Written[], skipped: Skipped[]) {
+    if (!line || listOf(await readPlan(store, "day", date, now)).some((task) => task.evening)) return;
+    const [ result ] = await addTasks(store, [ { date, suggested: true, text: line } ], { now });
+    record(written, skipped, { kind: "suggested", text: line }, result);
 }
 
 /**

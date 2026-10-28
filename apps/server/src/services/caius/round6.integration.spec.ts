@@ -38,7 +38,7 @@ const tools = createCaiusTools(undefined, async () => ({ code: 3, label: "Overca
 
 const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li>"
     + "<li>The day runs to bedtime, and the evening is planned too. Bedtime: 23:00. Evening: something away from screens, a chore or a Recharge item.</li>"
-    + "<li>Location for the weather: 39.95, -75.17</li></ul>"
+    + "<li>Location for the weather: 39.95, -75.17</li><li>Capacity: 180–240 work minutes a day, and 45–60 minutes in the evening.</li></ul>"
     + "<h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
 
 function call(name: string, args: object): Promise<any> {
@@ -132,6 +132,98 @@ describe("a closed day's header", () => {
         expect(drawing()).toEqual(drawn);
         expect(header).toContain("ZAP-601 first, then ZAP-610 and ZAP-611.");
         for (const key of [ "ZAP-601", "ZAP-610", "ZAP-611" ]) expect(String(drawn)).toContain(key);
+        delete calendars[MON];
+    });
+});
+
+describe("the evening", () => {
+    const SUGGESTION = "Something away from screens, a chore or a Recharge item: because the evening has nothing planned (~45m)";
+    const suggestedOf = async (date: string) => (await call("caius_plan", { period: "day", date })).suggested.map((t: any) => t.text);
+
+    it("Wed 11 Nov: after a Review whose evening question went unsaid, the plan offers one Suggested evening item from the standing rule, once", async () => {
+        const MON = "2028-11-13";
+        const WED = "2028-11-15";
+        calendars[WED] = [ event("14:00", "15:00", "Design Sync") ];
+        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("n-dave", "Message Dave if he knows anyone who will hang lights as a small job"))}`);
+        at(`${WED}T09:45`);
+        // The round-6 calls: the three steps, then "carry it" with no evening answer.
+        for (const step of [ "open", "next", "context" ]) await call("caius_winddown", { date: MON, step });
+        const review = await call("caius_winddown_apply", { date: MON, said: "carry it" });
+        expect(review.skipped).toEqual([]);
+        const inputs = review.planday.inputs;
+        expect(inputs.question).toBeNull();
+        expect(inputs.data.candidates).toEqual([]);
+        expect(inputs.data.evening).toEqual({ tasks: [], events: [], suggestion: SUGGESTION });
+
+        const planned = await call("caius_plan_apply", { date: WED, said: "fine", asOffered: true, brief: { headline: "Message Dave, then Design Sync at 14:00.", acts: [
+            { range: "10:00-14:00", text: "Message Dave about the lights." }, { range: "14:00-15:00", text: "Design Sync with Jordan." }
+        ] } });
+        expect(planned.skipped).toEqual([]);
+        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "suggested", status: "written", text: SUGGESTION }) ]));
+        expect(planned.say).toContain("Something away from screens");
+        expect(await suggestedOf(WED)).toEqual([ SUGGESTION ]);
+
+        // A refresh doesn't offer it again, and the step says so.
+        at(`${WED}T11:05`);
+        expect((await call("caius_planday", { date: WED, step: "inputs" })).data.evening.suggestion).toBeNull();
+        await call("caius_plan_apply", { date: WED, said: "", brief: { headline: "Message Dave.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
+        expect(await suggestedOf(WED)).toEqual([ SUGGESTION ]);
+
+        // Accepted with no section, it goes under the evening's heading, not his work list.
+        const plan = await call("caius_plan", { period: "day", date: WED });
+        const [ item ] = plan.suggested;
+        await call("caius_accept", { items: [ { noteId: plan.noteId, listItemId: item.listItemId } ] });
+        expect(await sectionsOf(WED)).toEqual({
+            "☑️ Tasks": [ "Message Dave if he knows anyone who will hang lights as a small job" ],
+            Evening: [ "Something away from screens, a chore or a Recharge item" ]
+        });
+        delete calendars[WED];
+    });
+
+    it("Thu 5 Nov: the evening asked last night and ignored is offered one Suggested item; an evening event or task, or a dismissal, keeps it off", async () => {
+        const WED = "2029-01-17";
+        const THU = "2029-01-18";
+        await dayWith(WED, `<h2>☑️ Tasks</h2>${ul(li("t-dave", "Message Dave about the lights"), li("t-101", `${zap("ZAP-701", "Verify the export retry")} ~30m`))}`);
+        at(`${WED}T17:45`);
+        const next = await call("caius_winddown", { date: WED, step: "next" });
+        expect(next.question).toBe("Anything for the evening?");
+        const wound = await call("caius_winddown_apply", { date: WED, said: "101 is done", done: [ "701" ] });
+        expect(wound.skipped).toEqual([]);
+
+        at(`${THU}T09:30`);
+        const inputs = await call("caius_planday", { date: THU, step: "inputs" });
+        expect(inputs.question).toBeNull();
+        expect(inputs.data.evening).toEqual({ tasks: [], events: [], suggestion: SUGGESTION });
+        const planned = await call("caius_plan_apply", { date: THU, said: "", brief: { headline: "Message Dave.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
+        expect(planned.skipped).toEqual([]);
+        expect(await suggestedOf(THU)).toEqual([ SUGGESTION ]);
+
+        // Dismissed, it stays off the day.
+        const plan = await call("caius_plan", { period: "day", date: THU });
+        await call("caius_dismiss", { items: [ { noteId: plan.noteId, listItemId: plan.suggested[0].listItemId } ] });
+        expect((await call("caius_planday", { date: THU, step: "inputs" })).data.evening.suggestion).toBeNull();
+        await call("caius_plan_apply", { date: THU, said: "", brief: { headline: "Message Dave.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
+        expect(await suggestedOf(THU)).toEqual([]);
+    });
+
+    it("an evening with a calendar event, or a task he names in the reply, gets no suggestion", async () => {
+        const MON = "2029-02-05";
+        const TUE = "2029-02-06";
+        calendars[MON] = [ event("19:00", "20:30", "Climbing gym") ];
+        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("e-1", "Write the runbook ~30m"))}`);
+        at(`${MON}T09:40`);
+        const gym = await call("caius_planday", { date: MON, step: "inputs" });
+        expect(gym.data.evening).toEqual({ tasks: [], events: [ "Climbing gym" ], suggestion: null });
+        await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
+        expect(await suggestedOf(MON)).toEqual([]);
+
+        await dayWith(TUE, `<h2>☑️ Tasks</h2>${ul(li("e-2", "Write the release note ~30m"))}`);
+        at(`${TUE}T09:40`);
+        const asked = await call("caius_planday", { date: TUE, step: "inputs" });
+        expect(asked.question).toBe("Anything for the evening?");
+        await call("caius_plan_apply", { date: TUE, said: "evening laundry", evening: [ "Laundry" ], brief: { headline: "The release note.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
+        expect(await suggestedOf(TUE)).toEqual([]);
+        expect((await sectionsOf(TUE)).Evening).toEqual([ "Laundry" ]);
         delete calendars[MON];
     });
 });

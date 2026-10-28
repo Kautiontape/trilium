@@ -22,6 +22,7 @@ import {
   itemMarkup,
   inProseById,
   moveInMainList,
+  placeForwarded,
   placeInMainList,
   placeTask,
   setTaskState,
@@ -294,6 +295,12 @@ async function loadNote(api: NoteStore, noteId: string): Promise<{ note: StoreNo
 
 const validItem = (r: ItemRequest | AcceptRequest | MoveRequest) => !!r.noteId && !!r.listItemId;
 
+/**
+ * The reason a Suggested evening item gives, "X: because the evening has nothing planned (~45m)":
+ * accepting it without a section puts it under the evening's heading, not in his main list.
+ */
+export const EVENING_REASON = 'the evening has nothing planned';
+
 export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: PlanOptions = {}): Promise<Done<AcceptRequest>[]> {
   return eachSequentially(reqs, async (req) => {
     if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
@@ -312,7 +319,10 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     const taken = takeSuggested(html, req.listItemId);
     if (!taken.ok) return skip(req, taken.reason, taken.reason === 'not_suggested' ? 'only an item under Suggested can be accepted (already accepted?)' : undefined);
     const markup = asListTask(taken.markup);
-    const after = target ? placeTask(taken.html, markup, target, req.position) : placeInMainList(taken.html, markup);
+    // An evening suggestion stays in the evening: under any Evening or Recharge heading, else a new Evening one.
+    const after = target ? placeTask(taken.html, markup, target, req.position)
+      : taken.text.includes(`: because ${EVENING_REASON} (`) ? placeForwarded(taken.html, markup, 'Evening')
+        : placeInMainList(taken.html, markup);
     if (inProseById(after, req.listItemId)) return skip(req, 'prose_section', PROSE_DETAIL);
     if (opts.dryRun) {
       return { ...req, status: 'accepted', dryRun: true, listItemId: req.listItemId, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };

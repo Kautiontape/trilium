@@ -24,7 +24,7 @@ export type { SectionKind } from './trilium/sections.js';
 export { readPlan, buildPlanView, findPeriodNote, isoWeekKey, dismissedKeys, isPeriodKey, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './trilium/plan-read.js';
 export type { PlanView, PlanTask, PlanSection, Capacity, PeriodKind } from './trilium/plan-read.js';
 export { buildDoc } from './trilium/journal.js';
-export { addTasks, acceptTasks, dismissTasks, moveTasks, setStates } from './trilium/plan.js';
+export { addTasks, acceptTasks, dismissTasks, EVENING_REASON, moveTasks, setStates } from './trilium/plan.js';
 export type { AddRequest, AcceptRequest, ItemRequest, MoveRequest, PlanResult, PlanOptions, PlanSkip } from './trilium/plan.js';
 export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './trilium/keys.js';
 export { placeTask, setTaskState, takeSuggested } from './trilium/plan-html.js';

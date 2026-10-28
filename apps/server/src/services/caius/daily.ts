@@ -13,6 +13,7 @@ import {
     dayCandidates,
     dayCapacity,
     DEFAULT_ESTIMATE,
+    EVENING_REASON,
     findPeriodNote,
     formatHours,
     gatherContext,
@@ -300,7 +301,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             plannedAt, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, overlaps,
             capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x", (line) => line.lineId),
-            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
+            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, evening: offer.evening, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
             ...planFromOf(date, deps.now, read.rhythm.start)
         }, questions.length ? questions.join(" ") : null, "brief");
     }
@@ -387,8 +388,44 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     ];
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
-        overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID), offeredAsks: offeredAsks(fresh, candidates)
+        overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID), offeredAsks: offeredAsks(fresh, candidates),
+        evening: eveningOf(day, read)
     };
+}
+
+/**
+ * The day's evening as the steps show it: his evening tasks, the calendar's evening events and
+ * `suggestion`, the Suggested line the plan's apply writes while the evening has neither. The line
+ * is his standing note's evening rule ("something away from screens, a chore or a Recharge item"),
+ * sized by its evening minutes; it is null without a rule, or once it is in the day's Suggested or
+ * dismissed there.
+ */
+function eveningOf(day: Awaited<ReturnType<typeof dayFacts>>, read: DayRead) {
+    const tasks = listOf(day.plan).filter((task) => task.evening).map((task) => task.text);
+    const events = eveningEventTitles(read);
+    const rule = eveningRule(read.standing.markdown);
+    const line = rule ? `${rule.text}: because ${EVENING_REASON} (~${rule.minutes}m)` : null;
+    const taken = new Set([ ...day.plan.dismissed, ...day.plan.suggested.flatMap((task) => keysOf(task.text)) ]);
+    const suggestion = line && !tasks.length && !events.length && !keysOf(line).some((key) => taken.has(key)) ? line : null;
+    return { tasks, events, suggestion };
+}
+
+/** The titles of the day's timed calendar events that start at or after the end of work. */
+export function eveningEventTitles(read: DayRead): string[] {
+    return read.inputs.calendar.filter((e) => !e.allDay && !e.declined && e.start >= read.rhythm.workEnd).map((e) => e.title);
+}
+
+/**
+ * The standing note's evening rule, from the Rhythm line "Evening: something away from screens, a
+ * chore or a Recharge item.", with its first letter capitalized, and the evening's minutes from
+ * "45–60 minutes in the evening" (the lower figure), else the default estimate. Null without the rule.
+ */
+export function eveningRule(markdown: string | null): { text: string; minutes: number } | null {
+    const rhythm = sectionOf(markdown, "Rhythm") ?? "";
+    const rule = /\bEvening:\s*([^.\n]+)/i.exec(rhythm)?.[1]?.trim();
+    if (!rule) return null;
+    const minutes = /(\d+)\s*(?:[–-]\s*\d+\s*)?minutes in the evening/i.exec(rhythm)?.[1];
+    return { text: `${rule.charAt(0).toUpperCase()}${rule.slice(1)}`, minutes: minutes ? Number(minutes) : DEFAULT_ESTIMATE };
 }
 
 /**

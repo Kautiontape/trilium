@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptTasks, addTasks, dismissTasks, moveTasks, setStates } from './plan.js';
+import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, setStates } from './plan.js';
 import { parseSource, taskKeys, textHash } from './keys.js';
 import { readPlan } from './plan-read.js';
 import { fakeTrilium, li, periodNote, STATES, TEMPLATE, ul } from './helpers.js';
@@ -233,6 +233,20 @@ describe('acceptTasks', () => {
     expect(f.html.d!.startsWith('<h2>☑️ Tasks</h2><ul class="todo-list"><li data-list-item-id="es9">')).toBe(true);
     const plan = await readPlan(f.api, 'day', DAY, now);
     expect(plan.sections.map((s) => [s.name, s.tasks.map((t) => t.text)])).toEqual([['☑️ Tasks', ['ZAP-9 Fix it']], ['Evening', ['Laundry']]]);
+  });
+  it('without a section, puts an evening suggestion under the evening heading, made above Suggested when there is none', async () => {
+    const line = `Something away from screens, a chore or a Recharge item: because ${EVENING_REASON} (~45m)`;
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h3>Recharge</h3>' + ul(li('ev1', 'Read')) + '<h2>Suggested</h2>' + ul(li('es1', line));
+    const f = fakeTrilium(seed(day));
+    expect((await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base))[0]).toMatchObject({ status: 'accepted' });
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections.map((s) => [s.name, s.tasks.map((t) => [t.text, t.estMinutes])])).toEqual([
+      ['☑️ Tasks', [['One', null]]], ['Recharge', [['Read', null], ['Something away from screens, a chore or a Recharge item', 45]]],
+    ]);
+    expect(plan.capacity.totalMinutes).toBe(30);
+    const g = fakeTrilium(seed('<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(li('es1', line), li('es2', 'Maybe B'))));
+    await acceptTasks(g.api, [{ noteId: 'd', listItemId: 'es1' }], base);
+    expect(g.html.d).toMatch(/<h2>☑️ Tasks<\/h2><ul[^>]*><li data-list-item-id="e1">.*<h\d>Evening<\/h\d><ul[^>]*><li data-list-item-id="es1">.*<h2>Suggested<\/h2>/s);
   });
   it('turns an accepted suggestion into a plain task: its key link and title, then its estimate as a token', async () => {
     const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-111">ZAP-111</a>';
