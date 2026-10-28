@@ -443,13 +443,12 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
         // A day keeps open while a hold given on it remains, or one given elsewhere covers an item that lives on it.
         const heldHere = allHeld.some((id) => open.items.some((item) => item.listItemId === id && item.period === date));
-        if (!held.length && !heldHere && !skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
+        const closed = !held.length && !heldHere && !skipped.some((entry) => entry.kind === "done" || entry.kind === "fate");
+        if (closed) {
             const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
             if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
-            // A closed day needs no record for a re-run's words any more.
-            const fresh = await findPeriodNote(store, "day", date);
-            for (const a of fresh?.attributes ?? []) if (a.type === "label" && a.name === SETTLED_LABEL) removeLabel(fresh?.noteId ?? "", SETTLED_LABEL, a.value);
         }
+        await pruneSettled(store, date, dayKey(now), closed);
         // The closed day is drawn as it was worked, its done tasks included; the next workday as it stands.
         for (const [ day, { read: dayRead, fetched } ] of briefed) {
             if (failedCalendar(dayRead)) {
@@ -1066,6 +1065,20 @@ async function eveningHeading(store: NoteStore, date: string): Promise<string> {
 }
 
 const EVENING_NAMES = new Set([ "evening", "recharge" ]);
+
+/**
+ * Takes `#caiusSettled` off every day note before `date` when `date` is closed, and off every day
+ * note older than the 3 workdays before `today` in any case. A re-run of `date` reads only its own
+ * labels, so an earlier day's are needed only until a later day is closed.
+ */
+async function pruneSettled(store: NoteStore, date: string, today: string, closed: boolean) {
+    const oldest = closingPeriods(today).recent.at(-1) ?? today;
+    for (const note of await store.search(`#${SETTLED_LABEL}`)) {
+        const day = label(note, PERIODS.day.label);
+        if (!day || !(day < oldest || (closed && day < date))) continue;
+        for (const a of note.attributes) if (a.type === "label" && a.name === SETTLED_LABEL) removeLabel(note.noteId, SETTLED_LABEL, a.value);
+    }
+}
 
 /** Adds each value of `name` not on the day note of `date` yet, creating the note if missing. */
 async function labelDay(store: NoteStore, date: string, name: string, values: string[]) {

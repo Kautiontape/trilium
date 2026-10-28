@@ -1107,7 +1107,7 @@ describe("fix round 3: hold and settled labels are cleaned up", () => {
         expect(await labelsOf(DAY, "caiusHeldGroup")).toEqual([]);
     });
 
-    it("F4: a day wound down with no hold left keeps no #caiusSettled labels", async () => {
+    it("F4, G1: a day keeps its #caiusSettled labels through its own wind-down; the next workday's wind-down takes them off", async () => {
         const DAY = "2027-12-01";
         await wednesday(DAY);
         at(`${DAY}T17:45`);
@@ -1116,7 +1116,56 @@ describe("fix round 3: hold and settled labels are cleaned up", () => {
         expect(await labelsOf(DAY, "caiusSettled")).not.toEqual([]);
         await call("caius_winddown_apply", { date: DAY, done: [ "111", "the bag" ] });
         expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+        expect(await labelsOf(DAY, "caiusSettled")).not.toEqual([]);
+        at("2027-12-02T17:45");
+        const thursday = await call("caius_winddown_apply", { date: "2027-12-02", done: [ "ZAP-101" ], fates: [ { listItemId: "Dave", drop: "asked in person" } ] });
+        expect(thursday.skipped).toEqual([]);
+        expect(await labelsOf("2027-12-02", "caiusWoundDown")).toHaveLength(1);
+        expect(await labelsOf("2027-12-02", "caiusSettled")).not.toEqual([]);
         expect(await labelsOf(DAY, "caiusSettled")).toEqual([]);
+    });
+
+    it("G1: #caiusSettled labels older than 3 workdays are taken off by a wind-down that doesn't close its day", async () => {
+        const DAY = "2028-02-14";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "111" ] });
+        expect(await labelsOf(DAY, "caiusSettled")).not.toEqual([]);
+        await cls.init(async () => {
+            const later = await store.calendarDay("2028-02-21");
+            await store.putContent(later.noteId, `<h2>☑️ Tasks</h2>${ul(li("ag-1", "Renew the parking permit"))}`);
+        });
+        at("2028-02-21T17:45");
+        const open = await call("caius_winddown_apply", { date: "2028-02-21", fates: [ { listItemId: "ag-1", to: "2099-01-01" } ] });
+        expect(open.skipped).toEqual([ expect.objectContaining({ reason: "not_a_listed_day" }) ]);
+        expect(await labelsOf("2028-02-21", "caiusWoundDown")).toEqual([]);
+        expect(await labelsOf(DAY, "caiusSettled")).toEqual([]);
+    });
+});
+
+describe("fix round 4: a follow-up by words after a complete wind-down", () => {
+    it("G1 (N3): 'drop Dave' drops Thursday's copy of Monday's Dave, and 'the export' asks which instead of ticking 101", async () => {
+        const MO = "2028-02-07", WE = "2028-02-09", TH = "2028-02-10";
+        await cls.init(async () => {
+            const monday = await store.calendarDay(MO);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MO}-111`, `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`), li(`${MO}-dave`, "Message Dave about the lights"))}`);
+            const wednesday = await store.calendarDay(WE);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${WE}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`), li(`${WE}-bag`, "Pack the climbing gym bag"))}`);
+        });
+        at(`${WE}T17:45`);
+        const first = await call("caius_winddown_apply", { date: WE, done: [ "the invoice export" ] });
+        expect(first.say).toMatch(/^ZAP-111 is done/);
+        expect(await labelsOf(WE, "caiusWoundDown")).toHaveLength(1);
+
+        const second = await call("caius_winddown_apply", { date: WE, done: [ "the invoice export" ], fates: [ { listItemId: "Dave", drop: "not needed" } ] });
+        expect(second.say).toBe("ZAP-111 was already done and Message Dave about the lights is dropped.");
+        expect(await tasksOf(TH)).toContainEqual({ text: "Message Dave about the lights _not needed_", state: "cancelled" });
+
+        const third = await call("caius_winddown_apply", { date: WE, done: [ "the export" ] });
+        expect(third.say).toMatch(/Which export: ZAP-111 or ZAP-101\?$/);
+        expect(third.written.filter((entry: any) => entry.kind === "done")).toEqual([]);
+        expect((await tasksOf(TH)).find((task: any) => task.text.startsWith("ZAP-101"))?.state).toBe("open");
+        await clearHolds(WE);
     });
 });
 
