@@ -582,3 +582,19 @@ describe("done in Jira", () => {
         expect(answer.data.items.filter((item: any) => item.group === "today").map((item: any) => [ item.listItemId, item.jiraDone ?? false ])).toEqual([ [ "j1", true ], [ "j2", false ] ]);
     });
 });
+
+describe("accepting past an Evening list", () => {
+    it("Thu: with only laundry under Evening, accepting ZAP-9 lands under Tasks and counts as work", async () => {
+        const day = "2026-12-03";
+        const noteId = await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2><h3>Evening</h3>${ul(li("l1", "Laundry ~45m"))}<h3>Suggested</h3>${ul(
+            li("z9", `Get ${jiraLink("ZAP-9")} Fix it done: because it waits (~45m)`))}`));
+        calendars[day] = [];
+        at(`${day}T09:30`);
+        expect((await call("caius_accept", { items: [ { noteId, listItemId: "z9" } ] })).results[0]).toMatchObject({ status: "accepted" });
+        const plan = await call("caius_plan", { period: "day", date: day });
+        expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.listItemId) ])).toEqual([ [ "☑️ Tasks", [ "z9" ] ], [ "Evening", [ "l1" ] ] ]);
+        const brief = await call("caius_planday", { date: day, step: "brief" });
+        expect(brief.data.list.map((task: any) => [ task.label, task.evening ])).toEqual([ [ "ZAP-9", false ], [ "Laundry", true ] ]);
+        expect(brief.data.header.work.find((block: any) => block.label === "ZAP-9")).toMatchObject({ start: "10:00", end: "10:45" });
+    });
+});

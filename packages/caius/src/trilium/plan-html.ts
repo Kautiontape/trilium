@@ -5,7 +5,7 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { isSuggestedName, normName, ProseTracker } from './sections.js';
+import { isSuggestedName, normName, proseKind, ProseTracker } from './sections.js';
 import {
   apply,
   checkboxEdit,
@@ -205,6 +205,27 @@ export function placeForwarded(html: string, item: string, section: string | nul
   const suggested = top.find((e) => isHeading(e) && isSuggestedName(e.text));
   const block = NEW_TASKS_SECTION + newList(item);
   return suggested ? apply(html, [insertAt(suggested.range[0], block)]) : html + block;
+}
+
+/** Headings of the evening, whose tasks aren't work, so an accepted item never lands under one unasked. */
+const EVENING_NAMES = new Set(['evening', 'recharge']);
+
+/**
+ * Where an accepted item goes when no section is named: the end of his main list, the first task
+ * list right under the main Tasks heading (the first `h2` that is not Suggested, Meetings, Context
+ * or an evening heading), made under that heading when it has none. Without such a heading, where
+ * `forward` would put it.
+ */
+export function placeInMainList(html: string, item: string): string {
+  const root = parse(html, { comment: true });
+  const top = elements(root);
+  const i = top.findIndex((e) => e.tagName === 'H2' && !isSuggestedName(e.text) && !proseKind(e.text) && !EVENING_NAMES.has(normName(e.text)));
+  const heading = top[i];
+  if (!heading) return placeForwarded(html, item, null);
+  const found = scanSection(top, i);
+  if (found.list) return apply(html, [insertInList(html, found.list, item)]);
+  if (found.placeholder) return apply(html, [{ start: found.placeholder.range[0], end: found.placeholder.range[1], text: newList(item) }]);
+  return apply(html, [insertAt(heading.range[1], newList(item))]);
 }
 
 export type TakeProblem = 'not_found' | 'not_live' | 'not_suggested';

@@ -197,6 +197,14 @@ describe('acceptTasks', () => {
     expect([...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1])).toEqual(['e1', 'e2', 'es2', 'es1']);
     expect(f.html.d!.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks', '<h2>Suggested']);
   });
+  it('without a section, skips an Evening list and goes straight under the Tasks heading, creating its list', async () => {
+    const day = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es9', 'Get ZAP-9 Fix it done: because x (~45m)'));
+    const f = fakeTrilium(seed(day));
+    expect((await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es9' }], base))[0]).toMatchObject({ status: 'accepted' });
+    expect(f.html.d!.startsWith('<h2>☑️ Tasks</h2><ul class="todo-list"><li data-list-item-id="es9">')).toBe(true);
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections.map((s) => [s.name, s.tasks.map((t) => t.text)])).toEqual([['☑️ Tasks', ['ZAP-9 Fix it']], ['Evening', ['Laundry']]]);
+  });
   it('turns an accepted suggestion into a plain task: its key link and title, then its estimate as a token', async () => {
     const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-111">ZAP-111</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(

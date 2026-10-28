@@ -21,7 +21,7 @@ import {
   inspectSuggested,
   itemMarkup,
   inProseById,
-  placeForwarded,
+  placeInMainList,
   placeTask,
   setTaskState,
   suggestedItems,
@@ -290,7 +290,7 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     if (given > 1) return skip(req, 'bad_request', 'give at most one of section, critical');
     if (req.position !== undefined && (!Number.isInteger(req.position) || req.position < 1)) return skip(req, 'bad_request', 'position must be 1 or more');
     if (req.position !== undefined && !given) return skip(req, 'bad_request', 'position needs a section or critical');
-    // With neither, the item joins the end of his main list, where `forward` would put it.
+    // With neither, the item joins the end of his main list (`placeInMainList`).
     const target: Target | null = req.critical ? { kind: 'critical' } : req.section !== undefined ? { kind: 'section', name: req.section.trim() } : null;
     if (target?.kind === 'section' && !target.name) return skip(req, 'bad_request', 'section name is empty');
     if (target && isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
@@ -301,7 +301,7 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     const taken = takeSuggested(html, req.listItemId);
     if (!taken.ok) return skip(req, taken.reason, taken.reason === 'not_suggested' ? 'only an item under Suggested can be accepted (already accepted?)' : undefined);
     const markup = asListTask(taken.markup);
-    const after = target ? placeTask(taken.html, markup, target, req.position) : placeForwarded(taken.html, markup, null);
+    const after = target ? placeTask(taken.html, markup, target, req.position) : placeInMainList(taken.html, markup);
     if (inProseById(after, req.listItemId)) return skip(req, 'prose_section', PROSE_DETAIL);
     if (opts.dryRun) {
       return { ...req, status: 'accepted', dryRun: true, listItemId: req.listItemId, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };
