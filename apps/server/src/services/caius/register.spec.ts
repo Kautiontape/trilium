@@ -60,6 +60,8 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
         "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
+        "Name each item in an answer by its `ref` from the step data (`o1`, `c1`, `l1`, `x1`, `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
+        "A ref holds only for the reply it came in; after an apply, name items by his words.",
         "the heavy-day move question (if any)",
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
         "and the heavy-day move as suggested",
@@ -92,7 +94,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it",
         "Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral",
         "Use `move` only when he asks for an order",
-        "On an `edited` skip, run the same apply call once more with the same answers",
+        "On an `edited` skip, run the same apply call once more with the same answers, each item named by his words",
         "If a Caius tool fails, say so in one clause and stop that item.",
         "Never run Plan my day for a future day."
     ]) expect(sheet, rule).toContain(rule);
@@ -104,7 +106,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
     ]) expect(openers, name).not.toMatch(new RegExp(`${name}(?![a-z_])`));
     expect(openers).not.toContain("generic note tools");
-    for (const old of [ "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
+    for (const old of [ "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
     }
     expect(sheet).not.toMatch(/Shawn(?!\")/);
