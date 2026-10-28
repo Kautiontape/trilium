@@ -29,9 +29,15 @@ export async function loadIncludedNote(noteId: string, $el: JQuery<HTMLElement>,
     });
 
     if (isExpandable) {
+        // A box rendered again stays open or closed as it was.
+        const $oldWrapper = isWrapper ? $el : $el.children('.include-note-wrapper');
+        const wasExpanded = $oldWrapper.children('.include-note-title-row').children('.include-note-toggle').attr('aria-expanded') === 'true';
+
         // Create expandable structure with toggle
         const $titleRow = $('<div class="include-note-title-row">');
-        const $toggle = $('<button class="include-note-toggle bx bx-chevron-right" aria-expanded="false">');
+        const $toggle = $('<button class="include-note-toggle bx bx-chevron-right">')
+            .attr('aria-expanded', String(wasExpanded))
+            .toggleClass('expanded', wasExpanded);
         const $title = $('<h4 class="include-note-title">').append($link);
 
         $titleRow.append($toggle, $title);
@@ -40,7 +46,10 @@ export async function loadIncludedNote(noteId: string, $el: JQuery<HTMLElement>,
         // The include widget itself is the first level of inclusion, so the included note's own
         // includes are rendered as reference links rather than expanded (see includesAsReferenceLinks).
         const { $renderedContent, type } = await content_renderer.getRenderedContent(note, { interactive: true, includesAsReferenceLinks: true, mediaEnvironment: "embedded" });
-        const $content = $(`<div class="include-note-content type-${type}" style="display: none;">`).append($renderedContent);
+        const $content = $(`<div class="include-note-content type-${type}">`).append($renderedContent);
+        if (!wasExpanded) {
+            $content.hide();
+        }
         $wrapper.append($content);
 
         // Add toggle functionality
@@ -94,6 +103,11 @@ export function refreshChangedIncludes(container: HTMLElement, loadResults: Load
     for (const section of container.querySelectorAll<HTMLElement>("section.include-note[data-note-id]")) {
         const noteId = section.dataset.noteId;
         if (!noteId || !(loadResults.isNoteContentReloaded(noteId) || attachmentOwners.has(noteId))) {
+            continue;
+        }
+        // An include inside an included note's content is rebuilt with that note's render.
+        const outerContent = section.parentElement?.closest(".include-note-content");
+        if (outerContent && container.contains(outerContent)) {
             continue;
         }
 
