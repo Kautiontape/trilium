@@ -28,6 +28,8 @@ import {
     type NoteStore,
     openTasks,
     overlapPairs,
+    PERIODS,
+    periodSpan,
     type PlanTask,
     type PlanView,
     readPlan,
@@ -74,18 +76,18 @@ const EVENING_SECTIONS = new Set([ "evening", "recharge" ]);
 
 export async function windDown(deps: StepDeps, { date, step, refresh }: { date: string; step: WindDownStep; refresh?: boolean }) {
     const targetDay = dayKey(nextWorkday(localDay(date)));
-    const reply = (standing: Standing, data: object, question: string | null, next: WindDownStep | null) => ({
+    const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: WindDownStep | null) => fitted({
         step, date, targetDay, targetDayName: weekdayName(targetDay), data, question, next,
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
 
     if (step === "open") {
-        const { standing, items } = await deps.locked("caius_winddown", async () => ({
+        const { standing, open } = await deps.locked("caius_winddown", async () => ({
             standing: await deps.standing(),
-            items: await stillOpen(deps.store, date, targetDay)
+            open: await stillOpen(deps.store, date, targetDay)
         }));
-        const question = items.length ? t("caius.daily.open", { day: weekdayName(targetDay) }) : null;
-        return reply(standing, { items, ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        const question = open.items.length ? t("caius.daily.open", { day: weekdayName(targetDay) }) : null;
+        return reply(standing, { ...open, ...(open.items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
     }
 
     const read = await deps.dayRead(targetDay, refresh);
@@ -143,7 +145,7 @@ const HEAVY_RATIO = 0.6;
 const LABEL_LENGTH = 24;
 
 export async function planDay(deps: StepDeps, { date, step, refresh }: { date: string; step: PlanDayStep; refresh?: boolean }) {
-    const reply = (standing: Standing, data: object, question: string | null, next: PlanDayStep | null) => ({
+    const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: PlanDayStep | null) => fitted({
         step, date, data, question, next,
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
@@ -257,6 +259,35 @@ function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEnt
         .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
 }
 
+/**
+ * The longest step reply, as JSON. The sidebar agent's CLI keeps a larger tool result in a file it
+ * can't read back, which broke every wind-down in T13A.
+ */
+export const MAX_REPLY_CHARS = 20_000;
+
+/**
+ * `reply` with its longest `data` lists cut from the end until its JSON is at most
+ * `MAX_REPLY_CHARS`, and `data.omitted` counting what each list lost.
+ */
+export function fitted<R extends { data: Record<string, unknown> }>(reply: R): R {
+    let size = JSON.stringify(reply).length;
+    if (size <= MAX_REPLY_CHARS) return reply;
+    const data: Record<string, unknown> = { ...reply.data };
+    const omitted: Record<string, number> = {};
+    while (size > MAX_REPLY_CHARS) {
+        const [ field, list ] = Object.entries(data)
+            .filter((entry): entry is [ string, unknown[] ] => Array.isArray(entry[1]) && entry[1].length > 0)
+            .sort((a, b) => JSON.stringify(b[1]).length - JSON.stringify(a[1]).length)[0] ?? [];
+        if (!field || !list) break;
+        const cut = Math.max(1, Math.ceil(list.length * (size - MAX_REPLY_CHARS + 100) / JSON.stringify(list).length));
+        data[field] = list.slice(0, list.length - cut);
+        omitted[field] = (omitted[field] ?? 0) + Math.min(cut, list.length);
+        data.omitted = omitted;
+        size = JSON.stringify({ ...reply, data }).length;
+    }
+    return { ...reply, data };
+}
+
 /** Whether the day's calendar could not be read: an error that is not a warning. */
 function failedCalendar(read: DayRead): boolean {
     return read.inputs.errors.some((e) => e.source === "calendar" && !isInputWarning(e.error));
@@ -293,27 +324,52 @@ function localMoment(stamp: string): Date | undefined {
     return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] ?? 0)) : undefined;
 }
 
+/** Workdays before the closed day whose leftovers the wind-down lists one by one. */
+const RECENT_WORKDAYS = 3;
+
 /**
- * The live tasks the wind-down of `date` closes: those in its day note, the overdue ones and those
- * in its ISO week note, each with its proposed fate: the target day for the first two, and for a
- * week task its week, or the target day's week when the week ends first. A sub-item goes with its
- * listed parent.
+ * The live tasks the wind-down of `date` closes, each with its proposed fate: those in its day note
+ * (`today`), in the notes of the last `RECENT_WORKDAYS` workdays (`recent`) and in its ISO week
+ * note (`week`), in that order. The target day is the fate of the first two; a week task's is its
+ * week, or the target day's week when the week ends first. A sub-item goes with its listed parent.
+ * Older overdue tasks are only counted, with the start of the oldest one's period.
  */
 async function stillOpen(store: NoteStore, date: string, targetDay: string) {
     const docs = (await loadJournal(store)).docs;
     const week = isoWeekKey(utcDay(date));
     const targetWeek = isoWeekKey(utcDay(targetDay));
+    const recent = new Set<string>();
+    for (let at = localDay(date), i = 0; i < RECENT_WORKDAYS; i++) {
+        at = lastWorkday(at);
+        recent.add(dayKey(at));
+    }
     const tasks = openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, noon(date)));
-    const group = (task: (typeof tasks)[number]) => task.period === date ? "today" : task.horizon === "overdue" ? "overdue" : task.period === week ? "week" : null;
-    const listed = tasks.filter((task) => group(task) !== null);
-    const ids = new Set(listed.map((task) => `${task.noteId}/${task.listItemId}`));
-    return listed
-        .filter((task) => !task.parentListItemId || !ids.has(`${task.noteId}/${task.parentListItemId}`))
+    const group = (task: (typeof tasks)[number]) => task.period === date ? "today"
+        : recent.has(task.period) ? "recent"
+            : task.period === week ? "week"
+                : task.horizon === "overdue" ? "older" : null;
+    const grouped = tasks.filter((task) => group(task) !== null);
+    const ids = new Set(grouped.map((task) => `${task.noteId}/${task.listItemId}`));
+    const top = grouped.filter((task) => !task.parentListItemId || !ids.has(`${task.noteId}/${task.parentListItemId}`));
+    const older = top.filter((task) => group(task) === "older");
+    const items = top
+        .filter((task) => group(task) !== "older")
+        .sort((a, b) => GROUPS.indexOf(group(a) ?? "") - GROUPS.indexOf(group(b) ?? ""))
         .map((task) => ({
             group: group(task), noteId: task.noteId, listItemId: task.listItemId, text: task.text, period: task.period,
             section: task.section, critical: task.critical,
             fate: group(task) !== "week" ? { forward: targetDay } : week === targetWeek ? { stay: week } : { forward: targetWeek }
         }));
+    const oldestDate = older.map((task) => periodStart(task.period)).sort()[0] ?? null;
+    return { items, olderCount: older.length, oldestDate };
+}
+
+const GROUPS = [ "today", "recent", "week" ];
+
+/** The first day of a day, ISO week or month key. */
+function periodStart(key: string): string {
+    const kind = PERIODS.day.pattern.test(key) ? "day" : PERIODS.week.pattern.test(key) ? "week" : "month";
+    return periodSpan(kind, key).start;
 }
 
 /**

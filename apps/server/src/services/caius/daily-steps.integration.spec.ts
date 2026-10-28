@@ -128,7 +128,7 @@ afterAll(() => {
 });
 
 describe("caius_winddown", () => {
-    it("open: lists today's leftovers, what slipped and the week's items for Friday, with fates on Monday and in next week's note", async () => {
+    it("open: lists today's leftovers, the last workdays' and the week's items for Friday, with fates on Monday and in next week's note", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "open" });
         expect(answer).toMatchObject({ step: "open", date: FRIDAY, targetDay: MONDAY, next: "next" });
         expect(answer.question).toBe("These are still open: today's leftovers and what's slipped. Which are actually done? Everything else goes to Monday unless you say otherwise.");
@@ -136,7 +136,7 @@ describe("caius_winddown", () => {
         expect(items).toEqual(expect.arrayContaining([
             [ "today", "f1", { forward: MONDAY } ],
             [ "today", "f3", { forward: MONDAY } ],
-            [ "overdue", "o1", { forward: MONDAY } ],
+            [ "recent", "o1", { forward: MONDAY } ],
             [ "week", "w1", { forward: "2026-W46" } ]
         ]));
         // The sub-item goes with its parent, and done tasks are left out.

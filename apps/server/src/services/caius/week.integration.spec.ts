@@ -148,3 +148,28 @@ describe("work he finished never comes back", () => {
         expect(sources(await call("caius_planday", { date: "2026-11-17", step: "inputs" }))).toContain("ZAP-101");
     });
 });
+
+describe("a wind-down that fits on one screen", () => {
+    it("Wed 17:45: open lists today, the last three workdays and the week, and counts the 189 older overdue tasks", async () => {
+        await cls.init(async () => {
+            for (let day = 1; day <= 21; day++) {
+                const date = `2026-10-${String(day).padStart(2, "0")}`;
+                await dayNote(date, `<h3>Work</h3>${ul(...Array.from({ length: 9 }, (_, i) =>
+                    li(`old${day}-${i}`, `Old overdue task ${day}.${i}: follow up on the vendor export and the long tail of the migration ~30m`)))}`);
+            }
+            await dayNote("2026-10-30", `<h3>Work</h3>${ul(li("f30", "Friday leftover ~30m"))}`);
+            notes.wed = await dayNote(WED, `<h3>Work</h3>${ul(li("w1", "Wednesday thing ~30m"))}`);
+        });
+        at(`${WED}T17:45`);
+        const answer = await call("caius_winddown", { date: WED, step: "open" });
+        const items = answer.data.items.map((item: any) => [ item.group, item.text ]);
+        expect(items).toEqual([
+            [ "today", "Wednesday thing" ],
+            [ "recent", "Friday leftover" ],
+            [ "recent", expect.stringContaining("Confirm the staging bucket name") ],
+            [ "week", expect.stringContaining("Review the import mapper change") ]
+        ]);
+        expect(answer.data).toMatchObject({ olderCount: 189, oldestDate: "2026-10-01" });
+        expect(JSON.stringify(answer).length).toBeLessThan(20_000);
+    });
+});
