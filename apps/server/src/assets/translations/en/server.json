@@ -636,7 +636,8 @@
       "list_and": "{{- head}} and {{- last}}",
       "list_more": "{{- head}} …and {{count}} more",
       "day_label": "{{- weekday}} {{day}} {{- month}}",
-      "week_label": "the week of {{- monday}}"
+      "week_label": "the week of {{- monday}}",
+      "month_label": "{{- month}} {{year}}"
     },
     "short": {
       "weekdays": {

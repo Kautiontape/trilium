@@ -119,12 +119,12 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         await labelDay(store, date, ASKED_LABEL, [
             ...offer.carry.map((line) => line.lineId), ...offer.overlaps.map((pair) => pair.overlapId), ...(offer.forwardSuggestion ? [ HEAVY_ID ] : [])
         ]);
-        // A forward may name only a task the steps showed, and only a day or week they listed.
+        // A forward may name only a task the steps showed, and only a day, week or month they listed.
         const shown = new Set([
             offer.forwardSuggestion?.listItemId, ...offer.candidates.map((c) => c.listItemId), ...(await catchupOf(store, date, now)).tasks.map((t) => t.listItemId)
         ].filter((id): id is string => !!id));
         const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
-        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week) ]);
+        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
 
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
@@ -224,10 +224,10 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         ].map((candidate) => [ candidate.candidateId, candidate ]));
 
         const states = await loadStateSymbols(store);
-        // An answer may name only an item the open step showed, and only a day or week it listed.
+        // An answer may name only an item the open step showed, and only a day, week or month it listed.
         const shownItems = new Set(open.items.map((item) => item.listItemId).filter((id): id is string => !!id));
         const listed = namedDays(date, targetDay);
-        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week) ]);
+        const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
         await guarded({ kind: "done" }, skipped, async () => { for (const listItemId of input.done) {
@@ -332,7 +332,7 @@ async function unreadableDay(store: NoteStore, dates: string[]) {
     }
     return null;
 }
-const NOT_LISTED = "Name a day from the step's data.days or a week from data.weeks";
+const NOT_LISTED = "Name a day from the step's data.days, a week from data.weeks or a month from data.months";
 
 /**
  * The day note's evening heading, Evening or Recharge with or without an emoji, given a

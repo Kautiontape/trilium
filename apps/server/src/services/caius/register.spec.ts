@@ -59,7 +59,7 @@ it("offers the caius skill only while it is registered, and names every tool the
     for (const rule of [
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
-        "Map a day he names to one of `data.days` (or a week to `data.weeks`); never compute a date.",
+        "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
         "the heavy-day move question (if any)",
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
         "and the heavy-day move as suggested",

@@ -171,7 +171,7 @@ const planApply = z.object({
     forward: z.array(z.object({
         listItemId: z.string().min(1).describe("A task's listItemId from the step data"),
         to: z.string().refine((to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to), "Give a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
-    })).optional().describe("Tasks the user moved, such as the heavy day's suggestion"),
+    })).optional().describe("Tasks the user moved, such as the heavy day's suggestion, each to one of the inputs step's data.days, data.weeks or data.months"),
     brief: z.object({
         headline: z.string().trim().min(1).describe("One sentence of 14 words or fewer that names the work"),
         acts: z.array(z.object({ range: z.string(), text: z.string() })).length(3).describe("The day in three acts, the third the evening"),
@@ -186,7 +186,7 @@ const windDownApply = z.object({
     fates: z.array(z.object({
         listItemId: z.string().min(1).describe("An open item's listItemId from the open step"),
         to: z.string().refine((to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to), "Give a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM").optional()
-            .describe("Where the user sends it: a day, an ISO week (\"later this week\") or a month"),
+            .describe("Where the user sends it: one of the open step's data.days, data.weeks (\"later this week\") or data.months"),
         drop: z.string().trim().min(1).optional().describe("Only when the user says drop, cancel or not doing: the user's reason")
     }).refine((fate) => (fate.to === undefined) !== (fate.drop === undefined), "Give exactly one of to or drop")).default([])
         .describe("Fates the user named. Every open item not named keeps the fate the open step proposed"),

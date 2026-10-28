@@ -179,17 +179,21 @@ export function windDownTarget(date: string, now: Date): string {
 }
 
 /**
- * The days and weeks he can name in an answer, so a day he says maps to a date without the agent
- * working one out: the workdays from `first` to the end of the week after `date`'s, and those two
- * ISO weeks. Each gets its display string from `withDateLabels`.
+ * The days, weeks and months he can name in an answer, so a day he says maps to a date without the
+ * agent working one out: the workdays from `first` to the end of the week after `date`'s, those two
+ * ISO weeks, and `date`'s month and the next two. Each gets its display string from `withDateLabels`.
  */
-export function namedDays(date: string, first: string): { days: { date: string }[]; weeks: { week: string }[] } {
+export function namedDays(date: string, first: string): { days: { date: string }[]; weeks: { week: string }[]; months: { month: string }[] } {
     const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(date))).start);
     const end = dayKey(new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 11));
     const days: { date: string }[] = [];
     for (let at = localDay(first); dayKey(at) <= end; at = nextWorkday(at)) days.push({ date: dayKey(at) });
     const weeks = [ 0, 7 ].map((offset) => ({ week: isoWeekKey(new Date(monday.getTime() + offset * 86_400_000)) }));
-    return { days, weeks };
+    const months = [ 0, 1, 2 ].map((offset) => {
+        const at = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + offset, 1));
+        return { month: at.toISOString().slice(0, 7) };
+    });
+    return { days, weeks, months };
 }
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";
@@ -727,8 +731,8 @@ export function lineIdOf(text: string): string {
 }
 
 /**
- * `value` with a `<field>Label` beside every field that holds a day (`Thu 5 Nov`) or an ISO week
- * (`the week of Mon 2 Nov`), at any depth, so the agent never works out a weekday itself.
+ * `value` with a `<field>Label` beside every field that holds a day (`Thu 5 Nov`), an ISO week
+ * (`the week of Mon 2 Nov`) or a month (`April 2027`), at any depth, so the agent never works out a weekday itself.
  */
 export function withDateLabels<T>(value: T): T {
     if (Array.isArray(value)) return value.map((item) => withDateLabels(item)) as T;
@@ -742,7 +746,7 @@ export function withDateLabels<T>(value: T): T {
     return out as T;
 }
 
-/** A day as `Thu 5 Nov`, an ISO week as `the week of Mon 2 Nov`, anything else null. */
+/** A day as `Thu 5 Nov`, an ISO week as `the week of Mon 2 Nov`, a month as `April 2027`, anything else null. */
 export function dateLabel(key: string): string | null {
     if (PERIODS.day.pattern.test(key)) {
         const at = utcDay(key);
@@ -752,7 +756,10 @@ export function dateLabel(key: string): string | null {
             month: t(`caius.short.months.${MONTHS[at.getUTCMonth()]}`)
         });
     }
-    return PERIODS.week.pattern.test(key) ? t("caius.daily.week_label", { monday: dateLabel(periodSpan("week", key).start) }) : null;
+    if (PERIODS.week.pattern.test(key)) return t("caius.daily.week_label", { monday: dateLabel(periodSpan("week", key).start) });
+    return PERIODS.month.pattern.test(key)
+        ? t("caius.daily.month_label", { month: t(`months.${MONTHS[Number(key.slice(5, 7)) - 1]}`), year: key.slice(0, 4) })
+        : null;
 }
 
 const MONTHS = [ "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december" ];

@@ -631,3 +631,22 @@ describe("a planned day ends the catch-up walk", () => {
         expect((await call("caius_planday", { date: "2027-03-30", step: "catchup" })).data.days).toEqual([]);
     });
 });
+
+describe("a month he names", () => {
+    it("Thu 1 Apr: the steps list this month and the next two; a fate to a listed month is written, a later one refused", async () => {
+        await cls.init(async () => {
+            const thu = await store.calendarDay("2027-04-01");
+            await store.putContent(thu.noteId, `<h2>☑️ Tasks</h2>${ul(li("mo1", "Plan the offsite"), li("mo2", "Book the venue tour"))}`);
+        });
+        at("2027-04-01T17:30");
+        const open = await call("caius_winddown", { date: "2027-04-01", step: "open" });
+        expect(open.data.months).toEqual([
+            { month: "2027-04", monthLabel: "April 2027" }, { month: "2027-05", monthLabel: "May 2027" }, { month: "2027-06", monthLabel: "June 2027" }
+        ]);
+        const applied = await call("caius_winddown_apply", { date: "2027-04-01", fates: [ { listItemId: "mo1", to: "2027-06" }, { listItemId: "mo2", to: "2027-07" } ] });
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", id: "mo1", detail: "2027-06", detailLabel: "June 2027", status: "written" }) ]));
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "fate", id: "mo2", reason: "not_a_listed_day" }) ]);
+        at("2027-04-05T09:40");
+        expect((await call("caius_planday", { date: "2027-04-05", step: "inputs" })).data.months.map((m: any) => m.month)).toEqual([ "2027-04", "2027-05", "2027-06" ]);
+    });
+});
