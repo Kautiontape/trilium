@@ -33,8 +33,10 @@ export const BRIEF_LABEL = "morningBrief";
 export const PLANNED_AT_LABEL = "caiusPlannedAt";
 /** On a brief: an ask its Follow up raised, as `#caiusRaised=ZAP-104:10` (the ticket and the comment). */
 export const RAISED_LABEL = "caiusRaised";
-/** On a day note: a keep or carry line asked about that day, by its lineId, so it is asked once. */
+/** On a day note: a question asked about that day, so it is asked once: a keep or carry line by its lineId, an overlap by its overlapId, `heavy` or `evening`. */
 export const ASKED_LABEL = "caiusAsked";
+/** On a day note: an ask offered as a candidate for that day, as `ZAP-105:10`; on later days it is a Follow up. */
+export const ASK_SEEN_LABEL = "caiusAskSeen";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
 export const NOT_TODAY_LABEL = "caiusNotToday";
 /** On a day note: the day was wound down, at `YYYY-MM-DDTHH:mm:ss`, so the catch-up looks no further back than it. */

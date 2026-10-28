@@ -158,7 +158,8 @@ describe("caius_plan_apply", () => {
         expect(brief).toContain("ZAP-111 Check the invoice export: because sitting in QA Testing for 3 days (~30m)");
         expect(brief.indexOf("ZAP-111")).toBeLessThan(brief.indexOf("ZAP-101"));
         expect(brief).not.toContain("Laundry");
-        expect(brief).toContain("Jordan Placeholder asked on Sunday: \"The rollout note is now in the runbook.\" (ZAP-105). If you already answered in Chat, dismiss this.");
+        // Jordan's ask is new today, so it is a candidate and not yet a Follow up.
+        expect(brief).not.toContain("Jordan Placeholder asked on Sunday:");
         expect(brief).not.toContain("something about a runbook");
         // Heads-up comes only from outside events; nothing changed, so there is none. Another section is kept.
         expect(brief).not.toContain("Sprint Planning runs long.");
@@ -253,7 +254,7 @@ describe("caius_winddown_apply", () => {
         const open = await call("caius_winddown", { date: MON, step: "open" });
         const item = (word: string) => open.data.items.find((i: any) => textOf(i).includes(word));
         expect(item("Dave")).toMatchObject({ group: "today", fate: { forward: "2026-11-03", forwardLabel: "Tue 3 Nov" } });
-        // Tuesday's own apply above already put ZAP-110 and ZAP-105 in its Suggested, so nothing is new for it.
+        // Tuesday's own apply above already put ZAP-110 in its Suggested, and Jordan's ask, offered Monday, is a Follow up there.
         expect((await call("caius_winddown", { date: MON, step: "next" })).data.candidates.filter((c: any) => c.kind !== "week")).toEqual([]);
         await call("caius_winddown", { date: MON, step: "context" });
 
@@ -283,7 +284,7 @@ describe("caius_winddown_apply", () => {
         ]);
         // The forwarded Laundry stays in the evening, which is why the evening answer is already written.
         expect(tuesday.sections.find((s: any) => s.name === "Evening")?.tasks.map(textOf)).toEqual([ expect.stringMatching(/^Laundry \[from Mon 2 Nov\]/) ]);
-        expect(tuesday.suggested.map(textOf)).toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-110"), expect.stringContaining("ZAP-105") ]));
+        expect(tuesday.suggested.map(textOf)).toEqual([ expect.stringContaining("ZAP-110") ]);
         expect((await call("caius_plan", { period: "week", date: "2026-W45" })).sections.flatMap((s: any) => s.tasks).map(textOf))
             .toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-101") ]));
     });

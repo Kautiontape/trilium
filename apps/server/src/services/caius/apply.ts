@@ -34,7 +34,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -137,6 +137,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             ...offer.carry.map((line) => line.lineId), ...offer.overlaps.map((pair) => pair.overlapId), ...(offer.forwardSuggestion ? [ HEAVY_ID ] : []),
             ...(offer.askEvening ? [ EVENING_ID ] : [])
         ]);
+        // An ask offered today is a Follow up from tomorrow on.
+        await labelDay(store, date, ASK_SEEN_LABEL, offer.offeredAsks);
         // A forward may name only a task the steps showed, and only a day, week or month they listed.
         const catchupTasks = (await catchupOf(store, date, now)).tasks;
         const shown = new Set([
@@ -268,11 +270,12 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const written: Written[] = [];
         const skipped: Skipped[] = [];
         const open = await stillOpen(store, date, targetDay);
-        const { facts, candidates, asks } = await nextOffer(store, targetDay, now, read);
+        const { facts, candidates, asks, offeredAsks } = await nextOffer(store, targetDay, now, read);
         const lines = await closingLines(store, date, targetDay, read);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
         // The next step's questions are about the next workday, so they are answered on its note.
         await labelDay(store, targetDay, ASKED_LABEL, nextAsked(asks));
+        await labelDay(store, targetDay, ASK_SEEN_LABEL, offeredAsks);
         const known = new Map([
             ...dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: [ ...facts.plan.dismissed, ...facts.closed ] }).map(present),
             ...candidates
@@ -975,8 +978,9 @@ function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, dat
     return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now, opts).work };
 }
 
-/** A ticket candidate as its Suggested line, the one shape `caius_add` writes. */
+/** A ticket candidate as its Suggested line: the shape `caius_add` writes, or an ask's "Answer X's question on KEY: because Y (~15m)". */
 function suggestedLine(candidate: Candidate): string {
+    if (candidate.kind === "ask") return `${candidate.text}: because ${candidate.because} (~${candidate.minutes}m)`;
     return `Get ${candidate.key ? `${candidate.key} ` : ""}${candidate.title ?? candidate.text} done: because ${candidate.because} (~${candidate.minutes}m)`;
 }
 

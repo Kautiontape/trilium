@@ -174,8 +174,8 @@ describe("caius_winddown", () => {
         const candidates = answer.data.candidates.map((c: any) => [ c.text, c.because, c.minutes, c.source ]);
         expect(candidates).toEqual([
             [ "Get ZAP-101 Summary ZAP-101 done", "sitting in Dev Verify for 3 days", 30, "ZAP-101" ],
-            [ "Get ZAP-102 Summary ZAP-102 done", "Sam Example asked on Wednesday", 30, "ZAP-102" ],
-            [ "Get ZAP-2600 Summary ZAP-2600 done", "Riley Sample asked on Thursday", 30, "ZAP-2600" ],
+            [ "Answer Sam Example's question on ZAP-102", "Sam Example asked on Wednesday", 15, "ZAP-102" ],
+            [ "Answer Riley Sample's question on ZAP-2600", "Riley Sample asked on Thursday", 15, "ZAP-2600" ],
             [ "Next week item", "on the week's list", 45, "2026-W46" ]
         ]);
         // A Context override keeps a ticket Jira calls Done on offer.

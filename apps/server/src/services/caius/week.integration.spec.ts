@@ -262,6 +262,14 @@ describe("Suggested lines have one format, built by the tool", () => {
     });
 });
 
+/** Records asks as offered on `date`, an earlier day, so from the next day on they are Follow ups, not candidates. */
+async function offeredOn(date: string, ...asks: string[]) {
+    await cls.init(async () => {
+        const note = await store.calendarDay(date);
+        for (const ask of asks) await store.addLabel(note.noteId, "caiusAskSeen", ask);
+    });
+}
+
 describe("follow-ups are raised once", () => {
     const ask = (key: string, commentId: string, created: string, author = "Riley Sample") =>
         ({ ticket: ticket(key), author, created, commentId, excerpt: "Is the legacy report job gone from production?" });
@@ -269,6 +277,7 @@ describe("follow-ups are raised once", () => {
 
     it("Mon 09:40: a brief with a Follow up records every ask it was given", async () => {
         jira.asks.push(ask("ZAP-104", "2", "2026-10-26T19:30:00.000Z"), ask("ZAP-130", "20", "2026-10-30T14:00:00.000Z", "Jordan Placeholder"));
+        await offeredOn("2026-10-31", "ZAP-104:2", "ZAP-130:20");
         at(`${MON}T09:40`);
         const brief = await call("caius_planday", { date: MON, step: "brief", refresh: true });
         expect(followUps(brief)).toEqual([ "ZAP-104:2", "ZAP-130:20" ]);
@@ -282,20 +291,19 @@ describe("follow-ups are raised once", () => {
         expect(note.attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value)).toEqual([ "ZAP-104:2", "ZAP-130:20" ]);
     });
 
-    it("Thu 09:30: Plan my day and Wind down leave an ask raised on Monday out of the Follow up until a newer comment comes, and keep it on offer", async () => {
+    it("Thu 09:30: an ask raised on Monday is out of the Follow up and the candidates; a newer comment is a new ask, offered as a candidate", async () => {
         at(`${THU}T09:30`);
         const quiet = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
         expect(followUps(quiet)).toEqual([]);
-        // Round 2: a raised ask that also left the candidates was never offered again after a skip.
-        expect(sources(quiet)).toContain("ZAP-130");
+        expect(sources(quiet)).not.toContain("ZAP-130");
         expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([]);
 
         jira.asks.push(ask("ZAP-130", "21", "2026-11-04T15:00:00.000Z", "Jordan Placeholder"));
         const newer = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
-        expect(followUps(newer)).toEqual([ "ZAP-130:21" ]);
-        expect(sources(newer)).toContain("ZAP-130");
-        expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([ "ZAP-130:21" ]);
-        expect(followUps(await call("caius_winddown", { date: THU, step: "next" }))).toEqual([ "ZAP-130:21" ]);
+        expect(followUps(newer)).toEqual([]);
+        expect(newer.data.candidates).toEqual(expect.arrayContaining([ expect.objectContaining({ candidateId: "ZAP-130", text: "Answer Jordan Placeholder's question on ZAP-130" }) ]));
+        expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([]);
+        expect(followUps(await call("caius_winddown", { date: THU, step: "next" }))).toEqual([]);
     });
 
     it("Tue 10 Nov: an ask raised more than 7 days ago can come back", async () => {
@@ -532,6 +540,7 @@ describe("a same-day refresh keeps the Follow up", () => {
     it("09:35 raises the ask, 11:05 still has it, and the next morning drops it", async () => {
         const day = "2026-11-26";
         jira.asks.push({ ticket: ticket("ZAP-190"), author: "Riley Sample", created: "2026-11-25T15:00:00.000Z", commentId: "30", excerpt: "Is the bucket confirmed?" });
+        await offeredOn("2026-11-21", "ZAP-190:30");
         await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("q1", "Something ~30m"))}`));
         const raised = (answer: any) => answer.data.followUps.map((f: any) => `${f.key}:${f.commentId}`);
 
@@ -552,6 +561,7 @@ describe("what counts as raised", () => {
         const day = "2026-11-30";
         jira.asks.push({ ticket: ticket("ZAP-191"), author: "Jordan Placeholder", created: "2026-11-27T15:00:00.000Z", commentId: "31", excerpt: "Can you check?" });
         jira.asks.push({ ticket: ticket("ZAP-192"), author: "Sam Example", created: "2026-11-27T16:00:00.000Z", commentId: "32", excerpt: "Any news?" });
+        await offeredOn("2026-11-28", "ZAP-191:31", "ZAP-192:32");
         await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("v1", "Something ~30m"))}`));
         at(`${day}T09:30`);
         const brief = await call("caius_planday", { date: day, step: "brief", refresh: true });

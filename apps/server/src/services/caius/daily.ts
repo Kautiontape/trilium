@@ -42,7 +42,7 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -144,9 +144,12 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
  */
 export async function nextOffer(store: NoteStore, targetDay: string, now: Date, read: DayRead) {
     const facts = await dayFacts(store, targetDay, now);
-    const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
+    const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, targetDay));
+    const candidates = onOffer(dayCandidates({ jira: fresh, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
     const asked = new Set(await dayLabels(store, targetDay, ASKED_LABEL));
-    return { facts, candidates, jira: unraised(read.inputs.jira, facts.raised), asks: nextAsks(read, facts, candidates, asked) };
+    return {
+        facts, candidates, jira: unraised(followed, facts.raised), asks: nextAsks(read, facts, candidates, asked), offeredAsks: offeredAsks(fresh, candidates)
+    };
 }
 
 /**
@@ -277,11 +280,12 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
-    const { plan, raised } = await deps.locked("caius_planday", async () => ({
+    const { plan, raised, seen } = await deps.locked("caius_planday", async () => ({
         plan: await readPlan(deps.store, "day", date, deps.now),
-        raised: await raisedAsks(deps.store, deps.now, date)
+        raised: await raisedAsks(deps.store, deps.now, date),
+        seen: await seenAsks(deps.store, date)
     }));
-    const followUps = followUpsOf(unraised(read.inputs.jira, raised));
+    const followUps = followUpsOf(unraised(splitAsks(read.inputs.jira, seen).followed, raised));
     const { start, end, workEnd, from } = read.rhythm;
     const events = drawnEvents(read);
     const { work, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now);
@@ -327,8 +331,9 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const lastContext = (await gatherContext(store, dayKey(lastWorkday(localDay(date))))).context;
     const plannedAt = brief ? label(brief, PLANNED_AT_LABEL) ?? null : null;
     const since = plannedAt ? localMoment(plannedAt) : undefined;
-    const jira = unraised(read.inputs.jira, day.raised);
-    const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
+    const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, date));
+    const jira = unraised(followed, day.raised);
+    const candidates = onOffer(dayCandidates({ jira: fresh, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
     const asked = await askedAbout(store, date);
     // An overlap, the heavy day's move or the evening is asked once for its day: a refresh asks only what's new.
     const askedToday = new Set(await dayLabels(store, date, ASKED_LABEL));
@@ -353,7 +358,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     ];
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
-        overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID)
+        overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID), offeredAsks: offeredAsks(fresh, candidates)
     };
 }
 
@@ -540,6 +545,38 @@ async function raisedAsks(store: NoteStore, now: Date, day: string): Promise<Set
         for (const a of note.attributes) if (a.type === "label" && a.name === RAISED_LABEL) raised.add(a.value);
     }
     return raised;
+}
+
+/**
+ * The asks offered as candidates for a day before `day`, as `KEY:commentId` (`#caiusAskSeen` on its
+ * note). The caller holds the lock.
+ */
+async function seenAsks(store: NoteStore, day: string): Promise<Set<string>> {
+    const seen = new Set<string>();
+    for (const note of await store.search(`#${ASK_SEEN_LABEL}`)) {
+        const date = label(note, PERIODS.day.label);
+        if (!date || date >= day) continue;
+        for (const a of note.attributes) if (a.type === "label" && a.name === ASK_SEEN_LABEL) seen.add(a.value);
+    }
+    return seen;
+}
+
+/**
+ * `jira` split by each ticket's latest ask: `fresh` holds the asks not offered on an earlier day
+ * (`seen`), which are candidates, and `followed` those that were, which only the Follow up raises.
+ */
+export function splitAsks(jira: CaiusInputs["jira"], seen: Set<string>): { fresh: CaiusInputs["jira"]; followed: CaiusInputs["jira"] } {
+    const old = new Set(latestAsks(jira.asks).filter((ask) => seen.has(`${ask.ticket.key}:${ask.commentId}`)).map((ask) => ask.ticket.key));
+    return {
+        fresh: { ...jira, asks: jira.asks.filter((ask) => !old.has(ask.ticket.key)) },
+        followed: { ...jira, asks: jira.asks.filter((ask) => old.has(ask.ticket.key)) }
+    };
+}
+
+/** The `#caiusAskSeen` values of the asks among `candidates`: each ticket's latest ask in `fresh`. */
+function offeredAsks(fresh: CaiusInputs["jira"], candidates: { candidateId: string; kind: string }[]): string[] {
+    const offered = new Set(candidates.filter((candidate) => candidate.kind === "ask").map((candidate) => candidate.candidateId));
+    return latestAsks(fresh.asks).filter((ask) => offered.has(ask.ticket.key)).map((ask) => `${ask.ticket.key}:${ask.commentId}`);
 }
 
 /** `jira` without the asks of a ticket whose latest ask is in `raised`: one with a newer comment stays. */
@@ -785,8 +822,8 @@ const isLive = (task: PlanTask) => task.state === "open" || task.state === "in_p
 
 /**
  * A candidate as the step reports it: its `candidateId` (its first key: the ticket, or a hash of a
- * week item's text), its `kind` (`handoff`, `ask` or `week`), `Get X done` (a week
- * item keeps its own text) with its reason in words, and for a ticket the `key` and `title` that
+ * week item's text), its `kind` (`handoff`, `ask` or `week`), `Get X done` (an ask is "Answer
+ * {author}'s question on {KEY}", ~15m; a week item keeps its own text) with its reason in words, and for a ticket the `key` and `title` that
  * `caius_add` takes with `because` and `minutes`. A week item carries the `noteId` and `listItemId`
  * to forward instead.
  */
@@ -800,8 +837,17 @@ export function present(candidate: Candidate) {
         : reason.kind === "ask"
             ? t("caius.daily.because_ask", { author: reason.author, weekday: weekdayName(dayKey(new Date(reason.created))) })
             : t("caius.daily.because_week");
-    return { candidateId: keys[0] ?? candidate.source, kind: reason.kind, text: reason.kind === "week" ? subject : t("caius.daily.get_done", { subject }), ...ticket, because, ...rest };
+    const text = reason.kind === "week" ? subject
+        : reason.kind === "ask" ? t("caius.daily.answer_ask", { author: reason.author, key: candidate.source })
+            : t("caius.daily.get_done", { subject });
+    return {
+        candidateId: keys[0] ?? candidate.source, kind: reason.kind, text, ...ticket, because, ...rest,
+        ...(reason.kind === "ask" ? { minutes: ASK_MINUTES } : {})
+    };
 }
+
+/** The size of answering an ask. */
+const ASK_MINUTES = 15;
 
 /**
  * A Context line's id in the step data: a hash of its text as `sameContext` compares it, so two

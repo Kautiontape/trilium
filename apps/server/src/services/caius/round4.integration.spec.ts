@@ -366,3 +366,35 @@ describe("review continues", () => {
         expect(wound.say).not.toContain("Now today's plan.");
     });
 });
+
+describe("asks are suggestions first, follow-ups later", () => {
+    it("Mon 09:40: Jordan's ask on ZAP-105 is a candidate to answer and no Follow up; on Tuesday it is a Follow up and no candidate", async () => {
+        jira.asks.push({
+            ticket: ticket("ZAP-105", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created: "2027-03-07T15:00:00.000-0500",
+            commentId: "c105b", excerpt: "@Sam Example the rollout note is in the runbook now."
+        });
+        at("2027-03-08T09:40");
+        const monday = await call("caius_planday", { date: "2027-03-08", step: "inputs", refresh: true });
+        expect(monday.data.candidates).toEqual([ expect.objectContaining({
+            candidateId: "ZAP-105", kind: "ask", text: "Answer Jordan Placeholder's question on ZAP-105", minutes: 15, because: "Jordan Placeholder asked on Sunday"
+        }) ]);
+        expect(monday.data.followUps).toEqual([]);
+        const planned = await call("caius_plan_apply", { date: "2027-03-08", brief: prose });
+        expect(planned.skipped).toEqual([]);
+        const plan = await call("caius_plan", { period: "day", date: "2027-03-08" });
+        expect(plan.suggested.map((task: any) => task.text)).toEqual([
+            expect.stringMatching(/^Answer Jordan Placeholder's question on \[ZAP-105\]\([^)]+\): because Jordan Placeholder asked on Sunday \(~15m\)$/)
+        ]);
+        expect(await cls.init(() => store.content(planned.briefNoteId))).not.toContain("Follow up");
+
+        at("2027-03-09T09:35");
+        const tuesday = await call("caius_planday", { date: "2027-03-09", step: "inputs", refresh: true });
+        expect(tuesday.data.candidates).toEqual([]);
+        expect(tuesday.data.followUps).toEqual([ expect.objectContaining({ key: "ZAP-105", commentId: "c105b" }) ]);
+        // The wind-down the night before already counts as a later day.
+        at("2027-03-08T17:30");
+        const night = await call("caius_winddown", { date: "2027-03-08", step: "next" });
+        expect(night.data.candidates).toEqual([]);
+        expect(night.data.followUps).toEqual([ expect.objectContaining({ key: "ZAP-105" }) ]);
+    });
+});

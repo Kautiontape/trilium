@@ -250,6 +250,17 @@ describe('acceptTasks', () => {
       ['Book the venue', 15],
     ]);
   });
+  it("turns an accepted ask into a plain task: 'Answer X's question on KEY: because Y (~15m)' keeps its words and its estimate as a token", async () => {
+    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-105">ZAP-105</a>';
+    const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
+      li('es1', `Answer Jordan Placeholder's question on ${link}: because Jordan Placeholder asked on Sunday (~15m)`),
+    );
+    const f = fakeTrilium(seed(day));
+    await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base);
+    expect(f.html.d).toContain(`<span class="todo-list__label__description">Answer Jordan Placeholder's question on ${link} ~15m</span>`);
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections[0]!.tasks.map((t) => t.estMinutes)).toEqual([null, 15]);
+  });
   it('unwraps a suggestion that CKEditor saved with non-breaking spaces', async () => {
     const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-2">ZAP-2</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(

@@ -184,12 +184,22 @@ describe("done means done everywhere in the step data", () => {
     });
 });
 
+/** Records asks as offered on `date`, an earlier day, so from the next day on they are Follow ups, not candidates. */
+async function offeredOn(date: string, ...asks: string[]) {
+    await cls.init(async () => {
+        const note = await store.calendarDay(date);
+        for (const ask of asks) await store.addLabel(note.noteId, "caiusAskSeen", ask);
+    });
+}
+
 describe("follow-ups are written by the tool", () => {
-    it("Mon 2 Nov: Jordan's ZAP-105 comment reads as a quote, not as an ask the agent reworded", async () => {
+    it("Tue 3 Nov: Jordan's ZAP-105 comment reads as a quote, not as an ask the agent reworded", async () => {
         const excerpt = "The rollout note is now in the runbook, so the deploy can go ahead whenever the staging bucket name is confirmed by someone on your side.";
         jira.asks.push({ ticket: ticket("ZAP-105"), author: "Jordan Placeholder", created: "2026-11-01T15:00:00.000Z", commentId: "50", excerpt });
-        at(`${MON}T09:40`);
-        const brief = await call("caius_planday", { date: MON, step: "brief", refresh: true });
+        // Offered on Monday, the ask is Tuesday's Follow up.
+        await offeredOn(MON, "ZAP-105:50");
+        at(`${TUE}T09:35`);
+        const brief = await call("caius_planday", { date: TUE, step: "brief", refresh: true });
         const followUp = brief.data.followUps.find((f: any) => f.key === "ZAP-105");
         expect(followUp.sentence).toBe("Jordan Placeholder asked on Sunday: \"The rollout note is now in the runbook, so the deploy can go ahead whenever the staging bucket name…\" (ZAP-105). If you already answered in Chat, dismiss this.");
         // The brief's Follow up starts from the same sentences.
@@ -233,7 +243,7 @@ describe("the weather never depends on the agent", () => {
 const prose = { headline: "A light day", acts: [ { range: "10:00 to 12:00", text: "x" }, { range: "12:00 to 18:00", text: "y" }, { range: "Evening", text: "z" } ], sections: [] };
 
 describe("skip is not dismiss", () => {
-    it("Mon 2 Nov 'skip the rest': ZAP-110 and ZAP-105 are put off for Monday only, and offered again on Tuesday", async () => {
+    it("Mon 2 Nov 'skip the rest': ZAP-110 and ZAP-105 are put off for Monday only; ZAP-110 is offered again on Tuesday, and the ask comes back as a Follow up", async () => {
         at(`${MON}T09:40`);
         const monday = await call("caius_planday", { date: MON, step: "inputs", refresh: true });
         const offered = monday.data.candidates.map((c: any) => c.candidateId);
@@ -250,7 +260,9 @@ describe("skip is not dismiss", () => {
 
         at(`${TUE}T09:35`);
         const tuesday = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
-        expect(tuesday.data.candidates.map((c: any) => c.candidateId)).toEqual(expect.arrayContaining([ "ZAP-110", "ZAP-105" ]));
+        expect(tuesday.data.candidates.map((c: any) => c.candidateId)).toContain("ZAP-110");
+        expect(tuesday.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-105");
+        expect(tuesday.data.followUps.map((f: any) => f.key)).toContain("ZAP-105");
     });
 });
 
@@ -268,7 +280,7 @@ describe("only his explicit words drop, cancel or dismiss", () => {
     it("Tue 3 Nov 11:10 (sim B R1.3) 'I saw Jordan's note, drop that one': ZAP-105 is dismissed, and its Follow up goes with it", async () => {
         at(`${TUE}T11:10`);
         const inputs = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
-        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toContain("ZAP-105");
+        expect(inputs.data.followUps.map((f: any) => f.key)).toContain("ZAP-105");
         const applied = await call("caius_plan_apply", { date: TUE, dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
         expect(applied.skipped).toEqual([]);
         expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", status: "written" }) ]));
@@ -345,6 +357,7 @@ describe("a refresh keeps the morning", () => {
 
     it("11:05 (round 2, sim B R1.3): his picks and the Follow up stay, the settled overlap isn't asked again, only the new one is", async () => {
         jira.asks.push({ ticket: ticket("ZAP-140"), author: "Riley Sample", created: "2026-11-18T15:00:00.000Z", commentId: "70", excerpt: "Is the bucket confirmed?" });
+        await offeredOn("2026-11-14", "ZAP-140:70");
         calendars[DAY] = [ event("10:00", "10:15", "Standup"), event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding") ];
         at(`${DAY}T09:35`);
         const morning = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });

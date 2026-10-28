@@ -607,6 +607,7 @@
       "standing_missing": "No note is labelled #assistantContext, so the rhythm and the brief rules are the defaults.",
       "standing_unreadable": "The standing note is protected or not a text note, so the rhythm and the brief rules are the defaults.",
       "get_done": "Get {{- subject}} done",
+      "answer_ask": "Answer {{- author}}'s question on {{key}}",
       "because_handoff_one": "sitting in {{- status}} for {{count}} day",
       "because_handoff_other": "sitting in {{- status}} for {{count}} days",
       "because_handoff_unknown": "sitting in {{- status}}",
