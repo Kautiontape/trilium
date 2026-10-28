@@ -125,11 +125,12 @@ describe("CaiusNudgeBar", () => {
         expect(text(bar)).toBe("No plan yet.");
     });
 
-    it("counts held tasks on the day and offers Review, but never moves them", async () => {
+    it("counts held tasks on the day and offers Review, never Skip or Move all for them alone", async () => {
         h.nudge.mockResolvedValue({ ...CATCHUP, tasks: [], held: [ { noteId: "tue", listItemId: "h1", text: "Check the export" }, { noteId: "tue", listItemId: "h2", text: "Verify the export" } ] });
         const bar = await mount(today);
         expect(text(bar)).toBe("Tuesday has 2 open tasks.");
-        expect(buttons(bar)).toEqual([ "Review", "Skip" ]);
+        // Skipping would hide a question he hasn't answered, so only Review is offered.
+        expect(buttons(bar)).toEqual([ "Review" ]);
 
         h.nudge.mockResolvedValue({ ...CATCHUP, held: [ { noteId: "tue", listItemId: "h1", text: "Check the export" } ] });
         const mixed = await mount(today);

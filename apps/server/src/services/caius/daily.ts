@@ -505,8 +505,9 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         held.unshift(...live.filter((task) => task.listItemId && holding.has(task.listItemId)));
         if (skippedHere) break;
     }
-    // A held task is asked about every morning until he names it, wherever it lives and however long ago its day was closed.
-    if (holding.size) {
+    // A held task is asked about every morning until he names it, wherever it lives and however long
+    // ago its day was closed; a day he skipped the catch-up of is quiet until the next.
+    if (holding.size && !skipped) {
         const docs = (await loadJournal(store)).docs;
         for (const task of openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, now))) {
             if (!task.listItemId || !holding.has(task.listItemId) || task.parentListItemId || task.period >= date) continue;

@@ -89,7 +89,8 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
             actions = [
                 ...(movable.length ? [ { label: t("caius.nudge.move_all"), onClick: () => void moveAll(movable) } ] : []),
                 { label: t("caius.nudge.review"), onClick: () => start(caiusOpener("winddown", oldest)) },
-                { label: t("caius.nudge.skip"), onClick: () => void skip() }
+                // With only held tasks left, a skip would hide a question he hasn't answered.
+                ...(shown.tasks.length ? [ { label: t("caius.nudge.skip"), onClick: () => void skip() } ] : [])
             ];
             break;
         }

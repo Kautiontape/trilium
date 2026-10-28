@@ -102,6 +102,20 @@ describe("Caius nudge route", () => {
         expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "hk1", "hk2" ]));
     });
 
+    it("S1: Skip on a day with movable and held tasks skips both for the day, so the bar stops showing the catch-up", async () => {
+        await cls.init(async () => {
+            const wed = await store.calendarDay("2033-07-06");
+            await store.putContent(wed.noteId, `<h3>Work</h3>${ul(li("sm1", "Movable thing"), li("sh1", "Check the export"), li("sh2", "Verify the export"))}`);
+            await store.addLabel(wed.noteId, "caiusHeld", "sh1");
+            await store.addLabel(wed.noteId, "caiusHeld", "sh2");
+        });
+        expect((await nudge("2033-07-07").expect(200)).body).toMatchObject({ state: "catchup", tasks: [ expect.objectContaining({ listItemId: "sm1" }) ] });
+        await skip("2033-07-07").expect(200);
+        expect((await nudge("2033-07-07").expect(200)).body).toMatchObject({ state: "unplanned" });
+        // The held tasks come back the next morning.
+        expect((await nudge("2033-07-08").expect(200)).body.held?.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "sh1", "sh2" ]));
+    });
+
     it("walks past a missing day to the open one before it", async () => {
         await cls.init(async () => {
             const tue = await store.calendarDay("2033-04-05");
