@@ -39,6 +39,8 @@ export const ASKED_LABEL = "caiusAsked";
 export const SETTLED_LABEL = "caiusSettled";
 /** On a day note being wound down: an open item an ambiguous answer matched, by its listItemId; it gets no fate until he names it. */
 export const HELD_LABEL = "caiusHeld";
+/** On a day note being wound down: the items one ambiguous answer held together, space-separated; once it narrows to one, that one is released. */
+export const HELD_GROUP_LABEL = "caiusHeldGroup";
 /** On a day note: an ask offered as a candidate for that day, as `ZAP-105:10`; on later days it is a Follow up. */
 export const ASK_SEEN_LABEL = "caiusAskSeen";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */

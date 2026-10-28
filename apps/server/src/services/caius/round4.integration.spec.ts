@@ -848,7 +848,7 @@ describe("fix round 1: a moved item is followed to its copy, not taken as in pla
 });
 
 describe("fix round 1: a hold survives the catch-up", () => {
-    it("Wed night 'the export is done' holds both; Thu move_all leaves them on Wednesday and asks which; 'ZAP-111 is finished' settles one", async () => {
+    it("Wed night 'the export is done' holds both; Thu move_all leaves them on Wednesday and asks which; 'ZAP-111 is finished' settles it and releases 101", async () => {
         await wednesday("2027-09-01");
         at("2027-09-01T17:45");
         await call("caius_winddown_apply", { date: "2027-09-01", done: [ "the export" ] });
@@ -863,8 +863,9 @@ describe("fix round 1: a hold survives the catch-up", () => {
         const finished = await call("caius_plan_apply", { date: "2027-09-02", finished: [ "ZAP-111" ], brief: prose });
         expect(finished.skipped).toEqual([]);
         expect((await tasksOf("2027-09-01"))[0]).toEqual({ text: "ZAP-111 Check the invoice export in QA", state: "done" });
-        expect(await labelsOf("2027-09-01", "caiusHeld")).toEqual([ "2027-09-01-101" ]);
-        expect(finished.say).toMatch(/What about ZAP-101\?$/);
+        // The hold narrowed to ZAP-101, which is released: no longer held, and not asked about.
+        expect(await labelsOf("2027-09-01", "caiusHeld")).toEqual([]);
+        expect(finished.say).not.toMatch(/\?$/);
     });
 });
 
@@ -904,5 +905,20 @@ describe("fix round 2: the settled fallback stays on the day and says what it fo
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "done", reason: "not_offered" }) ]);
         expect(applied.say).toContain("'the bag' wasn't found");
         expect(await labelsOf("2027-09-22", "caiusWoundDown")).toEqual([]);
+    });
+});
+
+describe("fix round 2: a hold that narrows to one item is resolved", () => {
+    it("N4: 'the export is done' holds both; '111' settles it, so 101 is released to its proposed fate and nothing is asked", async () => {
+        const DAY = "2027-09-29";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "the export" ] });
+        const narrowed = await call("caius_winddown_apply", { date: DAY, done: [ "111" ] });
+        expect(narrowed.skipped).toEqual([]);
+        expect(narrowed.say).not.toMatch(/\?$/);
+        expect(await labelsOf(DAY, "caiusHeld")).toEqual([]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+        expect((await tasksOf("2027-09-30")).map((task: any) => task.text)).toContain("ZAP-101 Verify the export retry on staging");
     });
 });
