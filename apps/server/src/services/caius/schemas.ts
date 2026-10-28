@@ -153,6 +153,32 @@ const briefWrite = z.object({
     dryRun
 }).refine(bothOrNeither, "Give latitude and longitude together, or neither");
 
+const jiraKey = z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase());
+const candidateRef = z.object({ candidateId: z.string().min(1).describe("A candidate's candidateId, from the step data") });
+const lineRef = z.object({ lineId: z.string().min(1).describe("A keep or carry line's lineId, from the step data") });
+const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
+
+const planApply = z.object({
+    date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
+    catchup: z.enum([ "move_all", "skip", "review" ]).optional().describe("The answer to the catch-up question, when one was asked"),
+    accept: z.array(candidateRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list"),
+    keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
+    finished: z.array(jiraKey).default([]).describe("Tickets the user says are finished"),
+    notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): offered again on the next workday. Not a dismissal"),
+    evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
+    context: answerTexts("What the user said is worth knowing, such as an overlap's answer, each written as a Context line"),
+    forward: z.array(z.object({
+        listItemId: z.string().min(1).describe("A task's listItemId from the step data"),
+        to: z.string().refine((to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to), "Give a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
+    })).optional().describe("Tasks the user moved, such as the heavy day's suggestion"),
+    brief: z.object({
+        headline: z.string().trim().min(1).describe("One sentence of 14 words or fewer that names the work"),
+        acts: z.array(z.object({ range: z.string(), text: z.string() })).length(3).describe("The day in three acts, the third the evening"),
+        sections: z.array(z.object({ title: z.string().trim().min(1), markdown: z.string() })).default([])
+            .describe("Sections after the picks, such as Heads-up; Follow up is written by the tool")
+    }).describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes")
+});
+
 const writes = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item).min(1), dryRun, html });
 
 const reads = {
@@ -246,6 +272,7 @@ export const toolInputs = {
     finished,
     winddown,
     planday,
+    planApply,
     add: writes(addItem),
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
@@ -299,6 +326,7 @@ export type FinishedInput = z.infer<typeof finished>;
 export type NudgeInput = z.infer<typeof nudge>;
 export type WindDownInput = z.infer<typeof winddown>;
 export type PlanDayInput = z.infer<typeof planday>;
+export type PlanApplyInput = z.output<typeof planApply>;
 export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;

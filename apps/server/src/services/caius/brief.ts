@@ -31,6 +31,8 @@ export const BRIEF_LABEL = "morningBrief";
 export const PLANNED_AT_LABEL = "caiusPlannedAt";
 /** On a brief: an ask its Follow up raised, as `#caiusRaised=ZAP-104:10` (the ticket and the comment). */
 export const RAISED_LABEL = "caiusRaised";
+/** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
+export const NOT_TODAY_LABEL = "caiusNotToday";
 /** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */
 export const SKIP_CATCHUP_LABEL = "caiusSkipCatchup";
 /** Children of a brief that the old push script labels; they are pages of a brief, never the brief. */
@@ -54,7 +56,14 @@ export interface NoteWrite {
     reason?: "edited";
 }
 
-export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
+/** One "Get done today" line: a task of his list, with why when it is known. */
+export interface BriefPick {
+    text: string;
+    because?: string;
+    minutes: number;
+}
+
+export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "picks"> & { picks: BriefPick[] }) {
     const { store } = deps;
     const { date, dryRun } = input;
     let day = await findPeriodNote(store, "day", date);
@@ -68,11 +77,13 @@ export async function writeBrief(deps: BriefDeps, input: BriefWriteInput) {
             return { date, error: "bad_request", detail: `The ${name} note of ${date}, or a child of the brief, is protected` };
         }
     }
-    const picks = input.picks.map((pick) => t("caius.brief.pick", {
-        text: pick.text.trim(),
-        because: pick.because.trim().replace(/^because\s+/i, ""),
-        estimate: formatEstimate(pick.minutes)
-    }));
+    const picks = input.picks.map((pick) => pick.because?.trim()
+        ? t("caius.brief.pick", {
+            text: pick.text.trim(),
+            because: pick.because.trim().replace(/^because\s+/i, ""),
+            estimate: formatEstimate(pick.minutes)
+        })
+        : t("caius.brief.pick_plain", { text: pick.text.trim(), estimate: formatEstimate(pick.minutes) }));
     const sections = input.sections.map(({ title, markdown }) => ({ title, html: withoutImages(deps.render(markdown, title)) }));
     const headerContent = (attachmentId: string) => headerHtml({
         dateLine: dateLine(date),
@@ -184,7 +195,7 @@ async function replace(store: NoteStore, noteId: string, role: NoteWrite["role"]
 }
 
 /** A section title compared ignoring case, spacing and punctuation: "Follow-up" is "Follow up". */
-function sameTitle(title: string): string {
+export function sameTitle(title: string): string {
     return title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 

@@ -165,6 +165,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.planday, service.planday)
         },
 
+        caius_plan_apply: {
+            description: "Make every write of a Plan my day conversation in one call, after the user has answered the one question set: the catch-up, the candidates the user took in the user's order (each to the end of the list), the keep or carry lines, finished tickets, candidates put off for today (not a dismissal), evening tasks, Context lines, moves, the Meetings block, and the brief with its picks, Follow up, drawing and weather. Every id comes from caius_planday's step data. Write only the brief's headline, acts and extra sections. No dry run: the user has answered. Answers what was written and what was skipped, with a reason; a re-run with the same input changes nothing.",
+            inputSchema: toolInputs.planApply,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.planApply, service.planApply)
+        },
+
         caius_header: {
             description: "Draw the day as terrain, from standup to bedtime, and attach it to a note as terrain.svg: meetings raise the line, planned work sits in bars under it, with a divider where work ends. Give latitude and longitude to add today's weather. A second call updates the same attachment. Returns the attachment id and the <img> snippet to put in the note; it does not change the note's text.",
             inputSchema: toolInputs.header,

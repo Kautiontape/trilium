@@ -47,6 +47,7 @@ Most write tools take an `items` list, `dryRun`, and `html: true` on a dry run t
 | `caius_skip_catchup` | Skip Plan my day's catch-up for a day: the last workday's open tasks stay where they are. | `{ "date": "2026-11-09" }` |
 | `caius_winddown` | One step of Wind down: `open`, `next`, `context`. Returns the data and the question to ask. | `{ "date": "2026-11-06", "step": "open" }` |
 | `caius_planday` | One step of Plan my day: `catchup`, `inputs`, `brief`. Returns the data and the question to ask. | `{ "date": "2026-11-09", "step": "catchup" }` |
+| `caius_plan_apply` | Every write of Plan my day in one call, from his answers mapped to the step data's ids. | `{ "date": "2026-11-09", "accept": [{ "candidateId": "ZAP-111" }], "brief": { "headline": "…", "acts": […], "sections": [] } }` |
 | `caius_header` | Draw the day as terrain, from standup to bedtime, and attach it to a note as `terrain.svg`. A second call updates the same attachment. Returns `attachmentId` and the `<img>` `snippet` to put in the note; the note's text is not changed. Give `latitude` and `longitude` to add the weather. | `{ "noteId": "…", "start": "10:00", "end": "23:00", "events": [{ "start": "10:00", "end": "10:15", "title": "Standup" }], "work": [{ "start": "13:00", "end": "14:00", "label": "ZAP-1", "focus": true }] }` |
 
 `noteId` and `listItemId` always come from `caius_plan` or `caius_open`. Never guess them.

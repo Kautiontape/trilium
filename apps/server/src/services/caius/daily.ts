@@ -182,15 +182,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
-        const facts = await deps.locked("caius_planday", async () => {
-            const day = await dayFacts(deps.store, date, deps.now);
-            const brief = day.plan.noteId ? await findBrief(deps.store, day.plan.noteId, date) : null;
-            const lastContext = await gatherContext(deps.store, dayKey(lastWorkday(localDay(date))));
-            return { ...day, plannedAt: brief ? label(brief, PLANNED_AT_LABEL) ?? null : null, lastContext: lastContext.context };
-        });
-        const since = facts.plannedAt ? localMoment(facts.plannedAt) : undefined;
-        const jira = unraised(read.inputs.jira, facts.raised);
-        const candidates = dayCandidates({ jira, week: facts.week, live: facts.live, exclude: facts.exclude, since }).map(present);
+        const { day: facts, plannedAt, candidates, carry, jira } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines
             ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
@@ -200,9 +192,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         const nextDay = dayKey(nextWorkday(localDay(date)));
         const heavy = read.inputs.capacity.bookedRatio > HEAVY_RATIO && last?.listItemId;
         const forwardSuggestion = heavy && last ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: nextDay } : null;
-        // Run every morning, whatever the catch-up answer was, so a missed wind-down doesn't let a line lapse.
         // The day being planned is in the week its lines go to, so the question never says "next week".
-        const carry = carryLines(facts.lastContext, date, read.context);
         const questions = [
             ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
             ...(forwardSuggestion ? [ t("caius.daily.heavy", {
@@ -211,7 +201,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
         ];
         return reply(read.standing, {
-            plannedAt: facts.plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
+            plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry,
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
@@ -223,10 +213,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     }));
     const followUps = followUpsOf(unraised(read.inputs.jira, raised));
     const { start, end, workEnd, from } = read.rhythm;
-    // The drawing takes whatever the feeds returned; only the Meetings block refuses a partial calendar.
-    const events = read.inputs.calendar
-        .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
-        .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
+    const events = drawnEvents(read);
     const { work, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now);
     const header = { start, end, workEnd, events, work };
     const coordinates = read.rhythm.latitude === undefined ? {} : { latitude: read.rhythm.latitude, longitude: read.rhythm.longitude };
@@ -251,6 +238,34 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         },
         errors: read.inputs.errors
     }, null, null);
+}
+
+/**
+ * What the `inputs` step offers for `date`, which `caius_plan_apply` reads again to resolve his
+ * answers: the day's facts, when it was last planned, the candidates new since then and the lines
+ * to carry, each line with its `lineId`. Runs every morning, whatever the catch-up answer was, so a
+ * missed wind-down doesn't let a line lapse. The caller holds the lock.
+ */
+export async function planOffer(store: NoteStore, date: string, now: Date, read: DayRead) {
+    const day = await dayFacts(store, date, now);
+    const brief = day.plan.noteId ? await findBrief(store, day.plan.noteId, date) : null;
+    const lastContext = (await gatherContext(store, dayKey(lastWorkday(localDay(date))))).context;
+    const plannedAt = brief ? label(brief, PLANNED_AT_LABEL) ?? null : null;
+    const since = plannedAt ? localMoment(plannedAt) : undefined;
+    const jira = unraised(read.inputs.jira, day.raised);
+    const candidates = dayCandidates({ jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present);
+    return { day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context), jira };
+}
+
+/**
+ * The day's calendar as the drawing takes it: timed events he hasn't declined, clipped to the day's
+ * span. It takes whatever the feeds returned; only the Meetings block refuses a partial calendar.
+ */
+export function drawnEvents(read: DayRead) {
+    const { start, end } = read.rhythm;
+    return read.inputs.calendar
+        .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
+        .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
 }
 
 /**
@@ -335,7 +350,7 @@ async function raisedAsks(store: NoteStore, now: Date, day: string): Promise<Set
 }
 
 /** `jira` without the asks of a ticket whose latest ask is in `raised`: one with a newer comment stays. */
-function unraised(jira: CaiusInputs["jira"], raised: Set<string>): CaiusInputs["jira"] {
+export function unraised(jira: CaiusInputs["jira"], raised: Set<string>): CaiusInputs["jira"] {
     const quiet = new Set(latestAsks(jira.asks).filter((ask) => raised.has(`${ask.ticket.key}:${ask.commentId}`)).map((ask) => ask.ticket.key));
     return { ...jira, asks: jira.asks.filter((ask) => !quiet.has(ask.ticket.key)) };
 }
@@ -407,7 +422,7 @@ export function workBlocks(plan: PlanView, day: { start: string; end: string; wo
 }
 
 /** The main list as the drawing and the picks read it: each live task's bar label, text, minutes, keys and whether it is an evening task. */
-function listOf(plan: PlanView) {
+export function listOf(plan: PlanView) {
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
     return mainTasks(plan).map((task) => ({
         label: workLabel(task.text), text: plainText(task.text), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
@@ -432,7 +447,7 @@ export function listPicks<P extends { text: string }>(plan: PlanView, picks: P[]
 }
 
 /** A task's text without its links' markup. */
-function plainText(text: string): string {
+export function plainText(text: string): string {
     return text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
 }
 
@@ -508,13 +523,14 @@ function periodStart(key: string): string {
  * already suggested or dismissed there and what Shawn closed lately (`closedKeys`), plus whether
  * the evening (Evening or Recharge) has a task and how many minutes it holds, which are not work.
  */
-async function dayFacts(store: NoteStore, date: string, now: Date) {
+export async function dayFacts(store: NoteStore, date: string, now: Date) {
     const plan = await readPlan(store, "day", date, now);
     const weekKey = isoWeekKey(utcDay(date));
     const weekPlan = await readPlan(store, "week", weekKey, now);
     const { docs } = await loadJournal(store);
     const live = liveKeys(docs, now);
-    const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)), ...await closedKeys(store, docs, now) ];
+    const closed = await closedKeys(store, docs, now);
+    const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)), ...closed ];
     const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks)
         .filter((task) => isLive(task) && task.text.trim() !== "");
     // As the plan's capacity counts them: a task with live sub-items counts through them, and an
@@ -522,7 +538,7 @@ async function dayFacts(store: NoteStore, date: string, now: Date) {
     const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
     const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
     return {
-        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, raised: await raisedAsks(store, now, date),
+        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, raised: await raisedAsks(store, now, date),
         evening: eveningTasks.length > 0, eveningMinutes
     };
 }
