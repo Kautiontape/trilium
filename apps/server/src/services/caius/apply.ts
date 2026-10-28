@@ -320,11 +320,13 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
             const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
             if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
         }
+        // The closed day is drawn as it was worked, its done tasks included; the next workday as it stands.
         for (const [ day, dayRead ] of briefed) {
             await guarded({ kind: "header", id: day }, skipped, async () => {
                 const plan = await readPlan(store, "day", day, now);
-                const header = headerOf(plan, dayRead, day, now);
-                const write = await redrawHeader(store, day, (noteId, weather) => drawHeader(noteId, header, weather).attachmentId, (acts) => withEveningAct(acts, plan, header));
+                const worked = { worked: day === date };
+                const header = headerOf(plan, dayRead, day, now, worked);
+                const write = await redrawHeader(store, day, (noteId, weather) => drawHeader(noteId, header, weather).attachmentId, (acts) => withEveningAct(acts, plan, header, worked));
                 if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
             });
         }
@@ -647,8 +649,8 @@ async function noteOf(store: NoteStore, listItemId: string): Promise<string | nu
  * The acts with the third as the evening's own act: the evening's calendar events and his evening
  * tasks in time order, each name once ("Call Mom, then Laundry."), or "Nothing planned." without any.
  */
-function withEveningAct(acts: PlanApplyInput["brief"]["acts"], plan: Awaited<ReturnType<typeof readPlan>>, header: { workEnd: string; events: { start: string; title: string }[]; work: { start: string; label: string }[] }) {
-    const tasks = listOf(plan).filter((task) => task.evening)
+function withEveningAct(acts: PlanApplyInput["brief"]["acts"], plan: Awaited<ReturnType<typeof readPlan>>, header: { workEnd: string; events: { start: string; title: string }[]; work: { start: string; label: string }[] }, opts: { worked?: boolean } = {}) {
+    const tasks = listOf(plan, opts).filter((task) => task.evening)
         .map((task) => ({ at: header.work.find((block) => block.label === task.label)?.start ?? "99:99", name: task.text }));
     const events = header.events.filter((event) => event.start >= header.workEnd).map((event) => ({ at: event.start, name: event.title }));
     const named = new Set<string>();
@@ -665,10 +667,10 @@ function withEveningAct(acts: PlanApplyInput["brief"]["acts"], plan: Awaited<Ret
 }
 
 /** The day's drawing: its span from the rhythm, the calendar's events and his list laid out between them. */
-function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date) {
+function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date, opts: { worked?: boolean } = {}) {
     const { start, end, workEnd } = read.rhythm;
     const events = drawnEvents(read);
-    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now).work };
+    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now, opts).work };
 }
 
 /** A ticket candidate as its Suggested line, the one shape `caius_add` writes. */

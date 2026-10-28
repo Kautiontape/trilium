@@ -251,6 +251,27 @@ describe("the header is drawn from the note as it ends", () => {
         expect(acts[0]).toEqual(prose.acts[0]);
         expect(acts[2]).toEqual({ range: "Evening", text: "Nothing planned." });
         expect(svg).not.toContain("Laundry");
+        // The day keeps the work he did on it, focus block and all.
+        expect(svg).toMatch(/Planned work: ZAP-140 10a to 10:30a\./);
+        expect(svg).toContain('fill-opacity="0.9"');
+    });
+
+    it("Wed 17:45 (review): the closed day's header keeps its done work where it was done, without the work moved on, laid out from standup", async () => {
+        const DAY = "2027-02-03";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("q160", `${zap("ZAP-160", "Ship the fix")} ~1h`), li("q161", `${zap("ZAP-161", "Write the note")} ~30m`))}<h3>Evening</h3>${ul(li("qiron", "Iron shirts"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
+        at(`${DAY}T17:45`);
+        const wound = await call("caius_winddown_apply", { date: DAY, done: [ "q160" ] });
+        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: DAY, status: "written" }) ]));
+        const { svg } = await headerOf(planned);
+        expect(svg).toMatch(/Planned work: ZAP-160 10a to 11a\./);
+        expect(svg).not.toContain("ZAP-161");
+        expect(svg).not.toContain("Iron shirts");
+        expect(svg).toContain('fill-opacity="0.9"');
     });
 });
 
