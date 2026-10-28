@@ -188,21 +188,24 @@ Nothing is kept between calls except what the notes hold, so calling a step agai
 
 Each conversation ends in one apply call. The agent maps your reply to the ids in the step data (`candidateId`, `lineId`, `listItemId`), and a day you name to one of `data.days` (the workdays to the end of next week), `data.weeks` (this week and next) or `data.months` (this month and the next two), and passes them; an id the step didn't show answers `not_offered` (or `unchanged` when the task is already closed, as on a re-run), and a day, week or month not listed answers `not_a_listed_day`; the tool makes every write, with no dry run, since you have answered. It answers `{ written, skipped }`: each entry names its `kind`, the id, and `status: "written"` or `"unchanged"`, and each skip a `reason` (`not_offered`, `not_found`, `review`, `calendar_unavailable`, `edited`…). Running it again with the same input changes no note.
 
-- **`caius_plan_apply`** `{ date, catchup?, accept, keep, finished, notToday, dismiss, evening, context, forward?, brief: { headline, acts, sections } }`, in this order:
+- **`caius_plan_apply`** `{ date, catchup?, accept, move, keep, finished, notToday, dismiss, evening, context, forward?, brief: { headline, acts, sections } }`, in this order:
   - **The catch-up:** `move_all` forwards every task of the catch-up's days to `date`; `skip` labels the day as `caius_skip_catchup` does; `review` writes nothing (the oldest day's wind-down goes through them).
-  - **Accepts,** in your order, each to the end of your list: a ticket through Suggested (added there first when it isn't), a week item by forwarding it to the day.
+  - **Accepts,** in your order, each to the end of your list unless you named a place: `first`, or `before`/`after` an item of `data.list` (by `listItemId`) or a candidate taken in the same call. A ticket goes through Suggested (added there first when it isn't), a week item by forwarding it to the day.
+  - **Moves** (`move`), only when you asked for an order: items of your main list put `first`, `before` or `after` another; an item outside it, such as an evening one, is skipped as `not_in_main_list`.
   - **Keeps:** each line to this week's note. Every keep or carry line, overlap and heavy-day question the step showed is recorded under `#caiusAsked`, whatever you answered.
   - **Finished** tickets, as `caius_finished` records them, on the day's note.
   - **Not today:** `#caiusNotToday=<candidateId>` on the day's note, and off its Suggested without a dismissal; it comes back on the next workday (a week item two workdays later).
   - **Dismiss,** only on your word: the candidate is dismissed from the day's Suggested, so the key is off every list for 14 days and its asks leave the Follow up.
   - **Every other offered ticket** goes to the day's Suggested.
   - **Evening** tasks under a `### Evening` heading, created after your tasks and above Suggested when missing; words already a live task of the day count as written.
-  - **Context** lines, placed by `caius_context_add`'s rules. **Forwards** by `listItemId`. The **Meetings block** from the calendar.
-  - **The brief:** the agent's headline, acts and extra sections; the picks are your list in its order (evening tasks apart, at most 5), with a candidate's reason where there is one; Follow up from the step's sentences and Heads-up from `headsUp`, in place of anything the agent wrote under those titles; the Evening act names the evening's events and tasks ("Call Mom, then Laundry."), the agent's words staying only for an empty evening; the drawing; the weather from the standing note. The answer carries `briefNoteId`, `link`, `headline` and `topPick`.
-- **`caius_winddown_apply`** `{ date, done, fates, accept, keep, carry, finished, notToday, dismiss, evening, context }` closes `date` against the next workday:
+  - **Context** lines, placed by `caius_context_add`'s rules. **Forwards** by `listItemId`, of a task the steps showed, your own list's included. The **Meetings block** from the calendar.
+  - **The brief:** the agent's headline, acts and extra sections; the picks are your list in its order (evening tasks apart, at most 5), with a candidate's reason where there is one; Follow up from the step's sentences and Heads-up from `headsUp`, in place of anything the agent wrote under those titles; the third act is the tool's: `Evening`, naming the evening's calendar events and tasks in time order, each once ("Call Mom, then Laundry."), or "Nothing planned."; the drawing; the weather from the standing note. The answer carries `briefNoteId`, `link`, `headline` and `topPick`.
+- **`caius_winddown_apply`** `{ date, done, fates, accept, move, keep, carry, finished, notToday, dismiss, evening, context }` closes `date` against the next workday:
   - **Done** items are marked done. **Fates** you named are a forward (`to`: a day, week or month) or a drop (`drop`: your reason, only when you said drop, cancel or not doing). **Every open item you didn't name** keeps the fate the `open` step proposed. A task sent to a week is put off there, so its week item comes back two workdays later.
-  - **Accepts, keeps, carries,** finished, not today, dismiss, the other candidates to Suggested, evening tasks and Context lines all land on the next workday (keeps and carries in its week note).
+  - **Accepts** (with their places, as in Plan my day), **moves,** keeps, carries, finished, not today, dismiss, the other candidates to Suggested, evening tasks and Context lines all land on the next workday (keeps and carries in its week note).
   - The closed day is labelled `#caiusWoundDown`, so a later catch-up looks no further back.
+  - **Last,** the closed day or the next workday, when it has a brief, has its header drawn again from the note as it ends: the drawing and the Evening act, with the headline and first two acts as written and the weather the brief recorded (`#caiusWeather`).
+  - It answers `next: "planday"` when the next workday is today (a morning Review of an older day), so Plan my day goes on in the same conversation; otherwise `next: null`.
 
 ### The write tools
 

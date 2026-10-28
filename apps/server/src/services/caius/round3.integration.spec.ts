@@ -273,3 +273,17 @@ describe("capacity is one honest number", () => {
         expect(inputs.data).not.toHaveProperty("summary");
     });
 });
+
+describe("a morning Review goes on to Plan my day", () => {
+    it("Wed 11 09:45: the Review of Monday answers next: planday for today; an evening wind-down doesn't", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2026-11-23");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("rdav", "Message Dave about the lights"))}`);
+        });
+        at("2026-11-25T09:45");
+        const review = await call("caius_winddown_apply", { date: "2026-11-23", done: [ "rdav" ] });
+        expect(review).toMatchObject({ targetDay: "2026-11-25", next: "planday" });
+        at("2026-11-25T17:30");
+        expect(await call("caius_winddown_apply", { date: "2026-11-25" })).toMatchObject({ targetDay: "2026-11-26", next: null });
+    });
+});

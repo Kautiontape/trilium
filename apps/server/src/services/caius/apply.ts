@@ -324,7 +324,8 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
                 if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
             });
         }
-        return withDateLabels({ date, targetDay, written, skipped });
+        // A Review of an older day closes it against today, which Plan my day plans next in the same conversation.
+        return withDateLabels({ date, targetDay, written, skipped, next: targetDay === dayKey(now) ? "planday" : null });
     });
 }
 

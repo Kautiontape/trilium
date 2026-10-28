@@ -80,6 +80,8 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
         "No recap after an apply",
         "State capacity only from the step's `data.capacity`",
+        "When the apply answers `next: \"planday\"`",
+        "go straight on to Plan my day for `targetDay` in this conversation",
         "Never ask what else to do when the step returns no candidates",
         "say so when the day is half booked or more",
         "Add one more short line only when something he asked for was skipped.",

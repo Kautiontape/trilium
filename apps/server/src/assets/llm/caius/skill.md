@@ -100,6 +100,7 @@ On a refresh (the day already has a brief), the step asks only what is new; with
 2. Send **one message**: what's left (`data.items`) with the `open` question, the next workday's candidates, the keep or carry question (only when `data.noticed` has a line), and the `next` and `context` questions. Say which items Jira calls done (`jiraDone`). Mention `olderCount` only when the step data has it, in one line.
 3. Take his reply and call `caius_winddown_apply` **once**: `done`, `fates` (only the items he named; every other item keeps its proposed fate), `accept`, `move`, `keep`, `carry`, `finished`, `notToday`, `dismiss`, `evening` and `context`.
 4. No recap after an apply: reply with one short line that the day is closed. Add one more short line only when something he asked for was skipped.
+5. When the apply answers `next: "planday"` (a morning Review of an older day, closed against today), go straight on to Plan my day for `targetDay` in this conversation, from its step 1, without waiting for another press.
 
 ### Rules
 
