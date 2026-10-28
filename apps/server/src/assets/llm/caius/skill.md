@@ -32,7 +32,7 @@ Most write tools take an `items` list, `dryRun`, and `html: true` on a dry run t
 | `caius_open` | List open tasks across the Journal by lane, with `noteId`, `listItemId` and `daysLate`. Lanes: overdue, today, week, orbit, planning_ahead, someday, suggested. | `{ "lane": "overdue", "limit": 20 }` |
 | `caius_explain` | Say why a task sits in its lane. | `{ "noteId": "abc", "listItemId": "e123" }` |
 | `caius_context` | Read the Context in force for a day: its note's Context lines, the last three workday notes' and the week note's (last week's too on a Monday), expired lines dropped. | `{ "date": "2026-11-09" }` |
-| `caius_add` | Add a task to a period, under a section, in the critical block, or under Suggested. | `{ "items": [{ "date": "2026-10-27", "section": "Work", "text": "Write the spec", "est": "1h" }] }` |
+| `caius_add` | Add a task to a period, under a section or in the critical block (`text`), or under Suggested (`key`, `title`, `because`, `minutes`, which it writes as "Get KEY title done: because why (~30m)"). | `{ "items": [{ "date": "2026-10-27", "suggested": true, "key": "ZAP-111", "title": "Check the invoice export in QA", "because": "sitting in QA Testing for 3 days", "minutes": 30 }] }` |
 | `caius_accept` | Move a Suggested item up under a section or into the critical block. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "section": "Work", "position": 1 }] }` |
 | `caius_dismiss` | Remove a Suggested item and keep it from being suggested again on that note. | `{ "items": [{ "noteId": "abc", "listItemId": "e123" }] }` |
 | `caius_set_state` | Mark tasks `done`, `doing` or `cancelled`. Cancelled needs a `reason`. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "state": "cancelled", "reason": "no longer needed" }] }` |
@@ -93,8 +93,8 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
 `date` is the day being closed. Every step works against the next workday, `targetDay` (`targetDayName` in words): on a Friday that is Monday.
 
 1. **`open`.** `data.items` is one list of what is still open: the day's leftovers (`group: "today"`), the last three workdays' (`"recent"`) and the week note's tasks (`"week"`), each with a proposed fate. Older overdue tasks are only counted, in `data.olderCount` (oldest from `data.oldestDate`): say the count in one line, as not tonight's job, and never list them or ask about them. After Shawn answers, mark the ones he calls done with `caius_set_state`, forward the rest whose fate is `{ forward }` to that day or week with `caius_forward`, and leave the `{ stay }` ones in the week note, unless he says otherwise.
-2. **`next`.** `data.candidates` are what could go into the next workday's Suggested, each as `text` ("Get X done"), `because`, `minutes` and `source`.
-   - Add the candidates to that day's Suggested with `caius_add` and `suggested: true`: the `text`, `source` (a Jira key), `est` from `minutes`.
+2. **`next`.** `data.candidates` are what could go into the next workday's Suggested, each as `text` ("Get X done"), `key`, `title`, `because`, `minutes` and `source`.
+   - Add the candidates to that day's Suggested with `caius_add` and `suggested: true`: pass each one's `key`, `title`, `because` and `minutes` as given. The tool writes the line; never write a Suggested line as free text.
    - A candidate with `noteId` and `listItemId` is a task in the week note already; `caius_add` would skip it as `duplicate`. Mention it, and forward it to the day with `caius_forward` only if Shawn names it.
    - The question covers what needs asking, in one go: the day over capacity ("which of these can wait?"), meetings that overlap, an empty evening. An overlap's answer goes to the day's Context with `caius_context_add`. An evening task he names goes in through Suggested and `caius_accept`, under the evening heading.
    - `data.errors` names a source that could not be read. Say which, in one line; with Jira missing there are no ticket candidates.
@@ -140,5 +140,5 @@ A skipped item is often right. Report it to Shawn instead of working around it.
 - Run any batch with `dryRun: true` first and show Shawn the summary. Apply it only after he agrees.
 - Never drop a task without a reason, and take the reason from Shawn, not from a guess.
 - Only pull down the cascade. Do not add a task to a week note that isn't in the month, unless Shawn says so.
-- The daily brief writes only to Suggested (`caius_add` with `suggested: true` and a `source`). It never writes above that section, and it does not suggest something already open anywhere in the Journal or already dismissed.
+- The daily brief writes only to Suggested (`caius_add` with `suggested: true`, `key`, `title`, `because` and `minutes`). It never writes above that section, and it does not suggest something already open anywhere in the Journal or already dismissed.
 - After an `edited` skip, read the note again with `caius_plan` before you run the item again.

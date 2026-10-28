@@ -400,9 +400,13 @@ export function mainTasks(plan: PlanView): PlanTask[] {
 
 const isLive = (task: PlanTask) => task.state === "open" || task.state === "in_progress";
 
-/** A candidate as the step reports it: `Get X done` (a week item keeps its own text) with its reason in words. */
+/**
+ * A candidate as the step reports it: `Get X done` (a week item keeps its own text) with its reason
+ * in words, and for a ticket the `key` and `title` that `caius_add` takes with `because` and `minutes`.
+ */
 export function present(candidate: Candidate) {
     const { subject, reason, keys: _keys, ...rest } = candidate;
+    const ticket = reason.kind === "week" ? {} : { key: candidate.source, title: subject.slice(candidate.source.length).trim() || subject };
     const because = reason.kind === "handoff"
         ? reason.days === null
             ? t("caius.daily.because_handoff_unknown", { status: reason.status })
@@ -410,7 +414,7 @@ export function present(candidate: Candidate) {
         : reason.kind === "ask"
             ? t("caius.daily.because_ask", { author: reason.author, weekday: weekdayName(dayKey(new Date(reason.created))) })
             : t("caius.daily.because_week");
-    return { text: reason.kind === "week" ? subject : t("caius.daily.get_done", { subject }), because, ...rest };
+    return { text: reason.kind === "week" ? subject : t("caius.daily.get_done", { subject }), ...ticket, because, ...rest };
 }
 
 const sameText = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();

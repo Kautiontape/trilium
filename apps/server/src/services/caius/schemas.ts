@@ -26,23 +26,47 @@ const version = {
 const dryRun = z.boolean().optional().describe("Report what would change without writing anything");
 const html = z.boolean().optional().describe("On a dry run, return each note's full before and after HTML instead of a summary of the change");
 
+/** A Suggested line in its one format, `Get ZAP-1 Check the export done: because it waits (~30m)`. */
+const SUGGESTED_LINE = /^Get \S.* done: because \S.* \(~\d+m\)$/;
+const SUGGESTED_SHAPE = "A Suggested item takes key, title, because and minutes, written as \"Get KEY title done: because why (~30m)\"; text is accepted only in that shape";
+
 const addItem = z.object({
     date: periodKey("day").optional().describe("Day note, YYYY-MM-DD"),
     week: periodKey("week").optional().describe("Week note, YYYY-Www"),
     month: periodKey("month").optional().describe("Month note, YYYY-MM"),
     section: z.string().optional().describe("Heading to add the task under"),
     critical: z.boolean().optional().describe("Add the task to the Important block"),
-    suggested: z.boolean().optional().describe("Add the task to the Suggested section"),
-    text: z.string().describe("The task text"),
+    suggested: z.boolean().optional().describe("Add the task to the Suggested section, from key, title, because and minutes"),
+    text: z.string().optional().describe("The task text. Not for a Suggested item, unless already in its \"Get KEY title done: because why (~30m)\" shape."),
+    key: z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase()).optional()
+        .describe("Suggested: the Jira key, linked in the line"),
+    title: z.string().trim().min(1).optional().describe("Suggested: what to get done, such as \"Check the invoice export in QA\""),
+    because: z.string().trim().min(1).optional().describe("Suggested: why today, such as \"sitting in QA Testing for 3 days\""),
+    minutes: z.number().int().positive().optional().describe("Suggested: the size in minutes"),
     source: z.string().optional().describe("A Jira key or URL, linked in the task and used to spot duplicates"),
-    est: z.string().optional().describe("Estimate such as 30m, 2h or 1h30m")
+    est: z.string().optional().describe("Estimate such as 30m, 2h or 1h30m; not for a Suggested item")
 }).refine(
     (item) => [item.date, item.week, item.month].filter((v) => v !== undefined).length === 1,
     "Give exactly one of date, week or month"
 ).refine(
     (item) => [item.section !== undefined, item.critical, item.suggested].filter(Boolean).length === 1,
     "Give exactly one of section, critical or suggested"
-);
+).refine(
+    (item) => item.suggested || (!!item.text?.trim() && [item.key, item.title, item.because, item.minutes].every((v) => v === undefined)),
+    "Give text; key, title, because and minutes are for a Suggested item"
+).refine(
+    (item) => !item.suggested || (item.text === undefined
+        ? item.title !== undefined && item.because !== undefined && item.minutes !== undefined
+        : SUGGESTED_LINE.test(item.text.trim()) && [item.key, item.title, item.because, item.minutes].every((v) => v === undefined)),
+    SUGGESTED_SHAPE
+).refine(
+    (item) => !item.suggested || item.est === undefined,
+    "A Suggested item carries its size in minutes; don't give est as well"
+).transform(({ key, title, because, minutes, text, ...item }) => ({
+    ...item,
+    text: text ?? `Get ${key ? `${key} ` : ""}${title} done: because ${because?.replace(/^because\s+/i, "")} (~${minutes}m)`,
+    ...(key && item.source === undefined ? { source: key } : {})
+}));
 
 const acceptItem = z.object({
     ...taskRef,

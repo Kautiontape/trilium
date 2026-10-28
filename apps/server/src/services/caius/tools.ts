@@ -56,7 +56,7 @@ export function createCaiusTools(
         },
 
         caius_add: {
-            description: "Add tasks to a day, week or month note, in a section, the Important block or the Suggested section. Takes a list of items.",
+            description: "Add tasks to a day, week or month note, in a section or the Important block (text), or the Suggested section (key, title, because and minutes, written as \"Get KEY title done: because why (~30m)\"; free text is rejected unless already in that shape). Takes a list of items.",
             inputSchema: toolInputs.add,
             async: true,
             mutates: true,

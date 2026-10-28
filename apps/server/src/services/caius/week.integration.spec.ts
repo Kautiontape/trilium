@@ -111,7 +111,7 @@ describe("work he finished never comes back", () => {
 
     it("Tue 11:05: the agent can't put ZAP-101 back in Suggested by hand", async () => {
         at(`${TUE}T11:05`);
-        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, text: "Get ZAP-101 verified", source: "ZAP-101" } ] });
+        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, key: "ZAP-101", title: "Verify the export retry", because: "sitting in Dev Verify for 6 days", minutes: 45 } ] });
         expect(added.results[0]).toMatchObject({ status: "skipped", reason: "finished" });
     });
 
@@ -129,7 +129,7 @@ describe("work he finished never comes back", () => {
 
     it("Thu 09:30: a dismissal on Tuesday's note keeps ZAP-112 out of Friday's plan for Monday", async () => {
         at(`${THU}T09:30`);
-        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, text: "Get ZAP-112 Check the report job done", source: "ZAP-112" } ] });
+        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, key: "ZAP-112", title: "Check the report job", because: "sitting in Dev Verify for 6 days", minutes: 30 } ] });
         expect(added.results[0]).toMatchObject({ status: "added" });
         const dismissed = await call("caius_dismiss", { items: [ { noteId: added.results[0].writtenNoteId, listItemId: added.results[0].listItemId } ] });
         expect(dismissed.results[0]).toMatchObject({ status: "dismissed", key: "ZAP-112" });
@@ -220,5 +220,37 @@ describe("Context writes decide their own target", () => {
 
         expect(await contextOf("week", "2026-W45")).toEqual(expect.arrayContaining([ "ZAP-2620 waits on legal", "Riley is out on Thursday" ]));
         expect(await contextOf("day", THU)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00" ]);
+    });
+});
+
+describe("Suggested lines have one format, built by the tool", () => {
+    it("writes the structured fields as \"Get KEY title done: because why (~Nm)\", with the estimate once", async () => {
+        at(`${THU}T09:30`);
+        const added = await call("caius_add", { items: [
+            { date: THU, suggested: true, key: "ZAP-121", title: "Check the invoice export in QA", because: "because sitting in QA Testing for 3 days", minutes: 30 },
+            { date: THU, suggested: true, title: "Book the venue", because: "the quote expires Friday", minutes: 15 }
+        ] });
+        expect(added.results.map((r: any) => r.status)).toEqual([ "added", "added" ]);
+        const suggested = (await call("caius_plan", { period: "day", date: THU })).suggested.map((task: any) => task.text.replace(/\]\([^)]*\)/g, "]"));
+        expect(suggested).toEqual([
+            "Get [ZAP-121] Check the invoice export in QA done: because sitting in QA Testing for 3 days (~30m)",
+            "Get Book the venue done: because the quote expires Friday (~15m)"
+        ]);
+    });
+
+    it("rejects the four formats T13A's Suggested lines came in, and an estimate given twice", async () => {
+        // The schema throws before the tool returns a promise.
+        const add = (item: object) => Promise.resolve().then(() => call("caius_add", { items: [ item ] }));
+        for (const text of [
+            "ZAP-101 — Verify the export retry on staging ~30m",
+            "ZAP-111",
+            "ZAP-111 (QA Testing, 3 days) ~30m",
+            "Get ZAP-111 \"Check the invoice export in QA\" done: sitting in QA Testing for 3 days (~30m) ~30m"
+        ]) {
+            await expect(add({ date: THU, suggested: true, text, source: "ZAP-111" }), text).rejects.toThrow(/Get KEY title done: because why \(~30m\)/);
+        }
+        await expect(add({ date: THU, suggested: true, key: "ZAP-120", title: "Check it", because: "it waits", minutes: 30, est: "30m" })).rejects.toThrow(/est/);
+        const shaped = await call("caius_add", { items: [ { date: THU, suggested: true, text: "Get ZAP-120 Check it done: because it waits (~30m)", source: "ZAP-120" } ] });
+        expect(shaped.results[0]).toMatchObject({ status: "added" });
     });
 });

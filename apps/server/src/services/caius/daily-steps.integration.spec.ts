@@ -260,7 +260,7 @@ describe("caius_winddown", () => {
         const sources = async () => (await call("caius_winddown", { date: FRIDAY, step: "next" })).data.candidates.map((c: any) => c.source);
         expect(await sources()).toContain("ZAP-101");
 
-        const added = await call("caius_add", { items: [ { date: MONDAY, suggested: true, text: "Get ZAP-101 Summary ZAP-101 done", source: "ZAP-101", est: "30m" } ] });
+        const added = await call("caius_add", { items: [ { date: MONDAY, suggested: true, key: "ZAP-101", title: "Summary ZAP-101", because: "sitting in Dev Verify for 3 days", minutes: 30 } ] });
         expect(added.results[0]).toMatchObject({ status: "added" });
         expect(await sources()).not.toContain("ZAP-101");
 
