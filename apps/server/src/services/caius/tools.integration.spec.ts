@@ -67,6 +67,9 @@ describe("caius tools", () => {
     it("sends the agent from the steps to one apply call, and never names Shawn", () => {
         expect(toolNamed("caius_planday").description).toContain("then call caius_plan_apply once with the user's answers");
         expect(toolNamed("caius_winddown").description).toContain("then call caius_winddown_apply once with the user's answers");
+        for (const name of [ "caius_winddown", "caius_planday" ]) {
+            for (const old of [ "caius_context_keep", "caius_skip_catchup" ]) expect(toolNamed(name).description, `${name}: ${old}`).not.toContain(old);
+        }
         for (const [ name, def ] of caiusTools) {
             expect(def.description, name).not.toContain("Shawn");
             expect(def.description, name).not.toContain("still do the step's writes");
