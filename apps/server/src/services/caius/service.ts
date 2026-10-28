@@ -62,6 +62,7 @@ import {
     type BriefWriteInput,
     type ContextAddInput,
     type ContextInput,
+    type ContextKeepInput,
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
     type ExplainInput,
@@ -316,9 +317,22 @@ export function createCaiusService(
             });
         },
 
+        /** Adds a Context line; one given a date that names a ticket or a state goes to that day's week note. */
         contextAdd: ({ dryRun, ...req }: ContextAddInput) => withCaiusLock("caius_context_add", async () => {
-            const result = await addContext(store, req, { dryRun, now: caiusNow() });
-            return withBlobIds([ withDiff(result) ]);
+            const moved = req.date !== undefined && aboutState(req.text);
+            const target = moved && req.date ? { week: isoWeekKey(new Date(`${req.date}T00:00:00Z`)), text: req.text, until: req.until } : req;
+            const result = await addContext(store, target, { dryRun, now: caiusNow() });
+            return withBlobIds([ moved ? { ...withDiff(result), detail: "moved to the week note" } : withDiff(result) ]);
+        }),
+
+        /** Writes each line Shawn kept to the week note of `date`, the day planned or wound down to. */
+        contextKeep: ({ date, lines, dryRun }: ContextKeepInput) => withCaiusLock("caius_context_keep", async () => {
+            const week = isoWeekKey(new Date(`${date}T00:00:00Z`));
+            const results = [];
+            for (const line of lines) {
+                results.push({ week, ...withDiff(await addContext(store, { week, ...line }, { dryRun, now: caiusNow() })) });
+            }
+            return withBlobIds(results);
         }),
 
         /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
@@ -529,6 +543,12 @@ const MONTHS = [
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december"
 ];
+
+/** Whether a Context line is about the state of things: it names a ticket, or says something is open, someone is out or on leave, or until when. */
+function aboutState(text: string): boolean {
+    return /\b[A-Z][A-Z0-9]+-\d+\b/.test(text)
+        || /\b(?:is|are)\s+(?:open|out|away|off)\b|\bout (?:all|this|until|today|on)\b|\bon (?:leave|PTO|holiday|vacation)\b|\ball week\b|\buntil\b/i.test(text);
+}
 
 /** The keys `addTasks` gives an item: its source's, else those of its text. */
 function addKeys(item: AddInput["items"][number]): string[] {

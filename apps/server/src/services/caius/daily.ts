@@ -134,7 +134,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
     const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
     const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
     const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
-    return reply(read.standing, { context: read.context, targetWeek, noticed }, question, null);
+    return reply(read.standing, { context: read.context, targetWeek, keepDate: targetDay, noticed }, question, null);
 }
 
 export type PlanDayStep = "catchup" | "inputs" | "brief";
@@ -194,7 +194,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         ];
         return reply(read.standing, {
             plannedAt: facts.plannedAt, candidates, meetings, overlaps, capacity: read.inputs.capacity,
-            targetWeek: isoWeekKey(utcDay(date)), carry,
+            targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry,
             context: read.context, forwardSuggestion, errors: read.inputs.errors
         }, questions.length ? questions.join(" ") : null, "brief");
     }

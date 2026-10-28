@@ -163,12 +163,21 @@ const meetings = z.object({
 });
 
 const contextAdd = z.object({
-    date: periodKey("day").optional().describe("The day note to add the line to, YYYY-MM-DD: for a fact about that one day"),
+    date: periodKey("day").optional().describe("The day note to add the line to, YYYY-MM-DD: for a fact about that one day. A line that names a ticket or a state (is open, is out, on leave, until) goes to that day's week note instead."),
     week: periodKey("week").optional().describe("The ISO week note to add the line to, YYYY-Www: the default for a fact about the state of things"),
     text: z.string().trim().min(1).describe("The line, such as \"ZAP-2590 is open\""),
     until: periodKey("day").optional().describe("The last day the line holds, YYYY-MM-DD; written as (until Fri 6 Nov)"),
     dryRun
 }).refine((input) => (input.date === undefined) !== (input.week === undefined), "Give exactly one of date or week");
+
+const contextKeep = z.object({
+    date: periodKey("day").describe("The day being planned (Plan my day) or wound down to (Wind down's next workday), YYYY-MM-DD: the step's data.keepDate. The lines go to that day's ISO week note."),
+    lines: z.array(z.object({
+        text: z.string().trim().min(1).describe("The line, such as \"ZAP-2590 is open\""),
+        until: periodKey("day").optional().describe("The last day the line holds, YYYY-MM-DD")
+    })).min(1).describe("The lines Shawn wants kept"),
+    dryRun
+});
 
 const finished = z.object({
     keys: z.array(z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase()))
@@ -201,6 +210,7 @@ export const toolInputs = {
     }),
     meetings,
     contextAdd,
+    contextKeep,
     briefWrite,
     skipCatchup,
     finished,
@@ -245,6 +255,7 @@ export type InputsInput = z.infer<typeof inputs>;
 export type InputsToolInput = z.infer<typeof toolInputs.inputs>;
 export type MeetingsInput = z.infer<typeof meetings>;
 export type ContextAddInput = z.infer<typeof contextAdd>;
+export type ContextKeepInput = z.infer<typeof contextKeep>;
 export type PlanInput = z.infer<typeof reads.plan>;
 export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;

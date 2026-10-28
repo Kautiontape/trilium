@@ -173,3 +173,52 @@ describe("a wind-down that fits on one screen", () => {
         expect(JSON.stringify(answer).length).toBeLessThan(20_000);
     });
 });
+
+describe("Context writes decide their own target", () => {
+    const JACO = "Jaco out all week.";
+    const ZAP2590 = "ZAP-2590 is open; Jira's Done is a mistake.";
+    const contextOf = async (period: string, date: string) => (await call("caius_plan", { period, date })).context.map((line: any) => line.text);
+
+    it("Mon 09:40: \"keep going\" on last week's lines writes them to week 45, not to Monday's note", async () => {
+        await cls.init(async () => {
+            const lastWeek = await store.calendarWeek("2026-W44");
+            await store.putContent(lastWeek.noteId, `<h3>Context</h3><ul><li>${JACO}</li><li>${ZAP2590.replace("'", "&#39;")}</li></ul>`);
+        });
+        at(`${MON}T09:40`);
+        const answer = await call("caius_planday", { date: MON, step: "inputs" });
+        expect(answer.data.carry.map((c: any) => c.line).sort()).toEqual([ JACO, ZAP2590 ]);
+        expect(answer.data.keepDate).toBe(MON);
+
+        const kept = await call("caius_context_keep", { date: answer.data.keepDate, lines: answer.data.carry.map((c: any) => ({ text: c.line })) });
+        expect(kept.results.map((r: any) => r.status)).toEqual([ "added", "added" ]);
+        expect((await contextOf("week", "2026-W45")).sort()).toEqual([ JACO, ZAP2590 ]);
+        expect(await contextOf("day", MON)).toEqual([]);
+    });
+
+    it("Fri 17:20: the wind-down carries them into week 46 for Monday", async () => {
+        at(`${FRI}T17:20`);
+        const answer = await call("caius_winddown", { date: FRI, step: "context" });
+        expect(answer.data.keepDate).toBe(MON9);
+        expect(answer.data.noticed.map((n: any) => n.line).sort()).toEqual([ JACO, ZAP2590 ]);
+        expect(answer.question).toContain("into next week?");
+
+        const kept = await call("caius_context_keep", { date: answer.data.keepDate, lines: [ { text: ZAP2590 } ] });
+        expect(kept.results[0]).toMatchObject({ status: "added" });
+        expect(await contextOf("week", "2026-W46")).toEqual([ ZAP2590 ]);
+        expect((await call("caius_context", { date: "2026-11-10" })).context.map((line: any) => line.text)).toContain(ZAP2590);
+    });
+
+    it("caius_context_add moves a line about a ticket or a state to the week note, and keeps a line about one day on the day", async () => {
+        at(`${WED}T17:45`);
+        const ticketLine = await call("caius_context_add", { date: THU, text: "ZAP-2620 waits on legal" });
+        expect(ticketLine.results[0]).toMatchObject({ status: "added", detail: "moved to the week note" });
+        const out = await call("caius_context_add", { date: THU, text: "Riley is out on Thursday" });
+        expect(out.results[0]).toMatchObject({ status: "added", detail: "moved to the week note" });
+        const day = await call("caius_context_add", { date: THU, text: "Taking Incident Review over Vendor Onboarding at 11:00" });
+        expect(day.results[0]).toMatchObject({ status: "added" });
+        expect(day.results[0].detail).not.toBe("moved to the week note");
+
+        expect(await contextOf("week", "2026-W45")).toEqual(expect.arrayContaining([ "ZAP-2620 waits on legal", "Riley is out on Thursday" ]));
+        expect(await contextOf("day", THU)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00" ]);
+    });
+});
