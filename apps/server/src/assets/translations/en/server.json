@@ -685,7 +685,8 @@
       "unchanged": "{{- item}} stays as it was",
       "a_task": "one task",
       "nothing": "Everything was already in place.",
-      "list_or": "{{- head}} or {{- last}}"
+      "list_or": "{{- head}} or {{- last}}",
+      "next_planday": "Now today's plan."
     },
     "short": {
       "weekdays": {

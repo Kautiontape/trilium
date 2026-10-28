@@ -330,3 +330,39 @@ describe("a question answered once stays answered", () => {
         delete calendars[THURSDAY];
     });
 });
+
+describe("review continues", () => {
+    it("Wed 11 09:45: the Review's apply says to go on to today's plan, and the plan step takes the answers already given", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-02-01");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("r-dave", "Message Dave about the lights"))}<h3>Evening</h3>${ul(li("r-groc", "Groceries"))}`);
+        });
+        at("2027-02-03T09:45");
+        const wound = await call("caius_winddown_apply", { date: "2027-02-01", done: [ "groceries" ] });
+        expect(wound.next).toBe("planday");
+        expect(wound.nextCall).toEqual({ tool: "caius_planday", date: "2027-02-03" });
+        expect(wound.say).toMatch(/ Now today's plan\.$/);
+
+        // A day nothing recorded: the answers he gave in this conversation are passed through instead.
+        at("2027-02-10T09:45");
+        expect((await call("caius_planday", { date: "2027-02-10", step: "inputs", refresh: true })).question).toContain("Anything for the evening?");
+        expect((await call("caius_planday", { date: "2027-02-10", step: "inputs", answered: { evening: [] } })).question).toBeNull();
+
+        // Last week's line is offered to carry on Tuesday, unless he already said to keep it.
+        expect((await call("caius_context_add", { week: "2027-W07", text: "Sam is out", until: "2027-02-26" })).results[0]).toMatchObject({ status: "added" });
+        at("2027-02-23T09:45");
+        const offered = await call("caius_planday", { date: "2027-02-23", step: "inputs", refresh: true });
+        expect(offered.data.carry.map((line: any) => line.line)).toEqual([ "Sam is out" ]);
+        const kept = await call("caius_planday", { date: "2027-02-23", step: "inputs", answered: { evening: [ "Groceries" ], keep: [ "Sam is out" ] } });
+        expect(kept.data.carry).toEqual([]);
+        expect(kept.question).toBeNull();
+    });
+
+    it("an evening wind-down has no next call", async () => {
+        at("2027-02-15T17:30");
+        const wound = await call("caius_winddown_apply", { date: "2027-02-15" });
+        expect(wound.next).toBeNull();
+        expect(wound.nextCall).toBeUndefined();
+        expect(wound.say).not.toContain("Now today's plan.");
+    });
+});

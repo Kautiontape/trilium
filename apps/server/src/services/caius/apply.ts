@@ -388,7 +388,11 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
         withTexts([ ...written, ...skipped ], pools, known);
-        return withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null, say: sayOf({ written, skipped }, { day: targetDay }) });
+        const say = sayOf({ written, skipped }, { day: targetDay });
+        return {
+            ...withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null, say: morning ? `${say} ${t("caius.say.next_planday")}` : say }),
+            ...(morning ? { nextCall: { tool: "caius_planday", date: targetDay } } : {})
+        };
     });
 }
 

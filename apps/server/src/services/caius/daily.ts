@@ -222,7 +222,7 @@ const HEAVY_RATIO = 0.5;
 /** Longest work-bar label before it is cut. */
 const LABEL_LENGTH = 24;
 
-export async function planDay(deps: StepDeps, { date, step, refresh }: { date: string; step: PlanDayStep; refresh?: boolean }) {
+export async function planDay(deps: StepDeps, { date, step, refresh, answered }: { date: string; step: PlanDayStep; refresh?: boolean; answered?: { evening?: string[]; keep?: string[] } }) {
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: PlanDayStep | null) => fitted({
         ...withDateLabels({ step, date, data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
@@ -249,7 +249,12 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
     const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
-        const { day: facts, plannedAt, candidates, carry, jira, headsUp, overlaps, forwardSuggestion, fits, askEvening } = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
+        const offer = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
+        const { day: facts, plannedAt, candidates, jira, headsUp, overlaps, forwardSuggestion, fits } = offer;
+        // What he already answered in this conversation is not asked again.
+        const kept = new Set((answered?.keep ?? []).map(lineIdOf));
+        const carry = offer.carry.filter((line) => !kept.has(line.lineId));
+        const askEvening = offer.askEvening && answered?.evening === undefined;
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines
             ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
