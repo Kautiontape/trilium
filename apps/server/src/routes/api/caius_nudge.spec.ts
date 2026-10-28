@@ -101,6 +101,24 @@ describe("Caius nudge route", () => {
         });
     });
 
+    it("answers wound_down with the time on a day wound down, over its plan, and without a time for a label that has none", async () => {
+        const day = "2033-03-14";
+        const note = await cls.init(async () => {
+            const monday = await store.calendarDay(day);
+            await store.putContent(monday.noteId, `<h3>Work</h3>${ul(li("w1", "Done thing", true))}`);
+            const brief = createChildNote(monday.noteId, "🌅 Morning Brief", "<p></p>");
+            setLabel(brief, "morningBrief", day);
+            setLabel(brief, "caiusPlannedAt", `${day}T09:40:00`);
+            setLabel(monday.noteId, "caiusWoundDown", `${day}T17:20:00`);
+            return monday.noteId;
+        });
+        expect((await nudge(day).expect(200)).body).toEqual({
+            date: day, state: "wound_down", lastWorkday: "2033-03-11", woundDownAt: `${day}T17:20:00`, woundDownTime: "17:20"
+        });
+        cls.init(() => setLabel(note, "caiusWoundDown", day));
+        expect((await nudge(day).expect(200)).body).toMatchObject({ state: "wound_down", woundDownAt: null, woundDownTime: null });
+    });
+
     it("reads a protected or non-text last workday as having no catch-up", async () => {
         const thursday = await cls.init(async () => {
             const note = await store.calendarDay("2033-03-10");

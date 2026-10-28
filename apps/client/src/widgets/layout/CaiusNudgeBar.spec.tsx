@@ -168,6 +168,15 @@ describe("CaiusNudgeBar", () => {
         expect(h.startCaiusConversation).toHaveBeenLastCalledWith("Plan my day 2026-11-04");
     });
 
+    it("reads 'Wound down 17:20.' with no action once the day is wound down", async () => {
+        h.nudge.mockResolvedValue({ date: TODAY, lastWorkday: "2026-11-03", state: "wound_down", woundDownAt: "2026-11-04T17:20:05" });
+        const bar = await mount(today);
+        expect(text(bar)).toBe("Wound down 17:20.");
+        expect(buttons(bar)).toEqual([]);
+        h.nudge.mockResolvedValue({ date: TODAY, lastWorkday: "2026-11-03", state: "wound_down", woundDownAt: null });
+        expect(text(await mount(today))).toBe("Wound down.");
+    });
+
     it("offers Plan my day for a plan made on an earlier day, and names the weekday of one made on another", async () => {
         h.nudge.mockResolvedValue({ date: TODAY, lastWorkday: "2026-11-03", state: "planned", plannedAt: "2026-10-30T17:20:05" });
         const earlier = await mount(today);

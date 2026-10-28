@@ -58,17 +58,18 @@ Today's day note (today by the Caius clock) shows a slim bar under its journal n
 
 | State | When | Bar | Actions |
 |---|---|---|---|
-| Catch-up | A workday since the last closed one still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks.", or "Tuesday and Wednesday have 5 open tasks." | **Move all to today**, **Review**, **Skip** |
-| Not planned | No catch-up is due, and today has no Morning Brief, or its brief was planned on an earlier day | "No plan yet." | **Plan my day** |
-| Planned | Today has a Morning Brief planned today | "Planned 08:40." ("Planned Fri 17:20." for a plan made on another day) | **Refresh** |
+| Wound down | Today was wound down (`#caiusWoundDown` on today's note, holding the time) | "Wound down 17:20." | none |
+| Catch-up | Today wasn't wound down, a workday since the last closed one still has live tasks, and today's catch-up has not been skipped | "Tuesday has 4 open tasks.", or "Tuesday and Wednesday have 5 open tasks." | **Move all to today**, **Review**, **Skip** |
+| Not planned | Today wasn't wound down, no catch-up is due, and today has no Morning Brief, or its brief was planned on an earlier day | "No plan yet." | **Plan my day** |
+| Planned | Today wasn't wound down and has a Morning Brief planned today | "Planned 08:40." ("Planned Fri 17:20." for a plan made on another day) | **Refresh** |
 
 - **Move all to today** forwards those tasks to today in one request, with no chat, the way the Plan tab's Close does: today's note is locked and reloaded if it is open. A task without a list item id is counted but not moved; run the id backfill.
 - **Review** starts `Wind down <oldest of those days>` in the sidebar chat.
-- **Which days:** walking back from the last workday, at most five workdays, every day with live tasks until the first closed one. A day with no note or no tasks at all is passed over; a day is closed when it had tasks and has none live, or, with nothing live, was wound down (`caius_winddown_apply` labels it `#caiusWoundDown`), skipped from, or planned (it has a brief). A skip recorded on a day covered the days before it, so the walk stops after that day.
+- **Which days:** walking back from the last workday, at most five workdays, every day with live tasks until the first closed one. A day with no note or no tasks at all is passed over; a day is closed when it had tasks and has none live, or, with nothing live, was wound down (`caius_winddown_apply` labels it `#caiusWoundDown=<the time>`), skipped from, or planned (it has a brief). A skip recorded on a day covered the days before it, so the walk stops after that day.
 - **Skip** sets `#caiusSkipCatchup=<today>` on today's note, as `caius_skip_catchup` does, so the bar and Plan my day stop offering the catch-up.
 - **Plan my day** and **Refresh** start `Plan my day <today>`.
 
-The rules are those of Plan my day's `catchup` step and of `caius_brief_write`'s brief lookup, read through `GET /api/caius/nudge?date=YYYY-MM-DD`. The bar reads its state when the note opens, and again after a change to the last workday's note, a skip, or a brief written under today's note, including a Caius write from the chat. Typing in today's note doesn't make it read again, and a hidden bar reads nothing.
+The rules are those of Plan my day's `catchup` step and of `caius_brief_write`'s brief lookup, read through `GET /api/caius/nudge?date=YYYY-MM-DD`. The bar reads its state when the note opens, and again after a change to the last workday's note, a wind-down, a skip, or a brief written under today's note, including a Caius write from the chat. Typing in today's note doesn't make it read again, and a hidden bar reads nothing.
 
 The **×** hides the bar on that note for the rest of the day. It doesn't skip the catch-up. The dismissal is kept in this browser's local storage, so another browser or device still shows the bar.
 

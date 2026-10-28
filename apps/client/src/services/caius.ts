@@ -146,7 +146,7 @@ export interface CaiusContextLine {
     noteId: string;
 }
 
-/** The nudge bar's state for a day: the catch-up first, then whether the day has a brief. */
+/** The nudge bar's state for a day: whether it was wound down, then the catch-up, then whether it has a brief. */
 export type CaiusNudge = { date: string; lastWorkday: string } & (
     | {
         state: "catchup";
@@ -156,6 +156,8 @@ export type CaiusNudge = { date: string; lastWorkday: string } & (
     }
     | { state: "unplanned" }
     | { state: "planned"; plannedAt: string | null }
+    /** `woundDownAt` is the local time of the wind-down, null when it wasn't recorded. */
+    | { state: "wound_down"; woundDownAt: string | null }
 );
 
 /** The gap between the server's dev clock and this browser's, in ms; 0 without a dev clock. */

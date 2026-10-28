@@ -81,7 +81,7 @@ import {
     type WindDownInput
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
-import { findBrief, PLANNED_AT_LABEL, writeBrief } from "./brief.js";
+import { findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import { catchupOf, type DayRead, listPicks, mainTasks, planDay, type Standing, type StepDeps, weekdayName, windDown, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
@@ -401,12 +401,17 @@ export function createCaiusService(
 
         /**
          * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and
-         * the brief lookup of `caius_brief_write`: `catchup` while the last workday has live tasks,
-         * then `planned` once the day has a brief, with the date and time it was planned, else
-         * `unplanned`. Reads only.
+         * the brief lookup of `caius_brief_write`: `wound_down` once the day was wound down, with the
+         * time, then `catchup` while the last workday has live tasks, then `planned` once the day has a
+         * brief, with the date and time it was planned, else `unplanned`. Reads only.
          */
         nudge: ({ date }: NudgeInput) => withCaiusLock("caius_nudge", async () => {
             const { lastWorkday, days, note, tasks } = await catchupOf(store, date, caiusNow());
+            const woundDown = note ? label(note, WOUND_DOWN_LABEL) : undefined;
+            if (woundDown !== undefined) {
+                const woundDownAt = woundDown.length > 10 ? woundDown : null;
+                return { date, state: "wound_down", lastWorkday, woundDownAt, woundDownTime: woundDownAt?.slice(11, 16) ?? null };
+            }
             if (tasks.length) {
                 return { date, state: "catchup", lastWorkday, days, tasks: tasks.map(({ noteId, listItemId, text }) => ({ noteId, listItemId, text })) };
             }

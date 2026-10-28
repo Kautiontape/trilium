@@ -287,3 +287,21 @@ describe("a morning Review goes on to Plan my day", () => {
         expect(await call("caius_winddown_apply", { date: "2026-11-25" })).toMatchObject({ targetDay: "2026-11-26", next: null });
     });
 });
+
+describe("a wound-down day says so", () => {
+    it("Fri 17:20: the wind-down records its time on the day, and a re-run keeps the first", async () => {
+        const DAY = "2026-11-27";
+        await cls.init(async () => {
+            const friday = await store.calendarDay(DAY);
+            await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("x1", "Tidy the desk"))}`);
+        });
+        const stamps = async () => (await cls.init(async () => store.note((await call("caius_plan", { period: "day", date: DAY })).noteId)))
+            .attributes.filter((a) => a.name === "caiusWoundDown").map((a) => a.value);
+        at(`${DAY}T17:20`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "x1" ] });
+        expect(await stamps()).toEqual([ `${DAY}T17:20:00` ]);
+        at(`${DAY}T17:40`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "x1" ] });
+        expect(await stamps()).toEqual([ `${DAY}T17:20:00` ]);
+    });
+});

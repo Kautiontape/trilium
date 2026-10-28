@@ -37,7 +37,7 @@ export const RAISED_LABEL = "caiusRaised";
 export const ASKED_LABEL = "caiusAsked";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
 export const NOT_TODAY_LABEL = "caiusNotToday";
-/** On a day note: the day was wound down, so the catch-up looks no further back than it. */
+/** On a day note: the day was wound down, at `YYYY-MM-DDTHH:mm:ss`, so the catch-up looks no further back than it. */
 export const WOUND_DOWN_LABEL = "caiusWoundDown";
 /** On a brief: the weather its drawing shows, as `61 Rain` (the WMO code and its label), so a redraw keeps it. */
 export const WEATHER_LABEL = "caiusWeather";

@@ -4551,7 +4551,9 @@
       "moved_one": "Moved {{count}} task to today.",
       "moved_other": "Moved {{count}} tasks to today.",
       "planned_untimed": "Planned.",
-      "planned_on": "Planned {{weekday}} {{time}}."
+      "planned_on": "Planned {{weekday}} {{time}}.",
+      "wound_down": "Wound down {{time}}.",
+      "wound_down_untimed": "Wound down."
     },
     "chat_unavailable": "Open the sidebar chat from a regular note to start Caius."
   }

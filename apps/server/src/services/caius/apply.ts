@@ -315,7 +315,11 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
-        if (!skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) await labelDay(store, date, WOUND_DOWN_LABEL, [ date ]);
+        // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
+        if (!skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) {
+            const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
+            if (!note.attributes.some((a) => a.type === "label" && a.name === WOUND_DOWN_LABEL)) await store.addLabel(note.noteId, WOUND_DOWN_LABEL, deps.plannedAt);
+        }
         for (const [ day, dayRead ] of briefed) {
             await guarded({ kind: "header", id: day }, skipped, async () => {
                 const plan = await readPlan(store, "day", day, now);
