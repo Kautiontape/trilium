@@ -186,8 +186,8 @@ const eveningAnswered = z.boolean().optional().describe("true when he said the e
 /** The agent's word that it checked what the last call's `check` asked about. */
 const checked = z.boolean().optional().describe("true when the last call answered `check` and he didn't mean what his words seemed to say: the call is applied as given, without the check");
 
-/** His vague yes, which takes the proposals as offered. */
-const asOffered = z.boolean().optional().describe("true on his vague yes (\"fine\", \"ok\", \"sounds good\"): every candidate taken in the order shown, every keep or carry line kept and the heavy-day move made, everything else as proposed. A said that is only such a word reads the same");
+/** His yes to everything offered, which takes the candidates and the keep or carry lines. */
+const asOffered = z.boolean().optional().describe("true when his yes or fine (\"fine\", \"ok\", \"sounds good\") takes everything offered: every candidate in the order shown and every keep or carry line, everything else as proposed. It never makes the heavy-day move (a `forward`) or a park (the item's month fate). The tool writes nothing from his words alone: a said that is only such a word, with neither this nor the specific fields, is a `check`");
 
 const overlapAnswers = z.array(z.object({
     overlapId: z.string().min(1).describe("The overlap's overlapId from the step data"),

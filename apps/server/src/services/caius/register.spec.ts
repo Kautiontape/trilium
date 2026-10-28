@@ -68,13 +68,11 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.",
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
         "When the catch-up step asks about held items (`data.held`), one he says is done goes in `finished`; anything else he says about them is `catchup: \"review\"`.",
-        "and the heavy-day move as suggested",
         "Never ask permission for anything the apply tool does.",
         "Never claim a write that isn't in the result: its `say` is the whole recap.",
         "After the apply, reply with the result's `say`, then the headline and the top pick, and nothing else.",
         "After the apply, reply with the result's `say` and nothing else.",
         "Never narrate tools, ids, protocol or data quality.",
-        "A vague reply (\"fine\", \"yeah\") accepts the proposals as offered",
         "Never write \"still\", \"outstanding\", \"unanswered\", \"waiting\", \"no reply\" or \"haven't answered\".",
         "Only \"drop\", \"cancel\" or \"not doing\" drops a task or dismisses a candidate; anything vaguer (\"skip that\", \"not now\") is `notToday`",
         "Never offer to drop a Context line.",
@@ -155,6 +153,13 @@ it("parks a stale item only on his word, and keeps a personal errand out of the 
     expect(sheet).toContain("An item with `park` has been carried on three workdays or more, and the `open` question asks to park it in that month. Only his word parks it: pass its fate with `to` set to `park.month`. Without it, the item goes on as proposed.");
     expect(sheet).toContain("His yes to the park question (\"yes\", \"park it\", \"sure\") is that fate: pass it. The tool parks nothing from his words alone, so a call without the month fate leaves the item on its proposed fate.");
     expect(sheet).toContain("The headline names his first work task: never a personal errand or an evening task when work is on his list. The tool writes your headline as you send it");
+});
+
+it("maps his yes onto asOffered or the fields, since the tool writes nothing from his words alone", () => {
+    const sheet = sheetOnce();
+    expect(sheet).toContain("Map his yes or fine onto the call: `asOffered: true` for everything offered (the candidates in the order shown, every keep or carry line), or the specific fields for what it answers. The heavy-day move is a `forward` with the suggestion's `listItemId` and `to`, and a park is the item's month fate: `asOffered` makes neither. The tool writes nothing from his words alone: a bare yes or fine with neither is a `check`. Never read a yes as a skip.");
+    expect(sheet).not.toContain("accepts the proposals as offered");
+    expect(sheet).not.toContain("answers that question only: pass that one answer, without `asOffered`");
 });
 
 /** The sheet's text, read while the skill is registered for that read alone. */
