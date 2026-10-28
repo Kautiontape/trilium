@@ -18,6 +18,10 @@ const MAX_PAGES = 10;
 const MAX_ASK_TICKETS = 80;
 /** Most keys checked in the `key in (…)` search, which travels in a URL. */
 const MAX_NAMED_KEYS = 100;
+/** Keys per search once Jira has rejected the whole list. */
+const KEY_CHUNK = 10;
+/** Most `key in (…)` searches one read makes, the first and the retries together. */
+export const MAX_KEY_SEARCHES = 30;
 const CONCURRENCY = 4;
 const RETRY_STATUSES = [ 429, 502, 503, 504 ];
 const MAX_RETRY_WAIT_MS = 5000;
@@ -151,19 +155,49 @@ async function searchInvolved(api: Api, warnings: Set<string>): Promise<{ issues
     return search(api, `(assignee = currentUser() OR watcher = currentUser()) ${window}`);
 }
 
-/** The tickets among `keys` that Jira has, read in one `key in (…)` search. Anything that is not a ticket key is left out. */
+/**
+ * The tickets among `keys` that Jira has, read in one `key in (…)` search. Anything that is not a
+ * ticket key is left out. Jira answers 400 when one key is unknown, so a rejected search is run
+ * again in chunks of `KEY_CHUNK`, and a rejected chunk key by key; a key rejected alone, or not
+ * searched within `MAX_KEY_SEARCHES`, is dropped with `done_partial`.
+ */
 async function namedIssues(api: Api, keys: string[], warnings: Set<string>): Promise<RawIssue[]> {
     const wanted = [ ...new Set(keys.map((key) => key.toUpperCase()).filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key))) ];
     if (!wanted.length) return [];
     if (wanted.length > MAX_NAMED_KEYS) warnings.add("done_truncated");
-    try {
-        const named = await search(api, `key in (${wanted.slice(0, MAX_NAMED_KEYS).join(", ")}) ORDER BY key`);
-        if (named.truncated) warnings.add("search_truncated");
-        return named.issues;
-    } catch {
-        warnings.add("done_partial");
-        return [];
-    }
+    let budget = MAX_KEY_SEARCHES;
+    const issues: RawIssue[] = [];
+    /** Searches `group`, answering whether Jira rejected it with a 400. */
+    const searchKeys = async (group: string[]): Promise<boolean> => {
+        budget--;
+        try {
+            const named = await search(api, `key in (${group.join(", ")}) ORDER BY key`);
+            if (named.truncated) warnings.add("search_truncated");
+            issues.push(...named.issues);
+            return false;
+        } catch (e) {
+            if (e instanceof JiraError && e.code === "http_400") return true;
+            warnings.add("done_partial");
+            return false;
+        }
+    };
+    /** Searches each group with at most `CONCURRENCY` in flight, answering the groups Jira rejected. */
+    const searchEach = async (groups: string[][]): Promise<string[][]> => {
+        const allowed = groups.slice(0, Math.max(0, budget));
+        if (allowed.length < groups.length) warnings.add("done_partial");
+        const rejected = await mapPool(allowed, searchKeys);
+        return allowed.filter((_, i) => rejected[i]);
+    };
+
+    const rejectedAll = await searchEach([ wanted.slice(0, MAX_NAMED_KEYS) ]);
+    const rejectedChunks = await searchEach(rejectedAll.flatMap((all) => chunks(all, KEY_CHUNK)));
+    const rejectedKeys = await searchEach(rejectedChunks.flatMap((chunk) => chunk.map((key) => [ key ])));
+    if (rejectedKeys.length) warnings.add("done_partial");
+    return issues;
+}
+
+function chunks<T>(items: T[], size: number): T[][] {
+    return Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
 }
 
 /** Maps `items` with at most `CONCURRENCY` calls in flight, keeping their order. */

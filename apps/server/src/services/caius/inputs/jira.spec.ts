@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { isInputWarning, readInputs } from "./index.js";
-import { adfToText, asksIn, isHandoffStatus, overriddenKeys } from "./jira.js";
+import { adfToText, asksIn, isHandoffStatus, MAX_KEY_SEARCHES, overriddenKeys } from "./jira.js";
 
 const NOW = new Date("2026-10-27T15:00:00Z");
 const TOKEN = "tok-not-a-real-secret";
@@ -171,6 +171,38 @@ describe("caius_inputs Jira under strain", () => {
         const failed = await read(named(true), [ "ZAP-120" ]);
         expect(failed.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "done_partial" } ]);
         expect(failed.jira.done).toEqual([ "ZAP-103", "ZAP-104" ]);
+    });
+
+    it("splits a key search Jira rejects into tens, then single keys, dropping only the keys it rejects alone", async () => {
+        const keySearches: string[][] = [];
+        const unknown = (key: string) => key === "ZAP-999" || Number(key.slice(4)) >= 300;
+        const rejectingUnknown = withFixtures((url) => {
+            const jql = url.searchParams.get("jql") ?? "";
+            if (url.pathname !== "/rest/api/3/search/jql" || !jql.startsWith("key in")) return undefined;
+            const keys = /key in \(([^)]*)\)/.exec(jql)?.[1]?.split(", ") ?? [];
+            keySearches.push(keys);
+            if (keys.some(unknown)) return new Response("{}", { status: 400 });
+            return new Response(JSON.stringify({ isLast: true, issues: keys.map((key) => ({
+                key, fields: { status: { name: key === "ZAP-120" ? "Done" : "In Progress", statusCategory: { key: key === "ZAP-120" ? "done" : "indeterminate" } }, resolution: null }
+            })) }));
+        });
+        const read = (keys: string[]) => readInputs({ date: "2026-10-27", keys }, { fetch: rejectingUnknown, env: ENV, now: () => NOW });
+
+        const named = [ "ZAP-120", "ZAP-999", ...Array.from({ length: 10 }, (_, i) => `ZAP-${130 + i}`) ];
+        const result = await read(named);
+        expect(result.jira.done).toEqual([ "ZAP-103", "ZAP-104", "ZAP-120" ]);
+        expect(result.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "done_partial" } ]);
+        expect(keySearches.map((keys) => keys.length)).toEqual([ 12, 10, 2, ...Array<number>(10).fill(1) ]);
+        expect(keySearches.slice(3).map(([ key ]) => key)).toEqual(named.slice(0, 10));
+
+        keySearches.length = 0;
+        const recovered = await read([ "ZAP-120", ...Array.from({ length: 10 }, (_, i) => `ZAP-${300 + i}`) ]);
+        expect(recovered.jira.done).toContain("ZAP-120");
+
+        keySearches.length = 0;
+        const everyKeyUnknown = await read(Array.from({ length: 100 }, (_, i) => `ZAP-${300 + i}`));
+        expect(keySearches.length).toBeLessThanOrEqual(MAX_KEY_SEARCHES);
+        expect(everyKeyUnknown.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "done_partial" } ]);
     });
 
     it("drops the comment clause once when Jira rejects the involved search with a 400", async () => {
