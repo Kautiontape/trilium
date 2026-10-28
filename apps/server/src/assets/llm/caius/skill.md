@@ -102,6 +102,8 @@ In these conversations only these tools are available; every other Caius tool an
 
 On a day already under way the step gives `data.planFrom`: the acts start there, never in the part of the day already past.
 
+When the catch-up step asks about held items (`data.held`), one he says is done goes in `finished`; anything else he says about them is `catchup: "review"`.
+
 On `catchup: "review"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day: call `catchup` again and go on from there.
 
 On a refresh (the day already has a brief), the step asks only what is new; with no question, call `caius_plan_apply` with an empty answer and the brief's prose.

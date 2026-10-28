@@ -70,11 +70,20 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
             const matches = orList(labels.length < texts.length ? texts.map((text) => labelWords(text, key)) : labels);
             return noun ? t("caius.say.which", { noun, matches }) : t("caius.say.which_held", { matches });
         }))
-        : held.length > 1 ? [ t("caius.say.which_held", { matches: orList(unique(held.map(labelOf))) }) ]
-            : held[0] ? [ t("caius.say.what_about", { item: labelOf(held[0]) }) ] : [];
+        : [ heldQuestion(held) ].filter((question): question is string => question !== null);
     const sentences = [ wrote, missed ].filter((clauses) => clauses.length).map((clauses) => `${capitalized(andList(clauses))}.`);
     if (!sentences.length && !questions.length) return t("caius.say.nothing");
     return [ ...sentences, ...questions ].join(" ");
+}
+
+/**
+ * The one question about items held from an earlier call, by their texts: "Which do you mean:
+ * ZAP-111 or ZAP-101?", "What about ZAP-101?" for one, or null for none. The catch-up step asks it too.
+ */
+export function heldQuestion(held: string[]): string | null {
+    const labels = unique(held.map(labelOf));
+    if (labels.length > 1) return t("caius.say.which_held", { matches: orList(labels) });
+    return labels[0] ? t("caius.say.what_about", { item: labels[0] }) : null;
 }
 
 /** Answers whose ambiguous items are held until he says which, so `say` asks. */

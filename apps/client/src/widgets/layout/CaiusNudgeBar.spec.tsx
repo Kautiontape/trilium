@@ -125,6 +125,21 @@ describe("CaiusNudgeBar", () => {
         expect(text(bar)).toBe("No plan yet.");
     });
 
+    it("counts held tasks on the day and offers Review, but never moves them", async () => {
+        h.nudge.mockResolvedValue({ ...CATCHUP, tasks: [], held: [ { noteId: "tue", listItemId: "h1", text: "Check the export" }, { noteId: "tue", listItemId: "h2", text: "Verify the export" } ] });
+        const bar = await mount(today);
+        expect(text(bar)).toBe("Tuesday has 2 open tasks.");
+        expect(buttons(bar)).toEqual([ "Review", "Skip" ]);
+
+        h.nudge.mockResolvedValue({ ...CATCHUP, held: [ { noteId: "tue", listItemId: "h1", text: "Check the export" } ] });
+        const mixed = await mount(today);
+        expect(text(mixed)).toBe("Tuesday has 4 open tasks.");
+        await press(button(mixed, "Move all to today"));
+        expect(h.apply).toHaveBeenLastCalledWith(expect.objectContaining({
+            forwards: [ { noteId: "tue", listItemId: "a", to: TODAY }, { noteId: "tue", listItemId: "b", to: TODAY } ]
+        }));
+    });
+
     it("moves tasks from several notes without a version token, locking every source", async () => {
         h.nudge.mockResolvedValue({ ...CATCHUP, tasks: [
             { noteId: "tue", listItemId: "a", text: "First" },

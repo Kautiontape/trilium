@@ -79,9 +79,11 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
             const movable = shown.tasks.filter((task): task is MovableTask => !!task.listItemId);
             const days = shown.days?.length ? shown.days : [ shown.lastWorkday ];
             const names = days.map((day) => dayName(day, date));
+            // Held tasks are open too, so they count; Move all never takes them.
+            const count = shown.tasks.length + (shown.held?.length ?? 0);
             text = names.length > 1
-                ? t("caius.nudge.catchup_days", { weekdays: t("caius.nudge.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: shown.tasks.length })
-                : t("caius.nudge.catchup", { weekday: names[0], count: shown.tasks.length });
+                ? t("caius.nudge.catchup_days", { weekdays: t("caius.nudge.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count })
+                : t("caius.nudge.catchup", { weekday: names[0], count });
             // Review closes the oldest day first; its wind-down sends what's left on.
             const oldest = days[0] ?? shown.lastWorkday;
             actions = [

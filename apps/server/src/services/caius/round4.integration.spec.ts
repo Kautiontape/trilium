@@ -855,6 +855,11 @@ describe("fix round 1: a hold survives the catch-up", () => {
         at("2027-09-02T09:30");
         const catchup = await call("caius_planday", { date: "2027-09-02", step: "catchup" });
         expect(catchup.data.tasks.map((task: any) => task.listItemId)).not.toContain("2027-09-01-111");
+        // The held exports surface in the catch-up as their own question, with refs to answer by.
+        expect(catchup.data.held.map((task: any) => [ task.listItemId, task.ref ])).toEqual([
+            [ "2027-09-01-111", refOf("o", "2027-09-01-111") ], [ "2027-09-01-101", refOf("o", "2027-09-01-101") ]
+        ]);
+        expect(catchup.question).toMatch(/Which do you mean: ZAP-111 or ZAP-101\?$/);
         const planned = await call("caius_plan_apply", { date: "2027-09-02", catchup: "move_all", brief: prose });
         expect((await tasksOf("2027-09-01")).slice(0, 2).map((task: any) => task.state)).toEqual([ "open", "open" ]);
         expect((await tasksOf("2027-09-02")).map((task: any) => task.text).join()).not.toContain("ZAP-1");

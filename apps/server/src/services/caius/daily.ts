@@ -47,6 +47,7 @@ import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
 import { numbered, refOf, withRefs } from "./refs.js";
+import { heldQuestion } from "./say.js";
 
 /** The standing note as markdown, or null with the one-line reason. */
 export interface Standing {
@@ -247,15 +248,20 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
     }
 
     if (step === "catchup") {
-        const { standing, catchup: { lastWorkday: last, days, skipped, tasks } } = await deps.locked("caius_planday", async () => ({
+        const { standing, catchup: { lastWorkday: last, days, skipped, tasks, held } } = await deps.locked("caius_planday", async () => ({
             standing: await deps.standing(),
             catchup: await catchupOf(deps.store, date, deps.now)
         }));
         const names = days.map((day) => catchupDayName(day, date));
-        const question = !tasks.length ? null : names.length > 1
+        const moving = !tasks.length ? null : names.length > 1
             ? t("caius.daily.catchup_days", { weekdays: t("caius.daily.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: tasks.length })
             : t("caius.daily.catchup", { weekday: names[0] ?? catchupDayName(last, date), count: tasks.length });
-        return reply(standing, { lastWorkday: last, days, oldestDay: days[0] ?? null, moveTo: date, skipped, tasks: withRefs(tasks, "o", (task) => task.listItemId) }, question, "inputs");
+        // A task an ambiguous answer held is asked about on its own, as `say` asks it; no catch-up moves it.
+        const question = [ moving, heldQuestion(held.map((task) => task.text)) ].filter((q) => q !== null).join(" ") || null;
+        return reply(standing, {
+            lastWorkday: last, days, oldestDay: days[0] ?? null, moveTo: date, skipped, tasks: withRefs(tasks, "o", (task) => task.listItemId),
+            ...(held.length ? { held: withRefs(held, "o", (task) => task.listItemId) } : {})
+        }, question, "inputs");
     }
 
     const read = await deps.dayRead(date, refresh);

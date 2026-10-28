@@ -67,6 +67,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "the heavy-day move question (if any)",
         "Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.",
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
+        "When the catch-up step asks about held items (`data.held`), one he says is done goes in `finished`; anything else he says about them is `catchup: \"review\"`.",
         "and the heavy-day move as suggested",
         "Never ask permission for anything the apply tool does.",
         "Never claim a write that isn't in the result: its `say` is the whole recap.",

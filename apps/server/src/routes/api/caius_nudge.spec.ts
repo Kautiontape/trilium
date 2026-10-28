@@ -71,6 +71,21 @@ describe("Caius nudge route", () => {
         expect(body.tasks.map((task: { listItemId: string }) => task.listItemId)).toEqual([ "s2", "s3" ]);
     });
 
+    it("flags a day whose only open tasks are held, listing them apart so Move all leaves them", async () => {
+        await cls.init(async () => {
+            const wed = await store.calendarDay("2033-05-04");
+            await store.putContent(wed.noteId, `<h3>Work</h3>${ul(li("h1", "Check the export"), li("h2", "Verify the export"))}`);
+            await store.addLabel(wed.noteId, "caiusHeld", "h1");
+            await store.addLabel(wed.noteId, "caiusHeld", "h2");
+            noteIds.held = wed.noteId;
+        });
+        const { body } = await nudge("2033-05-05").expect(200);
+        expect(body).toMatchObject({ state: "catchup", lastWorkday: "2033-05-04", days: [ "2033-05-04" ], tasks: [] });
+        expect(body.held).toEqual([
+            { noteId: noteIds.held, listItemId: "h1", text: "Check the export" }, { noteId: noteIds.held, listItemId: "h2", text: "Verify the export" }
+        ]);
+    });
+
     it("walks past a missing day to the open one before it", async () => {
         await cls.init(async () => {
             const tue = await store.calendarDay("2033-04-05");
