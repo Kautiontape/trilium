@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
 import { carryQuestion, fitted, MAX_REPLY_CHARS, withoutMoveLinks } from "./daily.js";
@@ -27,5 +28,15 @@ describe("withoutMoveLinks", () => {
         expect(withoutMoveLinks("Message Dave [from Friday 30](#root/abc) _scheduled [Tuesday 3](#root/def)_")).toBe("Message Dave");
         expect(withoutMoveLinks("Get a quote from Acme 2")).toBe("Get a quote from Acme 2");
         expect(withoutMoveLinks("See [Plan](#root/zz) scheduled Tuesday 3")).toBe("See [Plan](#root/zz) scheduled Tuesday 3");
+    });
+});
+
+describe("the words Caius writes", () => {
+    it("never say still, outstanding, unanswered or waiting, in any caius.daily or caius.brief string", () => {
+        const catalogue = JSON.parse(readFileSync(new URL("../../assets/translations/en/server.json", import.meta.url), "utf8")) as { caius: Record<string, Record<string, unknown>> };
+        const strings = (value: unknown): string[] => typeof value === "string" ? [ value ] : Object.values(value as object).flatMap(strings);
+        for (const group of [ "daily", "brief" ] as const) {
+            for (const text of strings(catalogue.caius[group])) expect(text, group).not.toMatch(/\b(?:still|outstanding|unanswered|waiting)\b/i);
+        }
     });
 });

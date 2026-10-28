@@ -608,7 +608,7 @@
       "because_handoff_unknown": "sitting in {{- status}}",
       "because_ask": "{{- author}} asked on {{- weekday}}",
       "because_week": "on the week's list",
-      "open": "These are still open: today's leftovers and what's slipped. Which are actually done? Everything else goes to {{- day}} unless you say otherwise.",
+      "open": "Here's what's left from today and what slipped. Which are done? The rest goes to {{- day}} unless you say otherwise.",
       "nothing_open": "Nothing is open: the day's list is closed and nothing has slipped.",
       "over": "{{- day}} is over by about {{hours}} h. Which of these can wait?",
       "overlap": "{{- first}} overlaps {{- second}} at {{time}}. Which one do you take?",
