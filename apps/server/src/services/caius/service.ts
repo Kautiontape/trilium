@@ -333,15 +333,12 @@ export function createCaiusService(
             });
         },
 
-        /**
-         * Adds a Context line; one given a date that `aboutTheWeek` places in the week goes to that
-         * day's week note, ending on that day unless it says how long it holds.
-         */
+        /** Adds a Context line; one given a date that `weekPlace` sends to a week goes to that week's note. */
         contextAdd: ({ dryRun, ...req }: ContextAddInput) => withCaiusLock("caius_context_add", async () => {
-            const moved = req.date !== undefined && aboutTheWeek(req.text);
-            // A moved line that doesn't say how long it holds ends on the day it was written for.
-            const until = req.until ?? (/\b(?:all week|this week|until)\b/i.test(req.text) ? undefined : req.date);
-            const target = moved && req.date ? { week: isoWeekKey(new Date(`${req.date}T00:00:00Z`)), text: req.text, until } : req;
+            const place = req.date === undefined ? null : weekPlace(req.text, req.date);
+            const moved = place !== null;
+            const until = req.until ?? place?.until;
+            const target = place ? { week: place.week, text: req.text, ...(until ? { until } : {}) } : req;
             const result = await addContext(store, target, { dryRun, now: caiusNow() });
             return withBlobIds([ moved ? { ...withDiff(result), detail: "moved to the week note" } : withDiff(result) ]);
         }),
@@ -597,18 +594,39 @@ const MONTHS = [
     "july", "august", "september", "october", "november", "december"
 ];
 
+const WEEKDAY = "(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*";
+const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ];
+
 /**
- * Whether a Context line belongs in the week note: it names a ticket or a state (open, out, off,
- * away, on leave, covering, down, freeze, until) or a span of days (this week, next week, all week,
- * "Thu-Fri"), and has no clock time and no part of today (today, tonight, this morning, afternoon or
- * evening), which keep it on the day.
+ * Where a Context line written for `date` goes when it isn't about that day alone: the week note to
+ * write it to, and the day it ends on when the line itself doesn't say. Null keeps it on the day.
+ * - A clock time, or today, tonight, this morning, this afternoon or this evening: the day.
+ * - Next week: next week's note. A weekday range ("Thu-Fri"): this week's, until its last day.
+ * - This week, all week, or until a weekday or a date: this week's, with no end of its own.
+ * - A ticket key: this week's, with no end, so "ZAP-2590 is open" doesn't lapse.
+ * - A person's or a one-day state (is open, out, off or down; away, on leave, covering, freeze,
+ *   on PTO, vacation or holiday): this week's, ending on `date`.
  */
-function aboutTheWeek(text: string): boolean {
-    if (/\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?[ap]m\b|\b(?:today|tonight|this (?:morning|afternoon|evening))\b/i.test(text)) return false;
-    const day = "(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*";
-    return /\b[A-Z][A-Z0-9]+-\d+\b/.test(text)
-        || /\bis (?:open|out)\b|\b(?:off|away|on leave|covering|down|freeze|until|this week|next week|all week)\b/i.test(text)
-        || new RegExp(`\\b${day}\\s*(?:-|–|to)\\s*${day}\\b`, "i").test(text);
+function weekPlace(text: string, date: string): { week: string; until?: string } | null {
+    if (/\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?[ap]m\b|\b(?:today|tonight|this (?:morning|afternoon|evening))\b/i.test(text)) return null;
+    const at = new Date(`${date}T00:00:00Z`);
+    const week = isoWeekKey(at);
+    if (/\bnext week\b/i.test(text)) return { week: isoWeekKey(new Date(at.getTime() + 7 * 86_400_000)) };
+    const range = new RegExp(`\\b${WEEKDAY}\\s*(?:-|–|to)\\s*(${WEEKDAY})\\b`, "i").exec(text);
+    if (range?.[1]) return { week, until: weekdayOf(date, range[1]) };
+    const untilWhen = new RegExp(`\\buntil\\s+(?:${WEEKDAY}\\b|\\d|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\s+\\d)`, "i");
+    if (/\b(?:this week|all week)\b/i.test(text) || untilWhen.test(text)) return { week };
+    if (/\b[A-Z][A-Z0-9]+-\d+\b/.test(text)) return { week };
+    const state = /\b(?:is|are)\s+(?:open|out|off|down|away)\b|['’]s\s+(?:out|off|down|away)\b|\b(?:away|on leave|covering|freeze|on PTO|on vacation|on holiday)\b/i;
+    return state.test(text) ? { week, until: date } : null;
+}
+
+/** The date of `weekday` ("Fri", "friday") in the ISO week of `date`. */
+function weekdayOf(date: string, weekday: string): string {
+    const at = new Date(`${date}T00:00:00Z`);
+    const monday = at.getTime() - ((at.getUTCDay() + 6) % 7) * 86_400_000;
+    const index = WEEKDAYS_FROM_MONDAY.indexOf(weekday.slice(0, 3).toLowerCase());
+    return new Date(monday + Math.max(0, index) * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** The keys `addTasks` gives an item: its source's, else those of its text. */

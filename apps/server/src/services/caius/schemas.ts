@@ -192,7 +192,7 @@ const meetings = z.object({
 });
 
 const contextAdd = z.object({
-    date: periodKey("day").optional().describe("The day note to add the line to, YYYY-MM-DD: for a fact about that one day. A line that names a ticket, a state or a span of days goes to that day's week note instead, unless it has a clock time or a part of today."),
+    date: periodKey("day").optional().describe("The day note to add the line to, YYYY-MM-DD: for a fact about that one day. A line that names a ticket, a state or a span of days goes to a week note instead (next week's for \"next week\"), unless it has a clock time or a part of today."),
     week: periodKey("week").optional().describe("The ISO week note to add the line to, YYYY-Www: the default for a fact about the state of things"),
     text: z.string().trim().min(1).describe("The line, such as \"ZAP-2590 is open\""),
     until: periodKey("day").optional().describe("The last day the line holds, YYYY-MM-DD; written as (until Fri 6 Nov)"),

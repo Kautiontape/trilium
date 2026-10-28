@@ -494,35 +494,31 @@ describe("a done task closes its own ticket only", () => {
 
 describe("where a Context line goes", () => {
     const day = "2026-11-25";
-    const contextOf = async (period: string, date: string) => (await call("caius_plan", { period, date })).context;
-    const add = async (text: string) => (await call("caius_context_add", { date: day, text })).results[0];
+    const lines = async (period: string, date: string) => (await call("caius_plan", { period, date })).context.map((line: any) => [ line.text, line.until ?? null ]);
+    // The reviewer's examples: where each line lands, and when it ends.
+    const DAY: string[] = [
+        "Riley is out today", "Heads down until lunch", "Pair with Sam on ZAP-110 at 14:00",
+        "Taking Incident Review over Vendor Onboarding at 11:00", "Dentist 15:00, offline until 16:30", "Gym is off tonight",
+        "Riley out tomorrow", "Kick off the migration", "Back up the prod DB first", "Sign off on the release notes",
+        "Wind down early, school play", "Jordan off sick"
+    ];
+    const WEEK: [ string, string | null ][] = [
+        [ "ZAP-2590 is open; Jira's Done is a mistake.", null ], [ "Sam's off this week", null ], [ "Release freeze this week", null ],
+        [ "Jaco out all week.", null ], [ "Vendor freeze until Friday", null ], [ "Code review paused until 27 Nov", null ],
+        [ "Staging is down", day ], [ "Jordan covering for Jaco", day ], [ "Jaco is on PTO", day ], [ "Sam is on vacation", day ],
+        [ "Pat is on holiday", day ], [ "Riley is out Thursday", day ], [ "Code freeze from Wednesday", day ],
+        [ "Jaco out Thu-Fri", "2026-11-27" ]
+    ];
 
-    it("keeps a line with a clock time or a part of today on the day, whatever else it names", async () => {
+    it("keeps a line on the day unless it names a ticket, a state after is/are, a span or a weekday range", async () => {
         at(`${day}T09:30`);
-        for (const text of [ "Taking Incident Review over Vendor Onboarding at 11:00", "ZAP-2620 demo at 14:00", "Riley is out this afternoon",
-            "Laundry tonight", "Staging is down this morning", "Lunch with Sam" ]) {
-            expect((await add(text)).detail, text).not.toBe("moved to the week note");
-        }
-        expect((await contextOf("day", day)).map((line: any) => line.text)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00",
-            "ZAP-2620 demo at 14:00", "Riley is out this afternoon", "Laundry tonight", "Staging is down this morning", "Lunch with Sam" ]);
-    });
+        for (const text of DAY) expect((await call("caius_context_add", { date: day, text })).results[0].detail, text).not.toBe("moved to the week note");
+        for (const [ text ] of WEEK) expect((await call("caius_context_add", { date: day, text })).results[0].detail, text).toBe("moved to the week note");
+        expect((await call("caius_context_add", { date: day, text: "Sam's away next week" })).results[0].detail).toBe("moved to the week note");
 
-    it("moves a line naming a ticket or a state to the week, ending it on the day unless it says the week or until", async () => {
-        at(`${day}T09:30`);
-        for (const text of [ "ZAP-2621 waits on legal", "Riley is out", "Jordan off sick", "Pat away at the offsite", "Sam on leave",
-            "James covering for Jaco", "Staging is down", "Release freeze", "Vendor portal closed until the upgrade",
-            "Jaco out all week", "Design review moved this week", "Riley off next week", "Offsite Thu-Fri" ]) {
-            expect((await add(text)).detail, text).toBe("moved to the week note");
-        }
-        const week = await contextOf("week", "2026-W48");
-        const until = (text: string) => week.find((line: any) => line.text === text)?.until ?? null;
-        expect(until("ZAP-2621 waits on legal")).toBe(day);
-        expect(until("Riley is out")).toBe(day);
-        expect(until("Offsite Thu-Fri")).toBe(day);
-        expect(until("Jaco out all week")).toBeNull();
-        expect(until("Design review moved this week")).toBeNull();
-        expect(until("Vendor portal closed until the upgrade")).toBeNull();
-        expect(week).toHaveLength(13);
+        expect((await lines("day", day)).map(([ text ]: string[]) => text).sort()).toEqual([ ...DAY ].sort());
+        expect((await lines("week", "2026-W48")).sort()).toEqual([ ...WEEK ].sort());
+        expect(await lines("week", "2026-W49")).toEqual([ [ "Sam's away next week", null ] ]);
     });
 });
 
