@@ -493,6 +493,7 @@ async function contextOnly(deps: ApplyDeps, asked: PlanApplyInput) {
         const written: Written[] = [];
         const skipped: Skipped[] = [];
         await guarded({ kind: "context" }, skipped, () => eveningAndContext(store, date, now, { evening: [], context: asked.context }, written, skipped, { tomorrow: true }));
+        if (asked.acts) skipped.push({ kind: "acts", reason: "not_a_move", detail: "Acts go with a call that only moves items of his list" });
         return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date }) });
     });
 }

@@ -106,6 +106,7 @@ function skipClause(entry: Skipped): string[] {
     if (UNKNOWN.has(entry.reason)) return item ? [ t("caius.say.not_found", { item }) ] : [];
     if (entry.reason === "duplicate" && item) return [ t("caius.say.duplicate", { item }) ];
     if (entry.reason === "stale") return [ item ? t("caius.say.stale", { item }) : t("caius.say.stale_unnamed") ];
+    if (entry.reason === "not_a_move") return [ t("caius.say.acts_not_a_move") ];
     if (entry.reason === "third_person") return [ t("caius.say.not_noted", { item: entry.text ?? "" }) ];
     if (entry.reason === "edited") return [ t("caius.say.edited", { item: item ?? t("caius.say.a_task") }) ];
     if (entry.kind === "brief") return [ t("caius.say.brief_skipped") ];

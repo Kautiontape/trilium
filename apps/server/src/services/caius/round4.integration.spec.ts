@@ -953,3 +953,14 @@ describe("fix round 2: rewritten picks survive a sub-bullet", () => {
         expect(outside(after)).toBe(outside(nested));
     });
 });
+
+describe("fix round 2: acts outside a move are said, not dropped", () => {
+    it("N7: a context-only call that carries acts writes the line and reports the acts as skipped", async () => {
+        const DAY = "2027-10-11";
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", { date: DAY, context: [ "Taking the vendor call at 15:00" ], acts: [ "a", "b", "c" ] });
+        expect(applied.written).toEqual([ expect.objectContaining({ kind: "context", status: "written" }) ]);
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "acts", reason: "not_a_move" }) ]);
+        expect(applied.say).toMatch(/[Tt]he acts go with a move/);
+    });
+});
