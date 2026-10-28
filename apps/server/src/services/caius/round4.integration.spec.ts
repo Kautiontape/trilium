@@ -9,6 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
+import { refOf } from "./refs.js";
 import { createBeccaStore, createChildNote } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
@@ -155,22 +156,23 @@ describe("short references", () => {
         jira.handoff.push({ ...ticket("ZAP-140"), daysInStatus: 2 });
         at("2026-11-11T17:45");
         const open = await call("caius_winddown", { date: "2026-11-11", step: "open" });
-        expect(open.data.items.map((item: any) => item.ref)).toEqual([ "o1", "o2", "o3", "o4" ]);
+        const ids = [ "111", "101", "dave", "bag" ].map((id) => `2026-11-11-${id}`);
+        expect(open.data.items.map((item: any) => item.ref)).toEqual(ids.map((id) => refOf("o", id)));
         expect(open.data.days[0]).toEqual(expect.objectContaining({ ref: "d1", date: "2026-11-12", dateLabel: "Thu 12 Nov" }));
         const next = await call("caius_winddown", { date: "2026-11-11", step: "next" });
-        expect(next.data.candidates).toEqual([ expect.objectContaining({ ref: "c1", candidateId: "ZAP-140" }) ]);
+        expect(next.data.candidates).toEqual([ expect.objectContaining({ ref: refOf("c", "ZAP-140"), candidateId: "ZAP-140" }) ]);
 
         at("2026-11-11T09:40");
         const inputs = await call("caius_planday", { date: "2026-11-11", step: "inputs", refresh: true });
-        expect(inputs.data.list.map((item: any) => item.ref)).toEqual([ "l1", "l2", "l3", "l4" ]);
-        expect(inputs.data.candidates[0]).toEqual(expect.objectContaining({ ref: "c1", candidateId: "ZAP-140" }));
+        expect(inputs.data.list.map((item: any) => item.ref)).toEqual(ids.map((id) => refOf("l", id)));
+        expect(inputs.data.candidates[0]).toEqual(expect.objectContaining({ ref: refOf("c", "ZAP-140"), candidateId: "ZAP-140" }));
         expect(inputs.data.days[0]).toEqual(expect.objectContaining({ ref: "d1", date: "2026-11-12" }));
     });
 
     it("Wed 17:45 '111, 101 and the bag are done, dave tomorrow': names resolve to the three open items, and a ref to a day", async () => {
         await wednesday();
         at(`${WED}T17:45`);
-        const applied = await call("caius_winddown_apply", { date: WED, done: [ "111", "ZAP-101", "the bag" ], fates: [ { listItemId: "o3", to: "d1" } ] });
+        const applied = await call("caius_winddown_apply", { date: WED, done: [ "111", "ZAP-101", "the bag" ], fates: [ { listItemId: refOf("o", `${WED}-dave`), to: "d1" } ] });
         expect(applied.skipped).toEqual([]);
         expect(await tasksOf(WED)).toEqual([
             { text: "ZAP-111 Check the invoice export in QA", state: "done" },
@@ -208,9 +210,9 @@ describe("short references", () => {
         });
         at(`${DAY}T09:40`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
-        expect(inputs.data.candidates.map((c: any) => [ c.ref, c.candidateId ])).toEqual([ [ "c1", "ZAP-150" ], [ "c2", "ZAP-151" ] ]);
+        expect(inputs.data.candidates.map((c: any) => [ c.ref, c.candidateId ])).toEqual([ [ refOf("c", "ZAP-150"), "ZAP-150" ], [ refOf("c", "ZAP-151"), "ZAP-151" ] ]);
         const applied = await call("caius_plan_apply", {
-            date: DAY, accept: [ { candidateId: "c2", after: "memo" }, { candidateId: "150" } ], move: [ { listItemId: "l2", first: true } ], brief: prose
+            date: DAY, accept: [ { candidateId: refOf("c", "ZAP-151"), after: "memo" }, { candidateId: "150" } ], move: [ { listItemId: refOf("l", "p-desk"), first: true } ], brief: prose
         });
         expect(applied.skipped).toEqual([]);
         expect((await tasksOf(DAY)).map((task: any) => task.text)).toEqual([ "Tidy the desk", "Write the memo", "ZAP-151 Fix the gate", "ZAP-150 Check the report" ]);
@@ -518,5 +520,60 @@ describe("'later this week' is the week", () => {
         ]));
         const week = await call("caius_plan", { period: "week", date: "2027-W11" });
         expect(week.sections.flatMap((s: any) => s.tasks).map((t: any) => t.text)).toEqual([ expect.stringContaining("ZAP-111") ]);
+    });
+});
+
+describe("fix round 1: a ref names the item the step showed", () => {
+    it("P1: he ticks 111 between the step and the apply; '101 is done, drop Dave' still lands on 101 and Dave", async () => {
+        const DAY = "2027-05-05";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const open = await call("caius_winddown", { date: DAY, step: "open" });
+        const ref = (word: string) => open.data.items.find((item: any) => item.text.includes(word)).ref;
+        const plan = await call("caius_plan", { period: "day", date: DAY });
+        await call("caius_set_state", { items: [ { noteId: plan.noteId, listItemId: `${DAY}-111`, state: "done" } ] });
+
+        const applied = await call("caius_winddown_apply", { date: DAY, done: [ ref("ZAP-101") ], fates: [ { listItemId: ref("Dave"), drop: "not needed" } ] });
+        expect(applied.skipped).toEqual([]);
+        const states = Object.fromEntries((await call("caius_plan", { period: "day", date: DAY })).sections.flatMap((s: any) => s.tasks)
+            .map((t: any) => [ t.listItemId, t.state ]));
+        expect(states).toEqual({ [`${DAY}-111`]: "done", [`${DAY}-101`]: "done", [`${DAY}-dave`]: "cancelled", [`${DAY}-bag`]: expect.anything() });
+        expect((await tasksOf("2027-05-06")).map((task: any) => task.text)).toEqual([ "Pack the climbing gym bag" ]);
+    });
+
+    it("a candidate ref no longer on offer is skipped as stale, with its text while Jira has the ticket, and lands on no other candidate", async () => {
+        const DAY = "2027-05-10";
+        jira.handoff.push(
+            { ...ticket("ZAP-170", { summary: "Check the report" }), daysInStatus: 2 }, { ...ticket("ZAP-171", { summary: "Fix the gate" }), daysInStatus: 2 },
+            { ...ticket("ZAP-173", { summary: "Read the spec" }), daysInStatus: 2 }
+        );
+        at(`${DAY}T09:40`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        const refOf = (key: string) => inputs.data.candidates.find((c: any) => c.candidateId === key).ref;
+        const [ done, gone ] = [ refOf("ZAP-170"), refOf("ZAP-173") ];
+        // ZAP-170 went to Suggested since the step, and ZAP-173 has left the hand-offs.
+        await call("caius_add", { items: [ { date: DAY, suggested: true, key: "ZAP-170", title: "Check the report", because: "it waits", minutes: 30 } ] });
+        jira.handoff.splice(2, 1);
+        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: done }, { candidateId: gone } ], brief: prose });
+        expect(applied.skipped).toEqual([
+            { kind: "accept", reason: "stale", text: "Get ZAP-170 Check the report done" },
+            { kind: "accept", reason: "stale" }
+        ]);
+        expect((await tasksOf(DAY)).map((task: any) => task.text).join()).not.toContain("ZAP-17");
+    });
+
+    it("M2: after 'take 172 first', 'put the desk first' by the step's list ref moves the desk, not what now sits in its old place", async () => {
+        const DAY = "2027-05-11";
+        jira.handoff.push({ ...ticket("ZAP-172", { summary: "Check the export" }), daysInStatus: 2 });
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("m-memo", "Write the memo ~30m"), li("m-desk", "Tidy the desk ~30m"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        const desk = inputs.data.list.find((item: any) => item.listItemId === "m-desk").ref;
+        await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "172", first: true } ], brief: prose });
+        await call("caius_plan_apply", { date: DAY, move: [ { listItemId: desk, first: true } ] });
+        expect((await tasksOf(DAY)).map((task: any) => task.text)).toEqual([ "Tidy the desk", "ZAP-172 Check the export", "Write the memo" ]);
     });
 });

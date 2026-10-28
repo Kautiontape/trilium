@@ -68,7 +68,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { type Named, resolveIn, resolveName, withRefs } from "./refs.js";
+import { isRef, type Named, refOf, resolveIn, resolveName, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment } from "./store.js";
@@ -151,7 +151,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
         const pools = planPools(offer, catchupTasks, listed.days);
-        const input = planAnswers(asked, pools, skipped);
+        const table = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        const input = planAnswers(asked, pools, skipped, table);
         /** The result with `say`, its entries named by their text first. */
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
             withTexts([ ...result.written, ...result.skipped ], pools, known);
@@ -290,13 +291,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
         const pools: Pools = {
-            open: named(withRefs(open.items, "o"), (item) => item.listItemId, (item) => item.text),
-            candidates: named(withRefs(candidates, "c"), (c) => c.candidateId, (c) => c.text),
-            list: named(withRefs(listItems(facts.plan), "l"), (item) => item.listItemId, (item) => item.text),
-            lines: named(withRefs([ ...lines.keep, ...lines.carry ], "x"), (line) => line.lineId, (line) => line.line),
+            open: named(withRefs(open.items, "o", (item) => item.listItemId), (item) => item.listItemId, (item) => item.text),
+            candidates: named(withRefs(candidates, "c", (c) => c.candidateId), (c) => c.candidateId, (c) => c.text),
+            list: named(withRefs(listItems(facts.plan), "l", (item) => item.listItemId), (item) => item.listItemId, (item) => item.text),
+            lines: named(withRefs([ ...lines.keep, ...lines.carry ], "x", (line) => line.lineId), (line) => line.lineId, (line) => line.line),
             days: dayNames(listed.days)
         };
-        const input = windDownAnswers(asked, pools, skipped);
+        const table = await refTable(store, now, known, facts.live, [ ...lines.keep, ...lines.carry ].map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        const input = windDownAnswers(asked, pools, skipped, table);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
         await guarded({ kind: "done" }, skipped, async () => { for (const listItemId of input.done) {
@@ -423,7 +425,8 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
         const catchupTasks = (await catchupOf(store, date, now)).tasks;
         const pools = planPools(offer, catchupTasks, namedDays(date, dayKey(nextWorkday(localDay(date)))).days);
         const known = new Map(offer.candidates.map((candidate) => [ candidate.candidateId, candidate ]));
-        const input = planAnswers(asked, pools, skipped);
+        const table = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        const input = planAnswers(asked, pools, skipped, table);
         const before = picksOf(offer.day.plan);
         await acceptAll(store, date, now, input, { known, moved: new Map() }, written, skipped);
         if (picksOf(await readPlan(store, "day", date, now)) !== before) {
@@ -456,10 +459,10 @@ async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, w
 /** What Plan my day's answers name their items from: the step data of `catchup` and `inputs`, with their refs. */
 function planPools(offer: Awaited<ReturnType<typeof planOffer>>, catchupTasks: Awaited<ReturnType<typeof catchupOf>>["tasks"], days: NamedDay[]): Pools {
     return {
-        open: named(withRefs(catchupTasks, "o"), (task) => task.listItemId, (task) => task.text),
-        candidates: named(withRefs(offer.candidates, "c"), (c) => c.candidateId, (c) => c.text),
-        list: named(withRefs(listItems(offer.day.plan), "l"), (item) => item.listItemId, (item) => item.text),
-        lines: named(withRefs(offer.carry, "x"), (line) => line.lineId, (line) => line.line),
+        open: named(withRefs(catchupTasks, "o", (task) => task.listItemId), (task) => task.listItemId, (task) => task.text),
+        candidates: named(withRefs(offer.candidates, "c", (c) => c.candidateId), (c) => c.candidateId, (c) => c.text),
+        list: named(withRefs(listItems(offer.day.plan), "l", (item) => item.listItemId), (item) => item.listItemId, (item) => item.text),
+        lines: named(withRefs(offer.carry, "x", (line) => line.lineId), (line) => line.lineId, (line) => line.line),
         days: dayNames(days)
     };
 }
@@ -488,22 +491,66 @@ interface Pools {
     days: Named[];
 }
 
-/** `items` as names an answer can give: each with its id, ref and plain text; an item without an id can't be named. */
-function named<T extends { ref: string }>(items: T[], id: (item: T) => string | null | undefined, text: (item: T) => string): Named[] {
+/** `items` as names an answer can give: each with its id, ref and plain text; an item without an id or ref can't be named. */
+function named<T extends { ref?: string }>(items: T[], id: (item: T) => string | null | undefined, text: (item: T) => string): Named[] {
     return items.flatMap((item) => {
         const value = id(item);
-        return value ? [ { id: value, ref: item.ref, text: plainText(withoutMoveLinks(text(item))) } ] : [];
+        return value && item.ref ? [ { id: value, ref: item.ref, text: plainText(withoutMoveLinks(text(item))) } ] : [];
     });
+}
+
+/** What a ref named when its step ran: the item's id and text, and whether it is settled since. */
+interface RefEntry {
+    id: string;
+    text: string;
+    settled: boolean;
+}
+
+/**
+ * Every item a step's ref could have named, by ref, whatever happened to it since: each list item
+ * of the Journal in any state (settled once done, moved or dropped), each ticket of the day's Jira
+ * read and each candidate the day knows (settled once its key is live on a list, as an accepted
+ * one is), and each Context line offered or in force (settled once in force). A ticket that has
+ * left Jira since is in none of them.
+ */
+async function refTable(store: NoteStore, now: Date, known: Map<string, Candidate>, live: Map<string, string[]>, offered: string[], inForce: string[], jira: DayRead["inputs"]["jira"]): Promise<Map<string, RefEntry>> {
+    const table = new Map<string, RefEntry>();
+    const { docs } = await loadJournal(store);
+    const byPath = new Map(docs.map((doc) => [ doc.path, doc ]));
+    for (const task of scanDocs(docs, TRILIUM_CONFIG, now).tasks) {
+        const id = byPath.get(task.file)?.itemIds.get(task.line);
+        if (!id) continue;
+        const entry = { id, text: plainText(withoutMoveLinks(task.text)), settled: !task.live };
+        table.set(refOf("o", id), entry);
+        table.set(refOf("l", id), entry);
+    }
+    const tickets = dayCandidates({ jira: { ...jira, done: [] }, live: new Map(), exclude: [] }).map(present);
+    for (const candidate of [ ...tickets, ...known.values() ]) {
+        table.set(refOf("c", candidate.candidateId), { id: candidate.candidateId, text: candidate.text, settled: live.has(candidate.candidateId) });
+    }
+    for (const text of offered) table.set(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: false });
+    for (const text of inForce) table.set(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: true });
+    return table;
 }
 
 /**
  * Reads the names of one answer: the id each names, its own value when it names nothing the steps
- * showed (the write then says why), or null when it names several, skipped as ambiguous. `held`
- * collects the ids an ambiguous answer matched, which nothing may write for.
+ * showed (the write then says why), or null when it names several, skipped as ambiguous, or a ref
+ * whose item left its pool since the step, skipped as stale. `held` collects the ids an ambiguous
+ * answer matched, which nothing may write for.
  */
-function nameReader(skipped: Skipped[]) {
+function nameReader(skipped: Skipped[], table: Map<string, RefEntry>) {
     const held = new Set<string>();
     const read = (kind: string, value: string, pools: Named[][]): string | null => {
+        // A ref that isn't in its pool any more names a settled item, which the write finds in place,
+        // or one the step showed and that has left since: never another item.
+        const ref = value.trim().toLowerCase();
+        if (isRef(ref) && !pools.some((pool) => pool.some((item) => item.ref.toLowerCase() === ref))) {
+            const entry = table.get(ref);
+            if (entry?.settled) return entry.id;
+            skipped.push({ kind, ...(entry ? { text: entry.text } : {}), reason: "stale" });
+            return null;
+        }
         const found = resolveIn(pools, value);
         if (found && "ambiguous" in found) {
             skipped.push({ kind, text: value, reason: "ambiguous", detail: found.ambiguous.join("; ") });
@@ -527,8 +574,8 @@ function nameReader(skipped: Skipped[]) {
  * skipped. `done` holds the items of his list that `finished` names: by a ticket key, or by anything
  * else he called done.
  */
-function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[]): PlanApplyInput & { done: string[] } {
-    const { read, place } = nameReader(skipped);
+function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>): PlanApplyInput & { done: string[] } {
+    const { read, place } = nameReader(skipped, table);
     const { done, finished } = doneOf([], input.finished, [ pools.list ], read);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
@@ -567,8 +614,8 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[]): P
  * Wind down's answers with every name read as the id it names; an ambiguous one is left out,
  * skipped, and the open items it matched are `held`: they keep no proposed fate either.
  */
-function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[]): WindDownApplyInput & { held: string[] } {
-    const { read, place, held } = nameReader(skipped);
+function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>): WindDownApplyInput & { held: string[] } {
+    const { read, place, held } = nameReader(skipped, table);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
@@ -639,7 +686,7 @@ function withTexts(entries: (Written | Skipped)[], pools: Pools, known: Map<stri
 }
 
 /** A value that looks like a list item id, a ref, or a line or overlap id rather than his words. */
-const ID_SHAPED = /^(?:[a-z]?[0-9a-f]{8,}|[oclxdw]\d+|[lo][0-9a-f]{10})$/i;
+const ID_SHAPED = /^(?:[a-z]?[0-9a-f]{8,}|[oclx][0-9a-f]{5}|[dw]\d+|[lo][0-9a-f]{10})$/i;
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
 async function guarded(entry: { kind: string; id?: string }, skipped: Skipped[], work: () => Promise<unknown>) {

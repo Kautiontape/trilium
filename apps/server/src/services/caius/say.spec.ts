@@ -65,6 +65,11 @@ describe("sayOf", () => {
         expect(say).not.toMatch(ID);
     });
 
+    it("names an item that changed since the step, with or without its text", () => {
+        expect(sayOf({ written: [], skipped: [ { kind: "accept", text: "Get ZAP-170 Check the report done", reason: "stale" }, { kind: "accept", reason: "stale" } ] }, { day: "2026-11-02" }))
+            .toBe("ZAP-170 changed since you saw it, so it stays as it was and one task changed since you saw it.");
+    });
+
     it("says so when nothing needed writing", () => {
         expect(sayOf({ written: [ { kind: "brief", status: "unchanged" } ], skipped: [] }, { day: "2026-11-02" })).toBe("Everything was already in place.");
     });

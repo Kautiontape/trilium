@@ -9,6 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
+import { refOf } from "./refs.js";
 import { createBeccaStore, createChildNote } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
@@ -129,9 +130,9 @@ describe("accept takes a position", () => {
         const inputs = await call("caius_planday", { date: WED, step: "inputs", refresh: true });
         expect(inputs.data.candidates).toEqual([ expect.objectContaining({ candidateId: "ZAP-101", kind: "week" }) ]);
         expect(inputs.data.list).toEqual([
-            { listItemId: "w105", text: "ZAP-105 Confirm the staging bucket name", evening: false, ref: "l1" },
-            { listItemId: "w111", text: "ZAP-111 Check the invoice export in QA", evening: false, ref: "l2" },
-            { listItemId: "wlau", text: "Laundry", evening: true, ref: "l3" }
+            { listItemId: "w105", text: "ZAP-105 Confirm the staging bucket name", evening: false, ref: refOf("l", "w105") },
+            { listItemId: "w111", text: "ZAP-111 Check the invoice export in QA", evening: false, ref: refOf("l", "w111") },
+            { listItemId: "wlau", text: "Laundry", evening: true, ref: refOf("l", "wlau") }
         ]);
         const applied = await call("caius_plan_apply", { date: WED, accept: [ { candidateId: "ZAP-101", first: true } ], brief: prose });
         expect(applied.skipped).toEqual([]);

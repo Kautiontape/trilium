@@ -61,8 +61,8 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
         "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
         "\"Later this week\" is the week ref `w1` in `data.days`, and \"next week\" is `w2`: never a date.",
-        "Name each item in an answer by its `ref` from the step data (`o1`, `c1`, `l1`, `x1`, `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
-        "A ref holds only for the reply it came in; after an apply, name items by his words.",
+        "Name each item in an answer by its `ref` from the step data (such as `o3fa9c` or `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
+        "A ref names the same item for the whole conversation. One whose item changed since the step is skipped as `stale`: ask him about that item in one clause.",
         "the heavy-day move question (if any)",
         "Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.",
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
@@ -99,7 +99,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral",
         "A Context line skipped as `third_person` is not written: reword it in his voice and call the same apply again with only that line in `context`, then reply.",
         "Use `move` only when he asks for an order",
-        "On an `edited` skip, run the same apply call once more with the same answers, each item named by his words",
+        "On an `edited` skip, run the same apply call once more with the same answers",
         "If a Caius tool fails, say so in one clause and stop that item.",
         "The day is whatever the step data says; never compare it with any other date you know; always call the step first.",
         "At the end of a wind-down, never offer to run Plan my day for another day.",
@@ -113,7 +113,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
     ]) expect(openers, name).not.toMatch(new RegExp(`${name}(?![a-z_])`));
     expect(openers).not.toContain("generic note tools");
-    for (const old of [ "and \"Anything for the evening?\"", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
+    for (const old of [ "A ref holds only for the reply it came in", "and \"Anything for the evening?\"", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
     }
     expect(sheet).not.toMatch(/Shawn(?!\")/);

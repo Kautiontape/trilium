@@ -1,8 +1,11 @@
 /**
- * The short references the steps give every item the agent can name (`o1` an open item, `c1` a
- * candidate, `l1` an item of his list, `x1` a Context line, `d1` a day), and the one resolver the
- * apply tools read an answer with: an id, a ref, a ticket key or its number, or a distinctive word.
+ * The short references the steps give every item the agent can name (`o3fa9c` an open item, `c…` a
+ * candidate, `l…` an item of his list, `x…` a Context line, each from a hash of the item's id; `d1`
+ * a day, by its place in a list the date alone decides), and the one resolver the apply tools read
+ * an answer with: an id, a ref, a ticket key or its number, or a distinctive word.
  */
+
+import { createHash } from "crypto";
 
 /** An item an answer can name: its id in the step data, its ref and its text. */
 export interface Named {
@@ -14,8 +17,29 @@ export interface Named {
 /** What an answer names: one item's id, the texts and ids of several that match, or null for none. */
 export type Resolved = { id: string } | { ambiguous: string[]; ids: string[] } | null;
 
-/** `items` each with a `ref`, the prefix and its 1-based place: `o1`, `o2`… */
-export function withRefs<T extends object>(items: T[], prefix: string): (T & { ref: string })[] {
+/**
+ * `items` each with a `ref` made from its id (`idOf`), so it names the same item whatever else joins
+ * or leaves the list. An item without an id gets none: it can't be named.
+ */
+export function withRefs<T extends object>(items: T[], prefix: string, idOf: (item: T) => string | null | undefined): (T & { ref?: string })[] {
+    return items.map((item) => {
+        const id = idOf(item);
+        return id ? { ...item, ref: refOf(prefix, id) } : item;
+    });
+}
+
+/** The ref of the item `id` under `prefix`: the prefix and the first five hex digits of a hash of the id. */
+export function refOf(prefix: string, id: string): string {
+    return `${prefix}${createHash("sha1").update(id).digest("hex").slice(0, 5)}`;
+}
+
+/** Whether `value` has the shape `refOf` gives an open item, candidate, list item or Context line. */
+export function isRef(value: string): boolean {
+    return /^[oclx][0-9a-f]{5}$/i.test(value.trim());
+}
+
+/** `items` each with a `ref`, the prefix and its 1-based place (`d1`, `d2`…), for a list whose order never changes. */
+export function numbered<T extends object>(items: T[], prefix: string): (T & { ref: string })[] {
     return items.map((item, i) => ({ ...item, ref: `${prefix}${i + 1}` }));
 }
 

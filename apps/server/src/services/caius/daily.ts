@@ -46,7 +46,7 @@ import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, P
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
-import { withRefs } from "./refs.js";
+import { numbered, withRefs } from "./refs.js";
 
 /** The standing note as markdown, or null with the one-line reason. */
 export interface Standing {
@@ -99,7 +99,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
-        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay), items: withRefs(items, "o"), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay), items: withRefs(items, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
     }
 
     const read = await deps.dayRead(targetDay, refresh);
@@ -120,8 +120,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
                 summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), focus: formatHours(targetMinutes) })
             };
         return reply(read.standing, {
-            list: withRefs(listItems(facts.plan), "l"),
-            candidates: withRefs(candidates, "c"),
+            list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId),
+            candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId),
             capacity: capacityOf(read, plannedMinutes),
             overlaps, evening, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
@@ -129,7 +129,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
 
     const { keep, carry } = await deps.locked("caius_winddown", () => closingLines(deps.store, date, targetDay, read));
     const targetWeek = isoWeekKey(utcDay(targetDay));
-    const noticed = withRefs([ ...keep, ...carry ], "x");
+    const noticed = withRefs([ ...keep, ...carry ], "x", (line) => line.lineId);
     const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
     const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
     const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
@@ -221,7 +221,7 @@ export function namedDays(date: string, first: string): { days: NamedDay[]; week
         ...(thisWeek ? [ { ref: "w1", week: thisWeek.week, name: t("caius.daily.later_this_week") } ] : []),
         ...(nextWeek ? [ { ref: "w2", week: nextWeek.week, name: t("caius.daily.next_week") } ] : [])
     ];
-    return { days: [ ...withRefs(days, "d"), ...inWords ], weeks, months };
+    return { days: [ ...numbered(days, "d"), ...inWords ], weeks, months };
 }
 
 /** A day an answer can name by its ref (`d1`), or a week by its ref and his words (`w1`, "later this week"). */
@@ -254,7 +254,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
         const question = !tasks.length ? null : names.length > 1
             ? t("caius.daily.catchup_days", { weekdays: t("caius.daily.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: tasks.length })
             : t("caius.daily.catchup", { weekday: names[0] ?? catchupDayName(last, date), count: tasks.length });
-        return reply(standing, { lastWorkday: last, days, oldestDay: days[0] ?? null, moveTo: date, skipped, tasks: withRefs(tasks, "o") }, question, "inputs");
+        return reply(standing, { lastWorkday: last, days, oldestDay: days[0] ?? null, moveTo: date, skipped, tasks: withRefs(tasks, "o", (task) => task.listItemId) }, question, "inputs");
     }
 
     const read = await deps.dayRead(date, refresh);
@@ -282,9 +282,9 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             ...(askEvening ? [ t("caius.daily.evening") ] : [])
         ];
         return reply(read.standing, {
-            plannedAt, list: withRefs(listItems(facts.plan), "l"), candidates: withRefs(candidates, "c"), meetings, overlaps,
+            plannedAt, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, overlaps,
             capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
-            targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x"),
+            targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x", (line) => line.lineId),
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
             ...planFromOf(date, deps.now, read.rhythm.start)
         }, questions.length ? questions.join(" ") : null, "brief");

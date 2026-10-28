@@ -682,6 +682,8 @@
       "calendar_unavailable": "the meetings stay as they were because the calendar couldn't be read",
       "not_found": "'{{- item}}' wasn't found",
       "duplicate": "{{- item}} is already open",
+      "stale": "{{- item}} changed since you saw it, so it stays as it was",
+      "stale_unnamed": "one task changed since you saw it",
       "third_person": "It names {{- name}} in the third person. Reword it in his voice, such as \"Taking Vendor Onboarding\" for \"{{- name}} takes Vendor Onboarding\", and send only that line again.",
       "not_noted": "'{{- item}}' isn't noted",
       "unnamed_one": "one task wasn't found",

@@ -157,7 +157,7 @@ const briefWrite = z.object({
 const finishedAnswers = z.array(z.string().trim().min(1).transform((value) => /^[A-Za-z][A-Za-z0-9]+-\d+$/.test(value) ? value.toUpperCase() : value)).default([])
     .describe("Tickets the user says are finished, by key; a key that names an open item ticks it too. Anything else he called done is read as a done answer");
 /** What an answer may name an item by, as `refs.ts` resolves it. */
-const NAMED = "its id or ref from the step data (o1, c1, l1, x1), a ticket key or its number, or a distinctive word of its text";
+const NAMED = "its id or ref from the step data (such as o3fa9c), a ticket key or its number, or a distinctive word of its text";
 /** A day, week or month an answer sends a task to. */
 const DESTINATION = "A day's ref (d1) or date YYYY-MM-DD, a week YYYY-Www or a month YYYY-MM, from the step's data.days, data.weeks or data.months";
 const candidateRef = z.object({ candidateId: z.string().min(1).describe(`A candidate: ${NAMED}`) });
