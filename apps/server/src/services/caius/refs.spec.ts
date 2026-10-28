@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hisWord, isRef, numbered, refOf, resolveIn, resolveName, saidFates, withRefs } from "./refs.js";
+import { hisWord, isRef, numbered, refOf, resolveIn, resolveName, saidAnswered, saidFates, withRefs } from "./refs.js";
 
 const open = withRefs([
     { id: "e111", text: "ZAP-111 Check the invoice export in QA" },
@@ -95,5 +95,19 @@ describe("hisWord", () => {
         expect(hisWord("110 is done. 111 later this week. evening pack the climbing gym bag")).toBe(false);
         expect(hisWord("fine")).toBe(false);
         expect(hisWord("")).toBe(false);
+    });
+});
+
+describe("saidAnswered", () => {
+    const jordan = { key: "ZAP-105", author: "Jordan Placeholder" };
+    const riley = { key: "ZAP-120", author: "Riley Example" };
+
+    it("names the follow-ups he says he answered, by author, key or number, or the only one when he says chat", () => {
+        expect(saidAnswered("111 not today. answered jordan in chat. ZAP-2590 is open", [ jordan, riley ])).toEqual([ "ZAP-105" ]);
+        expect(saidAnswered("replied on 120", [ jordan, riley ])).toEqual([ "ZAP-120" ]);
+        expect(saidAnswered("answered it in chat", [ jordan ])).toEqual([ "ZAP-105" ]);
+        expect(saidAnswered("answered it in chat", [ jordan, riley ])).toEqual([]);
+        expect(saidAnswered("don't dismiss 105", [ jordan ])).toEqual([]);
+        expect(saidAnswered("fine", [ jordan ])).toEqual([]);
     });
 });

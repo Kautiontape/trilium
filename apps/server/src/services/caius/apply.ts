@@ -34,7 +34,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -50,6 +50,7 @@ import {
     failedCalendar,
     followUpsOf,
     HEAVY_ID,
+    latestAsks,
     lineIdOf,
     listItems,
     listOf,
@@ -72,7 +73,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidFates, withRefs } from "./refs.js";
+import { hisWord, isRef, type Named, refOf, resolveIn, resolveName, saidAnswered, saidFates, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment, removeLabel } from "./store.js";
@@ -159,7 +160,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const { table, items, copies, collided } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         pools.settled = settledOf(items, (item) => item.period === date, copies);
         const input = planAnswers(asked, pools, skipped, table, copies, collided);
-        input.dismiss = withHisWord(asked.said, input.dismiss, skipped);
+        input.dismiss = withHisWord(asked.said, [ ...input.dismiss, ...answeredIn(asked.said, offer.jira, input.dismiss) ], skipped);
         const followed = new Map([ ...input.follows ].map(([ id, copy ]) => [ id, copy.text ]));
         /** The result with `say`, its entries named by their text first. */
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
@@ -235,7 +236,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "finished" }, skipped, () => finish(store, date, now, input.finished, written, skipped));
 
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
-        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, written, skipped));
+        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss.map((c) => c.candidateId), known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEvents(read) }));
 
@@ -268,7 +269,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // A pick's reason is its candidate's, live or not, so a re-run words the brief the same.
         const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
-        const brief = await briefOf(deps, { date, brief: prose }, read, reasons, offer.jira, offer.headsUp, weather)
+        const answered = new Set(written.filter((entry) => entry.kind === "dismiss" && entry.id).map((entry) => entry.id));
+        const brief = await briefOf(deps, { date, brief: prose }, read, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, offer.headsUp, weather)
             .catch((e: unknown) => ({ error: "failed", detail: e instanceof Error ? e.message : String(e) }));
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
@@ -315,7 +317,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const written: Written[] = [];
         const skipped: Skipped[] = [];
         const open = await stillOpen(store, date, targetDay);
-        const { facts, candidates, asks, offeredAsks } = await nextOffer(store, targetDay, now, read);
+        const { facts, candidates, asks, offeredAsks, jira } = await nextOffer(store, targetDay, now, read);
         const lines = await closingLines(store, date, targetDay, read);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
         // The next step's questions are about the next workday, so they are answered on its note.
@@ -350,7 +352,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // A fate he named in his own words that the call left out is applied as he named it.
         const answered = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.held ]);
         input.fates.push(...saidFates(asked.said, pools.open, pools.days).filter((fate) => !answered.has(fate.listItemId)));
-        input.dismiss = withHisWord(asked.said, input.dismiss, skipped);
+        input.dismiss = withHisWord(asked.said, [ ...input.dismiss, ...answeredIn(asked.said, jira, input.dismiss) ], skipped);
         // The ref table covers the Journal, so a held item that lives outside the window is read from it.
         const journalItem = (id: string) => items.find((item) => item.id === id);
         // The open items and the ref table carry their note; only an id from elsewhere needs the Journal searched.
@@ -472,7 +474,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         } });
         await guarded({ kind: "finished" }, skipped, () => finish(store, targetDay, now, input.finished, written, skipped));
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
-        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped));
+        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
@@ -1069,6 +1071,11 @@ function holdGroupOf(value: string): HoldGroup {
 }
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
+/** The follow-ups of `jira` he says in `said` he answered, as dismissals, but those `dismiss` already names. */
+function answeredIn(said: string, jira: DayRead["inputs"]["jira"], dismiss: { candidateId: string }[]): { candidateId: string }[] {
+    return saidAnswered(said, followUpsOf(jira)).filter((key) => !dismiss.some((c) => c.candidateId === key)).map((candidateId) => ({ candidateId }));
+}
+
 /** The dismissals his reply `said` gives his word for; without it each is skipped as `not_his_word`. */
 function withHisWord<T extends { candidateId: string }>(said: string, dismiss: T[], skipped: Skipped[]): T[] {
     if (hisWord(said)) return dismiss;
@@ -1166,11 +1173,15 @@ async function putOff(store: NoteStore, date: string, now: Date, ids: string[], 
 /**
  * Dismisses candidates he said to dismiss: from the day's Suggested, put there first when it isn't,
  * with `#caiusDismissed`, so the key is off every list for 14 days and its asks leave the Follow up.
+ * A ticket's latest ask in `asks` is recorded as answered (`#caiusAnswered`), which keeps it out of
+ * every Follow up for good.
  */
-async function dismiss(store: NoteStore, date: string, now: Date, ids: string[], known: Map<string, Candidate>, written: Written[], skipped: Skipped[]) {
+async function dismiss(store: NoteStore, date: string, now: Date, ids: string[], known: Map<string, Candidate>, asks: DayRead["inputs"]["jira"]["asks"], written: Written[], skipped: Skipped[]) {
     for (const candidateId of ids) {
         const candidate = known.get(candidateId);
         const entry = { kind: "dismiss", id: candidateId, ...(candidate ? { text: candidate.text } : {}) };
+        const ask = latestAsks(asks).find((latest) => latest.ticket.key === candidateId);
+        if (ask) await labelDay(store, date, ANSWERED_LABEL, [ `${ask.ticket.key}:${ask.commentId}` ]);
         let plan = await readPlan(store, "day", date, now);
         if (plan.dismissed.includes(candidateId)) {
             written.push({ ...entry, status: "unchanged" });

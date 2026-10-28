@@ -42,7 +42,7 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -626,12 +626,15 @@ const RAISED_DAYS = 7;
 
 /**
  * The asks raised by briefs dated in the last `RAISED_DAYS` days and before `day`, the day being
- * planned, as `KEY:commentId`: a refresh of that day's own brief raises them again. The caller holds
- * the lock.
+ * planned, as `KEY:commentId`: a refresh of that day's own brief raises them again. An ask he
+ * answered in Chat (`#caiusAnswered`, on any day) is in it for good. The caller holds the lock.
  */
 async function raisedAsks(store: NoteStore, now: Date, day: string): Promise<Set<string>> {
     const since = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - RAISED_DAYS));
     const raised = new Set<string>();
+    for (const note of await store.search(`#${ANSWERED_LABEL}`)) {
+        for (const a of note.attributes) if (a.type === "label" && a.name === ANSWERED_LABEL) raised.add(a.value);
+    }
     for (const note of await store.search(`#${RAISED_LABEL}`)) {
         const date = label(note, BRIEF_LABEL);
         if (!date || date < since || date >= day) continue;
@@ -704,7 +707,7 @@ function shortExcerpt(text: string): string {
     return `${(word > 0 ? cut.slice(0, word) : cut).replace(/[\s,;:.]+$/, "")}…`;
 }
 
-function latestAsks(asks: CaiusInputs["jira"]["asks"]) {
+export function latestAsks(asks: CaiusInputs["jira"]["asks"]) {
     const latest = new Map<string, CaiusInputs["jira"]["asks"][number]>();
     for (const ask of asks) {
         const seen = latest.get(ask.ticket.key);

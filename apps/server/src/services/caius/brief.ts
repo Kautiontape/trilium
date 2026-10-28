@@ -44,6 +44,8 @@ export const HELD_LABEL = "caiusHeld";
 export const HELD_GROUP_LABEL = "caiusHeldGroup";
 /** On a day note: an ask offered as a candidate for that day, as `ZAP-105:10`; on later days it is a Follow up. */
 export const ASK_SEEN_LABEL = "caiusAskSeen";
+/** On a day note: an ask he answered in Chat, as `KEY:commentId`; it is never a Follow up or a candidate again, until a newer comment. */
+export const ANSWERED_LABEL = "caiusAnswered";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
 export const NOT_TODAY_LABEL = "caiusNotToday";
 /** On a day note: the day was wound down, at `YYYY-MM-DDTHH:mm:ss`, so the catch-up looks no further back than it. */

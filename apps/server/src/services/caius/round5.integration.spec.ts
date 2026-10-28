@@ -172,3 +172,41 @@ describe("his words decide", () => {
         expect(dismissed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-105", status: "written" }) ]));
     });
 });
+
+describe("answered in Chat", () => {
+    const jordan = (commentId: string, created: string) => jira.asks.push({
+        ticket: ticket("ZAP-205", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created,
+        commentId, excerpt: "@Sam Example the rollout note is in the runbook now."
+    });
+
+    it("Tue 09:35 'answered jordan in chat' closes the Follow up for good: not at 11:05, not two weeks on, back only with a newer comment", async () => {
+        const MON = "2026-11-23";
+        const TUE = "2026-11-24";
+        jordan("c205", "2026-11-22T15:00:00.000-0500");
+        at(`${MON}T09:40`);
+        await call("caius_plan_apply", { date: MON, said: "evening just mom", brief: prose });
+
+        at(`${TUE}T09:35`);
+        expect((await call("caius_planday", { date: TUE, step: "inputs", refresh: true })).data.followUps.map((f: any) => f.key)).toEqual([ "ZAP-205" ]);
+        // The agent's round-5 call: no dismiss, only his words.
+        const planned = await call("caius_plan_apply", {
+            date: TUE, said: "111 not today. answered jordan in chat. ZAP-2590 is open, Jira's Done is wrong", context: [ "ZAP-2590 is open" ], brief: prose
+        });
+        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-205", status: "written" }) ]));
+        expect(await cls.init(() => store.content(planned.briefNoteId))).not.toContain("ZAP-205");
+
+        at(`${TUE}T11:05`);
+        expect((await call("caius_planday", { date: TUE, step: "inputs", refresh: true })).data.followUps).toEqual([]);
+        const refreshed = await call("caius_plan_apply", { date: TUE, said: "", brief: prose });
+        expect(await cls.init(() => store.content(refreshed.briefNoteId))).not.toContain("ZAP-205");
+
+        at("2026-12-09T09:45");
+        const later = await call("caius_planday", { date: "2026-12-09", step: "inputs", refresh: true });
+        expect(later.data.followUps).toEqual([]);
+        expect(later.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-205");
+
+        jordan("c206", "2026-12-08T15:00:00.000-0500");
+        // A newer comment is a new ask: offered again, first as a candidate.
+        expect((await call("caius_planday", { date: "2026-12-09", step: "inputs", refresh: true })).data.candidates.map((c: any) => c.candidateId)).toContain("ZAP-205");
+    });
+});

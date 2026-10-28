@@ -134,6 +134,19 @@ export function hisWord(said: string): boolean {
     return false;
 }
 
+/**
+ * The keys of the follow-ups `said` says he answered: with his word (`hisWord`), each follow-up whose
+ * key, its number or its author's name is in it, or the only one when it names none of them.
+ */
+export function saidAnswered(said: string, followUps: { key: string; author: string }[]): string[] {
+    if (!hisWord(said)) return [];
+    const heard = new Set(words(said));
+    const named = followUps.filter((followUp) => heard.has(followUp.key.toLowerCase()) || heard.has(followUp.key.split("-")[1] ?? "")
+        || words(followUp.author).some((name) => name.length > 2 && heard.has(name)));
+    const [ only ] = followUps;
+    return named.length ? named.map((followUp) => followUp.key) : followUps.length === 1 && only && heard.has("chat") ? [ only.key ] : [];
+}
+
 /** A clause that says where something doesn't go. */
 const NEGATION = /^\s*(?:not|no|never|don'?t)\b/;
 
