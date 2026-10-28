@@ -19,8 +19,8 @@ export interface WorkBlock {
 /**
  * Lays `tasks` out in order from `start`, or from `notBefore` when that is later (the time now, on
  * the day being planned), each in the earliest free time after the one before it, split across a
- * meeting when it has to be (only the first part carries the label), never past `end`. Evening tasks start no earlier than `workEnd`. The first block of the first work task is the focus block (of the first task when all
- * are evening tasks). `unplaced` holds the minutes of each task that did not fit before `end`.
+ * meeting when it has to be (only the first part carries the label), never past `end`. Evening tasks start no earlier than `workEnd`. The first block of the first work task is the focus block; a day of
+ * evening tasks only has none. `unplaced` holds the minutes of each task that did not fit before `end`.
  */
 export function layoutWork(
   day: { start: string; end: string; workEnd: string; notBefore?: string },
@@ -65,7 +65,7 @@ export function layoutWork(
   }
 
   const firstWork = tasks.findIndex((task) => !task.evening);
-  const focus = work.findIndex((block) => block.task === Math.max(0, firstWork));
+  const focus = firstWork < 0 ? -1 : work.findIndex((block) => block.task === firstWork);
   return {
     work: work.map(({ task: _task, ...block }, i) => (i === focus ? { ...block, focus: true as const } : block)),
     unplaced,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefBodyHtml, headerHtml, includeNote, leadingInclude, withInclude, withoutImages } from './brief-html.js';
+import { briefBodyHtml, headerHtml, includeNote, leadingInclude, readHeader, withInclude, withoutImages } from './brief-html.js';
 
 const INCLUDE = '<section class="include-note" data-note-id="hdr" data-box-size="full">&nbsp;</section>';
 
@@ -53,6 +53,15 @@ describe('headerHtml', () => {
       + '<td><p><strong>Evening</strong></p><p>A walk.</p></td>'
       + '</tr></tbody></table></figure>',
     );
+  });
+  it('reads back what it wrote, unescaped, and nothing from a note that is not a header', () => {
+    const header = {
+      dateLine: 'Monday · November 9 2026',
+      headline: 'Ship <the> fix & review',
+      acts: [{ range: '10:00 to 12:00', text: 'Standup, then the fix.' }, { range: '12:00 to 18:00', text: 'Review & tests.' }, { range: 'Evening', text: 'A walk.' }],
+    };
+    expect(readHeader(headerHtml({ ...header, image: { src: 'x.svg', alt: 'The day' } }))).toEqual(header);
+    expect(readHeader('<p>Just a note</p>')).toBeNull();
   });
 });
 

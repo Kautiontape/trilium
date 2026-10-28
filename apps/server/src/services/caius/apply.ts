@@ -32,7 +32,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASKED_LABEL, type BriefPick, NOT_TODAY_LABEL, sameTitle, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL, redrawHeader, sameTitle, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -42,6 +42,7 @@ import {
     followUpsOf,
     HEAVY_ID,
     lineIdOf,
+    listItems,
     listOf,
     mainTasks,
     namedDays,
@@ -124,7 +125,8 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         ]);
         // A forward may name only a task the steps showed, and only a day, week or month they listed.
         const shown = new Set([
-            offer.forwardSuggestion?.listItemId, ...offer.candidates.map((c) => c.listItemId), ...(await catchupOf(store, date, now)).tasks.map((t) => t.listItemId)
+            offer.forwardSuggestion?.listItemId, ...offer.candidates.map((c) => c.listItemId), ...(await catchupOf(store, date, now)).tasks.map((t) => t.listItemId),
+            ...listItems(offer.day.plan).map((item) => item.listItemId)
         ].filter((id): id is string => !!id));
         const listed = namedDays(date, dayKey(nextWorkday(localDay(date))));
         const listedTo = new Set<string>([ ...listed.days.map((d) => d.date), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
@@ -209,6 +211,12 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
     const { date } = input;
     const targetDay = windDownTarget(date, deps.now);
     const read = await deps.dayRead(targetDay);
+    // A day with a brief has its header drawn again after the writes, from its calendar.
+    const briefed = new Map<string, DayRead>();
+    for (const day of new Set([ date, targetDay ])) {
+        const note = await findPeriodNote(deps.store, "day", day);
+        if (note && await findBrief(deps.store, note.noteId, day)) briefed.set(day, day === targetDay ? read : await deps.dayRead(day));
+    }
     return deps.locked("caius_winddown_apply", async () => {
         const { store, now } = deps;
         const unreadable = await unreadableDay(store, [ date, targetDay ]);
@@ -308,6 +316,14 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped));
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         if (!skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) await labelDay(store, date, WOUND_DOWN_LABEL, [ date ]);
+        for (const [ day, dayRead ] of briefed) {
+            await guarded({ kind: "header", id: day }, skipped, async () => {
+                const plan = await readPlan(store, "day", day, now);
+                const header = headerOf(plan, dayRead, day, now);
+                const write = await redrawHeader(store, day, (noteId, weather) => drawHeader(noteId, header, weather).attachmentId, (acts) => withEveningAct(acts, plan, header));
+                if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
+            });
+        }
         return withDateLabels({ date, targetDay, written, skipped });
     });
 }
@@ -591,17 +607,31 @@ async function noteOf(store: NoteStore, listItemId: string): Promise<string | nu
 }
 
 /**
- * The acts with the third naming the evening's own items, its calendar events and his evening
- * tasks in time order ("Call Mom, then Laundry."); the agent's words stay only for an empty evening.
+ * The acts with the third as the evening's own act: the evening's calendar events and his evening
+ * tasks in time order, each name once ("Call Mom, then Laundry."), or "Nothing planned." without any.
  */
 function withEveningAct(acts: PlanApplyInput["brief"]["acts"], plan: Awaited<ReturnType<typeof readPlan>>, header: { workEnd: string; events: { start: string; title: string }[]; work: { start: string; label: string }[] }) {
     const tasks = listOf(plan).filter((task) => task.evening)
         .map((task) => ({ at: header.work.find((block) => block.label === task.label)?.start ?? "99:99", name: task.text }));
     const events = header.events.filter((event) => event.start >= header.workEnd).map((event) => ({ at: event.start, name: event.title }));
-    const items = [ ...events, ...tasks ].sort((a, b) => a.at.localeCompare(b.at)).map((item) => item.name);
-    const [ first, second, third ] = acts;
-    if (!items.length || !first || !second || !third) return acts;
-    return [ first, second, { ...third, text: t("caius.brief.evening_act", { items: items.join(t("caius.brief.evening_then")) }) } ];
+    const named = new Set<string>();
+    const items = [ ...events, ...tasks ].sort((a, b) => a.at.localeCompare(b.at)).map((item) => item.name).filter((name) => {
+        const same = name.replace(/\s+/g, " ").trim().toLowerCase();
+        if (named.has(same)) return false;
+        named.add(same);
+        return true;
+    });
+    const [ first, second ] = acts;
+    if (!first || !second) return acts;
+    const text = items.length ? t("caius.brief.evening_act", { items: items.join(t("caius.brief.evening_then")) }) : t("caius.brief.evening_empty");
+    return [ first, second, { range: t("caius.brief.evening_range"), text } ];
+}
+
+/** The day's drawing: its span from the rhythm, the calendar's events and his list laid out between them. */
+function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date) {
+    const { start, end, workEnd } = read.rhythm;
+    const events = drawnEvents(read);
+    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now).work };
 }
 
 /** A ticket candidate as its Suggested line, the one shape `caius_add` writes. */
@@ -642,14 +672,13 @@ async function briefOf(deps: ApplyDeps, input: PlanApplyInput, read: DayRead, re
         ...(headsUp.length ? [ { title: headsUpTitle, markdown: headsUp.map((line) => `- ${line}`).join("\n") } ] : []),
         ...input.brief.sections.filter((section) => ![ followUpTitle, headsUpTitle ].some((title) => sameTitle(section.title) === sameTitle(title)))
     ];
-    const { start, end, workEnd } = read.rhythm;
-    const events = drawnEvents(read);
-    const header = { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, input.date, now).work };
+    const header = headerOf(plan, read, input.date, now);
     const result = await writeBrief({
         store,
         draw: (noteId) => drawHeader(noteId, header, weather).attachmentId,
         render: deps.render,
-        plannedAt: deps.plannedAt
+        plannedAt: deps.plannedAt,
+        ...(weather ? { weather } : {})
     }, {
         date: input.date, headline: input.brief.headline, acts: withEveningAct(input.brief.acts, plan, header), picks, sections, header,
         followUps: followUps.map(({ key, commentId }) => ({ key, commentId }))

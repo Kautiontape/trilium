@@ -65,6 +65,18 @@ export function headerHtml(header: { dateLine: string; headline: string; image: 
   );
 }
 
+/** The date line, headline and acts of a header note `headerHtml` wrote, or null when it isn't one. */
+export function readHeader(html: string): { dateLine: string; headline: string; acts: BriefAct[] } | null {
+  const root = parse(html, { comment: true });
+  const dateLine = root.querySelector('p');
+  const headline = root.querySelector('h2');
+  const acts = root.querySelectorAll('td').map((cell) => {
+    const [range, text] = cell.querySelectorAll('p');
+    return { range: range?.text ?? '', text: text?.text ?? '' };
+  });
+  return dateLine && headline && acts.length ? { dateLine: dateLine.text, headline: headline.text, acts } : null;
+}
+
 /**
  * The brief's body: the header's include-note, the picks as plain bullets under `picksTitle`, then
  * each section under its own heading. A section's `html` is trusted (rendered from markdown).

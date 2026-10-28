@@ -76,6 +76,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Once he says to stop, never ask about it again",
         "Map \"first\", \"after 105\" or \"before the report\" onto the accept's `first`, `before` or `after`",
         "Never refuse a reorder he asks for",
+        "name his work in the order of his list as this call leaves it",
         "Use `move` only when he asks for an order",
         "never use the generic note tools",
         "If a Caius tool fails, say so in one clause and stop that item.",

@@ -5,6 +5,7 @@
  */
 
 import {
+    type BriefAct,
     briefBodyHtml,
     diffSummary,
     ensureListItemIds,
@@ -14,6 +15,7 @@ import {
     label,
     leadingInclude,
     type NoteStore,
+    readHeader,
     type StoreNote,
     withInclude,
     withoutImages
@@ -37,6 +39,8 @@ export const ASKED_LABEL = "caiusAsked";
 export const NOT_TODAY_LABEL = "caiusNotToday";
 /** On a day note: the day was wound down, so the catch-up looks no further back than it. */
 export const WOUND_DOWN_LABEL = "caiusWoundDown";
+/** On a brief: the weather its drawing shows, as `61 Rain` (the WMO code and its label), so a redraw keeps it. */
+export const WEATHER_LABEL = "caiusWeather";
 /** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */
 export const SKIP_CATCHUP_LABEL = "caiusSkipCatchup";
 /** Children of a brief that the old push script labels; they are pages of a brief, never the brief. */
@@ -50,6 +54,8 @@ export interface BriefDeps {
     render: (markdown: string, title: string) => string;
     /** `YYYY-MM-DDTHH:mm:ss` local time from the Caius clock. */
     plannedAt: string;
+    /** The weather the drawing shows, kept on the brief for a redraw. */
+    weather?: { code: number; label: string };
 }
 
 /** One note's write: `updated`, `unchanged`, or `edited` when it changed between the read and the write. */
@@ -126,6 +132,7 @@ export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "
     }
     setLabel(brief.noteId, BRIEF_LABEL, date);
     setLabel(brief.noteId, "cssClass", CSS_CLASS);
+    if (deps.weather) setLabel(brief.noteId, WEATHER_LABEL, `${deps.weather.code} ${deps.weather.label}`);
     setLabel(header.noteId, "cssClass", CSS_CLASS);
 
     // A new Header takes the place of the include-note of one that was deleted or replaced.
@@ -156,6 +163,33 @@ export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "
         includeAdded: writes[2]?.status === "updated",
         writes
     };
+}
+
+/**
+ * Draws the header of the brief of `date` again, when the day has one: the drawing with `draw`,
+ * given the weather the brief was drawn with, and the header note with its date line and headline
+ * as written and the acts `acts` makes of the written ones. Answers the header note's write, or
+ * null when the day has no brief or no header to read.
+ */
+export async function redrawHeader(
+    store: NoteStore, date: string,
+    draw: (noteId: string, weather: { code: number; label: string } | undefined) => string,
+    acts: (written: BriefAct[]) => BriefAct[]
+): Promise<NoteWrite | null> {
+    const day = await findPeriodNote(store, "day", date);
+    const brief = day && day.type === "text" && !day.isProtected ? await findBrief(store, day.noteId, date) : null;
+    const header = brief && !brief.isProtected ? await findHeader(store, brief.noteId) : null;
+    if (!brief || !header || header.isProtected) return null;
+    const written = readHeader(await store.content(header.noteId));
+    if (!written) return null;
+    const weather = /^(\d+) (.+)$/.exec(label(brief, WEATHER_LABEL) ?? "");
+    const attachmentId = draw(header.noteId, weather?.[1] && weather[2] ? { code: Number(weather[1]), label: weather[2] } : undefined);
+    return replace(store, header.noteId, "header", () => headerHtml({
+        dateLine: written.dateLine,
+        headline: written.headline,
+        image: { src: `api/attachments/${attachmentId}/image/terrain.svg`, alt: t("caius.brief.image_alt") },
+        acts: acts(written.acts)
+    }));
 }
 
 /**

@@ -4,7 +4,7 @@
  */
 
 import { dayCapacity } from "@triliumnext/caius";
-import { cls, sql_init } from "@triliumnext/core";
+import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
@@ -159,5 +159,78 @@ describe("accept takes a position", () => {
 
         const refused = await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "tlau", first: true } ], brief: prose });
         expect(refused.skipped).toEqual([ expect.objectContaining({ kind: "move", id: "tlau", reason: "not_in_main_list" }) ]);
+    });
+});
+
+/** The header the brief of `applied` wrote: its acts and the drawing's SVG. */
+async function headerOf(applied: { headerNoteId: string; attachmentId: string }) {
+    const html = await cls.init(() => store.content(applied.headerNoteId));
+    const acts = [ ...html.matchAll(/<td><p><strong>([^<]*)<\/strong><\/p><p>([^<]*)<\/p><\/td>/g) ].map((m) => ({ range: m[1], text: m[2] }));
+    const svg = String(cls.init(() => becca.getAttachmentOrThrow(applied.attachmentId).getContent()));
+    return { acts, svg };
+}
+
+describe("the header is drawn from the note as it ends", () => {
+    it("Wed 09:40 'laundry can go to tomorrow': the forward of his own evening item is made, and neither the drawing nor the Evening act has Laundry", async () => {
+        const DAY = "2026-11-11";
+        calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("19:00", "20:30", "Climbing gym") ];
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h130", `${zap("ZAP-130", "Verify the export retry")} ~30m`))}`
+                + `<h3>Evening</h3>${ul(li("hlau", "Laundry <a href=\"#root/abc\">from Tue 10 Nov</a>"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        expect(inputs.data.list.map((item: any) => item.listItemId)).toEqual([ "h130", "hlau" ]);
+        const applied = await call("caius_plan_apply", { date: DAY, forward: [ { listItemId: "hlau", to: "2026-11-12" } ], brief: { ...prose, acts: [ prose.acts[0], prose.acts[1], { range: "Evening", text: "Laundry, then Climbing gym." } ] } });
+        expect(applied.skipped).toEqual([]);
+        const { acts, svg } = await headerOf(applied);
+        expect(acts[2]).toEqual({ range: "Evening", text: "Climbing gym." });
+        expect(svg).not.toContain("Laundry");
+        expect(svg).toContain("ZAP-130");
+    });
+
+    it("Wed 11 'fine': a forward stamp is not in a bar's label, and an evening chore is never the focus block", async () => {
+        const DAY = "2026-11-13";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2><h3>Evening</h3>${ul(li("flau", "Laundry <a href=\"#root/abc\">from Tuesday 3</a>"))}`);
+        });
+        at(`${DAY}T09:45`);
+        const evening = (await call("caius_planday", { date: DAY, step: "brief" })).data.header.work;
+        expect(evening).toEqual([ { start: "18:00", end: "18:30", label: "Laundry" } ]);
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("frun", "Write the runbook <a href=\"#root/abc\">from Monday 9</a> ~30m"))}<h3>Evening</h3>${ul(li("flau", "Laundry"))}`);
+        });
+        const work = (await call("caius_planday", { date: DAY, step: "brief" })).data.header.work;
+        expect(work.map((w: any) => [ w.label, w.focus ?? false ])).toEqual([ [ "Write the runbook", true ], [ "Laundry", false ] ]);
+    });
+
+    it("Mon 09:40 'evening is just mom': the Evening act is its own act and names the call once", async () => {
+        const DAY = "2026-11-16";
+        calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("18:00", "18:30", "Call Mom") ];
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", { date: DAY, evening: [ "Call Mom" ], brief: { ...prose, acts: [ prose.acts[0], prose.acts[1], { range: "14:00 to 18:00", text: "Call Mom." } ] } });
+        expect((await headerOf(applied)).acts[2]).toEqual({ range: "Evening", text: "Call Mom." });
+    });
+
+    it("Wed 17:45: a wind-down that moves tonight's Laundry on draws today's header again without it", async () => {
+        const DAY = "2026-11-18";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g140", `${zap("ZAP-140", "Ship the fix")} ~30m`))}<h3>Evening</h3>${ul(li("glau", "Laundry"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
+        expect((await headerOf(planned)).acts[2]).toEqual({ range: "Evening", text: "Laundry." });
+        at(`${DAY}T17:45`);
+        const wound = await call("caius_winddown_apply", { date: DAY, done: [ "g140" ] });
+        expect(wound.skipped).toEqual([]);
+        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: DAY, status: "written" }) ]));
+        const { acts, svg } = await headerOf(planned);
+        expect(acts[0]).toEqual(prose.acts[0]);
+        expect(acts[2]).toEqual({ range: "Evening", text: "Nothing planned." });
+        expect(svg).not.toContain("Laundry");
     });
 });

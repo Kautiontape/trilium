@@ -34,7 +34,7 @@ describe('layoutWork', () => {
     expect(unplaced).toEqual([{ label: 'Big', minutes: 600 - 420 - 15 }]);
   });
 
-  it('starts no block before notBefore, and no evening task before it either', () => {
+  it('starts no block before notBefore, and no evening task before it either, and never makes an evening task the focus', () => {
     const { work } = layoutWork({ ...day, notBefore: '11:15' }, [{ start: '10:00', end: '10:30' }, { start: '15:00', end: '15:30' }], [
       { label: 'ZAP-105', minutes: 30 },
       { label: 'Laundry', minutes: 30, evening: true },
@@ -44,6 +44,6 @@ describe('layoutWork', () => {
       { start: '18:00', end: '18:30', label: 'Laundry' },
     ]);
     expect(layoutWork({ ...day, notBefore: '19:00' }, [], [{ label: 'Laundry', minutes: 30, evening: true }]).work)
-      .toEqual([{ start: '19:00', end: '19:30', label: 'Laundry', focus: true }]);
+      .toEqual([{ start: '19:00', end: '19:30', label: 'Laundry' }]);
   });
 });

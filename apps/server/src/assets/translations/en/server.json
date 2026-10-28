@@ -599,6 +599,8 @@
       "pick_plain": "{{- text}} (~{{estimate}})",
       "evening_act": "{{- items}}.",
       "evening_then": ", then ",
+      "evening_range": "Evening",
+      "evening_empty": "Nothing planned.",
       "image_alt": "The day: meetings on a line, planned work as bars under it"
     },
     "daily": {
