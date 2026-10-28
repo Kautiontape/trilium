@@ -314,7 +314,7 @@ const planday = z.object({
     refresh,
     answered: z.object({
         evening: z.array(z.string()).optional().describe("What he already said about the evening in this conversation, even nothing: the step doesn't ask about it"),
-        keep: z.array(z.string()).optional().describe("The Context lines he already said to keep in this conversation, by their words: the step doesn't offer them to carry")
+        keep: z.array(z.string()).optional().describe("The Context lines he already said to keep in this conversation, by their words, lineId or ref: the step doesn't offer them to carry")
     }).optional().describe("inputs: the answers he already gave in this conversation, such as in the wind-down just before")
 });
 

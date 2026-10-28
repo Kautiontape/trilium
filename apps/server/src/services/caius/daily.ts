@@ -46,7 +46,7 @@ import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, P
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
-import { numbered, withRefs } from "./refs.js";
+import { numbered, refOf, withRefs } from "./refs.js";
 
 /** The standing note as markdown, or null with the one-line reason. */
 export interface Standing {
@@ -264,8 +264,9 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
         const offer = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
         const { day: facts, plannedAt, candidates, jira, headsUp, overlaps, forwardSuggestion, fits } = offer;
         // What he already answered in this conversation is not asked again.
-        const kept = new Set((answered?.keep ?? []).map(lineIdOf));
-        const carry = offer.carry.filter((line) => !kept.has(line.lineId));
+        // A kept line can be given by its words, its lineId or its ref.
+        const kept = new Set(answered?.keep ?? []);
+        const carry = offer.carry.filter((line) => !kept.has(line.lineId) && !kept.has(refOf("x", line.lineId)) && ![ ...kept ].some((said) => lineIdOf(said) === line.lineId));
         const askEvening = offer.askEvening && answered?.evening === undefined;
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines

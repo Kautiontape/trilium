@@ -761,3 +761,17 @@ describe("fix round 1: the third-person retry in Plan my day", () => {
         expect(await cls.init(() => store.content(first.briefNoteId))).toBe(brief);
     });
 });
+
+describe("fix round 1: answered.keep takes the line's id or ref", () => {
+    it("M4: a line he already said to keep, given by its lineId or its x ref, isn't offered to carry again", async () => {
+        expect((await call("caius_context_add", { week: "2027-W31", text: "Pat is out", until: "2027-08-13" })).results[0]).toMatchObject({ status: "added" });
+        at("2027-08-10T09:45");
+        const offered = await call("caius_planday", { date: "2027-08-10", step: "inputs", refresh: true });
+        const [ line ] = offered.data.carry;
+        expect(line).toEqual(expect.objectContaining({ line: "Pat is out" }));
+        for (const given of [ line.lineId, line.ref, "Pat is out" ]) {
+            const kept = await call("caius_planday", { date: "2027-08-10", step: "inputs", answered: { keep: [ given ] } });
+            expect(kept.data.carry, given).toEqual([]);
+        }
+    });
+});
