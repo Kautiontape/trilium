@@ -592,13 +592,13 @@ async function placeOnList(store: NoteStore, date: string, now: Date, entry: { k
     const tasks = mainTasks(plan);
     const find = (ref: string) => tasks.find((task) => task.listItemId === ref) ?? tasks.find((task) => keysOf(withoutMoveLinks(task.text)).includes(ref));
     const task = find(item);
-    const anchor = by === undefined ? undefined : find(by);
+    const anchor = by === undefined ? undefined : find(by)?.listItemId ?? undefined;
     const noteId = task?.noteId ?? plan.noteId;
-    if (!task?.listItemId || !noteId || (by !== undefined && !anchor?.listItemId)) {
+    if (!task?.listItemId || !noteId || (by !== undefined && !anchor)) {
         skipped.push({ ...entry, reason: "not_on_list" });
         return;
     }
-    const where = place.first ? { first: true } : place.before !== undefined ? { before: anchor?.listItemId } : { after: anchor?.listItemId };
+    const where = place.first ? { first: true } : place.before !== undefined ? { before: anchor } : { after: anchor };
     const [ result ] = await moveTasks(store, [ { noteId, listItemId: task.listItemId, ...where } ]);
     record(written, skipped, entry, result);
 }
