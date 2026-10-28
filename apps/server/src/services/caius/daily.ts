@@ -139,7 +139,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     const noticed = withRefs([ ...keep, ...carry ], "x", (line) => line.lineId);
     const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
     const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
-    const question = questions.length ? [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ") : null;
+    // The question set always ends with the one line that lets him add something.
+    const question = [ ...questions, t("caius.daily.context", { day: weekdayName(targetDay) }) ].join(" ");
     return reply(read.standing, { context: read.context, targetWeek, keepDate: targetDay, noticed }, question, null);
 }
 

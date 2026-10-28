@@ -342,3 +342,12 @@ describe("one capacity figure", () => {
         delete calendars[THU];
     });
 });
+
+describe("the wind-down's last question", () => {
+    it("Mon 17:30 with nothing to keep or carry: the context step still asks 'anything to add?', in one line", async () => {
+        at("2027-02-08T17:30");
+        const context = await call("caius_winddown", { date: "2027-02-08", step: "context" });
+        expect(context.data.noticed).toEqual([]);
+        expect(context.question).toBe("Anything to add for Tuesday?");
+    });
+});

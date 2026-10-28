@@ -249,10 +249,10 @@ describe("caius_winddown", () => {
             { kind: "carry", line: "Release branch is cut", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) }
         ]);
         expect(answer.data.context.map((line: any) => line.text)).toContain("ZAP-2600 is open");
-        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry 'Sam is out' and 'Release branch is cut' into next week? Anything to know for Monday?");
+        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry 'Sam is out' and 'Release branch is cut' into next week? Anything to add for Monday?");
 
         const quiet = await call("caius_winddown", { date: TUESDAY, step: "context" });
-        expect(quiet.question).toBeNull();
+        expect(quiet.question).toBe("Anything to add for Wednesday?");
         expect(quiet.data.noticed).toEqual([]);
     });
 
@@ -263,7 +263,7 @@ describe("caius_winddown", () => {
             { kind: "carry", line: "Sam is out", until: "2026-11-11", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) },
             { kind: "carry", line: "Release branch is cut", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) }
         ]);
-        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going? Anything to know for Tuesday?");
+        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going? Anything to add for Tuesday?");
     });
 
     it("context: offers a day note's line that outlasts the days its note is read", async () => {
@@ -272,7 +272,7 @@ describe("caius_winddown", () => {
         expect((await call("caius_winddown", { date: MONDAY, step: "context" })).data.noticed.map((n: any) => n.line)).not.toContain("Vendor demo prep");
         const answer = await call("caius_winddown", { date: TUESDAY, step: "context" });
         expect(plain(answer.data.noticed)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) } ]);
-        expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything to know for Wednesday?");
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything to add for Wednesday?");
     });
 
     it("next: a candidate put in Suggested and then dismissed does not come back", async () => {
