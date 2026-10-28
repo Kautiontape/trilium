@@ -7,7 +7,7 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { placeForwarded } from './plan-html.js';
+import { escapeHtml, placeForwarded } from './plan-html.js';
 import {
   apply,
   checkboxEdit,
@@ -46,8 +46,10 @@ export interface MarkOptions {
 
 export interface CopyOptions {
   sourceNoteId: string;
-  /** Link text for the "from …" back link, e.g. "Monday 26" or "week 45". */
+  /** Link text for the "from …" back link, e.g. "Mon 26 Oct" or "week 45". */
   sourceLabel: string;
+  /** For a task that already has a back link: the label of the note it points at, to write the link again as a plain one. */
+  backLinkLabel?: string;
   states: StateSymbols;
   newId?: () => string;
 }
@@ -58,20 +60,20 @@ export type InsertResult =
   | { ok: false; reason: ItemProblem; scheduledTo: string[] };
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DEFAULT_STATE_ID = '_rescheduled';
 const DEFAULT_STATE_TITLE = 'Rescheduled';
 
-/** "2026-10-27" → "Tuesday 27". */
+/** "2026-10-27" → "Tue 27 Oct", as the step data labels a day. */
 export function dayLabel(date: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!m) return date;
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}`;
+  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]?.slice(0, 3)}`;
 }
 
 /**
- * The short link text for a day, ISO week or month note: "Tuesday 27", "week 45",
+ * The short link text for a day, ISO week or month note: "Tue 27 Oct", "week 45",
  * "November". A month in a year other than `inYear` carries it ("January 2027").
  * Anything else comes back as given.
  */
@@ -141,7 +143,7 @@ export function inspectItem(
 
 /**
  * Mark an item (and its still-live sub-items) Rescheduled: state attribute,
- * title, checked box, plus a trailing italic "scheduled Tuesday 27" note whose
+ * title, checked box, plus a trailing italic "scheduled Tue 27 Oct" note whose
  * link points at the target note.
  */
 export function markRescheduled(html: string, id: string, opts: MarkOptions): MarkResult {
@@ -200,8 +202,14 @@ function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): stri
   reset(top);
 
   const span = descriptionOf(top);
-  // A task forwarded again keeps the link to where it started, so the links don't chain.
-  if (span && !hasBackLink(span)) {
+  // A task forwarded again keeps the link to where it started, so the links don't chain. It is
+  // written again as a plain link with today's label: CKEditor shows a `reference-link` as the
+  // note's title ("26 - Monday").
+  const back = span && backLinkOf(span);
+  if (back) {
+    const label = opts.backLinkLabel ?? back.text.trim().replace(/^from\s+/, '');
+    edits.push({ start: back.range[0], end: back.range[1], text: noteLink(back.getAttribute('href')?.slice('#root/'.length) ?? '', `from ${escapeHtml(label)}`) });
+  } else if (span) {
     // Before the trailing tokens (~30m, !, *date), so the parser still reads them.
     const at = spanEnd(snippet, span) - span.innerHTML.length + tokenZoneStartInHtml(span.innerHTML);
     edits.push({ start: at, end: at, text: ` ${noteLink(opts.sourceNoteId, `from ${opts.sourceLabel}`)}` });
@@ -226,7 +234,7 @@ export function insertCopy(targetHtml: string, sourceHtml: string, id: string, o
 /**
  * True when the target already holds a copy made from this source note (a half-finished forward):
  * the source's text with a back link to the source, or, for a task that already carries a back
- * link, the same text unchanged.
+ * link, the same text apart from that link, which the copy writes again.
  */
 export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sourceNoteId: string): boolean {
   const source = findItem(parse(sourceHtml, { comment: true }), id);
@@ -234,12 +242,12 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
   if (!sourceSpan) return false;
   const body = sourceSpan.innerHTML;
   if (hasBackLink(sourceSpan)) {
-    const same = (html: string) => html.replace(/&nbsp;/g, ' ');
+    // The copy's back link is written again (`buildCopy`), so the rest of the text is compared.
     return parse(targetHtml, { comment: true })
       .querySelectorAll('li')
       .some((li) => {
-        const inner = descriptionOf(li)?.innerHTML;
-        return inner !== undefined && same(inner) === same(body);
+        const span = descriptionOf(li);
+        return !!span && hasBackLink(span) && withoutBackLink(span.innerHTML) === withoutBackLink(body);
       });
   }
   // A space or &nbsp;, then a link to the source note with any text: the copy's back link as
@@ -255,5 +263,20 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
 
 /** Whether a task's text holds a "from …" link to the note it was forwarded from. */
 function hasBackLink(span: HTMLElement): boolean {
-  return span.querySelectorAll('a').some((a) => /^#root\/[^/?#]+$/.test(a.getAttribute('href') ?? '') && /^from\s/.test(a.text.trim()));
+  return !!backLinkOf(span);
 }
+
+/** A task's "from …" link to the note it was forwarded from. */
+function backLinkOf(span: HTMLElement): HTMLElement | undefined {
+  return span.querySelectorAll('a').find((a) => /^#root\/[^/?#]+$/.test(a.getAttribute('href') ?? '') && /^from\s/.test(a.text.trim()));
+}
+
+/** The note id a task's "from …" link points at, or null; `html` is the note, `id` the task's list item id. */
+export function backLinkTarget(html: string, id: string): string | null {
+  const li = findItem(parse(html, { comment: true }), id);
+  const span = li && descriptionOf(li);
+  return (span && backLinkOf(span)?.getAttribute('href')?.slice('#root/'.length)) || null;
+}
+
+/** `inner` without its "from …" back link, as written or as CKEditor saved it. */
+const withoutBackLink = (inner: string) => inner.replace(/(?:\s|&nbsp;)*<a [^>]*href="#root\/[^"]*"[^>]*>from [^<]*<\/a>/, '').replace(/&nbsp;/g, ' ');

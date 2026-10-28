@@ -26,22 +26,22 @@ const copy = { sourceNoteId: SRC_ID, sourceLabel: 'Monday 26', states: STATES };
 
 describe('periodLabel', () => {
   it('names a day, week or month in the short style, adding the year to a month in another year', () => {
-    expect(periodLabel('2026-10-27')).toBe('Tuesday 27');
+    expect(periodLabel('2026-10-27')).toBe('Tue 27 Oct');
     expect(periodLabel('2026-W45')).toBe('week 45');
     expect(periodLabel('2026-W05')).toBe('week 5');
     expect(periodLabel('2026-11')).toBe('November');
     expect(periodLabel('2026-11', 2026)).toBe('November');
     expect(periodLabel('2027-01', 2026)).toBe('January 2027');
     expect(periodLabel('2027-W02', 2026)).toBe('week 2');
-    expect(periodLabel('2027-01-04', 2026)).toBe('Monday 4');
+    expect(periodLabel('2027-01-04', 2026)).toBe('Mon 4 Jan');
     expect(periodLabel('nonsense')).toBe('nonsense');
   });
 });
 
 describe('dayLabel', () => {
-  it('names the weekday and day of month', () => {
-    expect(dayLabel('2026-10-27')).toBe('Tuesday 27');
-    expect(dayLabel('2026-11-01')).toBe('Sunday 1');
+  it('names the short weekday, the day of month and the short month, as the step data labels a day', () => {
+    expect(dayLabel('2026-10-27')).toBe('Tue 27 Oct');
+    expect(dayLabel('2026-11-01')).toBe('Sun 1 Nov');
   });
 });
 

@@ -141,7 +141,7 @@ describe("caius_plan_apply", () => {
 
         const plan = await call("caius_plan", { period: "day", date: MON });
         const main = plan.sections.filter((section: any) => section.name !== "Evening").flatMap((section: any) => section.tasks.map((task: any) => task.text));
-        expect(main).toEqual([ expect.stringMatching(/^Message Dave about hanging lights \[from Friday 30\]/), expect.stringContaining("ZAP-111"), expect.stringContaining("ZAP-101") ]);
+        expect(main).toEqual([ expect.stringMatching(/^Message Dave about hanging lights \[from Fri 30 Oct\]/), expect.stringContaining("ZAP-111"), expect.stringContaining("ZAP-101") ]);
         expect(plan.sections.find((section: any) => section.name === "Evening")?.tasks.map((task: any) => task.text)).toEqual([ "Laundry" ]);
         expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-105") ]);
         expect(plan.meetings).toEqual([ "10:00 Standup", "10:45 Sprint Planning", "18:00 Call Mom" ]);
@@ -273,16 +273,16 @@ describe("caius_winddown_apply", () => {
 
         const monday = await call("caius_plan", { period: "day", date: MON });
         // Every item is closed: ZAP-111 done, the rest forwarded with a "scheduled" link.
-        const closed = monday.sections.flatMap((s: any) => s.tasks).map((t: any) => [ t.state, /_scheduled \[(Tuesday 3|week 45)\]/.exec(textOf(t))?.[1] ?? null, textOf(t).slice(0, 12) ]);
+        const closed = monday.sections.flatMap((s: any) => s.tasks).map((t: any) => [ t.state, /_scheduled \[(Tue 3 Nov|week 45)\]/.exec(textOf(t))?.[1] ?? null, textOf(t).slice(0, 12) ]);
         expect(closed).toEqual([
-            [ "done", "Tuesday 3", "Message Dave" ], [ "done", null, "[ZAP-111](ht" ], [ "done", "week 45", "[ZAP-101](ht" ], [ "done", "Tuesday 3", "Laundry _sch" ]
+            [ "done", "Tue 3 Nov", "Message Dave" ], [ "done", null, "[ZAP-111](ht" ], [ "done", "week 45", "[ZAP-101](ht" ], [ "done", "Tue 3 Nov", "Laundry _sch" ]
         ]);
         const tuesday = await call("caius_plan", { period: "day", date: "2026-11-03" });
         expect(tuesday.sections.flatMap((s: any) => s.tasks).filter((t: any) => t.state === "open").map(textOf)).toEqual([
-            expect.stringContaining("Message Dave"), "Laundry [from Monday 2](#root/" + monday.noteId + ")"
+            expect.stringContaining("Message Dave"), "Laundry [from Mon 2 Nov](#root/" + monday.noteId + ")"
         ]);
         // The forwarded Laundry stays in the evening, which is why the evening answer is already written.
-        expect(tuesday.sections.find((s: any) => s.name === "Evening")?.tasks.map(textOf)).toEqual([ expect.stringMatching(/^Laundry \[from Monday 2\]/) ]);
+        expect(tuesday.sections.find((s: any) => s.name === "Evening")?.tasks.map(textOf)).toEqual([ expect.stringMatching(/^Laundry \[from Mon 2 Nov\]/) ]);
         expect(tuesday.suggested.map(textOf)).toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-110"), expect.stringContaining("ZAP-105") ]));
         expect((await call("caius_plan", { period: "week", date: "2026-W45" })).sections.flatMap((s: any) => s.tasks).map(textOf))
             .toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-101") ]));

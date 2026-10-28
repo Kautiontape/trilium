@@ -67,15 +67,33 @@ const req = { noteId: 'mon', listItemId: 'eone', to: '2026-10-27' };
 let n = 0;
 const opts = { states: STATES, newId: () => `enew${++n}` };
 
+describe('a back link from an older forward', () => {
+  it('is written again as a plain "from Mon 26 Oct" link, and a re-run after a half-finished forward makes no second copy', async () => {
+    const seed = () => ({
+      oct26: [periodNote('oct26', 'dateNote', '2026-10-26'), ''] as [StoreNote, string],
+      w46: [periodNote('w46', 'weekNote', '2026-W46'), '<h2>☑️ Tasks</h2>' + ul(li('edave', 'Message Dave <a class="reference-link" href="#root/oct26">from Monday 26</a>'))] as [StoreNote, string],
+      nov9: [periodNote('nov9', 'dateNote', '2026-11-09'), '<h2>☑️ Tasks</h2>'] as [StoreNote, string],
+    });
+    const move = { noteId: 'w46', listItemId: 'edave', to: '2026-11-09' };
+    const half = fakeTrilium(seed(), { failPut: 'w46' });
+    expect((await forwardTasks(half.api, [move], opts))[0]).toMatchObject({ status: 'failed' });
+    expect(half.html.nov9).toContain('Message Dave <a href="#root/oct26">from Mon 26 Oct</a>');
+    expect(half.html.nov9).not.toContain('reference-link');
+    const f = fakeTrilium({ ...seed(), nov9: [periodNote('nov9', 'dateNote', '2026-11-09'), half.html.nov9!] });
+    expect((await forwardTasks(f.api, [move], opts))[0]).toMatchObject({ status: 'moved', detail: 'target already held the copy' });
+    expect(f.html.nov9!.match(/Message Dave/g)).toHaveLength(1);
+  });
+});
+
 describe('forwardTasks', () => {
   it('writes the target first, then the source', async () => {
     const f = fake();
     const [r] = await forwardTasks(f.api, [req], opts);
     expect(r).toMatchObject({ status: 'moved', writtenNoteIds: ['tue', 'mon'] });
     expect(f.log.filter((l) => l.startsWith('put'))).toEqual(['put tue', 'put mon']);
-    expect(f.html.tue).toContain('Write it <a href="#root/mon">from Monday 26</a>');
+    expect(f.html.tue).toContain('Write it <a href="#root/mon">from Mon 26 Oct</a>');
     expect(f.html.mon).toContain('data-trilium-task-state="_rescheduled"');
-    expect(f.html.mon).toContain('<em>scheduled <a href="#root/tue">Tuesday 27</a></em>');
+    expect(f.html.mon).toContain('<em>scheduled <a href="#root/tue">Tue 27 Oct</a></em>');
     expect(f.html.mon).toContain(li('etwo', 'Other'));
   });
 
@@ -200,7 +218,7 @@ describe('forwardTasks to and from weeks and months', () => {
     const [r] = await go(f, 'mon', 'eone', '2026-W45');
     expect(r).toMatchObject({ status: 'moved' });
     expect(f.html.mon).toContain('<em>scheduled <a href="#root/wk">week 45</a></em>');
-    expect(f.html.wk).toContain('Write it <a href="#root/mon">from Monday 26</a>');
+    expect(f.html.wk).toContain('Write it <a href="#root/mon">from Mon 26 Oct</a>');
     expect(f.log.filter((l) => l.startsWith('put'))).toEqual(['put wk', 'put mon']);
   });
 
@@ -208,19 +226,19 @@ describe('forwardTasks to and from weeks and months', () => {
     const f = seed();
     await go(f, 'mon', 'eone', '2026-11');
     expect(f.html.mon).toContain('>November</a></em>');
-    expect(f.html.mo).toContain('from Monday 26</a>');
+    expect(f.html.mo).toContain('from Mon 26 Oct</a>');
 
     const g = seed();
     const [r] = await go(g, 'mon', 'eone', '2027-01');
     expect(r).toMatchObject({ status: 'moved' });
     expect(g.html.mon).toContain('href="#root/new-2027-01">January 2027</a></em>');
-    expect(g.html['new-2027-01']).toContain('from Monday 26</a>');
+    expect(g.html['new-2027-01']).toContain('from Mon 26 Oct</a>');
   });
 
   it('forwards a week or a month down to a day, and a week to a month', async () => {
     const f = seed();
     await go(f, 'wk', 'ewk', '2026-10-28');
-    expect(f.html.wk).toContain('scheduled <a href="#root/new-2026-10-28">Wednesday 28</a>');
+    expect(f.html.wk).toContain('scheduled <a href="#root/new-2026-10-28">Wed 28 Oct</a>');
     expect(f.html['new-2026-10-28']).toContain('Week thing <a href="#root/wk">from week 45</a>');
 
     const [m] = await go(f, 'mo', 'emo', '2026-W46');

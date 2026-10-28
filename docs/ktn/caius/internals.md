@@ -105,7 +105,7 @@ CKEditor keeps any `data-list-item-id` it is given but invents a random one for 
 
 ## Forwarding
 
-Forwarding moves a task the way you do by hand. The old item becomes Rescheduled (state `_rescheduled`, title "Rescheduled", box checked) with a trailing italic `scheduled Tuesday 27` linking to the target. An open copy appears in the target with a `from Monday 26` link back. Nothing goes through markdown: `forward-html.ts` parses the HTML with `node-html-parser` for positions only and splices the changes into the original string, so every other byte of the note stays as Trilium stored it.
+Forwarding moves a task the way you do by hand. The old item becomes Rescheduled (state `_rescheduled`, title "Rescheduled", box checked) with a trailing italic `scheduled Tue 27 Oct` linking to the target. An open copy appears in the target with a `from Mon 26 Oct` link back; a day is labelled as the step data labels it. A task forwarded again keeps its first back link, written again in this form (an old `reference-link` one included), so the links never chain. Nothing goes through markdown: `forward-html.ts` parses the HTML with `node-html-parser` for positions only and splices the changes into the original string, so every other byte of the note stays as Trilium stored it.
 
 - **Target.** A copy under the heading with the same name as the source's section (compared ignoring case and spacing), else the end of the first task list, else a new `<h2>☑️ Tasks</h2>` list at the end. Never the critical block or Suggested. The copy is open (Doing stays Doing), has a fresh id, and carries only open sub-items, also with fresh ids. The target note comes from the calendar service and is created from the template if missing. Into an untouched template day, the copy replaces the `[…]` placeholder.
 - **Source.** The item and its live sub-items become Rescheduled; closed sub-items stay.
@@ -116,7 +116,7 @@ Forwarding moves a task the way you do by hand. The old item becomes Rescheduled
 
 ### Plain internal links
 
-The links written into forwarded tasks (`scheduled Tuesday 27`, `from Monday 26`) are **plain internal links**, `<a href="#root/<noteId>">text</a>`, not `reference-link` anchors. CKEditor treats a `reference-link` as a live reference: when the note is opened and saved it replaces the link text with the target note's title (`27 - Tuesday`) and loses the italic around it. A plain link keeps its text and its italic through the editor. Both readers still understand the old reference-link markup in notes written earlier.
+The links written into forwarded tasks (`scheduled Tue 27 Oct`, `from Mon 26 Oct`) are **plain internal links**, `<a href="#root/<noteId>">text</a>`, not `reference-link` anchors. CKEditor treats a `reference-link` as a live reference: when the note is opened and saved it replaces the link text with the target note's title (`27 - Tuesday`) and loses the italic around it. A plain link keeps its text and its italic through the editor. Both readers still understand the old reference-link markup in notes written earlier.
 
 ### Finding the item
 

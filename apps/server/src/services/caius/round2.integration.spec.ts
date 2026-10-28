@@ -290,7 +290,7 @@ describe("only his explicit words drop, cancel or dismiss", () => {
         const applied = await call("caius_winddown_apply", { date: "2026-11-23", context: [ "Riley covers the release" ] });
         expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "fate", id: "dave23", detail: "2026-11-24" }) ]));
         const monday = await call("caius_plan", { period: "day", date: "2026-11-23" });
-        expect(monday.sections.flatMap((s: any) => s.tasks).map((t: any) => t.text)).toEqual([ expect.stringContaining("_scheduled [Tuesday 24]") ]);
+        expect(monday.sections.flatMap((s: any) => s.tasks).map((t: any) => t.text)).toEqual([ expect.stringContaining("_scheduled [Tue 24 Nov]") ]);
         expect(monday.context.map((c: any) => c.text)).toEqual([ "Vendor call moved to Thursday" ]);
         await expect(async () => call("caius_winddown_apply", { date: "2026-11-23", fates: [ { listItemId: "dave23", drop: "" } ] })).rejects.toThrow(/too_small|>=1/);
     });
