@@ -3,7 +3,7 @@ import {
     dayKey, isSuggested, monthKey, nextMonthKey, nextWeekKey, tomorrowKey, weekKey
 } from "../../../menus/task_actions";
 import type {
-    CaiusForwardItem, CaiusPeriodKind, CaiusPlan, CaiusPlanTask, CaiusSetStateItem
+    CaiusContextLine, CaiusForwardItem, CaiusPeriodKind, CaiusPlan, CaiusPlanTask, CaiusSetStateItem
 } from "../../../services/caius";
 
 /** The period the Plan tab shows: its kind, and any local day inside it. */
@@ -189,6 +189,21 @@ export function closeFates(period: CaiusPeriodKind, key: string, now: Date): Fat
 export function isPastPeriod(period: CaiusPeriodKind, key: string, now: Date) {
     // Keys of one kind sort by date.
     return key < periodKey({ kind: period, anchor: now });
+}
+
+/** Whether a Context line in force on the day `date` lapses before the next workday. */
+export function endsSoon(line: Pick<CaiusContextLine, "until">, date: string) {
+    const day = parsePeriodKey("day", date);
+    return !!line.until && !!day && line.until < dayKey(nextWorkday(day));
+}
+
+/** The first workday after `date`, as `nextWorkday` in `packages/caius/src/workday.ts` steps. */
+function nextWorkday(date: Date) {
+    const day = startOfDay(date);
+    do {
+        day.setDate(day.getDate() + 1);
+    } while (day.getDay() === 0 || day.getDay() === 6);
+    return day;
 }
 
 /**

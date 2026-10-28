@@ -23,7 +23,8 @@ const api = vi.hoisted(() => ({
     forward: vi.fn(),
     setState: vi.fn(),
     apply: vi.fn(),
-    explain: vi.fn()
+    explain: vi.fn(),
+    context: vi.fn()
 }));
 const caiusWrite = vi.hoisted(() => vi.fn());
 const startCaiusConversation = vi.hoisted(() => vi.fn());
@@ -85,6 +86,7 @@ describe("PlanTab", () => {
             write.mockResolvedValue([ { status: "moved" } ]);
         }
         api.setState.mockResolvedValue([ { status: "updated" } ]);
+        api.context.mockImplementation(async (date: string) => ({ date, context: [] }));
         api.open.mockImplementation(async (lane?: string) => {
             const tasks = lane ? LANES[lane] ?? [] : Object.values(LANES).flat();
             return { total: tasks.length, tasks };
@@ -402,6 +404,41 @@ describe("PlanTab", () => {
         }, "blob-1");
         expect(results.every((result) => result.reason === "stale")).toBe(true);
         expect(api.apply).toHaveBeenCalledTimes(1);
+    });
+
+    it("lists the Context in force for the viewed day under Capacity, with when each line ends", async () => {
+        api.plan.mockImplementation(async (period: string, key: string) => ({ ...dayPlan(), period, key }));
+        api.context.mockResolvedValue({
+            date: "2026-10-27",
+            context: [
+                { text: "[ZAP-2590](https://jira/ZAP-2590) is open", period: "week", key: "2026-W44", noteId: "week44" },
+                { text: "Jaco out", until: "2026-10-27", period: "day", key: "2026-10-26", noteId: "yesterday" },
+                { text: "Release frozen", until: "2026-11-13", period: "day", key: "2026-10-27", noteId: "today" }
+            ]
+        });
+        const tab = await mount();
+
+        expect(api.context).toHaveBeenCalledWith("2026-10-27");
+        const cards = [ ...tab.querySelectorAll("[id^=plan-]") ].map((card) => card.id);
+        expect(cards.indexOf("plan-context")).toBe(cards.indexOf("plan-capacity") + 1);
+        expect(texts(tab, "#plan-context .plan-context-text")).toEqual([ "ZAP-2590 is open", "Jaco out", "Release frozen" ]);
+        expect(texts(tab, "#plan-context li")).toEqual([
+            "ZAP-2590 is open",
+            "Jaco outuntil Tue 27 Octends soon",
+            "Release frozenuntil Fri 13 Nov"
+        ]);
+
+        api.context.mockResolvedValue({ date: "2026-10-27", context: [] });
+        await press(tab.querySelector(".plan-period-step .bx-chevron-right"));
+        expect(api.context).toHaveBeenLastCalledWith("2026-10-28");
+        expect(text(tab, "#plan-context")).toContain("No Context in force.");
+
+        // A week or month has no single day to read the Context of.
+        api.context.mockClear();
+        await press(button(tab, "Week"));
+        expect(api.plan).toHaveBeenLastCalledWith("week", "2026-W44");
+        expect(api.context).not.toHaveBeenCalled();
+        expect(tab.querySelector("#plan-context")).toBeNull();
     });
 
     it("steps between periods, switches to the week, and comes back to today", async () => {

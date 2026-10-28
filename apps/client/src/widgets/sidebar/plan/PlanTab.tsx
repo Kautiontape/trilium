@@ -8,7 +8,7 @@ import appContext from "../../../components/app_context";
 import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
-    caiusApi, caiusNow, type CaiusLane, type CaiusOpenTask, caiusOpener, type CaiusPeriodKind, type CaiusPlan,
+    caiusApi, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, caiusOpener, type CaiusPeriodKind, type CaiusPlan,
     isCaiusEnabled, RELOAD_TIMEOUT_MS, startCaiusConversation, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
@@ -24,6 +24,7 @@ import SegmentedChoice from "../../react/SegmentedChoice";
 import { CollapsibleWidgets, RightPaneTabVisible } from "../RightPanelWidget";
 import PlanCapacity from "./PlanCapacity";
 import PlanClose from "./PlanClose";
+import PlanContext from "./PlanContext";
 import {
     acceptSections, isCloseable, isPastPeriod, periodKey, periodOfNote, stepPeriod,
     type ViewedPeriod
@@ -96,6 +97,7 @@ export default function PlanTab() {
                         <div className="plan-no-note">{t("caius.plan.no_note")}</div>
                     )}
                     <PlanCapacity plan={current.plan} onOpen={openTask} />
+                    {current.context && <PlanContext date={key} lines={current.context} />}
                     <PlanSuggested
                         key={key}
                         plan={current.plan}
@@ -208,6 +210,8 @@ interface PlanData {
     lanes: { lane: CaiusLane; total: number; tasks: CaiusOpenTask[] }[];
     /** The note's headings, where Accept can put a suggested item. */
     sections: string[];
+    /** The Context in force on a viewed day; `null` for a week or month. */
+    context: CaiusContextLine[] | null;
 }
 
 /**
@@ -228,9 +232,10 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
 
     const load = useCallback(async () => {
         try {
-            const [ plan, open ] = await Promise.all([
+            const [ plan, open, context ] = await Promise.all([
                 caiusApi.plan(kind, key),
-                caiusApi.open(undefined, OPEN_TASKS_LIMIT)
+                caiusApi.open(undefined, OPEN_TASKS_LIMIT),
+                kind === "day" ? caiusApi.context(key) : null
             ]);
             const lanes = PULL_IN_LANES.map((lane) => {
                 const tasks = open.tasks.filter((task) => task.lane === lane);
@@ -239,7 +244,7 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
             const note = plan.noteId ? await froca.getNote(plan.noteId) : null;
             const html = await note?.getContent();
             const sections = typeof html === "string" ? acceptSections(html) : [];
-            setData({ plan, lanes, sections });
+            setData({ plan, lanes, sections, context: context?.context ?? null });
             setError(null);
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));

@@ -4,7 +4,7 @@ import type { CaiusPlan, CaiusPlanTask } from "../../../services/caius";
 import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
-    acceptSections, capacityStatus, closeCandidates, closeFates, fateTarget, groupFates,
+    acceptSections, capacityStatus, closeCandidates, closeFates, endsSoon, fateTarget, groupFates,
     isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, stepPeriod, taskLabel,
     unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
@@ -237,3 +237,16 @@ function planOf(tasks: CaiusPlanTask[], critical: CaiusPlanTask[] = []): CaiusPl
         }
     };
 }
+
+describe("endsSoon", () => {
+    it("marks a Context line that lapses before the next workday", () => {
+        // A Tuesday: the next workday is Wednesday.
+        expect(endsSoon({ until: "2026-10-27" }, "2026-10-27")).toBe(true);
+        expect(endsSoon({ until: "2026-10-28" }, "2026-10-27")).toBe(false);
+        expect(endsSoon({}, "2026-10-27")).toBe(false);
+
+        // A Friday: a line until Sunday lapses before Monday.
+        expect(endsSoon({ until: "2026-11-01" }, "2026-10-30")).toBe(true);
+        expect(endsSoon({ until: "2026-11-02" }, "2026-10-30")).toBe(false);
+    });
+});
