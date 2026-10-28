@@ -80,7 +80,7 @@ export interface Capacity {
   /** unestimatedCount x 30 */
   unestimatedMinutes: number;
   totalMinutes: number;
-  /** Minutes of the live tasks under Evening or Recharge, which the counts above leave out: not work. */
+  /** On a day note, minutes of the live tasks under Evening or Recharge, which the counts above leave out: not work. */
   eveningMinutes: number;
   /** Suggested range for this period (minutes), null when there is none (a month). */
   target: { min: number; max: number } | null;
@@ -183,8 +183,10 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   // blank checkbox, not a task, and neither counts nor makes its parent a parent.
   const countable = main.filter((t) => t.live && t.text.trim() !== '');
   const parents = new Set(countable.filter((t) => t.parent !== null).map((t) => t.parent));
-  const evening = countable.filter((t) => !parents.has(t.text) && isEveningName(t.section));
-  const counted = countable.filter((t) => !parents.has(t.text) && !isEveningName(t.section));
+  // Only a day's evening is apart from its work; a week's or month's Recharge is planned time.
+  const inEvening = (t: { section: string | null }) => period === 'day' && isEveningName(t.section);
+  const evening = countable.filter((t) => !parents.has(t.text) && inEvening(t));
+  const counted = countable.filter((t) => !parents.has(t.text) && !inEvening(t));
   const estimated = counted.filter((t) => t.estMinutes !== null);
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;

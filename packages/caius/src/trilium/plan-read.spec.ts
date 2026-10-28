@@ -137,6 +137,12 @@ describe('readPlan (day)', () => {
     expect(capacity).toMatchObject({ plannedMinutes: 30, estimatedCount: 1, unestimatedCount: 1, unestimatedMinutes: 30, totalMinutes: 60, eveningMinutes: 75 });
   });
 
+  it('counts a week or month note\'s Recharge as before: only a day note keeps its evening apart', async () => {
+    const html = '<h2>Foundation</h2>' + ul(li('w1', 'Plan the sprint ~2h')) + '<h2>Recharge</h2>' + ul(li('w2', 'Long walk ~1h'));
+    const { capacity } = await readPlan(fakeTrilium({ w: [periodNote('w', 'weekNote', '2026-W44'), html] }).api, 'week', '2026-W44', now);
+    expect(capacity).toMatchObject({ plannedMinutes: 180, totalMinutes: 180, eveningMinutes: 0 });
+  });
+
   it('keeps a parent task counted when its only sub-item is empty', async () => {
     const html = '<h3>Work</h3>' + ul(li('p1', 'Write report ~2h', { sub: ul(li('p1a', '')) }));
     const { capacity } = await readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] }).api, 'day', '2026-10-26', now);
