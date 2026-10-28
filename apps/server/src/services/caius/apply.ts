@@ -397,11 +397,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // call passes its month fate. As the open step, a held item gets no park offer.
         const heldOnes = await heldItems(store);
         const stale = await staleItems(store, now, open.items.filter((item) => !item.listItemId || !heldOnes.has(item.listItemId)), targetDay);
-        // On a vague yes the answers are what was offered, unless a question of its own is pending.
-        const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0);
-        const vague = asked.asOffered || (vagueYes(asked.said) && !asked.accept.length && !asked.keep.length && !asked.carry.length && pending === 0);
+        // With `asOffered` the answers are what was offered, but for a candidate the call itself names.
         const put = new Set([ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId));
-        const answers: WindDownApplyInput = vague ? {
+        for (const value of [ ...asked.done, ...asked.finished, ...asked.fates.map((fate) => fate.listItemId) ]) {
+            const found = resolveName(pools.candidates, value);
+            if (found && "id" in found) put.add(found.id);
+        }
+        const answers: WindDownApplyInput = asked.asOffered ? {
             ...asked,
             accept: asked.accept.length ? asked.accept : candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
             keep: asked.keep.length ? asked.keep : lines.keep.map((line) => ({ lineId: line.lineId })),
@@ -411,8 +413,15 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
         const endOf = (id: string) => { const entry = byEntry.get(id); return entry ? chainEnd(entry, byEntry, copies)?.id ?? id : id; };
-        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
-            ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
+        const answered = !!asked.asOffered || !!asked.eveningAnswered || [
+            asked.done, asked.fates, asked.accept, asked.move, asked.keep, asked.carry, asked.finished, asked.notToday, asked.dismiss, asked.evening, asked.context, asked.overlaps
+        ].some((answers) => answers.length > 0);
+        const offered = [
+            ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
+            ...open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)))
+        ];
+        const check = asked.checked ? [] : [ ...yesChecks(asked.said, answered, offered), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
+            ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
         // The next step's questions are about the next workday, so they are answered on its note.
@@ -1218,7 +1227,7 @@ function holdGroupOf(value: string): HoldGroup {
 export interface Check {
     item: string;
     said: string;
-    missing: "fate" | "dismiss" | "answered" | "overlap";
+    missing: "fate" | "dismiss" | "answered" | "overlap" | "asOffered";
     message: string;
 }
 
@@ -1251,6 +1260,15 @@ function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, poo
         const key = given === null ? "caius.check.fate" : "caius.check.fate_other";
         return [ { item, said: heard.clause, missing: "fate" as const, message: t(key, { item, clause: heard.clause }) } ];
     });
+}
+
+/**
+ * His bare yes or fine (`vagueYes`) to what the step offered (`offered`, by its words) in a call that
+ * passes no answer and no `asOffered`: his words alone never take anything.
+ */
+function yesChecks(said: string, answered: boolean, offered: string[]): Check[] {
+    if (answered || !offered.length || !vagueYes(said)) return [];
+    return [ { item: offered.join("; "), said, missing: "asOffered", message: t("caius.check.as_offered") } ];
 }
 
 /**
