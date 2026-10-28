@@ -104,7 +104,7 @@ export function createCaiusTools(
         },
 
         caius_meetings: {
-            description: "Write the Meetings block of a day note: plain clock lines such as \"10:00 Standup (Sam, Riley)\", never tasks. Without items, the lines come from the day's calendar: declined and all-day events left out, up to four first names, and (overlaps) on meetings that overlap. Replaces only that block; creates the day note if missing. Dry run first.",
+            description: "Write the Meetings block of a day note: plain clock lines such as \"10:00 Standup (Sam, Riley)\", never tasks. Without items, the lines come from the day's calendar: declined and all-day events left out, up to four first names, and (overlaps) on meetings that overlap. Replaces only that block; creates the day note if missing. dryRun shows the change without writing; in Plan my day it is written without asking.",
             inputSchema: toolInputs.meetings,
             async: true,
             mutates: true,
@@ -112,7 +112,7 @@ export function createCaiusTools(
         },
 
         caius_context_add: {
-            description: "Add one Context line to a day note (date) or an ISO week note (week): a plain bullet under ### Context, never a task. A line about the state of things goes in the week note; only a line about one day goes in that day's note. Given date, a line that names a ticket or a state (is open, is out, on leave, until) is moved to that day's week note, with detail \"moved to the week note\". until is written as (until Fri 6 Nov). Text already in force is skipped as duplicate. Creates the heading and the note if missing. Dry run first.",
+            description: "Add one Context line to a day note (date) or an ISO week note (week): a plain bullet under ### Context, never a task. A line about the state of things goes in the week note; only a line about one day goes in that day's note. Given date, a line that names a ticket or a state (is open, is out, on leave, until) is moved to that day's week note, with detail \"moved to the week note\". until is written as (until Fri 6 Nov). Text already in force is skipped as duplicate. Creates the heading and the note if missing. dryRun shows the change without writing.",
             inputSchema: toolInputs.contextAdd,
             async: true,
             mutates: true,
@@ -128,7 +128,7 @@ export function createCaiusTools(
         },
 
         caius_brief_write: {
-            description: "Write the day's Morning Brief: a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines (only those that name a task of the day's main list, in its order; the rest come back in droppedPicks) and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it, with the work bars laid out again from the main list) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there, and records each ask in followUps that a section names (#caiusRaised), so it isn't raised again for 7 days. A re-run updates the same notes. Dry run first.",
+            description: "Write the day's Morning Brief: a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines (only those that name a task of the day's main list, in its order; the rest come back in droppedPicks) and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it, with the work bars laid out again from the main list) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there, and records each ask in followUps that a section names (#caiusRaised), so it isn't raised again for 7 days. A re-run updates the same notes. dryRun shows the change without writing; in Plan my day it is written without asking.",
             inputSchema: toolInputs.briefWrite,
             async: true,
             mutates: true,
@@ -152,14 +152,14 @@ export function createCaiusTools(
         },
 
         caius_winddown: {
-            description: "Run one step of the Wind down conversation for the day being closed (date); every step works against the next workday. Steps in order: open (the live tasks of the day, the last three workdays and the week, each with a proposed fate, and older overdue tasks as a count), next (candidates for the next workday's Suggested, its capacity, overlaps and evening), context (the Context in force and the lines to keep or carry, which go to caius_context_keep with data.keepDate). Returns { step, data, question, next, standing }: ask question verbatim; a null question means nothing to ask; still do the step's writes (dry run first). Then call the step named by next. Reads only; make the writes with the other caius_* tools, dry run first.",
+            description: "Run one step of the Wind down conversation for the day being closed (date); every step works against the next workday. Steps in order: open (the live tasks of the day, the last three workdays and the week, each with a proposed fate, and older overdue tasks as a count), next (candidates for the next workday's Suggested, its capacity, overlaps and evening), context (the Context in force and the lines to keep or carry, which go to caius_context_keep with data.keepDate). Returns { step, data, question, next, standing }: ask question word for word, in the one message the conversation sends; a null question means nothing to ask; still do the step's writes. Then call the step named by next. Reads only; make the writes with the other caius_* tools.",
             inputSchema: toolInputs.winddown,
             async: true,
             execute: parsed(toolInputs.winddown, service.winddown)
         },
 
         caius_planday: {
-            description: "Run one step of the Plan my day conversation for date, today or a missed earlier day; a later date answers error not_today. Steps in order: catchup (the last workday's open tasks, unless caius_skip_catchup was used for date), inputs (candidates new since the last brief, the Meetings block to write, overlaps, and on a day over 60% booked a task to move to the next workday; lines to carry go to caius_context_keep with data.keepDate), brief (the day's span from the standing note's Rhythm, the main list the picks come from, the work blocks for the drawing, the standing note's Brief rules and the input caius_brief_write takes). Returns { step, data, question, next, standing }: ask question verbatim; a null question means nothing to ask; still do the step's writes (dry run first). Then call the step named by next. Reads only.",
+            description: "Run one step of the Plan my day conversation for date, today or a missed earlier day; a later date answers error not_today. Steps in order: catchup (the last workday's open tasks, unless caius_skip_catchup was used for date), inputs (candidates new since the last brief, the Meetings block to write, overlaps, and on a day over 60% booked a task to move to the next workday; lines to carry go to caius_context_keep with data.keepDate), brief (the day's span from the standing note's Rhythm, the main list the picks come from, the work blocks for the drawing, the standing note's Brief rules and the input caius_brief_write takes). Returns { step, data, question, next, standing }: ask question word for word, in the one message the conversation sends; a null question means nothing to ask; still do the step's writes. Then call the step named by next. Reads only.",
             inputSchema: toolInputs.planday,
             async: true,
             execute: parsed(toolInputs.planday, service.planday)

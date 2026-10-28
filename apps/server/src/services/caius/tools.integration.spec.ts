@@ -67,7 +67,8 @@ describe("caius tools", () => {
     it("tells the agent that a null question still leaves the step's writes to do", () => {
         for (const name of [ "caius_winddown", "caius_planday" ]) {
             const description = toolNamed(name).description;
-            expect(description).toContain("a null question means nothing to ask; still do the step's writes (dry run first)");
+            expect(description).toContain("a null question means nothing to ask; still do the step's writes.");
+            expect(description).not.toContain("dry run first");
             expect(description).not.toContain("skip the step");
         }
     });

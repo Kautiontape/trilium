@@ -51,15 +51,24 @@ it("offers the caius skill only while it is registered, and names every tool the
         expect(sheet, `the sheet should mention ${name}`).toContain(`\`${name}\``);
     }
     expect(sheet.split("\n").length).toBeGreaterThanOrEqual(80);
-    // The openers follow only their own section, and no step lets the agent choose the main list.
+    // The openers follow only their own section: one message, then every write in one go.
     expect(sheet).toContain("For `Wind down` and `Plan my day` openers, follow only this section.");
     expect(sheet).not.toContain("until the day fits its capacity");
-    expect(sheet).toContain("A null `question` means nothing to ask; still do the step's writes (dry run first)");
-    expect(sheet).toContain("on yes, write them with `caius_context_keep` and `date: data.keepDate`");
+    expect(sheet).toContain("A null `question` means nothing to ask; still do the step's writes.");
+    expect(sheet).toContain("then \"Which of these today, in what order?\"");
+    expect(sheet).toContain("After his answer, do everything in one go, with no further yes:");
+    expect(sheet).toContain("After his answer, apply everything in one go:");
+    expect(sheet).toContain("Dry run first, and wait for a yes, only for forwards and drops of his own tasks that he hasn't already answered.");
+    expect(sheet).toContain("Never narrate tool calls or internals, and never mention files, shell or fetching. Never retry a tool with another tool.");
+    expect(sheet).toContain("On a tool error, say one plain sentence and carry on with the rest.");
+    expect(sheet).toContain("Never guess pronouns, and never say Jira \"confirms\" something it didn't return.");
+    expect(sheet).toContain("Never run Plan my day for a future day.");
+    expect(sheet).toContain("`caius_add` it as a task under an `Evening` heading, on his word.");
+    expect(sheet).toContain("End with the headline and the top pick in two lines");
+    expect(sheet).toContain("with `caius_context_keep` and `date: data.keepDate`");
     expect(sheet).toContain("Add the candidates to that day's Suggested with `caius_add` and `suggested: true`");
-    expect(sheet).toContain("Lines about the state of things go to the week note; a day note only for a line about that day.");
-    expect(sheet).not.toContain("When the next workday is in another week, `noticed` also holds");
     expect(sheet).toContain("Never \"no reply\", \"unanswered\", \"still open\", \"still waiting\", \"outstanding\" or \"haven't answered\".");
+    expect(sheet).not.toContain("Every write is a dry run first, shown to Shawn in two lines, then applied on his yes");
 
     unregister();
     expect(readSkill("caius")).toBeNull();
