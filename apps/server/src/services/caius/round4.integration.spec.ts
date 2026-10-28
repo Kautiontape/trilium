@@ -603,7 +603,8 @@ describe("fix round 1: a re-run by his words finds what the first run did", () =
         expect((await call("caius_winddown_apply", answer)).skipped).toEqual([]);
         const again = await call("caius_winddown_apply", answer);
         expect(again.skipped).toEqual([]);
-        expect(again.say).toBe("Everything was already in place.");
+        // Every answer found already settled is named, never a silent "already in place".
+        expect(again.say).toBe("ZAP-111 and Pack the climbing gym bag were already done and Message Dave if he knows anyone who will hang lights as a small job was already moved.");
     });
 
     it("P8: the same Plan my day accept by number twice: the second finds ZAP-174 on his list", async () => {
@@ -615,6 +616,7 @@ describe("fix round 1: a re-run by his words finds what the first run did", () =
         const again = await call("caius_plan_apply", answer);
         expect(again.skipped).toEqual([]);
         expect(again.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", id: "ZAP-174", status: "unchanged" }) ]));
+        expect(again.say).toMatch(/^ZAP-174 was already on your list/);
     });
 
     it("a partial first run, then a re-run by words: 111 already done counts as answered, the bag and Dave are settled where they now sit, and the day ends wound down", async () => {
@@ -884,5 +886,23 @@ describe("fix round 2: copies of one carried item are one item", () => {
             expect(again.say, run).not.toContain("Which");
         }
         expect(await labelsOf("2027-09-14", "caiusWoundDown")).toHaveLength(1);
+    });
+});
+
+describe("fix round 2: the settled fallback stays on the day and says what it found", () => {
+    it("N5: Monday's done 'Buy a new gym bag' doesn't absorb Wednesday's 'the bag', which matches nothing open there", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-09-20");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("b-gym", "Buy a new gym bag"))}`);
+            const wednesday = await store.calendarDay("2027-09-22");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("b-duf", "Pack the climbing duffel"))}`);
+        });
+        const monday = await call("caius_plan", { period: "day", date: "2027-09-20" });
+        await call("caius_set_state", { items: [ { noteId: monday.noteId, listItemId: "b-gym", state: "done" } ] });
+        at("2027-09-22T17:45");
+        const applied = await call("caius_winddown_apply", { date: "2027-09-22", done: [ "the bag" ] });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "done", reason: "not_offered" }) ]);
+        expect(applied.say).toContain("'the bag' wasn't found");
+        expect(await labelsOf("2027-09-22", "caiusWoundDown")).toEqual([]);
     });
 });

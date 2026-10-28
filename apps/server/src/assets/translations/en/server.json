@@ -650,6 +650,14 @@
       "next_week": "next week"
     },
     "say": {
+      "already_done_one": "{{- items}} was already done",
+      "already_done_other": "{{- items}} were already done",
+      "already_dropped_one": "{{- items}} was already dropped",
+      "already_dropped_other": "{{- items}} were already dropped",
+      "already_moved_one": "{{- items}} was already moved",
+      "already_moved_other": "{{- items}} were already moved",
+      "already_taken_one": "{{- items}} was already on your list",
+      "already_taken_other": "{{- items}} were already on your list",
       "done_one": "{{- items}} is done",
       "done_other": "{{- items}} are done",
       "moved": "{{- items}} moved to {{- to}}",

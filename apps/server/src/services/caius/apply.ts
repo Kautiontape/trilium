@@ -34,7 +34,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_LABEL, findBrief, rewritePicks, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -154,14 +154,14 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // A held task can be named, to settle it, but no catch-up moves it.
         const pools = planPools(offer, [ ...catchupTasks, ...heldTasks ], listed.days);
         const { table, items, copies } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
-        pools.settled = settledOf(items, new Set([ date ]), copies);
+        pools.settled = settledOf(items, (item) => item.period === date, copies);
         const input = planAnswers(asked, pools, skipped, table, copies);
         const followed = new Map([ ...input.follows ].map(([ id, copy ]) => [ id, copy.text ]));
         /** The result with `say`, its entries named by their text first. */
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
             withTexts([ ...result.written, ...result.skipped ], pools, known, followed);
             const stillHeld = heldTasks.filter((task) => task.listItemId && !input.done.includes(task.listItemId)).map((task) => task.text);
-            return withDateLabels({ ...result, say: sayOf(result, { day: date, held: stillHeld }) });
+            return withDateLabels({ ...result, say: sayOf(result, { day: date, held: stillHeld, already: input.already }) });
         };
 
         // What he finished is ticked where it is, his list or a catch-up day, before the catch-up moves anything.
@@ -312,8 +312,10 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             taken: []
         };
         const { table, items, copies } = await refTable(store, now, known, facts.live, [ ...lines.keep, ...lines.carry ].map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
-        const closing = closingPeriods(date).all;
-        pools.settled = settledOf(items, closing, copies);
+        // A re-run's words can name what is settled on the day, or what an earlier wind-down of it settled.
+        const closingNote = await findPeriodNote(store, "day", date);
+        const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
+        pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
         const input = windDownAnswers(asked, pools, skipped, table, copies);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
@@ -336,7 +338,6 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 
         // An item an ambiguous answer matched stays where it is, on this call and later ones, until a
         // call names it: he named it, but which one is unclear.
-        const closingNote = await findPeriodNote(store, "day", date);
         const heldBefore = closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === HELD_LABEL).map((a) => a.value) : [];
         const namedNow = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.move.map((ref) => ref.listItemId) ]);
         const openIds = new Set(open.items.map((item) => item.listItemId));
@@ -383,6 +384,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         }
         await labelDay(store, date, NOT_TODAY_LABEL, putOffWeek);
         });
+        await labelDay(store, date, SETTLED_LABEL, written.filter((entry) => (entry.kind === "done" || entry.kind === "fate") && entry.status === "written" && entry.id).map((entry) => entry.id ?? ""));
 
         // What the fates move to the next workday can be placed by the id it had here; nothing else
         // can, a held item least of all, since it stays here.
@@ -430,7 +432,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
         withTexts([ ...written, ...skipped ], pools, known, followed);
         const heldTexts = held.map((id) => open.items.find((item) => item.listItemId === id)?.text ?? "");
-        const say = sayOf({ written, skipped }, { day: targetDay, held: heldTexts });
+        const say = sayOf({ written, skipped }, { day: targetDay, held: heldTexts, already: input.already });
         return {
             ...withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null, say: morning ? `${say} ${t("caius.say.next_planday")}` : say }),
             ...(morning ? { nextCall: { tool: "caius_planday", date: targetDay } } : {})
@@ -477,7 +479,7 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
             else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, {}, weather, written, skipped, acts));
         }
         withTexts([ ...written, ...skipped ], pools, known);
-        return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date }) });
+        return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date, already: input.already }) });
     });
 }
 
@@ -560,12 +562,12 @@ function planPools(offer: Awaited<ReturnType<typeof planOffer>>, catchupTasks: A
     };
 }
 
-/** The items of `periods` that are settled, done, moved or dropped, as names a re-run's answer can give. */
-function settledOf(items: (RefEntry & { period: string })[], periods: Set<string>, copies: Copies): Named[] {
+/** The settled items `within` takes, done, moved or dropped, as names a re-run's answer can give. */
+function settledOf(items: (RefEntry & { period: string })[], within: (item: RefEntry & { period: string }) => boolean, copies: Copies): Named[] {
     const byId = new Map(items.map((item) => [ item.id, item ]));
     // A carried item and its copies are one item: one name for each chain, whichever copy it ends at.
     const chains = new Map<string, Named>();
-    for (const item of items.filter((candidate) => candidate.settled && periods.has(candidate.period))) {
+    for (const item of items.filter((candidate) => candidate.settled && within(candidate))) {
         const end = chainEnd(item, byId, copies)?.id ?? item.id;
         if (!chains.has(end)) chains.set(end, { id: item.id, ref: "", text: item.text });
     }
@@ -685,6 +687,8 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
 function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Copies = new Map()) {
     const held = new Set<string>();
     const follows = new Map<string, { source: string; period: string; text: string }>();
+    /** The answers found already settled, which `say` names: what, and how it was settled. */
+    const already: Already[] = [];
     const byId = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
     /**
      * What an answer of `kind` does with an item that left its pool: a done item is in place for a
@@ -692,7 +696,10 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
      * force is in place. Null for anything else, which is stale.
      */
     const settle = (entry: RefEntry, intent: string): string | null => {
-        if (!entry.item) return entry.settled ? entry.id : null;
+        if (!entry.item) {
+            if (entry.settled && intent === "accept") already.push({ text: entry.text, how: "taken" });
+            return entry.settled ? entry.id : null;
+        }
         const at = chainEnd(entry, byId, copies);
         if (!at?.item) return null;
         if (!at.settled) {
@@ -701,8 +708,14 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
         }
         // The chain ends settled: in place only when that is what he asks for, a done item called done or a dropped one dropped.
         if (at.item.moved) return null;
-        if (at.item.state === "done" && intent === "done") return at.id;
-        if (at.item.state === "cancelled" && intent === "drop") return at.id;
+        if (at.item.state === "done" && intent === "done") {
+            already.push({ text: at.text, how: "done" });
+            return at.id;
+        }
+        if (at.item.state === "cancelled" && intent === "drop") {
+            already.push({ text: at.text, how: "dropped" });
+            return at.id;
+        }
         return null;
     };
     const read = (kind: string, value: string, pools: Named[][], fallback: Named[][] = [], hold = false, intent = kind): string | null => {
@@ -726,6 +739,8 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
         }
         if (found && !open) {
             const entry = byId.get(found.id);
+            // A key already on his list: the accept is in place.
+            if (!entry) already.push({ text: [ ...fallback.flat() ].find((item) => item.id === found.id)?.text ?? found.id, how: "taken" });
             const id = entry ? settle(entry, intent) : found.id;
             if (id) return id;
             skipped.push({ kind, text: entry?.text ?? value, reason: "stale" });
@@ -740,7 +755,13 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
         const id = read(kind, by, pools);
         return id === null ? null : { ...at, ...(at.before !== undefined ? { before: id } : { after: id }) };
     };
-    return { read, place, held, follows };
+    return { read, place, held, follows, already };
+}
+
+/** An answer found already settled: the item's words, and how. */
+interface Already {
+    text: string;
+    how: "done" | "dropped" | "moved" | "taken";
 }
 
 /**
@@ -748,8 +769,8 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>, copies: Co
  * skipped. `done` holds the items of his list or the catch-up that `finished` names: by a ticket
  * key, or by anything else he called done.
  */
-function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies): PlanApplyInput & { done: string[]; follows: Follows } {
-    const { read, place, follows } = nameReader(skipped, table, copies);
+function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies): PlanApplyInput & { done: string[]; follows: Follows; already: Already[] } {
+    const { read, place, follows, already } = nameReader(skipped, table, copies);
     const { done, finished } = doneOf([], input.finished, [ pools.list, pools.open ], [ pools.settled ], read);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
@@ -761,6 +782,7 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
         done,
         finished,
         follows,
+        already,
         accept: input.accept.flatMap((ref) => {
             const id = read("accept", ref.candidateId, [ pools.candidates ], [ pools.taken ]);
             const at = place("place", ref, onList);
@@ -789,8 +811,8 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
  * Wind down's answers with every name read as the id it names; an ambiguous one is left out,
  * skipped, and the open items it matched are `held`: they keep no proposed fate either.
  */
-function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies): WindDownApplyInput & { held: string[]; follows: Follows } {
-    const { read, place, held, follows } = nameReader(skipped, table, copies);
+function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies): WindDownApplyInput & { held: string[]; follows: Follows; already: Already[] } {
+    const { read, place, held, follows, already } = nameReader(skipped, table, copies);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
@@ -815,6 +837,7 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
             // A moved item already where he sends it is in place: its source answers unchanged.
             const copy = follows.get(id);
             const item = copy && !fate.drop && copy.period === to ? copy.source : id;
+            if (copy && item === copy.source) already.push({ text: copy.text, how: "moved" });
             return [ { ...fate, listItemId: item, ...(to === undefined ? {} : { to }) } ];
         }),
         accept: input.accept.flatMap((ref) => {
@@ -832,7 +855,8 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         notToday: input.notToday.flatMap(candidate("not_today")),
         dismiss: input.dismiss.flatMap(candidate("dismiss")),
         held: [ ...held ].filter((id) => open.has(id)),
-        follows
+        follows,
+        already
     };
 }
 

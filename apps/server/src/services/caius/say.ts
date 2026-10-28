@@ -14,7 +14,7 @@ import { dateLabel, plainText, weekdayName, withoutMoveLinks } from "./daily.js"
  * with one plain question when an answer held items for being ambiguous, or `held` holds the texts
  * of items an earlier call held.
  */
-export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [] }: { day: string; held?: string[] }): string {
+export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [], already = [] }: { day: string; held?: string[]; already?: { text: string; how: string }[] }): string {
     const made = written.filter((entry) => entry.status === "written");
     const of = (...kinds: string[]) => made.filter((entry) => kinds.includes(entry.kind));
     const labels = (entries: { text?: string; id?: string }[]) => unique(entries.map((entry) => labelOf(entry.text ?? entry.id ?? "")));
@@ -30,7 +30,10 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         moves.set(to, [ ...(moves.get(to) ?? []), entry ]);
     }
     const caught = of("catchup").filter((entry) => entry.detail !== "skip");
+    // An answer found already settled is said, never folded silently into "already in place".
+    const settled = [ "done", "dropped", "moved", "taken" ].flatMap((how) => clause(`already_${how}`, already.filter((entry) => entry.how === how)));
     const wrote = [
+        ...settled,
         ...(caught.length ? [ t("caius.say.caught_up", { count: caught.length }) ] : []),
         ...(of("catchup").some((entry) => entry.detail === "skip") ? [ t("caius.say.catchup_skipped") ] : []),
         ...clause("done", of("done")),
@@ -139,6 +142,7 @@ export function labelOf(text: string): string {
     const plain = plainText(withoutMoveLinks(text))
         .replace(/^Get (.+?) done(?:: because .*)?$/, "$1")
         .replace(/\s*\(~\d+m\)$/, "")
+        .replace(/\s+_[^_]+_$/, "")
         .replace(/\s+~\d+(?:h\d*m?|m)$/, "")
         .trim();
     return /\b[A-Z][A-Z0-9]+-\d+\b/.exec(plain)?.[0] ?? plain;
