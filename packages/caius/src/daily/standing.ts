@@ -24,6 +24,9 @@ export interface Rhythm {
   from: Record<'start' | 'end' | 'workEnd' | 'rollover', 'rhythm' | 'default'>;
 }
 
+/** The latest the day can roll over, so a clock never runs past 29:59. */
+const MAX_ROLLOVER = 6 * 60;
+
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const TIME = /\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*([ap]\.?m\.?)?(?![\d])/i;
 const COORDINATES = /(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/;
@@ -55,13 +58,13 @@ export function sectionOf(markdown: string | null, name: string): string | null 
  */
 export function readRhythm(markdown: string | null): Rhythm {
   const lines = (sectionOf(markdown, 'Rhythm') ?? '').split('\n');
-  const after = (pattern: RegExp) => {
+  const after = (pattern: RegExp, midnight = false) => {
     for (const line of lines) {
       const at = line.search(pattern);
       const rest = at < 0 ? '' : line.slice(at);
       const time = TIME.exec(rest);
       if (time) return { minutes: minutesOf(time), meridiem: !!time[3] };
-      if (/\bmidnight\b/i.test(rest)) return { minutes: 0, meridiem: true };
+      if (midnight && /\bmidnight\b/i.test(rest)) return { minutes: 0, meridiem: true };
     }
     return null;
   };
@@ -73,12 +76,14 @@ export function readRhythm(markdown: string | null): Rhythm {
   };
   const start = after(/standup|work starts|start of work/i)?.minutes ?? null;
   const startAt = start ?? toMinutes(DEFAULT_START);
-  const given = after(/rolls over|roll over|rollover|day ends? at/i)?.minutes ?? null;
-  const rolloverAt = given !== null && given <= startAt ? given : Math.min(DEFAULT_ROLLOVER, startAt);
+  const given = after(/rolls over|roll over|rollover|\b(?:the|my) day ends? at/i, true)?.minutes ?? null;
+  const rolloverAt = given !== null && given <= Math.min(startAt, MAX_ROLLOVER) ? given : Math.min(DEFAULT_ROLLOVER, startAt);
   const workEnd = later(after(/work ends|end of work|stop work|finish work/i), [startAt]);
-  const bedtime = after(/bedtime/i);
+  const bedtime = after(/bedtime/i, true);
+  // Twelve without am or pm, "12:30", is half past midnight here.
+  const small = bedtime && !bedtime.meridiem && bedtime.minutes >= 12 * 60 && bedtime.minutes < 13 * 60 ? bedtime.minutes - 12 * 60 : bedtime?.minutes ?? null;
   // A bedtime before the rollover is after midnight, so it counts on from 24:00.
-  const end = bedtime && bedtime.minutes < rolloverAt ? bedtime.minutes + 24 * 60 : later(bedtime, [startAt, workEnd ?? toMinutes(DEFAULT_WORK_END)]);
+  const end = small !== null && small <= rolloverAt && rolloverAt > 0 ? small + 24 * 60 : later(bedtime, [startAt, workEnd ?? toMinutes(DEFAULT_WORK_END)]);
   const located = lines.filter((line) => /location|weather/i.test(line)).map((line) => COORDINATES.exec(line)).find(Boolean);
   const latitude = located ? Number(located[1]) : NaN;
   const longitude = located ? Number(located[2]) : NaN;
@@ -88,7 +93,7 @@ export function readRhythm(markdown: string | null): Rhythm {
     workEnd: workEnd === null ? DEFAULT_WORK_END : hhmm(workEnd),
     rollover: hhmm(rolloverAt),
     ...(Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? { latitude, longitude } : {}),
-    from: { start: start === null ? 'default' : 'rhythm', end: end === null ? 'default' : 'rhythm', workEnd: workEnd === null ? 'default' : 'rhythm', rollover: given !== null && given <= startAt ? 'rhythm' : 'default' },
+    from: { start: start === null ? 'default' : 'rhythm', end: end === null ? 'default' : 'rhythm', workEnd: workEnd === null ? 'default' : 'rhythm', rollover: given !== null && given <= Math.min(startAt, MAX_ROLLOVER) ? 'rhythm' : 'default' },
   };
 }
 

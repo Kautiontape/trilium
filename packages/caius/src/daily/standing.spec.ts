@@ -75,6 +75,15 @@ describe('readRhythm', () => {
     expect(readRhythm('## Rhythm\n\n- Standup at 03:00.\n')).toMatchObject({ rollover: '03:00', from: { rollover: 'default' } });
   });
 
+  it('reads 12:30 as half past midnight, accepts a bedtime at the rollover, and ignores look-alike lines', () => {
+    const rhythm = (lines: string) => readRhythm(`## Rhythm\n\n- Standup at 10:00.\n${lines}`);
+    expect(rhythm('- Bedtime: 12:30\n')).toMatchObject({ end: '24:30' });
+    expect(rhythm('- Bedtime: 4:00 AM\n')).toMatchObject({ end: '28:00' });
+    expect(rhythm('- Workday ends at 6:00 pm.\n')).toMatchObject({ rollover: '04:00', from: { rollover: 'default' } });
+    expect(rhythm('- The day rolls over at 08:00.\n')).toMatchObject({ rollover: '04:00', from: { rollover: 'default' } });
+    expect(rhythm('- Work ends around midnight.\n- Bedtime: 1:00 AM\n')).toMatchObject({ end: '25:00' });
+  });
+
   it('uses the defaults with no standing note or no Rhythm section', () => {
     const defaults = { start: '10:00', end: '23:00', workEnd: '18:00', rollover: '04:00', from: { start: 'default', end: 'default', workEnd: 'default', rollover: 'default' } };
     expect(readRhythm(null)).toEqual(defaults);
