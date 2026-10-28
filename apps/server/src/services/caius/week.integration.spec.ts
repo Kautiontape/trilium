@@ -375,3 +375,24 @@ describe("the brief follows his list", () => {
         ]);
     });
 });
+
+describe("an evening thing he names", () => {
+    it("goes on his list under Evening, above Suggested, and is drawn after the end of work", async () => {
+        const day = "2026-11-12";
+        await cls.init(() => dayNote(day, `<h3>Meetings</h3><ul><li>10:00 Daily Standup</li></ul><h3>Context</h3><ul><li>Taking Incident Review</li></ul>`
+            + `<h2>☑️ Tasks</h2>${ul(li("e1", `${jiraLink("ZAP-150")} — Review the mapper ~30m`))}<h3>Suggested</h3>${ul(li("e2", `Get ${jiraLink("ZAP-151")} Check it done: because it waits (~30m)`))}`));
+        calendars[day] = [ { start: "10:00", end: "10:15", title: "Daily Standup", attendees: [], allDay: false, declined: false, source: [ 0 ] } ];
+        at(`${day}T09:30`);
+        const added = await call("caius_add", { items: [ { date: day, section: "Evening", text: "Laundry ~45m" } ] });
+        expect(added.results[0]).toMatchObject({ status: "added" });
+
+        const plan = await call("caius_plan", { period: "day", date: day });
+        expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.text) ])).toEqual([
+            [ "☑️ Tasks", [ expect.stringContaining("Review the mapper") ] ],
+            [ "Evening", [ "Laundry" ] ]
+        ]);
+        expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("Check it done") ]);
+        const brief = await call("caius_planday", { date: day, step: "brief" });
+        expect(brief.data.header.work.find((block: any) => block.label === "Laundry")).toMatchObject({ start: "18:00", end: "18:45" });
+    });
+});
