@@ -217,7 +217,8 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
         .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
         .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
     const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
-    const { work, unplaced } = layoutWork({ start, end, workEnd }, events, mainTasks(plan).map((task) => ({
+    const notBefore = date === dayKey(deps.now) ? quarterAfter(deps.now) : undefined;
+    const { work, unplaced } = layoutWork({ start, end, workEnd, notBefore }, events, mainTasks(plan).map((task) => ({
         label: workLabel(task.text), minutes: task.estMinutes ?? DEFAULT_ESTIMATE, evening: eveningSections.has(task.section)
     })));
     const header = { start, end, workEnd, events, work };
@@ -367,6 +368,12 @@ function workLabel(text: string): string {
     const key = keysOf(text).find((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k));
     const plain = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
     return key ?? (plain.length > LABEL_LENGTH ? `${plain.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : plain);
+}
+
+/** The local time of `at` rounded up to the quarter hour, `HH:MM`; at most `23:59`. */
+function quarterAfter(at: Date): string {
+    const minutes = Math.min(23 * 60 + 59, Math.ceil((at.getHours() * 60 + at.getMinutes()) / 15) * 15);
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
 /** `YYYY-MM-DDTHH:mm:ss` as local time. */

@@ -313,3 +313,21 @@ describe("never plan another day from a wind-down", () => {
         expect(await call("caius_planday", { date: FRI, step: "catchup" })).toMatchObject({ step: "catchup", date: FRI, next: "inputs" });
     });
 });
+
+describe("the work layout starts at now", () => {
+    it("Tue 11:05: the refresh lays ZAP-105 out from 11:15, not in the hour already gone", async () => {
+        calendars[TUE] = [
+            { start: "09:30", end: "09:45", title: "Team Standup", attendees: [], allDay: false, declined: false, source: [ 0 ] },
+            { start: "10:00", end: "10:30", title: "Weekly Planning Sync", attendees: [], allDay: false, declined: false, source: [ 0 ] },
+            { start: "15:00", end: "15:30", title: "Customer Call", attendees: [], allDay: false, declined: false, source: [ 0 ] }
+        ];
+        at(`${TUE}T11:05`);
+        const brief = await call("caius_planday", { date: TUE, step: "brief", refresh: true });
+        expect(brief.data.header.work[0]).toMatchObject({ start: "11:15", end: "11:45", focus: true });
+        expect(brief.data.header.work[0].label).toBe("ZAP-105");
+
+        at(`${WED}T09:40`);
+        const missed = await call("caius_planday", { date: TUE, step: "brief" });
+        expect(missed.data.header.work[0]).toMatchObject({ start: "10:30" });
+    });
+});

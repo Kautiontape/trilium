@@ -17,17 +17,17 @@ export interface WorkBlock {
 }
 
 /**
- * Lays `tasks` out in order from `start`, each in the earliest free time after the one before it,
- * split across a meeting when it has to be, never past `end`. Evening tasks start no earlier than
- * `workEnd`. The first block of the first work task is the focus block (of the first task when all
+ * Lays `tasks` out in order from `start`, or from `notBefore` when that is later (the time now, on
+ * the day being planned), each in the earliest free time after the one before it, split across a
+ * meeting when it has to be, never past `end`. Evening tasks start no earlier than `workEnd`. The first block of the first work task is the focus block (of the first task when all
  * are evening tasks). `unplaced` holds the minutes of each task that did not fit before `end`.
  */
 export function layoutWork(
-  day: { start: string; end: string; workEnd: string },
+  day: { start: string; end: string; workEnd: string; notBefore?: string },
   meetings: { start: string; end: string }[],
   tasks: WorkTask[],
 ): { work: WorkBlock[]; unplaced: { label: string; minutes: number }[] } {
-  const start = parseClock(day.start) ?? 0;
+  const start = Math.max(parseClock(day.start) ?? 0, parseClock(day.notBefore ?? '') ?? 0);
   const end = parseClock(day.end) ?? 24 * 60;
   const workEnd = parseClock(day.workEnd) ?? end;
   const busy: [number, number][] = meetings
