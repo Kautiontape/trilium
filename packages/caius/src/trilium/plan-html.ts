@@ -166,7 +166,8 @@ export function placeTask(html: string, item: string, target: Target, position?:
 }
 
 /**
- * Where `forward` puts a copy: the list under the header with the same name,
+ * Where `forward` puts a copy: the list under the header with the same name; for an Evening or
+ * Recharge task, any evening heading, else a new `### <name>` above Suggested;
  * else the first task list outside the critical block, Suggested, Meetings and Context (an Important
  * item goes to the target's Important block instead), else a new
  * "Tasks" list (above Suggested). An untouched template's placeholder is
@@ -190,6 +191,14 @@ export function placeForwarded(html: string, item: string, section: string | nul
       return norm(e.text) === norm(section) && !isSuggestedName(e.text) && !tracker.kind;
     });
     if (i >= 0) return intoFound(scanSection(top, i), top[i]!.range[1]);
+    // An evening task stays in the evening: under any Evening or Recharge heading, else a new one.
+    if (EVENING_NAMES.has(normName(section))) {
+      const evening = top.findIndex((e) => isHeading(e) && EVENING_NAMES.has(normName(e.text)));
+      if (evening >= 0) return intoFound(scanSection(top, evening), top[evening]!.range[1]);
+      const block = `<h3>${escapeHtml(section.trim())}</h3>${newList(item)}`;
+      const suggestedAt = top.find((e) => isHeading(e) && isSuggestedName(e.text));
+      return suggestedAt ? apply(html, [insertAt(suggestedAt.range[0], block)]) : html + block;
+    }
   }
 
   let inSuggested = false;

@@ -466,3 +466,39 @@ describe("the catch-up walks past a day with nothing in it", () => {
         expect((await call("caius_planday", { date: "2027-01-27", step: "catchup" })).data.days).toEqual([ "2027-01-26" ]);
     });
 });
+
+describe("evening stays evening", () => {
+    it("Mon night: Laundry under Evening, wound down to Tuesday, stays under Tuesday's Evening and is no pick", async () => {
+        await cls.init(async () => {
+            const mon = await store.calendarDay("2027-02-01");
+            await store.putContent(mon.noteId, `<h2>☑️ Tasks</h2>${ul(li("ev1", "Write the report"))}<h3>Evening</h3>${ul(li("ev2", "Laundry"))}`);
+        });
+        at("2027-02-01T17:30");
+        const wound = await call("caius_winddown_apply", { date: "2027-02-01", evening: [ "Laundry" ] });
+        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "evening", status: "unchanged" }) ]));
+        const tuesday = await call("caius_plan", { period: "day", date: "2027-02-02" });
+        expect(tuesday.sections.map((section: any) => [ section.name, section.tasks.map((t: any) => String(t.text).split(" [")[0]) ])).toEqual([
+            [ "☑️ Tasks", [ "Write the report" ] ], [ "Evening", [ "Laundry" ] ]
+        ]);
+        at("2027-02-02T09:40");
+        const applied = await call("caius_plan_apply", { date: "2027-02-02", brief: prose });
+        const brief = await cls.init(() => store.content(applied.briefNoteId));
+        expect(brief).toContain("Write the report (~30m)");
+        expect(brief).not.toContain("Laundry (~30m)");
+    });
+
+    it("an evening answer that is already a work task is reported, not called written; a Recharge heading counts as the evening", async () => {
+        await cls.init(async () => {
+            const day = await store.calendarDay("2027-02-03");
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("ew1", "Groceries"))}<h3>🌙 Recharge</h3>${ul(li("ew2", "Read"))}`);
+        });
+        at("2027-02-03T09:40");
+        const applied = await call("caius_plan_apply", { date: "2027-02-03", evening: [ "Groceries", "Iron the shirts" ], brief: prose });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "Groceries", reason: "duplicate" }) ]);
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "evening", text: "Iron the shirts", status: "written" }) ]));
+        const plan = await call("caius_plan", { period: "day", date: "2027-02-03" });
+        expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((t: any) => t.text) ])).toEqual([
+            [ "☑️ Tasks", [ "Groceries" ] ], [ "🌙 Recharge", [ "Read", "Iron the shirts" ] ]
+        ]);
+    });
+});

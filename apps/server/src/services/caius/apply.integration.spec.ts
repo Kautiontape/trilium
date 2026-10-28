@@ -281,6 +281,8 @@ describe("caius_winddown_apply", () => {
         expect(tuesday.sections.flatMap((s: any) => s.tasks).filter((t: any) => t.state === "open").map(textOf)).toEqual([
             expect.stringContaining("Message Dave"), "Laundry [from Monday 2](#root/" + monday.noteId + ")"
         ]);
+        // The forwarded Laundry stays in the evening, which is why the evening answer is already written.
+        expect(tuesday.sections.find((s: any) => s.name === "Evening")?.tasks.map(textOf)).toEqual([ expect.stringMatching(/^Laundry \[from Monday 2\]/) ]);
         expect(tuesday.suggested.map(textOf)).toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-110"), expect.stringContaining("ZAP-105") ]));
         expect((await call("caius_plan", { period: "week", date: "2026-W45" })).sections.flatMap((s: any) => s.tasks).map(textOf))
             .toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-101") ]));

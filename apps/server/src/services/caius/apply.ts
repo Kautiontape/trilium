@@ -18,6 +18,7 @@ import {
     loadStateSymbols,
     meetingLines,
     nextWorkday,
+    normName,
     type NoteStore,
     PERIODS,
     readPlan,
@@ -274,17 +275,23 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
 const EVENING = "Evening";
 
 /**
- * Gives the day note a `### Evening` heading when it has none: after his tasks, above Suggested, so
- * an evening task never lands in the work list and is drawn after work ends.
+ * The day note's evening heading, Evening or Recharge with or without an emoji, given a
+ * `### Evening` after his tasks and above Suggested when it has none, so an evening task never
+ * lands in the work list and is drawn after work ends. Answers the heading's name.
  */
-async function eveningHeading(store: NoteStore, date: string) {
+async function eveningHeading(store: NoteStore, date: string): Promise<string> {
     const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
     const before = await store.content(note.noteId);
-    if (/<h[1-6][^>]*>\s*Evening\s*<\/h[1-6]>/i.test(before)) return;
-    const suggested = /<h[1-6][^>]*>\s*Suggested\s*<\/h[1-6]>/i.exec(before);
-    const at = suggested ? suggested.index : before.length;
+    const headings = [ ...before.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi) ];
+    const found = headings.find((m) => EVENING_NAMES.has(normName((m[1] ?? "").replace(/<[^>]+>/g, ""))));
+    if (found) return (found[1] ?? EVENING).replace(/<[^>]+>/g, "").trim();
+    const suggested = headings.find((m) => normName((m[1] ?? "").replace(/<[^>]+>/g, "")) === "suggested");
+    const at = suggested?.index ?? before.length;
     await store.putContent(note.noteId, `${before.slice(0, at)}<h3>${EVENING}</h3>${before.slice(at)}`, before);
+    return EVENING;
 }
+
+const EVENING_NAMES = new Set([ "evening", "recharge" ]);
 
 /** Adds each value of `name` not on the day note of `date` yet, creating the note if missing. */
 async function labelDay(store: NoteStore, date: string, name: string, values: string[]) {
@@ -363,15 +370,17 @@ async function shelve(store: NoteStore, date: string, now: Date, offered: Candid
 /** His evening tasks under the day's Evening heading, and his Context lines placed by `contextAddOn`. */
 async function eveningAndContext(store: NoteStore, date: string, now: Date, input: { evening: string[]; context: string[] }, written: Written[], skipped: Skipped[]) {
     for (const text of input.evening) {
-        // A task forwarded to the day carries a "from Monday 2" link, so the same words already there count as written.
+        // An evening task forwarded to the day carries a "from Monday 2" link, so the same words there count as written.
         const same = (words: string) => plainText(words).toLowerCase();
-        if (listOf(await readPlan(store, "day", date, now)).some((task) => same(task.text) === same(text))) {
+        if (listOf(await readPlan(store, "day", date, now)).some((task) => task.evening && same(task.text) === same(text))) {
             written.push({ kind: "evening", text, status: "unchanged" });
             continue;
         }
-        await eveningHeading(store, date);
-        const [ result ] = await addTasks(store, [ { date, section: EVENING, text } ], { now });
-        record(written, skipped, { kind: "evening", text }, result);
+        const section = await eveningHeading(store, date);
+        const [ result ] = await addTasks(store, [ { date, section, text } ], { now });
+        // A duplicate here is a work task with the same words, not an evening task already written.
+        if (result?.status === "skipped" && result.reason === "duplicate") skipped.push({ kind: "evening", text, reason: "duplicate", detail: result.detail });
+        else record(written, skipped, { kind: "evening", text }, result);
     }
     for (const text of input.context) {
         const { result } = await contextAddOn(store, { date, text }, now);
