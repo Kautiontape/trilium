@@ -51,12 +51,16 @@ export function numbered<T extends object>(items: T[], prefix: string): (T & { r
  */
 export function resolveName(pool: Named[], said: string): Resolved {
     const value = said.trim();
-    const exact = pool.find((item) => item.id === value) ?? pool.find((item) => item.ref.toLowerCase() === value.toLowerCase())
-        ?? pool.find((item) => item.aliases?.some((alias) => alias === value.toLowerCase()));
-    if (exact) return { id: exact.id };
     const one = (matches: Named[]): Resolved => matches.length === 1 && matches[0]
         ? { id: matches[0].id }
         : matches.length > 1 ? { ambiguous: matches.map((item) => item.text), ids: matches.map((item) => item.id) } : null;
+    const byId = pool.find((item) => item.id === value);
+    if (byId) return { id: byId.id };
+    // Two items whose ids hash to one ref share it: that ref names neither.
+    const byRef = pool.filter((item) => item.ref.toLowerCase() === value.toLowerCase());
+    if (byRef.length) return one(byRef);
+    const exact = pool.find((item) => item.aliases?.some((alias) => alias === value.toLowerCase()));
+    if (exact) return { id: exact.id };
     if (JIRA_KEY.test(value)) return one(pool.filter((item) => jiraKeys(item.text).includes(value.toUpperCase())));
     if (/^\d+$/.test(value)) return one(pool.filter((item) => jiraKeys(item.text).some((key) => key.endsWith(`-${value}`))));
     const wanted = words(value).filter((word) => !FILLER.has(word));
@@ -74,8 +78,9 @@ export function resolveName(pool: Named[], said: string): Resolved {
 export function resolveIn(pools: Named[][], said: string): Resolved {
     const value = said.trim().toLowerCase();
     for (const pool of pools) {
-        const exact = pool.find((item) => item.id.toLowerCase() === value || item.ref.toLowerCase() === value);
-        if (exact) return { id: exact.id };
+        const byId = pool.find((item) => item.id.toLowerCase() === value);
+        if (byId) return { id: byId.id };
+        if (pool.some((item) => item.ref.toLowerCase() === value)) return resolveName(pool, said);
     }
     for (const pool of pools) {
         const found = resolveName(pool, said);
