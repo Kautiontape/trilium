@@ -253,3 +253,13 @@ describe("skip is not dismiss", () => {
         expect(tuesday.data.candidates.map((c: any) => c.candidateId)).toEqual(expect.arrayContaining([ "ZAP-110", "ZAP-105" ]));
     });
 });
+
+describe("the ZAP-2590 line is asked about only at the week boundary", () => {
+    it("Wed night doesn't raise it; Friday offers to carry it into Week 46 once", async () => {
+        const lines = (answer: any) => answer.data.noticed.map((n: any) => n.line);
+        at(`${WED}T17:45`);
+        expect(lines(await call("caius_winddown", { date: WED, step: "context" }))).not.toContain("ZAP-2590 is open; Jira's Done is a mistake");
+        at(`${FRI}T17:20`);
+        expect(lines(await call("caius_winddown", { date: FRI, step: "context" }))).toContain("ZAP-2590 is open; Jira's Done is a mistake");
+    });
+});

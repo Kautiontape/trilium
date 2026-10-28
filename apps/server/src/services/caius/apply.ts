@@ -21,7 +21,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { type BriefPick, NOT_TODAY_LABEL, sameTitle, writeBrief } from "./brief.js";
+import { ASKED_LABEL, type BriefPick, NOT_TODAY_LABEL, sameTitle, writeBrief } from "./brief.js";
 import {
     catchupOf,
     dayKey,
@@ -94,6 +94,14 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
             ...dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: offer.day.live, exclude: [ ...offer.day.plan.dismissed, ...offer.day.closed ] }).map(present),
             ...offer.candidates
         ].map((candidate) => [ candidate.candidateId, candidate ]));
+
+        // Every line the step asked about is answered now, whatever he said, so it isn't asked again.
+        const askedNote = offer.carry.length ? await findPeriodNote(store, "day", date) ?? await store.calendarDay(date) : null;
+        for (const line of askedNote ? offer.carry : []) {
+            if (askedNote && !askedNote.attributes.some((a) => a.type === "label" && a.name === ASKED_LABEL && a.value === line.lineId)) {
+                await store.addLabel(askedNote.noteId, ASKED_LABEL, line.lineId);
+            }
+        }
 
         await catchup(store, date, now, input.catchup, written, skipped);
 

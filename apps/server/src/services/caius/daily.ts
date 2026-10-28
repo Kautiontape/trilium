@@ -42,7 +42,7 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL } from "./brief.js";
+import { ASKED_LABEL, BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -135,14 +135,16 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
 
     // A line in force today that lapses before the target day and keeps a ticket open: Jira's own
     // answer is not consulted, since `done` leaves out every key a Context line calls open.
-    const today = await deps.locked("caius_winddown", () => gatherContext(deps.store, date));
+    const { today, asked } = await deps.locked("caius_winddown", async () => ({
+        today: await gatherContext(deps.store, date), asked: await askedAbout(deps.store, date)
+    }));
     const keep = today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)
         .map((line) => ({ kind: "keep" as const, line: line.text, lineId: lineIdOf(line.text), until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
-        .filter((line) => line.keys.length)
+        .filter((line) => line.keys.length && !asked.has(line.lineId))
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
     const targetWeek = isoWeekKey(utcDay(targetDay));
-    const carry = carryLines(today.context, targetDay, read.context);
+    const carry = carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId));
     const noticed = [ ...keep, ...carry ];
     const sameWeek = isoWeekKey(utcDay(date)) === targetWeek;
     const questions = [ ...keep.map((n) => n.question), ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), sameWeek) ] : []) ];
@@ -255,7 +257,22 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const since = plannedAt ? localMoment(plannedAt) : undefined;
     const jira = unraised(read.inputs.jira, day.raised);
     const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
-    return { day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context), jira };
+    const asked = await askedAbout(store, date);
+    return { day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira };
+}
+
+/**
+ * The lineIds asked about on `date` or on the last workday before it (`#caiusAsked`), which are not
+ * asked again: a line he let pass on Monday is not raised on Tuesday. The caller holds the lock.
+ */
+async function askedAbout(store: NoteStore, date: string): Promise<Set<string>> {
+    return new Set([ ...await dayLabels(store, date, ASKED_LABEL), ...await dayLabels(store, dayKey(lastWorkday(localDay(date))), ASKED_LABEL) ]);
+}
+
+/** The values of the label `name` on the day note of `date`; none without the note. The caller holds the lock. */
+export async function dayLabels(store: NoteStore, date: string, name: string): Promise<string[]> {
+    const note = await findPeriodNote(store, "day", date);
+    return note?.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) ?? [];
 }
 
 /**
@@ -538,17 +555,22 @@ export async function dayFacts(store: NoteStore, date: string, now: Date) {
     // empty to-do is not a task.
     const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
     const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
-    const dayNote = plan.noteId ? await store.note(plan.noteId) : null;
-    const notToday = new Set(dayNote?.attributes.filter((a) => a.type === "label" && a.name === NOT_TODAY_LABEL).map((a) => a.value) ?? []);
+    const notToday = new Set(await dayLabels(store, date, NOT_TODAY_LABEL));
+    const putOffBefore = new Set(await dayLabels(store, dayKey(lastWorkday(localDay(date))), NOT_TODAY_LABEL));
     return {
-        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, notToday, raised: await raisedAsks(store, now, date),
+        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, notToday, putOffBefore, raised: await raisedAsks(store, now, date),
         evening: eveningTasks.length > 0, eveningMinutes
     };
 }
 
-/** `candidates` without those he put off for the day (`#caiusNotToday` on its note), which come back on the next workday. */
-function onOffer<C extends { candidateId: string }>(candidates: C[], facts: { notToday: Set<string> }): C[] {
-    return candidates.filter((candidate) => !facts.notToday.has(candidate.candidateId));
+/**
+ * `candidates` without those he put off for the day (`#caiusNotToday` on its note), which come back
+ * on the next workday, and a week item he put off on the last workday, which comes back two workdays
+ * after he put it off.
+ */
+function onOffer<C extends { candidateId: string; kind: string }>(candidates: C[], facts: { notToday: Set<string>; putOffBefore: Set<string> }): C[] {
+    return candidates.filter((candidate) => !facts.notToday.has(candidate.candidateId)
+        && !(candidate.kind === "week" && facts.putOffBefore.has(candidate.candidateId)));
 }
 
 /** The live top-level tasks of a plan, the Important block first, then in his order. */

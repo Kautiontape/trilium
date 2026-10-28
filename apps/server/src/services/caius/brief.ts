@@ -31,6 +31,8 @@ export const BRIEF_LABEL = "morningBrief";
 export const PLANNED_AT_LABEL = "caiusPlannedAt";
 /** On a brief: an ask its Follow up raised, as `#caiusRaised=ZAP-104:10` (the ticket and the comment). */
 export const RAISED_LABEL = "caiusRaised";
+/** On a day note: a keep or carry line asked about that day, by its lineId, so it is asked once. */
+export const ASKED_LABEL = "caiusAsked";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
 export const NOT_TODAY_LABEL = "caiusNotToday";
 /** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */

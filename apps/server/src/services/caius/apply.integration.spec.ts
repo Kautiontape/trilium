@@ -198,3 +198,36 @@ describe("caius_plan_apply", () => {
         expect(await call("caius_plan_apply", { ...input, date: "2026-11-03" })).toMatchObject({ date: "2026-11-03", error: "not_today" });
     });
 });
+
+describe("an answer stays answered", () => {
+    const prose = { headline: "A day", acts: [ { range: "a", text: "x" }, { range: "b", text: "y" }, { range: "Evening", text: "z" } ], sections: [] };
+    const carried = (answer: any) => answer.data.carry.map((c: any) => c.line);
+
+    it("Tue 3 Nov: a carry he let pass on Monday morning isn't asked again at Monday's refresh, Monday night or Tuesday", async () => {
+        // Monday's apply above recorded the two carry lines it was shown, kept or not.
+        at(`${MON}T09:40`);
+        const note = await cls.init(async () => store.note((await call("caius_plan", { period: "day", date: MON })).noteId));
+        expect(note.attributes.filter((a) => a.name === "caiusAsked")).toHaveLength(2);
+        at(`${MON}T11:05`);
+        expect(carried(await call("caius_planday", { date: MON, step: "inputs" }))).toEqual([]);
+        at(`${MON}T17:30`);
+        expect((await call("caius_winddown", { date: MON, step: "context" })).data.noticed).toEqual([]);
+        at("2026-11-03T09:35");
+        const tuesday = await call("caius_planday", { date: "2026-11-03", step: "inputs" });
+        expect(carried(tuesday)).toEqual([]);
+        expect(tuesday.question ?? "").not.toContain("Jaco");
+    });
+
+    it("Wed 4 Nov: a week item he put off on Tuesday isn't offered until Thursday", async () => {
+        const week = (date: string) => call("caius_planday", { date, step: "inputs" }).then((answer) => answer.data.candidates.filter((c: any) => c.kind === "week").map((c: any) => c.text));
+        at("2026-11-03T09:35");
+        const tuesday = await call("caius_planday", { date: "2026-11-03", step: "inputs" });
+        const tidy = tuesday.data.candidates.find((c: any) => c.text === "Tidy the backlog");
+        expect(tidy).toBeDefined();
+        expect((await call("caius_plan_apply", { date: "2026-11-03", notToday: [ { candidateId: tidy.candidateId } ], brief: prose })).skipped).toEqual([]);
+        at("2026-11-04T09:40");
+        expect(await week("2026-11-04")).toEqual([]);
+        at("2026-11-05T09:30");
+        expect(await week("2026-11-05")).toEqual([ "Tidy the backlog" ]);
+    });
+});
