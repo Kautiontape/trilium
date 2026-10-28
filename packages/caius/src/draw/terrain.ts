@@ -287,7 +287,8 @@ export function weatherOfSvg(svg: string): { code: number; label: string } | nul
   const mark = /<g data-part="weather" data-icon="(\w+)">[\s\S]*?<text [^>]*>([^<]*)<\/text><\/g>/.exec(svg);
   const icon = mark?.[1] as WeatherIcon | undefined;
   if (!icon || !(icon in ICON_CODES) || mark?.[2] === undefined) return null;
-  const label = mark[2].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  // Every entity `esc` writes, `&amp;` last so an escaped entity reads back as itself.
+  const label = mark[2].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
   return { code: ICON_CODES[icon], label };
 }
 
@@ -358,5 +359,5 @@ function describe(events: Ev[], work: Wk[]): string {
 }
 
 function esc(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

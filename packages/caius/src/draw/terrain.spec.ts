@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { layoutWork } from '../daily/blocks.js';
 import { HEAVY_DAY, LATE_HEAVY_DAY, NORMAL_DAY, OPEN_DAY, T13A_DAYS, T13A_RHYTHM } from './fixtures.js';
-import { renderDayTerrain, type TerrainInput, weatherIcon } from './terrain.js';
+import { renderDayTerrain, type TerrainInput, weatherIcon, weatherOfSvg } from './terrain.js';
 
 describe('renderDayTerrain', () => {
   it('draws the three fixture days', () => {
@@ -38,6 +38,13 @@ describe('renderDayTerrain', () => {
     expect(renderDayTerrain(OPEN_DAY)).toContain('data-part="work-end"');
     expect(renderDayTerrain({ ...OPEN_DAY, workEnd: '23:30' })).not.toContain('data-part="work-end"');
     expect(renderDayTerrain({ ...OPEN_DAY, workEnd: '09:00' })).not.toContain('data-part="work-end"');
+  });
+
+  it('reads back the weather it drew, whatever its label holds', () => {
+    const weather = { code: 0, label: `Sun & <wind> "gusts" isn't` };
+    expect(weatherOfSvg(renderDayTerrain({ ...OPEN_DAY, weather }))).toEqual(weather);
+    const drawn = '<g data-part="weather" data-icon="sun"><g></g><text x="1">It&#39;s &quot;clear&quot; &amp; dry</text></g>';
+    expect(weatherOfSvg(drawn)).toEqual({ code: 0, label: `It's "clear" & dry` });
   });
 
   it('draws a weather icon with its label, or none without weather', () => {
