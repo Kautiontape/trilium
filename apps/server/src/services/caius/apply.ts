@@ -27,6 +27,7 @@ import {
     PERIODS,
     readPlan,
     scanDocs,
+    setContextLine,
     setMeetings,
     setStates,
     takeSuggested,
@@ -44,6 +45,7 @@ import {
     heldValueOf,
     dateLabel,
     dayLabels,
+    declinedEvent,
     proposedForward,
     dayKey,
     type DayRead,
@@ -169,7 +171,10 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         } : asked;
         const input = planAnswers(answers, pools, skipped, table, copies, collided);
         // His words only check the call: when they seem to say something the call doesn't, nothing is written.
-        const check = asked.checked ? [] : dismissChecks(asked.said, input.dismiss, known, [ ...offer.candidates, ...followUpsOf(offer.jira) ], offer.day.plan.suggested);
+        const check = asked.checked ? [] : [
+            ...dismissChecks(asked.said, input.dismiss, known, [ ...offer.candidates, ...followUpsOf(offer.jira) ], offer.day.plan.suggested),
+            ...overlapChecks(asked.said, offer.overlaps, input.overlaps)
+        ];
         if (check.length) return checkAnswer({ date }, check);
         // Every question the step asked is answered now, whatever he said, so it isn't asked again.
         await labelDay(store, date, ASKED_LABEL, [
@@ -259,7 +264,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // A meeting he isn't taking leaves the Meetings block and the drawing written below.
         let taken = read;
         await guarded({ kind: "overlap" }, skipped, async () => {
-            const declined = await takeOverlaps(store, date, now, read, asked.said, input.overlaps, written, skipped);
+            const declined = await takeOverlaps(store, date, now, read, input.overlaps, written, skipped);
             taken = { ...read, inputs: withTaken(read.inputs, declined, read.rhythm) };
         });
 
@@ -379,7 +384,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         } : asked;
         const input = windDownAnswers(answers, pools, skipped, table, copies, collided);
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
-        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested) ];
+        const check = asked.checked ? [] : [ ...fateChecks(asked.said, input, pools), ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested),
+            ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
         // The next step's questions are about the next workday, so they are answered on its note.
@@ -509,7 +515,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
-        await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, asked.said, input.overlaps, written, skipped));
+        await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, input.overlaps, written, skipped));
         if (!failedCalendar(read)) await recordFocus(store, targetDay, read);
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
@@ -1643,21 +1649,19 @@ function suggestedLine(candidate: Candidate): string {
 }
 
 /**
- * The overlaps of `day` he answered, in `answers` or in `said` naming one meeting of a pair: each
- * written as "Taking X, not Y, at 11:00" in the day's Context, with Y declined for the day
- * (`#caiusDeclined`). Answers the titles declined. The pairs are read with his own declines undone,
- * so a re-run finds the pair it answered.
+ * The overlaps of `day` he answered in `answers`: each written as "Taking X, not Y, at 11:00" in the
+ * day's Context, with that Y event declined for the day (`#caiusDeclined=overlapId|start|title`). A
+ * new answer to an overlap answered before replaces the earlier: its decline goes and its line is
+ * rewritten, so the day holds one. The pairs are read with his own declines undone, so a re-run or a
+ * correction finds the pair it answers. Answers the declines the day now holds.
  */
-async function takeOverlaps(store: NoteStore, day: string, now: Date, read: DayRead, said: string, answers: { overlapId: string; take: string }[], written: Written[], skipped: Skipped[]): Promise<string[]> {
-    const his = new Set((await dayLabels(store, day, DECLINED_LABEL)).map(normName));
-    const pairs = overlapPairs(read.inputs.calendar.map((event) => his.has(normName(event.title)) ? { ...event, declined: false } : event))
-        .map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) }));
-    const heard = pairs.filter((pair) => !answers.some((answer) => answer.overlapId === pair.overlapId)).flatMap((pair) => {
-        const named = [ pair.first, pair.second ].filter((title) => saysPhrase(said, title));
-        return named.length === 1 && named[0] ? [ { overlapId: pair.overlapId, take: named[0] } ] : [];
-    });
-    const declined: string[] = [];
-    for (const { overlapId, take } of [ ...answers, ...heard ]) {
+async function takeOverlaps(store: NoteStore, day: string, now: Date, read: DayRead, answers: { overlapId: string; take: string }[], written: Written[], skipped: Skipped[]): Promise<string[]> {
+    const labels = await dayLabels(store, day, DECLINED_LABEL);
+    const his = labels.map(declinedEvent).filter((event) => event !== null);
+    const events = read.inputs.calendar.map((event) => his.some((each) => each.start === event.start && each.title === normName(event.title)) ? { ...event, declined: false } : event);
+    const pairs = overlapPairs(events).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) }));
+    const declined = [ ...labels ];
+    for (const { overlapId, take } of answers) {
         const pair = pairs.find((candidate) => candidate.overlapId === overlapId);
         const taken = pair && [ pair.first, pair.second ].find((title) => normName(title) === normName(take) || saysPhrase(take, title));
         if (!pair || !taken) {
@@ -1665,13 +1669,36 @@ async function takeOverlaps(store: NoteStore, day: string, now: Date, read: DayR
             continue;
         }
         const other = taken === pair.first ? pair.second : pair.first;
+        // The event he isn't taking is the one of that title the overlap's time falls in.
+        const event = events.find((each) => !each.allDay && normName(each.title) === normName(other) && each.start <= pair.at && pair.at < each.end);
+        const value = `${overlapId}|${event?.start ?? pair.at}|${other}`;
         const text = t("caius.daily.overlap_taken", { take: taken, other, time: pair.at });
+        const earlier = labels.filter((label) => declinedEvent(label)?.overlapId === overlapId && label !== value);
+        const note = await findPeriodNote(store, "day", day) ?? await store.calendarDay(day);
+        for (const label of earlier) {
+            removeLabel(note.noteId, DECLINED_LABEL, label);
+            declined.splice(declined.indexOf(label), 1);
+            // The earlier answer's line becomes this one, so the day's Context holds one answer.
+            const was = t("caius.daily.overlap_taken", { take: other, other: taken, time: pair.at });
+            const before = await store.content(note.noteId);
+            const after = setContextLine(before, was, text, day);
+            if (after !== null) await store.putContent(note.noteId, after, before);
+        }
         const { result } = await contextAddOn(store, { date: day, text }, now);
-        record(written, skipped, { kind: "overlap", id: overlapId, text, detail: taken }, result);
-        await labelDay(store, day, DECLINED_LABEL, [ other ]);
-        declined.push(other);
+        record(written, skipped, { kind: "overlap", id: overlapId, text, detail: taken }, earlier.length ? { status: "updated" } : result);
+        if (!labels.includes(value)) await labelDay(store, day, DECLINED_LABEL, [ value ]);
+        if (!declined.includes(value)) declined.push(value);
     }
     return declined;
+}
+
+/** The overlaps offered in this call that his reply seems to answer, by naming one of their meetings, while the call doesn't. */
+function overlapChecks(said: string, offered: { first: string; second: string; at: string; overlapId: string }[], answers: { overlapId: string }[]): Check[] {
+    return offered.filter((pair) => !answers.some((answer) => answer.overlapId === pair.overlapId) && (saysPhrase(said, pair.first) || saysPhrase(said, pair.second)))
+        .map((pair) => {
+            const item = t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at }).replace(/\. .*$/, "");
+            return { item, said, missing: "overlap" as const, message: t("caius.check.overlap", { item }) };
+        });
 }
 
 /** Files a library result under written (a write, or `duplicate`/`already_moved`/`unchanged`: already there) or skipped. */

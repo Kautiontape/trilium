@@ -379,7 +379,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
         ? t("caius.daily.heavy_fits", { tasks: labels.length > 1 ? t("caius.daily.list_and", { head: labels.slice(0, -1).join(", "), last: labels.at(-1) }) : labels[0], count: labels.length })
         : null;
     // His answer to an overlap is news for the day it is about, as a line whose range starts that day is.
-    const declined = await dayLabels(store, date, DECLINED_LABEL);
+    const declined = (await dayLabels(store, date, DECLINED_LABEL)).flatMap((value) => value.split("|").slice(2).join("|") || []);
     const headsUp = [
         ...headsUpOf(day.plan.meetings, failedCalendar(read) ? null : meetingLines(read.inputs.calendar)),
         ...read.context.filter((line) => line.from === date || (line.period === "day" && line.key === date && declined.some((title) => line.text.includes(title))))
@@ -479,14 +479,22 @@ export async function dayLabels(store: NoteStore, date: string, name: string): P
 }
 
 /**
- * `inputs` with the meetings he isn't taking (`declined`, by title: `#caiusDeclined` on the day note)
- * declined, so the Meetings block, the drawing and the overlaps leave them out, and the capacity read again.
+ * `inputs` with the meetings he isn't taking declined: each `#caiusDeclined` value on the day note,
+ * `overlapId|start|title`, names one event by its start and title. The Meetings block, the drawing
+ * and the overlaps leave them out, and the capacity is read again.
  */
 export function withTaken(inputs: CaiusInputs, declined: string[], rhythm: { start: string; workEnd: string }): CaiusInputs {
-    if (!declined.length) return inputs;
-    const out = new Set(declined.map(normName));
-    const calendar = flagOverlaps(inputs.calendar.map(({ overlap: _overlap, ...event }) => out.has(normName(event.title)) ? { ...event, declined: true } : event));
+    const out = declined.map(declinedEvent).filter((event) => event !== null);
+    if (!out.length) return inputs;
+    const calendar = flagOverlaps(inputs.calendar.map(({ overlap: _overlap, ...event }) =>
+        out.some((each) => each.start === event.start && each.title === normName(event.title)) ? { ...event, declined: true } : event));
     return { ...inputs, calendar, capacity: dayCapacity(calendar, { workStart: rhythm.start, workEnd: rhythm.workEnd }) };
+}
+
+/** A `#caiusDeclined` value as the overlap it answered and the event it declines, by start and title; null for one of another shape. */
+export function declinedEvent(value: string): { overlapId: string; start: string; title: string } | null {
+    const [ overlapId, start, ...title ] = value.split("|");
+    return overlapId && start && title.length ? { overlapId, start, title: normName(title.join("|")) } : null;
 }
 
 /**

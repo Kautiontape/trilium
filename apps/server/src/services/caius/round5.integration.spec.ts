@@ -296,15 +296,24 @@ describe("answered in Chat", () => {
 describe("the overlap answer", () => {
     const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
 
-    it("Wed 17:45 'incident review': Thursday's Context says so, its Meetings, drawing and capacity drop Vendor Onboarding, and nothing is asked again", async () => {
+    it("Wed 17:45 'incident review': the words alone are checked; the explicit answer goes to Thursday's Context, drops that Vendor Onboarding only, and a correction replaces it", async () => {
         const WED = "2027-01-06";
         const THU = "2027-01-07";
-        calendars[THU] = [ event("10:00", "10:15", "Daily Standup"), event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding") ];
+        calendars[THU] = [
+            event("10:00", "10:15", "Daily Standup"), event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding"),
+            event("15:00", "15:30", "Vendor Onboarding")
+        ];
         at(`${WED}T17:45`);
         const next = await call("caius_winddown", { date: WED, step: "next" });
         expect(next.question).toContain("Incident Review overlaps Vendor Onboarding at 11:00");
+        const { overlapId } = next.data.overlaps[0];
         // The agent's round-5 call: his answer only in his words.
-        const wound = await call("caius_winddown_apply", { date: WED, said: "111, 101 and the bag are done. incident review. evening iron shirts", evening: [ "Iron shirts" ] });
+        const said = "111, 101 and the bag are done. incident review. evening iron shirts";
+        const checked = await call("caius_winddown_apply", { date: WED, said, evening: [ "Iron shirts" ] });
+        expect(checked.written).toEqual([]);
+        expect(checked.check).toEqual([ expect.objectContaining({ missing: "overlap", item: "Incident Review overlaps Vendor Onboarding at 11:00" }) ]);
+
+        const wound = await call("caius_winddown_apply", { date: WED, said, evening: [ "Iron shirts" ], overlaps: [ { overlapId, take: "Incident Review" } ] });
         expect(wound.skipped).toEqual([]);
         expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "overlap", detail: "Incident Review", status: "written" }) ]));
         expect((await call("caius_context", { date: THU })).context).toEqual([ expect.objectContaining({ text: "Taking Incident Review, not Vendor Onboarding, at 11:00", period: "day" }) ]);
@@ -312,16 +321,41 @@ describe("the overlap answer", () => {
         at(`${THU}T09:30`);
         const inputs = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
         expect(inputs.data.overlaps).toEqual([]);
-        expect(inputs.data.meetings.lines).toEqual([ "10:00 Daily Standup", "10:30 Incident Review" ]);
+        expect(inputs.data.meetings.lines).toEqual([ "10:00 Daily Standup", "10:30 Incident Review", "15:00 Vendor Onboarding" ]);
         expect(inputs.data.headsUp).toEqual([ "Taking Incident Review, not Vendor Onboarding, at 11:00" ]);
-        expect(inputs.data.capacity.bookedMinutes).toBe(75);
+        expect(inputs.data.capacity.bookedMinutes).toBe(105);
         const planned = await call("caius_plan_apply", { date: THU, said: "", brief: prose });
         const brief = await cls.init(() => store.content(planned.briefNoteId));
         expect(brief).toContain("Taking Incident Review, not Vendor Onboarding, at 11:00");
         const drawing = String(cls.init(() => becca.getNoteOrThrow(planned.headerNoteId).getAttachments().find((a) => a.title === "terrain.svg")?.getContent()));
         expect(drawing).toContain("Incident Review");
-        expect(drawing).not.toContain("Vendor Onboarding");
+
+        // He corrects it: Vendor Onboarding after all. One line, and only Incident Review leaves the day.
+        at(`${WED}T17:50`);
+        const fixed = await call("caius_winddown_apply", { date: WED, said: "actually vendor onboarding", overlaps: [ { overlapId, take: "Vendor Onboarding" } ] });
+        expect(fixed.check).toBeUndefined();
+        expect(fixed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "overlap", detail: "Vendor Onboarding", status: "written" }) ]));
+        expect((await call("caius_context", { date: THU })).context.map((line: any) => line.text)).toEqual([ "Taking Vendor Onboarding, not Incident Review, at 11:00" ]);
+        at(`${THU}T09:35`);
+        const after = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
+        expect(after.data.meetings.lines).toEqual([ "10:00 Daily Standup", "11:00 Vendor Onboarding", "15:00 Vendor Onboarding" ]);
+        expect(after.data.capacity.bookedMinutes).toBe(105);
         delete calendars[THU];
+    });
+
+    it("'standup is cancelled today btw' with Standup overlapping Design Review: a check, never an answer; checked: true leaves both meetings", async () => {
+        const DAY = "2027-01-13";
+        calendars[DAY] = [ event("10:00", "10:30", "Standup"), event("10:15", "11:00", "Design Review") ];
+        at(`${DAY}T09:40`);
+        const said = "standup is cancelled today btw";
+        const checked = await call("caius_plan_apply", { date: DAY, said, brief: prose });
+        expect(checked.written).toEqual([]);
+        expect(checked.check).toEqual([ expect.objectContaining({ missing: "overlap" }) ]);
+        const planned = await call("caius_plan_apply", { date: DAY, said, checked: true, brief: prose });
+        expect(planned.written.map((entry: any) => entry.kind)).not.toContain("overlap");
+        const plan = await call("caius_plan", { period: "day", date: DAY });
+        expect(plan.meetings).toEqual([ "10:00 Standup", "10:15 Design Review" ]);
+        delete calendars[DAY];
     });
 });
 

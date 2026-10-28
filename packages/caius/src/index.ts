@@ -33,7 +33,7 @@ export { now as caiusClock, clockOverride } from './clock.js';
 export { nextWorkday, lastWorkday } from './workday.js';
 export { contextNotes, gatherContext } from './trilium/context.js';
 export type { ContextEntry } from './trilium/context.js';
-export { addContext, addContextLine, formatUntil, replaceMeetings, setMeetings } from './trilium/daynote.js';
+export { addContext, addContextLine, formatUntil, replaceMeetings, setContextLine, setMeetings } from './trilium/daynote.js';
 export { parseContext, periodSpan, sameContext } from './trilium/until.js';
 export type { ContextAddResult, MeetingsResult } from './trilium/daynote.js';
 export type { ContextLine } from './trilium/until.js';
