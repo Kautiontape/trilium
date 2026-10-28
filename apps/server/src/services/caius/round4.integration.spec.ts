@@ -1281,3 +1281,50 @@ describe("fix round 4: a hold settled from a day whose window doesn't reach the 
         await clearHolds(WE);
     });
 });
+
+describe("fix round 5: a Review of a day older than 3 workdays keeps its settled record", () => {
+    it("H1 (P1): Friday's Review of Monday, no hold; 'drop Dave' drops today's copy and 'the export' asks which instead of ticking 101", async () => {
+        const TH = "2028-03-30", MO = "2028-04-03", FR = "2028-04-07";
+        await cls.init(async () => {
+            const thursday = await store.calendarDay(TH);
+            await store.putContent(thursday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${TH}-111`, `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`), li(`${TH}-dave`, "Message Dave about the lights"))}`);
+            const monday = await store.calendarDay(MO);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MO}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`), li(`${MO}-bag`, "Pack the climbing gym bag"))}`);
+        });
+        at(`${FR}T09:30`);
+        const first = await call("caius_winddown_apply", { date: MO, done: [ "the invoice export" ] });
+        expect(first.say).toMatch(/^ZAP-111 is done/);
+        expect(await labelsOf(MO, "caiusWoundDown")).toHaveLength(1);
+        expect(await labelsOf(MO, "caiusSettled")).not.toEqual([]);
+
+        const second = await call("caius_winddown_apply", { date: MO, done: [ "the invoice export" ], fates: [ { listItemId: "Dave", drop: "not needed" } ] });
+        expect(second.say).toMatch(/^ZAP-111 was already done and Message Dave about the lights is dropped\./);
+        expect(await tasksOf(FR)).toContainEqual({ text: "Message Dave about the lights _not needed_", state: "cancelled" });
+
+        const third = await call("caius_winddown_apply", { date: MO, done: [ "the export" ] });
+        expect(third.say).toMatch(/Which export: ZAP-111 or ZAP-101\?/);
+        expect(third.written.filter((entry: any) => entry.kind === "done")).toEqual([]);
+        expect((await tasksOf(FR)).find((task: any) => task.text.startsWith("ZAP-101"))?.state).toBe("open");
+        await clearHolds(MO);
+    });
+
+    it("H1 (S5i): a hold eight workdays old; the Review of its day settles it and keeps that day's #caiusSettled", async () => {
+        const DAY = "2028-05-03", TODAY = "2028-05-15";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "the export" ] });
+        for (const day of [ "2028-05-04", "2028-05-05", "2028-05-08", "2028-05-09", "2028-05-10", "2028-05-11", "2028-05-12" ]) {
+            await cls.init(async () => {
+                const note = await store.calendarDay(day);
+                await store.putContent(note.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${day}-x`, `Thing on ${day}`))}`);
+            });
+            at(`${day}T17:45`);
+            await call("caius_winddown_apply", { date: day, done: [ `${day}-x` ] });
+        }
+        at(`${TODAY}T09:30`);
+        const review = await call("caius_winddown_apply", { date: DAY, done: [ "ZAP-101" ] });
+        expect(review.say).toMatch(/^ZAP-101 is done and ZAP-111 moved to Mon 15 May\./);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+        expect(await labelsOf(DAY, "caiusSettled")).toEqual(expect.arrayContaining([ `${DAY}-101`, `${DAY}-111` ]));
+    });
+});

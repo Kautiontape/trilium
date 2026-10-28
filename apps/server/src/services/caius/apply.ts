@@ -1085,15 +1085,15 @@ async function eveningHeading(store: NoteStore, date: string): Promise<string> {
 const EVENING_NAMES = new Set([ "evening", "recharge" ]);
 
 /**
- * Takes `#caiusSettled` off every day note before `date` when `date` is closed, and off every day
- * note older than the 3 workdays before `today` in any case. A re-run of `date` reads only its own
- * labels, so an earlier day's are needed only until a later day is closed.
+ * Takes `#caiusSettled` off every day note before `date` when `date` is closed, and off every other
+ * day note older than the 3 workdays before `today` in any case. A re-run of `date` reads only its
+ * own labels, so an earlier day's are needed only until a later day is closed; `date` keeps its own.
  */
 async function pruneSettled(store: NoteStore, date: string, today: string, closed: boolean) {
     const oldest = closingPeriods(today).recent.at(-1) ?? today;
     for (const note of await store.search(`#${SETTLED_LABEL}`)) {
         const day = label(note, PERIODS.day.label);
-        if (!day || !(day < oldest || (closed && day < date))) continue;
+        if (!day || day === date || !(day < oldest || (closed && day < date))) continue;
         for (const a of note.attributes) if (a.type === "label" && a.name === SETTLED_LABEL) removeLabel(note.noteId, SETTLED_LABEL, a.value);
     }
 }
