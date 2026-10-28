@@ -234,6 +234,23 @@ describe("a place can name what the same call writes", () => {
     });
 });
 
+describe("several firsts keep his order", () => {
+    it("accept [{331, first}, {330, first}] and a move first after them: 331, 330, then the moved task, then the rest", async () => {
+        const DAY = "2027-03-04";
+        jira.handoff.push({ ...ticket("ZAP-330"), daysInStatus: 2 }, { ...ticket("ZAP-331"), daysInStatus: 2 });
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("vown", "Own task ~30m"), li("vlast", "Last task ~30m"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const applied = await call("caius_plan_apply", {
+            date: DAY, accept: [ { candidateId: "ZAP-331", first: true }, { candidateId: "ZAP-330", first: true } ], move: [ { listItemId: "vlast", first: true } ], brief: prose
+        });
+        expect(applied.skipped).toEqual([]);
+        expect(await listed(DAY)).toEqual([ expect.stringContaining("ZAP-331"), expect.stringContaining("ZAP-330"), "Last task", "Own task" ]);
+    });
+});
+
 describe("the header is drawn from the note as it ends", () => {
     it("Wed 09:40 'laundry can go to tomorrow': the forward of his own evening item is made, and neither the drawing nor the Evening act has Laundry", async () => {
         const DAY = "2026-11-11";

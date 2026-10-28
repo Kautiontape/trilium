@@ -599,11 +599,21 @@ async function acceptAll(store: NoteStore, date: string, now: Date, input: Pick<
         await guarded({ kind: "accept", id: ref.candidateId }, skipped, () => accept(store, date, now, refs.known.get(ref.candidateId), ref.candidateId, written, skipped));
         if (skipped.length === before) taken.push(ref);
     }
+    // Several firsts keep the order he gave: each one after the first goes after the one before it.
+    let lastFirst: string | undefined;
+    const inOrder = (item: string, place: { first?: boolean; before?: string; after?: string }) => {
+        if (!place.first) return place;
+        const at = lastFirst === undefined ? place : { after: lastFirst };
+        lastFirst = item;
+        return at;
+    };
     for (const { candidateId, ...place } of taken) {
-        await guarded({ kind: "place", id: candidateId }, skipped, () => placeOnList(store, date, now, { kind: "place", id: candidateId }, candidateId, place, refs, written, skipped));
+        const at = inOrder(candidateId, place);
+        await guarded({ kind: "place", id: candidateId }, skipped, () => placeOnList(store, date, now, { kind: "place", id: candidateId }, candidateId, at, refs, written, skipped));
     }
     for (const { listItemId, ...place } of input.move) {
-        await guarded({ kind: "move", id: listItemId }, skipped, () => placeOnList(store, date, now, { kind: "move", id: listItemId }, listItemId, place, refs, written, skipped));
+        const at = inOrder(listItemId, place);
+        await guarded({ kind: "move", id: listItemId }, skipped, () => placeOnList(store, date, now, { kind: "move", id: listItemId }, listItemId, at, refs, written, skipped));
     }
 }
 
