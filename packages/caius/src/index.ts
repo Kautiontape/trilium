@@ -45,7 +45,7 @@ export { readRhythm, sectionOf } from './daily/standing.js';
 export { layoutWork } from './daily/blocks.js';
 export type { WorkBlock, WorkTask } from './daily/blocks.js';
 export type { Rhythm } from './daily/standing.js';
-export { dayCandidates, keysOf, liveKeys } from './daily/candidates.js';
+export { closedKeys, CLOSED_DAYS, dayCandidates, FINISHED_DAYS, FINISHED_LABEL, keysOf, liveKeys } from './daily/candidates.js';
 export type { Candidate, CandidateReason, JiraLike, TicketLike, WeekTaskLike } from './daily/candidates.js';
 export { briefBodyHtml, headerHtml, includeNote, leadingInclude, withInclude, withoutImages } from './trilium/brief-html.js';
 export type { BriefAct } from './trilium/brief-html.js';

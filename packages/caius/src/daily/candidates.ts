@@ -1,11 +1,14 @@
 // Candidates for a day's Suggested section: Jira hand-offs and asks, and the week note's items,
-// minus anything already live in the Journal, already suggested or dismissed.
+// minus anything already live in the Journal, already suggested or dismissed, and what Shawn has
+// closed lately.
 
 import { scanDocs } from '../index/index.js';
 import { TRILIUM_CONFIG } from '../trilium/config.js';
 import type { TriliumDoc } from '../trilium/journal.js';
 import { markdownLinks, taskKeys } from '../trilium/keys.js';
-import { DEFAULT_ESTIMATE } from '../trilium/plan-read.js';
+import { DEFAULT_ESTIMATE, DISMISSED_LABEL, PERIODS, type PeriodKind } from '../trilium/plan-read.js';
+import { label, type NoteReader, type StoreNote } from '../trilium/store.js';
+import { periodSpan } from '../trilium/until.js';
 
 /** The part of a `caius_inputs` ticket the candidates read. */
 export interface TicketLike {
@@ -71,6 +74,39 @@ export function liveKeys(docs: TriliumDoc[], now: Date): Map<string, string[]> {
   return keys;
 }
 
+/** Days a done or cancelled task, or a dismissal, keeps its key off every list. */
+export const CLOSED_DAYS = 14;
+/** Days a ticket Shawn called finished keeps its key off every list. */
+export const FINISHED_DAYS = 30;
+/** On a day note: Shawn said the ticket is finished, as `#caiusFinished=ZAP-101`. */
+export const FINISHED_LABEL = 'caiusFinished';
+
+/**
+ * The keys never to offer on the day of `now`, whatever Jira says: those of tasks done or
+ * cancelled in a Journal note whose period ends no more than `CLOSED_DAYS` before that day, unless
+ * the key is live again (a forwarded task's copy); those dismissed on any period note that recent;
+ * and those labelled `#caiusFinished` on a period note no more than `FINISHED_DAYS` back. A done
+ * mark carries no date, so the note's period dates it; a note of a later period counts too.
+ */
+export async function closedKeys(store: NoteReader, docs: TriliumDoc[], now: Date): Promise<Set<string>> {
+  const since = (days: number) => dayOf(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
+  const recent = (period: { kind: PeriodKind; key: string } | null, days: number) => !!period && periodSpan(period.kind, period.key).end >= since(days);
+  const live = liveKeys(docs, now);
+  const closed = new Set<string>();
+  for (const task of scanDocs(docs, TRILIUM_CONFIG, now).tasks) {
+    if (task.state !== 'done' && task.state !== 'cancelled') continue;
+    if (!recent(pathPeriod(task.file), CLOSED_DAYS)) continue;
+    for (const key of keysOf(task.text)) if (!live.has(key)) closed.add(key);
+  }
+  for (const [name, days] of [[DISMISSED_LABEL, CLOSED_DAYS], [FINISHED_LABEL, FINISHED_DAYS]] as const) {
+    for (const note of await store.search(`#${name}`)) {
+      if (!recent(notePeriod(note), days)) continue;
+      for (const a of note.attributes) if (a.type === 'label' && a.name === name && a.value) closed.add(a.value);
+    }
+  }
+  return closed;
+}
+
 /**
  * The candidates for a day, hand-offs first, then asks (the latest per ticket), then week items,
  * each key once. Left out: a ticket Jira calls done (and a week item that names one), anything whose key is in `exclude` (the day's
@@ -121,3 +157,21 @@ export function dayCandidates(o: {
   }
   return out;
 }
+
+/** The period a Journal path belongs to: `Journal/Daily/2026-11-02.md` and its children's paths. */
+function pathPeriod(path: string): { kind: PeriodKind; key: string } | null {
+  const m = /^Journal\/(Daily|Weekly|Monthly)\/(\d{4}-(?:W\d{2}|\d{2}-\d{2}|\d{2}))(?![\d-])/.exec(path);
+  const kind = m && (m[1] === 'Daily' ? 'day' : m[1] === 'Weekly' ? 'week' : 'month');
+  return kind && m[2] ? { kind, key: m[2] } : null;
+}
+
+/** The period a note is labelled with, if it is a day, week or month note. */
+function notePeriod(note: StoreNote): { kind: PeriodKind; key: string } | null {
+  for (const kind of ['day', 'week', 'month'] as const) {
+    const key = label(note, PERIODS[kind].label);
+    if (key && PERIODS[kind].pattern.test(key)) return { kind, key };
+  }
+  return null;
+}
+
+const dayOf = (at: Date) => `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;

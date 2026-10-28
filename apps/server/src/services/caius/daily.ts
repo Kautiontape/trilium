@@ -7,6 +7,7 @@
 
 import {
     type Candidate,
+    closedKeys,
     type ContextEntry,
     contextNotes,
     dayCandidates,
@@ -316,16 +317,17 @@ async function stillOpen(store: NoteStore, date: string, targetDay: string) {
 }
 
 /**
- * What a day's candidates are checked against: its plan, the week's items, the live keys and what
- * is already suggested or dismissed there, plus whether the evening (Evening or Recharge) has a task
- * and how many minutes it holds, which are not work.
+ * What a day's candidates are checked against: its plan, the week's items, the live keys, what is
+ * already suggested or dismissed there and what Shawn closed lately (`closedKeys`), plus whether
+ * the evening (Evening or Recharge) has a task and how many minutes it holds, which are not work.
  */
 async function dayFacts(store: NoteStore, date: string, now: Date) {
     const plan = await readPlan(store, "day", date, now);
     const weekKey = isoWeekKey(utcDay(date));
     const weekPlan = await readPlan(store, "week", weekKey, now);
-    const live = liveKeys((await loadJournal(store)).docs, now);
-    const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)) ];
+    const { docs } = await loadJournal(store);
+    const live = liveKeys(docs, now);
+    const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)), ...await closedKeys(store, docs, now) ];
     const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks)
         .filter((task) => isLive(task) && task.text.trim() !== "");
     // As the plan's capacity counts them: a task with live sub-items counts through them, and an

@@ -135,6 +135,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.skipCatchup, service.skipCatchup)
         },
 
+        caius_finished: {
+            description: "Record that Shawn says tickets are finished when they are not tasks to tick: labels today's day note #caiusFinished=<key>, so Wind down and Plan my day leave them out of the candidates for 30 days, and caius_add won't suggest them. Use it whenever he says a ticket is done that isn't on his list. No dry run: his word is the yes.",
+            inputSchema: toolInputs.finished,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.finished, service.finished)
+        },
+
         caius_winddown: {
             description: "Run one step of the Wind down conversation for the day being closed (date); every step works against the next workday. Steps in order: open (the live tasks of the day, overdue ones and the week's, each with a proposed fate), next (candidates for the next workday's Suggested, its capacity, overlaps and evening), context (the Context in force and anything noticed). Returns { step, data, question, next, standing }: ask question verbatim; a null question means nothing to ask; still do the step's writes (dry run first). Then call the step named by next. Reads only; make the writes with the other caius_* tools, dry run first.",
             inputSchema: toolInputs.winddown,

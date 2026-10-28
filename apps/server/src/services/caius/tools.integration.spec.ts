@@ -56,7 +56,7 @@ describe("caius tools", () => {
         const defs = new Map([...caiusTools]);
         expect([...defs.keys()]).toEqual([
             "caius_plan", "caius_open", "caius_explain", "caius_context", "caius_inputs", "caius_add",
-            "caius_accept", "caius_dismiss", "caius_set_state", "caius_forward", "caius_assign_ids", "caius_meetings", "caius_context_add", "caius_brief_write", "caius_skip_catchup", "caius_winddown", "caius_planday", "caius_header"
+            "caius_accept", "caius_dismiss", "caius_set_state", "caius_forward", "caius_assign_ids", "caius_meetings", "caius_context_add", "caius_brief_write", "caius_skip_catchup", "caius_finished", "caius_winddown", "caius_planday", "caius_header"
         ]);
         for (const [name, def] of defs) {
             expect(def.async).toBe(true);

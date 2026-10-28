@@ -42,6 +42,7 @@ Most write tools take an `items` list, `dryRun`, and `html: true` on a dry run t
 | `caius_meetings` | Write the day note's Meetings block: clock lines, never tasks. Without `items` the lines come from the calendar. Replaces only that block. | `{ "date": "2026-11-09", "dryRun": true }` |
 | `caius_context_add` | Add one Context line to a day note (`date`) or a week note (`week`), with an optional `until`. Text already in force is a `duplicate`. | `{ "week": "2026-W46", "text": "Sam is out all week", "until": "2026-11-13", "dryRun": true }` |
 | `caius_brief_write` | Write the day's Morning Brief and its header, and include the header at the top of the day note. A re-run updates the same notes. | The `shape` from `caius_planday` step `brief`, filled in |
+| `caius_finished` | Record that Shawn says a ticket is finished when it isn't a task to tick. Candidates and Suggested leave it out for 30 days. No dry run: his word is the yes. | `{ "keys": ["ZAP-101"] }` |
 | `caius_skip_catchup` | Skip Plan my day's catch-up for a day: the last workday's open tasks stay where they are. | `{ "date": "2026-11-09" }` |
 | `caius_winddown` | One step of Wind down: `open`, `next`, `context`. Returns the data and the question to ask. | `{ "date": "2026-11-06", "step": "open" }` |
 | `caius_planday` | One step of Plan my day: `catchup`, `inputs`, `brief`. Returns the data and the question to ask. | `{ "date": "2026-11-09", "step": "catchup" }` |
@@ -83,6 +84,7 @@ Two conversations, each started by a short opener that names a day: `Wind down 2
 - **The steps in order.** Call the first step, then the one `next` names, until `next` is null.
 - **The questions.** Ask each `question` word for word. A null `question` means nothing to ask; still do the step's writes (dry run first), such as putting the candidates in Suggested, then go on to the next step. Say `data.summary` when there is one.
 - **The writes.** Every write is a dry run first, shown to Shawn in two lines, then applied on his yes (`caius_skip_catchup` has none: his "skip" is the yes). Only `caius_accept`, or a `caius_forward` of a task Shawn names, puts anything into his main list. Everything else he wants goes to Suggested with `caius_add` (`suggested: true`) and stays there.
+- **Finished work.** When Shawn says a ticket is done and it isn't a task to tick, call `caius_finished` with its key. A task he ticks off, a dismissal and `caius_finished` all keep the key off every list, so never offer it again.
 - **Never** ask Shawn to do something a tool can do, and never state a fact that is not in the tools' data.
 
 ### Wind down

@@ -16,11 +16,13 @@ import {
     addTasks,
     caiusClock,
     clockOverride,
+    closedKeys,
     daysLate,
     diffSummary,
     dismissTasks,
     ensureListItemIds,
     findPeriodNote,
+    FINISHED_LABEL,
     forwardTasks,
     gatherContext,
     isoWeekKey,
@@ -35,6 +37,8 @@ import {
     type NoteStore,
     openTasks,
     type OpenTask,
+    parseSource,
+    PERIODS,
     presentResult,
     readPlan,
     renderDayTerrain,
@@ -43,6 +47,7 @@ import {
     setStates,
     type StateAction,
     suggestedTasks,
+    taskKeys,
     TRILIUM_CONFIG,
     withListItemIds
 } from "@triliumnext/caius";
@@ -60,6 +65,7 @@ import {
     DEFAULT_OPEN_LIMIT,
     type DismissInput,
     type ExplainInput,
+    type FinishedInput,
     type ForwardInput,
     type HeaderDay,
     type HeaderInput,
@@ -238,9 +244,23 @@ export function createCaiusService(
         /** `caius_inputs`, cached like the steps' reads; it reads no notes, so it takes no lock. */
         inputs: ({ refresh, ...input }: InputsToolInput) => cachedInputs(input, refresh),
 
-        add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => withBlobIds(
-            (await addTasks(store, items, { dryRun, now: caiusNow() })).map((r) => presentResult(r, html))
-        )),
+        /** Adds the items, except a Suggested item naming a key Shawn closed lately (`closedKeys`), skipped as `finished`. */
+        add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => {
+            const now = caiusNow();
+            const docs = items.some((item) => item.suggested) ? await journalDocs(store) : null;
+            const closed = docs ? await closedKeys(store, docs, now) : new Set<string>();
+            const closedKey = (item: AddInput["items"][number]) => item.suggested ? addKeys(item).find((key) => closed.has(key)) : undefined;
+            const added = await addTasks(store, items.filter((item) => closedKey(item) === undefined), { dryRun, now });
+            let next = 0;
+            return withBlobIds(items.map((item) => {
+                const key = closedKey(item);
+                const result = key === undefined
+                    ? added[next++]
+                    : { ...item, status: "skipped" as const, reason: "finished", detail: `${key} was closed lately: done, dismissed or called finished` };
+                if (!result) throw new Error("The library returned fewer results than it was given items");
+                return presentResult(result, html);
+            }));
+        }),
 
         accept: ({ items, dryRun, html }: AcceptInput) => withCaiusLock("caius_accept", async () => withBlobIds(
             (await unlessStale(items, (fresh) => acceptTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
@@ -311,6 +331,29 @@ export function createCaiusService(
             const labelled = note.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
             if (!labelled) setLabel(note.noteId, SKIP_CATCHUP_LABEL, date);
             return { date, noteId: note.noteId, status: labelled ? "unchanged" : "updated", created: !existing };
+        }),
+
+        /**
+         * Labels a day or week note `#caiusFinished=<key>` for each key not on it yet: `note`, else
+         * today's day note, created if missing.
+         */
+        finished: ({ keys, note: noteId }: FinishedInput) => withCaiusLock("caius_finished", async () => {
+            const today = currentKey("day", caiusNow());
+            const note = noteId
+                ? await store.note(noteId).catch(() => undefined)
+                : await findPeriodNote(store, "day", today) ?? await store.calendarDay(today);
+            if (!note) {
+                return { error: "not_found", detail: `Note '${noteId}' not found` };
+            }
+            if (label(note, PERIODS.day.label) === undefined && label(note, PERIODS.week.label) === undefined) {
+                return { error: "bad_request", detail: `Note '${note.noteId}' is not a day or week note` };
+            }
+            if (note.isProtected) {
+                return { error: "bad_request", detail: `Note '${note.noteId}' is protected` };
+            }
+            const fresh = [ ...new Set(keys) ].filter((key) => !note.attributes.some((a) => a.type === "label" && a.name === FINISHED_LABEL && a.value === key));
+            for (const key of fresh) await store.addLabel(note.noteId, FINISHED_LABEL, key);
+            return { noteId: note.noteId, keys, status: fresh.length ? "updated" : "unchanged" };
         }),
 
         winddown: (input: WindDownInput) => windDown(stepDeps(), input),
@@ -486,6 +529,12 @@ const MONTHS = [
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december"
 ];
+
+/** The keys `addTasks` gives an item: its source's, else those of its text. */
+function addKeys(item: AddInput["items"][number]): string[] {
+    const source = item.source === undefined ? null : parseSource(item.source);
+    return source ? source.keys : taskKeys(item.text.trim(), []);
+}
 
 /** Runs set state over `items` one at a time, each with its own action. */
 async function setStatesOf(

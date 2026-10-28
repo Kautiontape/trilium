@@ -170,6 +170,12 @@ const contextAdd = z.object({
     dryRun
 }).refine((input) => (input.date === undefined) !== (input.week === undefined), "Give exactly one of date or week");
 
+const finished = z.object({
+    keys: z.array(z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase()))
+        .min(1).describe("The tickets he says are finished, such as [\"ZAP-101\"]"),
+    note: z.string().optional().describe("The day or week note to record it on, by noteId. Defaults to today's day note.")
+});
+
 const skipCatchup = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD, whose catch-up is skipped")
 });
@@ -197,6 +203,7 @@ export const toolInputs = {
     contextAdd,
     briefWrite,
     skipCatchup,
+    finished,
     winddown,
     planday,
     add: writes(addItem),
@@ -247,6 +254,7 @@ export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
 export type SkipCatchupInput = z.infer<typeof skipCatchup>;
+export type FinishedInput = z.infer<typeof finished>;
 export type NudgeInput = z.infer<typeof nudge>;
 export type WindDownInput = z.infer<typeof winddown>;
 export type PlanDayInput = z.infer<typeof planday>;
