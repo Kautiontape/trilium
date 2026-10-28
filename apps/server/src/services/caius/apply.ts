@@ -265,8 +265,8 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
         await dismiss(store, targetDay, now, input.dismiss.map((c) => c.candidateId), known, written, skipped);
         await shelve(store, targetDay, now, candidates, input, written, skipped);
         await eveningAndContext(store, targetDay, now, input, written, skipped);
-        // The day is closed now, so a later catch-up looks no further back than it.
-        await labelDay(store, date, WOUND_DOWN_LABEL, [ date ]);
+        // The day is closed only when every item got its fate, so a later catch-up looks no further back.
+        if (!skipped.some((entry) => entry.kind === "done" || entry.kind === "fate")) await labelDay(store, date, WOUND_DOWN_LABEL, [ date ]);
         return withDateLabels({ date, targetDay, written, skipped });
     });
 }

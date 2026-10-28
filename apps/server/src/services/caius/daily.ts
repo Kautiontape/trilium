@@ -362,11 +362,12 @@ const CATCHUP_DAYS = 5;
 
 /**
  * What Plan my day offers to move to `date`: the live top-level tasks of every workday since the
- * last closed one, oldest first, at most `CATCHUP_DAYS` back. A day is closed when it has nothing
- * live, was wound down (`#caiusWoundDown`), or is protected or not a text note, since Caius cannot
- * read it; a skip recorded on a day (`#caiusSkipCatchup`) covered the days before it, so the walk
- * stops after that day. None once the day note carries `#caiusSkipCatchup=<date>`. Answers the day
- * note too, without creating it. The caller holds the lock.
+ * last closed one, oldest first, at most `CATCHUP_DAYS` back. The walk passes a day with no note or
+ * no tasks at all (an untouched template), and stops at a closed day: one that had tasks and has
+ * none live, one wound down (`#caiusWoundDown`) with nothing live, one protected or not a text
+ * note, since Caius cannot read it, or, after taking its tasks, one that recorded a skip
+ * (`#caiusSkipCatchup`), which covered the days before it. None once the day note carries
+ * `#caiusSkipCatchup=<date>`. Answers the day note too, without creating it. The caller holds the lock.
  */
 export async function catchupOf(store: NoteStore, date: string, now: Date) {
     const last = dayKey(lastWorkday(localDay(date)));
@@ -378,15 +379,25 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         at = lastWorkday(at);
         const key = dayKey(at);
         const dayNote = await findPeriodNote(store, "day", key);
-        if (!dayNote || dayNote.type !== "text" || dayNote.isProtected || label(dayNote, WOUND_DOWN_LABEL) !== undefined) break;
-        const live = mainTasks(await readPlan(store, "day", key, now))
-            .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
-        if (!live.length) break;
+        if (!dayNote) continue;
+        if (dayNote.type !== "text" || dayNote.isProtected) break;
+        const plan = await readPlan(store, "day", key, now);
+        const live = mainTasks(plan).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
+        const woundDown = label(dayNote, WOUND_DOWN_LABEL) !== undefined;
+        if (!live.length) {
+            if (woundDown || topLevel(plan).length) break;
+            continue;
+        }
         days.unshift(key);
         tasks.unshift(...live);
         if (dayNote.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL)) break;
     }
     return { lastWorkday: last, days, note, skipped, tasks };
+}
+
+/** A plan's top-level tasks in any state. */
+function topLevel(plan: PlanView): PlanTask[] {
+    return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].filter((task) => task.parent === null && task.text.trim() !== "");
 }
 
 /**

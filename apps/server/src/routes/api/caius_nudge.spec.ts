@@ -62,13 +62,22 @@ describe("Caius nudge route", () => {
         await cls.init(async () => {
             for (const [ date, id ] of [ [ "2033-03-15", "s1" ], [ "2033-03-16", "s2" ], [ "2033-03-17", "s3" ] ]) {
                 const day = await store.calendarDay(date as string);
-                await store.putContent(day.noteId, `<h3>Work</h3>${ul(li(id as string, `Task ${id}`))}`);
+                await store.putContent(day.noteId, `<h3>Work</h3>${ul(li(id as string, `Task ${id}`, id === "s1"))}`);
                 if (id === "s1") setLabel(day.noteId, "caiusWoundDown", date as string);
             }
         });
         const { body } = await nudge("2033-03-18").expect(200);
         expect(body).toMatchObject({ state: "catchup", lastWorkday: "2033-03-17", days: [ "2033-03-16", "2033-03-17" ] });
         expect(body.tasks.map((task: { listItemId: string }) => task.listItemId)).toEqual([ "s2", "s3" ]);
+    });
+
+    it("walks past a missing day to the open one before it", async () => {
+        await cls.init(async () => {
+            const tue = await store.calendarDay("2033-04-05");
+            await store.putContent(tue.noteId, `<h3>Work</h3>${ul(li("g1", "Open on Tuesday"), li("g2", "Also Tuesday"))}`);
+        });
+        const { body } = await nudge("2033-04-07").expect(200);
+        expect(body).toMatchObject({ state: "catchup", lastWorkday: "2033-04-06", days: [ "2033-04-05" ] });
     });
 
     it("answers unplanned once the catch-up is skipped, and planned with the date and time once a brief exists", async () => {
@@ -103,7 +112,8 @@ describe("Caius nudge route", () => {
         expect((await nudge(WEDNESDAY).expect(200)).body).toMatchObject({ state: "catchup", lastWorkday: TUESDAY });
         expect(Object.keys(becca.notes).length).toBe(before);
 
-        expect((await nudge("2033-03-13").expect(200)).body).toEqual({ date: "2033-03-13", state: "unplanned", lastWorkday: "2033-03-11" });
+        // Friday has no note, so the catch-up walks on to Thursday's open task.
+        expect((await nudge("2033-03-13").expect(200)).body).toMatchObject({ date: "2033-03-13", state: "catchup", lastWorkday: "2033-03-11" });
         expect(Object.keys(becca.notes).length).toBe(before);
 
         await nudge("2033-02-30").expect(400);

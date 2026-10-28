@@ -428,3 +428,41 @@ describe("a wind-down of an older day works against today", () => {
         expect(today.sections.flatMap((s: any) => s.tasks).map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Renew the domain", "Laundry" ]);
     });
 });
+
+describe("the catch-up walks past a day with nothing in it", () => {
+    it("Thu 21 Jan: Tuesday's two open tasks come through a missing Wednesday, then an untouched Wednesday template", async () => {
+        await cls.init(async () => {
+            const tue = await store.calendarDay("2027-01-19");
+            await store.putContent(tue.noteId, `<h2>☑️ Tasks</h2>${ul(li("tu1", "First thing"), li("tu2", "Second thing"))}`);
+        });
+        at("2027-01-21T09:30");
+        const missing = await call("caius_planday", { date: "2027-01-21", step: "catchup" });
+        expect(missing.data.days).toEqual([ "2027-01-19" ]);
+        expect(missing.question).toBe("Tuesday has 2 open tasks. Move all to today, review them, or skip?");
+        await cls.init(async () => {
+            const wed = await store.calendarDay("2027-01-20");
+            await store.putContent(wed.noteId, "<h2>☑️ Tasks</h2><p>[…]</p>");
+        });
+        expect((await call("caius_planday", { date: "2027-01-21", step: "catchup" })).data.days).toEqual([ "2027-01-19" ]);
+    });
+
+    it("a wind-down that skipped an item leaves the day open, and a stray label on a day with live tasks doesn't close it", async () => {
+        await cls.init(async () => {
+            const mon = await store.calendarDay("2027-01-25");
+            await store.putContent(mon.noteId, `<h2>☑️ Tasks</h2>${ul(li("wd1", "Left open"))}`);
+        });
+        at("2027-01-25T17:30");
+        const applied = await call("caius_winddown_apply", { date: "2027-01-25", done: [ "nope" ] });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "done", id: "nope" }) ]);
+        const monday = await cls.init(async () => store.note((await call("caius_plan", { period: "day", date: "2027-01-25" })).noteId));
+        expect(monday.attributes.filter((a) => a.name === "caiusWoundDown")).toEqual([]);
+
+        await cls.init(async () => {
+            const tue = await store.calendarDay("2027-01-26");
+            await store.putContent(tue.noteId, `<h2>☑️ Tasks</h2>${ul(li("wd2", "Still here"))}`);
+            await store.addLabel(tue.noteId, "caiusWoundDown", "2027-01-26");
+        });
+        at("2027-01-27T09:30");
+        expect((await call("caius_planday", { date: "2027-01-27", step: "catchup" })).data.days).toEqual([ "2027-01-26" ]);
+    });
+});
