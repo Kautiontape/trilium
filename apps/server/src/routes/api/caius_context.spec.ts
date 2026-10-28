@@ -23,7 +23,7 @@ describe("Caius context route", () => {
             const friday = await store.calendarDay(FRIDAY);
             await store.putContent(friday.noteId, "<h3>Context</h3><ul><li>Jaco out (until Fri 11 Mar)</li><li>Over by Monday (until Sat 5 Mar)</li></ul>");
             const monday = await store.calendarDay(MONDAY);
-            await store.putContent(monday.noteId, "<h3>Context</h3><ul><li>ZAP-2590 is open</li></ul>");
+            await store.putContent(monday.noteId, "<h3>Context</h3><ul><li>ZAP-2590 is open (until Wed 9 Mar)</li></ul>");
             Object.assign(noteIds, { friday: friday.noteId, monday: monday.noteId });
         });
     });
@@ -37,7 +37,7 @@ describe("Caius context route", () => {
         expect(body).toEqual({
             date: TUESDAY,
             context: [
-                { text: "ZAP-2590 is open", period: "day", key: MONDAY, noteId: noteIds.monday },
+                { text: "ZAP-2590 is open", until: "2033-03-09", period: "day", key: MONDAY, noteId: noteIds.monday },
                 { text: "Jaco out", until: "2033-03-11", period: "day", key: FRIDAY, noteId: noteIds.friday }
             ]
         });

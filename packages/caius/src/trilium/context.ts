@@ -1,5 +1,6 @@
 // The Context in force for a day: the Context sections of the day note, the last three workday
-// notes, the current week note and, on a Monday, last week's. Read-only; never creates a note.
+// notes, the current week note and, on a Monday, last week's. A day note's line without an
+// `until` holds on that day only. Read-only; never creates a note.
 
 import { lastWorkday } from '../workday.js';
 import { buildDoc, loadStateSymbols } from './journal.js';
@@ -40,7 +41,8 @@ export function contextNotes(date: string): { period: 'day' | 'week'; key: strin
 
 /**
  * Context lines in force on `date` (`YYYY-MM-DD`), from the notes `contextNotes` names. A line whose
- * `(until …)` date is before `date` is dropped. When the same text is in several notes, the
+ * `(until …)` date is before `date` is dropped, and so is an earlier day note's line without an
+ * `until`, which holds on its own day only and so takes no part in the comparison below. When the same text is in several notes, the
  * newest note's line is kept (compared by `sameContext`): a day note is dated by its day, a week note by its Monday, and a
  * day note beats a week note that starts the same day. The result is newest first.
  */
@@ -59,8 +61,10 @@ export async function gatherContext(api: NoteReader, date: string): Promise<{ da
     // Expired lines take part, so that a newer note ending a line hides the older open-ended copy;
     // within one note an in force line is read last and so beats an expired copy.
     const { context, expiredContext } = parseContext(doc.contextLines, dated, date);
+    const oneDayOver = (line: ContextLine) => period === 'day' && key < date && line.until === undefined;
     for (const [expired, lines] of [[true, expiredContext], [false, context]] as const) {
       for (const line of lines) {
+        if (oneDayOver(line)) continue;
         const id = sameContext(line.text);
         kept.delete(id);
         kept.set(id, { entry: { ...line, period, key, noteId: note.noteId }, expired });

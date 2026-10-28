@@ -44,10 +44,9 @@ describe('gatherContext', () => {
     const fake = fakeTrilium(NOTES);
     const out = await gatherContext(fake.api, '2026-11-09');
     expect(out.date).toBe('2026-11-09');
-    expect(ids(out).sort()).toEqual([
-      'Fri line', 'Jaco out all week', 'Last week standing', 'Own line', 'Shared line', 'Standing note', 'Thu line', 'Wed line',
-    ]);
-    // Expired (Old news, until 6 Nov < 9 Nov), the 4th workday back, the weekend and W44 are out.
+    expect(ids(out).sort()).toEqual(['Jaco out all week', 'Last week standing', 'Own line', 'Shared line', 'Standing note']);
+    // Expired (Old news, until 6 Nov < 9 Nov), an earlier day's lines without an until (Fri, Thu and
+    // Wed line), the 4th workday back, the weekend and W44 are out.
     const shared = out.context.find((c) => c.text === 'Shared line');
     expect(shared).toMatchObject({ period: 'day', key: '2026-11-06', until: '2026-11-11', noteId: 'd2026-11-06' });
   });
@@ -56,7 +55,7 @@ describe('gatherContext', () => {
     const fake = fakeTrilium(NOTES);
     const out = await gatherContext(fake.api, '2026-11-11');
     // Wed 11 Nov: the last 3 workdays are Tue 10, Mon 9 and Fri 6.
-    expect(ids(out).sort()).toEqual(['Fri line', 'Jaco out all week', 'Own line', 'Shared line', 'Standing note']);
+    expect(ids(out).sort()).toEqual(['Jaco out all week', 'Shared line', 'Standing note']);
   });
 
   it('keeps the newest of two lines with the same text, newest first', async () => {
@@ -82,13 +81,25 @@ describe('gatherContext', () => {
     expect(sameContext('Done!;')).toBe('done');
   });
 
+  it('holds a day note line without an until on that day only, and never lets it hide a week copy', async () => {
+    // Round 2: Thursday's overlap answer still showed on Friday and the next Monday.
+    const fake = fakeTrilium({
+      thu: day('2026-11-05', 'Take Incident Review over Vendor Onboarding at 11:00', 'Jaco out', 'Freeze on (until Fri 6 Nov)'),
+      w45: week('2026-W45', 'Jaco out'),
+    });
+    expect(ids(await gatherContext(fake.api, '2026-11-05')).sort()).toEqual(['Freeze on', 'Jaco out', 'Take Incident Review over Vendor Onboarding at 11:00']);
+    const friday = await gatherContext(fake.api, '2026-11-06');
+    expect(ids(friday).sort()).toEqual(['Freeze on', 'Jaco out']);
+    expect(friday.context.find((c) => c.text === 'Jaco out')).toMatchObject({ period: 'week', key: '2026-W45' });
+  });
+
   it('lets a newer expired line hide the older open-ended one', async () => {
     const fake = fakeTrilium({
-      a: day('2026-11-04', 'Jaco out'),
+      a: week('2026-W45', 'Jaco out'),
       b: day('2026-11-05', 'Jaco out (until 5 Nov)'),
-      c: day('2026-11-06', 'Other'),
+      c: day('2026-11-06', 'Other (until 9 Nov)'),
     });
-    expect(ids(await gatherContext(fake.api, '2026-11-09'))).toEqual(['Other']);
+    expect(ids(await gatherContext(fake.api, '2026-11-06'))).toEqual(['Other']);
     // Still in force a day earlier: the newer line wins and carries its date.
     const early = await gatherContext(fake.api, '2026-11-05');
     expect(early.context.find((c) => c.text === 'Jaco out')).toMatchObject({ key: '2026-11-05', until: '2026-11-05' });

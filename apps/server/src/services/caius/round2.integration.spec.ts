@@ -18,6 +18,10 @@ const bullets = (...items: string[]) => `<ul>${items.map((item) => `<li>${item}<
 
 const MON = "2026-11-02";
 const TUE = "2026-11-03";
+const WED = "2026-11-04";
+const THU = "2026-11-05";
+const FRI = "2026-11-06";
+const MON9 = "2026-11-09";
 
 const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
     key, summary: `Summary ${key}`, status: "Code Review", resolution: null, url: `https://example.atlassian.net/browse/${key}`,
@@ -75,5 +79,23 @@ describe("a Context line is one line, whatever its full stop", () => {
         const tuesday = await call("caius_planday", { date: TUE, step: "inputs" });
         expect(tuesday.data.carry).toEqual([]);
         expect(tuesday.data.context.map((c: any) => c.text)).toEqual([ "ZAP-2590 is open; Jira's Done is a mistake" ]);
+    });
+});
+
+describe("a day note's Context lasts its day", () => {
+    it("Wed 17:45 to Fri: Thursday's overlap answer holds on Thursday and is gone on Friday, never offered to carry", async () => {
+        at(`${WED}T17:45`);
+        const added = await call("caius_context_add", { date: THU, text: "Take Incident Review over Vendor Onboarding at 11:00" });
+        expect(added.results[0]).toMatchObject({ status: "added" });
+        const line = "Take Incident Review over Vendor Onboarding at 11:00";
+        expect((await call("caius_context", { date: THU })).context.map((c: any) => c.text)).toContain(line);
+        expect((await call("caius_context", { date: FRI })).context.map((c: any) => c.text)).not.toContain(line);
+        expect((await call("caius_context", { date: MON9 })).context.map((c: any) => c.text)).not.toContain(line);
+
+        at(`${THU}T17:30`);
+        const closing = await call("caius_winddown", { date: THU, step: "context" });
+        expect(closing.data.noticed.map((n: any) => n.line)).not.toContain(line);
+        at(`${FRI}T09:30`);
+        expect((await call("caius_planday", { date: FRI, step: "inputs" })).data.carry.map((c: any) => c.line)).not.toContain(line);
     });
 });

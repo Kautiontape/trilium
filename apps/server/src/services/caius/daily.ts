@@ -266,12 +266,14 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
  * The lines in force on an earlier day (`inForce`) that `day` won't read, to offer to carry into
  * `day`'s week note: from a note `contextNotes(day)` leaves out, with no `until` or one not before
  * `day`, and not already read on `day` from a note it reads (`dayContext`, its Context in force).
- * Last week's note counts as unread: on a Monday it is read for that day only.
+ * Last week's note counts as unread: on a Monday it is read for that day only. A day note's line
+ * without an `until` holds on its own day only, so it is never carried.
  */
 function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEntry[]) {
     const reads = new Set(contextNotes(day).filter((n) => !n.oneDay).map((n) => `${n.period}:${n.key}`));
     const readThen = new Set(dayContext.filter((line) => reads.has(`${line.period}:${line.key}`)).map((line) => sameContext(line.text)));
     return inForce
+        .filter((line) => !(line.period === "day" && line.until === undefined))
         .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= day) && !readThen.has(sameContext(line.text)))
         .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
 }
