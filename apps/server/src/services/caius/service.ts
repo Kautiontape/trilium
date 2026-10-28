@@ -222,8 +222,8 @@ export function createCaiusService(
     });
 
     return {
-        /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. */
-        rollover: async () => readRhythm((await withCaiusLock("caius_standing", readStanding)).markdown).rollover,
+        /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. A read, so it takes no lock and the status never waits on a write. */
+        rollover: async () => readRhythm((await readStanding()).markdown).rollover,
 
         plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
             const now = await todayHeld();
