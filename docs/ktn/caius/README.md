@@ -64,7 +64,7 @@ Today's day note (today by the Caius clock) shows a slim bar under its journal n
 
 - **Move all to today** forwards those tasks to today in one request, with no chat, the way the Plan tab's Close does: today's note is locked and reloaded if it is open. A task without a list item id is counted but not moved; run the id backfill.
 - **Review** starts `Wind down <oldest of those days>` in the sidebar chat.
-- **Which days:** walking back from the last workday, at most five workdays, every day with live tasks until the first closed one. A day is closed when it has nothing live, or was wound down (`caius_winddown_apply` labels it `#caiusWoundDown`). A skip recorded on a day covered the days before it, so the walk stops after that day.
+- **Which days:** walking back from the last workday, at most five workdays, every day with live tasks until the first closed one. A day with no note or no tasks at all is passed over; a day is closed when it had tasks and has none live, or, with nothing live, was wound down (`caius_winddown_apply` labels it `#caiusWoundDown`), skipped from, or planned (it has a brief). A skip recorded on a day covered the days before it, so the walk stops after that day.
 - **Skip** sets `#caiusSkipCatchup=<today>` on today's note, as `caius_skip_catchup` does, so the bar and Plan my day stop offering the catch-up.
 - **Plan my day** and **Refresh** start `Plan my day <today>`.
 

@@ -602,3 +602,32 @@ describe("Context placement in Plan my day looks forward", () => {
         expect((await call("caius_context", { date: "2027-03-10" })).context.map((c: any) => c.text)).not.toContain("Riley is off Thu 11 Mar");
     });
 });
+
+describe("a skipped catch-up stays skipped the next day", () => {
+    it("Fri 1 leftover, Monday skips it from the apply: Tuesday has no catch-up", async () => {
+        await cls.init(async () => {
+            const fri = await store.calendarDay("2027-03-19");
+            await store.putContent(fri.noteId, `<h2>☑️ Tasks</h2>${ul(li("fl1", "Friday leftover"))}`);
+        });
+        at("2027-03-22T09:30");
+        expect((await call("caius_planday", { date: "2027-03-22", step: "catchup" })).data.days).toEqual([ "2027-03-19" ]);
+        expect((await call("caius_plan_apply", { date: "2027-03-22", catchup: "skip", brief: prose })).skipped).toEqual([]);
+        at("2027-03-23T09:30");
+        const tuesday = await call("caius_planday", { date: "2027-03-23", step: "catchup" });
+        expect(tuesday.data.days).toEqual([]);
+        expect(tuesday.question).toBeNull();
+    });
+});
+
+describe("a planned day ends the catch-up walk", () => {
+    it("Fri 1 leftover, Monday planned with no answer to the catch-up: Tuesday has no catch-up", async () => {
+        await cls.init(async () => {
+            const fri = await store.calendarDay("2027-03-26");
+            await store.putContent(fri.noteId, `<h2>☑️ Tasks</h2>${ul(li("fp1", "Friday leftover"))}`);
+        });
+        at("2027-03-29T09:30");
+        expect((await call("caius_plan_apply", { date: "2027-03-29", brief: prose })).skipped).toEqual([]);
+        at("2027-03-30T09:30");
+        expect((await call("caius_planday", { date: "2027-03-30", step: "catchup" })).data.days).toEqual([]);
+    });
+});

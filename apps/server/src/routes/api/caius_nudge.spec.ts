@@ -80,6 +80,16 @@ describe("Caius nudge route", () => {
         expect(body).toMatchObject({ state: "catchup", lastWorkday: "2033-04-06", days: [ "2033-04-05" ] });
     });
 
+    it("keeps a catch-up skipped from the bar skipped the next day, though the skipping day has no tasks", async () => {
+        await cls.init(async () => {
+            const fri = await store.calendarDay("2033-04-15");
+            await store.putContent(fri.noteId, `<h3>Work</h3>${ul(li("k1", "Friday leftover"))}`);
+        });
+        expect((await nudge("2033-04-18").expect(200)).body).toMatchObject({ state: "catchup", days: [ "2033-04-15" ] });
+        await skip("2033-04-18").expect(200);
+        expect((await nudge("2033-04-19").expect(200)).body).toMatchObject({ state: "unplanned", lastWorkday: "2033-04-18" });
+    });
+
     it("answers unplanned once the catch-up is skipped, and planned with the date and time once a brief exists", async () => {
         expect((await skip(MONDAY).expect(200)).body).toMatchObject({ date: MONDAY, status: "updated" });
         expect(becca.getNoteOrThrow(noteIds.monday).getLabelValue("caiusSkipCatchup")).toBe(MONDAY);

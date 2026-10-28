@@ -378,9 +378,9 @@ const CATCHUP_DAYS = 5;
  * What Plan my day offers to move to `date`: the live top-level tasks of every workday since the
  * last closed one, oldest first, at most `CATCHUP_DAYS` back. The walk passes a day with no note or
  * no tasks at all (an untouched template), and stops at a closed day: one that had tasks and has
- * none live, one wound down (`#caiusWoundDown`) with nothing live, one protected or not a text
- * note, since Caius cannot read it, or, after taking its tasks, one that recorded a skip
- * (`#caiusSkipCatchup`), which covered the days before it. None once the day note carries
+ * none live; one with nothing live that was wound down (`#caiusWoundDown`), recorded a skip
+ * (`#caiusSkipCatchup`) or has a brief; one protected or not a text note, since Caius cannot read
+ * it; or, after taking its tasks, one that recorded a skip, which covered the days before it. None once the day note carries
  * `#caiusSkipCatchup=<date>`. Answers the day note too, without creating it. The caller holds the lock.
  */
 export async function catchupOf(store: NoteStore, date: string, now: Date) {
@@ -398,13 +398,15 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         const plan = await readPlan(store, "day", key, now);
         const live = mainTasks(plan).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
         const woundDown = label(dayNote, WOUND_DOWN_LABEL) !== undefined;
+        const skippedHere = dayNote.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL);
         if (!live.length) {
-            if (woundDown || topLevel(plan).length) break;
+            // A day he planned, skipped from or wound down was looked at, so the walk ends there.
+            if (woundDown || skippedHere || topLevel(plan).length || await findBrief(store, dayNote.noteId, key)) break;
             continue;
         }
         days.unshift(key);
         tasks.unshift(...live);
-        if (dayNote.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL)) break;
+        if (skippedHere) break;
     }
     return { lastWorkday: last, days, note, skipped, tasks };
 }
