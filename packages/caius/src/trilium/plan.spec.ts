@@ -189,6 +189,14 @@ describe('acceptTasks', () => {
     expect(g.html.d!.startsWith('<aside class="admonition important">')).toBe(true);
     expect(g.html.d).toContain('Maybe A');
   });
+  it('without a section, appends to his main list in the order named, and adds no heading', async () => {
+    const day = '<h3>Meetings</h3><ul><li>10:00 Standup</li></ul><h2>☑️ Tasks</h2>' + ul(li('e1', 'One'), li('e2', 'Two')) + '<h2>Suggested</h2>' + ul(li('es1', 'Maybe A'), li('es2', 'Maybe B'));
+    const f = fakeTrilium(seed(day));
+    const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es2' }, { noteId: 'd', listItemId: 'es1' }], base);
+    expect(out.map((r) => r.status)).toEqual(['accepted', 'accepted']);
+    expect([...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1])).toEqual(['e1', 'e2', 'es2', 'es1']);
+    expect(f.html.d!.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks', '<h2>Suggested']);
+  });
   it('keeps Suggested last when accepting into a new section', async () => {
     const f = fakeTrilium(seed(html));
     await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'Home' }], base);
@@ -212,7 +220,7 @@ describe('acceptTasks', () => {
   });
   it('rejects bad requests', async () => {
     const f = fakeTrilium(seed(html));
-    const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }, { noteId: 'd', listItemId: 'es1', section: 'W', position: 0 }, { noteId: '', listItemId: 'x', critical: true }], base);
+    const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1', section: 'W', critical: true }, { noteId: 'd', listItemId: 'es1', section: 'W', position: 0 }, { noteId: '', listItemId: 'x', critical: true }], base);
     expect(out.every((o) => o.status === 'skipped' && o.reason === 'bad_request')).toBe(true);
   });
 });

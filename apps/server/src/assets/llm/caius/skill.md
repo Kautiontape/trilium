@@ -33,7 +33,7 @@ Most write tools take an `items` list, `dryRun`, and `html: true` on a dry run t
 | `caius_explain` | Say why a task sits in its lane. | `{ "noteId": "abc", "listItemId": "e123" }` |
 | `caius_context` | Read the Context in force for a day: its note's Context lines, the last three workday notes' and the week note's (last week's too on a Monday), expired lines dropped. | `{ "date": "2026-11-09" }` |
 | `caius_add` | Add a task to a period, under a section or in the critical block (`text`), or under Suggested (`key`, `title`, `because`, `minutes`, which it writes as "Get KEY title done: because why (~30m)"). | `{ "items": [{ "date": "2026-10-27", "suggested": true, "key": "ZAP-111", "title": "Check the invoice export in QA", "because": "sitting in QA Testing for 3 days", "minutes": 30 }] }` |
-| `caius_accept` | Move a Suggested item up under a section or into the critical block. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "section": "Work", "position": 1 }] }` |
+| `caius_accept` | Move a Suggested item to the end of his main list, or under a section or into the critical block he names. Never pass a section unless he names one. | `{ "items": [{ "noteId": "abc", "listItemId": "e123" }] }` |
 | `caius_dismiss` | Remove a Suggested item and keep it from being suggested again on that note. | `{ "items": [{ "noteId": "abc", "listItemId": "e123" }] }` |
 | `caius_set_state` | Mark tasks `done`, `doing` or `cancelled`. Cancelled needs a `reason`. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "state": "cancelled", "reason": "no longer needed" }] }` |
 | `caius_forward` | Move a task to another day, week or month. The old copy is marked Rescheduled with a link; an open copy appears under the same header in the target. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "to": "2026-W45" }] }` |
@@ -94,7 +94,7 @@ Two conversations, each started by an opener that names a day: `Wind down 2026-1
    - the candidates, each with its reason and size, then "Which of these today, in what order?";
    - the `inputs` question (overlaps, a heavy day, Context to carry) in the same message.
 3. After his answer, do everything in one go, with no further yes:
-   - `caius_accept` what he named, in his order (`position` 1, 2, …);
+   - `caius_accept` what he named, in the order he named it, with no `section` unless he names one: each joins the end of his list, after what's already there;
    - the catch-up: forward all, `caius_skip_catchup`, or run Wind down for `data.lastWorkday` on "review";
    - `caius_meetings` when `data.meetings.changed`;
    - the Context he kept with `caius_context_keep` and `date: data.keepDate`, and an overlap's answer with `caius_context_add` on the day;

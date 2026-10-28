@@ -396,3 +396,16 @@ describe("an evening thing he names", () => {
         expect(brief.data.header.work.find((block: any) => block.label === "Laundry")).toMatchObject({ start: "18:00", end: "18:45" });
     });
 });
+
+describe("accepting into his list", () => {
+    it("without a section, appends what he named after his own items, in his order, with no new heading", async () => {
+        const day = "2026-11-13";
+        const noteId = await cls.init(() => dayNote(day, `<h3>Meetings</h3><ul><li>10:00 Daily Standup</li></ul><h2>☑️ Tasks</h2>${ul(li("a1", "His own first thing ~30m"))}`
+            + `<h3>Suggested</h3>${ul(li("as1", "Get Book the venue done: because the quote expires Friday (~15m)"), li("as2", "Get Write the notes done: because Sam asked (~30m)"))}`));
+        at(`${day}T09:30`);
+        const accepted = await call("caius_accept", { items: [ { noteId, listItemId: "as2" }, { noteId, listItemId: "as1" } ] });
+        expect(accepted.results.map((r: any) => r.status)).toEqual([ "accepted", "accepted" ]);
+        const plan = await call("caius_plan", { period: "day", date: day });
+        expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.listItemId) ])).toEqual([ [ "☑️ Tasks", [ "a1", "as2", "as1" ] ] ]);
+    });
+});

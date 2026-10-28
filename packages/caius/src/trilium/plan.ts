@@ -20,6 +20,7 @@ import {
   inspectSuggested,
   itemMarkup,
   inProseById,
+  placeForwarded,
   placeTask,
   setTaskState,
   suggestedItems,
@@ -49,6 +50,7 @@ export interface AddRequest {
 export interface AcceptRequest {
   noteId: string;
   listItemId: string;
+  /** At most one of section or critical; with neither, the end of his main list. */
   section?: string;
   critical?: boolean;
   /** 1-based place in the destination list; default the end. */
@@ -284,18 +286,20 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
   return eachSequentially(reqs, async (req) => {
     if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
     const given = [req.section !== undefined, !!req.critical].filter(Boolean).length;
-    if (given !== 1) return skip(req, 'bad_request', 'give exactly one of section, critical');
+    if (given > 1) return skip(req, 'bad_request', 'give at most one of section, critical');
     if (req.position !== undefined && (!Number.isInteger(req.position) || req.position < 1)) return skip(req, 'bad_request', 'position must be 1 or more');
-    const target: Target = req.critical ? { kind: 'critical' } : { kind: 'section', name: (req.section ?? '').trim() };
-    if (target.kind === 'section' && !target.name) return skip(req, 'bad_request', 'section name is empty');
-    if (isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
+    if (req.position !== undefined && !given) return skip(req, 'bad_request', 'position needs a section or critical');
+    // With neither, the item joins the end of his main list, where `forward` would put it.
+    const target: Target | null = req.critical ? { kind: 'critical' } : req.section !== undefined ? { kind: 'section', name: req.section.trim() } : null;
+    if (target?.kind === 'section' && !target.name) return skip(req, 'bad_request', 'section name is empty');
+    if (target && isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
 
     const loaded = await loadNote(api, req.noteId);
     if ('problem' in loaded) return skip(req, 'unreadable', loaded.problem);
     const html = await api.content(req.noteId);
     const taken = takeSuggested(html, req.listItemId);
     if (!taken.ok) return skip(req, taken.reason, taken.reason === 'not_suggested' ? 'only an item under Suggested can be accepted (already accepted?)' : undefined);
-    const after = placeTask(taken.html, taken.markup, target, req.position);
+    const after = target ? placeTask(taken.html, taken.markup, target, req.position) : placeForwarded(taken.html, taken.markup, null);
     if (inProseById(after, req.listItemId)) return skip(req, 'prose_section', PROSE_DETAIL);
     if (opts.dryRun) {
       return { ...req, status: 'accepted', dryRun: true, listItemId: req.listItemId, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };

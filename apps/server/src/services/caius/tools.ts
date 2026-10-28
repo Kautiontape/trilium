@@ -64,7 +64,7 @@ export function createCaiusTools(
         },
 
         caius_accept: {
-            description: "Accept suggested tasks: move them from a Suggested section into a section or the Important block. Takes a list of items.",
+            description: "Accept suggested tasks: move them from a Suggested section to the end of Shawn's main list, in the order given, or into a section he names or the Important block. Takes a list of items.",
             inputSchema: toolInputs.accept,
             async: true,
             mutates: true,

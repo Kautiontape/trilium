@@ -70,12 +70,15 @@ const addItem = z.object({
 
 const acceptItem = z.object({
     ...taskRef,
-    section: z.string().optional().describe("Heading to move the task under"),
+    section: z.string().optional().describe("Heading to move the task under, only when Shawn names one. Without section or critical, the task joins the end of his main list."),
     critical: z.boolean().optional().describe("Move the task into the Important block"),
-    position: z.number().int().positive().optional().describe("1-based place in the destination list; default the end")
+    position: z.number().int().positive().optional().describe("With section or critical: 1-based place in the destination list; default the end")
 }).refine(
-    (item) => [item.section !== undefined, item.critical].filter(Boolean).length === 1,
-    "Give exactly one of section or critical"
+    (item) => [item.section !== undefined, item.critical].filter(Boolean).length <= 1,
+    "Give at most one of section or critical"
+).refine(
+    (item) => item.position === undefined || item.section !== undefined || !!item.critical,
+    "position needs a section or critical"
 );
 
 const dismissItem = z.object(taskRef);
