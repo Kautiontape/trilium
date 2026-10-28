@@ -99,7 +99,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "say so when the day is half booked or more",
         "The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it",
         "Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral",
-        "A Context line skipped as `third_person` is not written: reword it in his voice and call the same apply again with only that line in `context`, then reply.",
+        "A Context line skipped as `third_person` is not written: reword it in his voice and call the same apply again with only that line in `context` and nothing else, no `brief`, then reply.",
         "Use `move` only when he asks for an order",
         "On an `edited` skip, run the same apply call once more with the same answers",
         "If a Caius tool fails, say so in one clause and stop that item.",

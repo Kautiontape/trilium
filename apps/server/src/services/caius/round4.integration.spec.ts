@@ -743,3 +743,21 @@ describe("fix round 1: an ambiguous destination holds the item", () => {
         expect(applied.say).toMatch(/Which week: later this week or next week\?$/);
     });
 });
+
+describe("fix round 1: the third-person retry in Plan my day", () => {
+    it("M1: a call with only context, and no brief, validates and writes only those lines", async () => {
+        const DAY = "2027-07-26";
+        at(`${DAY}T09:40`);
+        const first = await call("caius_plan_apply", { date: DAY, context: [ "Riley plans the release with Shawn at 14:00" ], brief: prose });
+        expect(first.skipped).toEqual([ expect.objectContaining({ kind: "context", reason: "third_person" }) ]);
+        const asked = await labelsOf(DAY, "caiusAsked");
+        const brief = await cls.init(() => store.content(first.briefNoteId));
+
+        const retry = await call("caius_plan_apply", { date: DAY, context: [ "Planning the release with Riley at 14:00" ] });
+        expect(retry.skipped).toEqual([]);
+        expect(retry.written).toEqual([ expect.objectContaining({ kind: "context", text: "Planning the release with Riley at 14:00", status: "written" }) ]);
+        expect((await call("caius_plan", { period: "day", date: DAY })).context.map((line: any) => line.text)).toEqual([ "Planning the release with Riley at 14:00" ]);
+        expect(await labelsOf(DAY, "caiusAsked")).toEqual(asked);
+        expect(await cls.init(() => store.content(first.briefNoteId))).toBe(brief);
+    });
+});

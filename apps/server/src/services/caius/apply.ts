@@ -119,7 +119,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
     const place = await deps.place();
     const weather = place ? await deps.weatherOf(place.latitude, place.longitude, date) : undefined;
     const prose = asked.brief;
-    if (!prose) return reorder(deps, asked, read, weather);
+    if (!prose) return asked.move.length ? reorder(deps, asked, read, weather) : contextOnly(deps, asked);
 
     return deps.locked("caius_plan_apply", async () => {
         const { store, now } = deps;
@@ -462,6 +462,20 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
             else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, {}, weather, written, skipped, acts));
         }
         withTexts([ ...written, ...skipped ], pools, known);
+        return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date }) });
+    });
+}
+
+/** A Plan my day call with only `context`, as the retry of a line skipped as third person: those lines, and nothing else. */
+async function contextOnly(deps: ApplyDeps, asked: PlanApplyInput) {
+    const { date } = asked;
+    return deps.locked("caius_plan_apply", async () => {
+        const { store, now } = deps;
+        const unreadable = await unreadableDay(store, [ date ]);
+        if (unreadable) return unreadable;
+        const written: Written[] = [];
+        const skipped: Skipped[] = [];
+        await guarded({ kind: "context" }, skipped, () => eveningAndContext(store, date, now, { evening: [], context: asked.context }, written, skipped, { tomorrow: true }));
         return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date }) });
     });
 }
