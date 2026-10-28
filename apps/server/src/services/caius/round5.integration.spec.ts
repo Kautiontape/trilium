@@ -1,0 +1,136 @@
+/**
+ * The week of the fifth normal-user simulation (T23, Mon 2 to Wed 11 Nov 2026), replayed through
+ * the tools: each test follows an answer the round-5 transcripts show the tools losing.
+ */
+
+import { dayCapacity } from "@triliumnext/caius";
+import { cls, sql_init } from "@triliumnext/core";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
+import type { InputsInput } from "./schemas.js";
+import { createBeccaStore, createChildNote } from "./store.js";
+import { createCaiusTools } from "./tools.js";
+
+const store = createBeccaStore();
+
+const li = (id: string, text: string) =>
+    `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox" disabled="disabled">`
+    + `<span class="todo-list__label__description">${text}</span></label></li>`;
+const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>`;
+const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+
+const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
+    key, summary: `Summary ${key}`, status: "Code Review", resolution: null, url: `https://example.atlassian.net/browse/${key}`,
+    assignee: "Me", updated: "2026-10-27T10:00:00.000-0400", ...o
+});
+
+const jira: JiraInputs = { handoff: [], asks: [], done: [] };
+const calendars: Record<string, CalendarEvent[]> = {};
+
+async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
+    const calendar = calendars[input.date] ?? [];
+    return { date: input.date, jira, calendar, capacity: dayCapacity(calendar, { workStart: input.workStart, workEnd: input.workEnd }), errors: [] };
+}
+
+const tools = createCaiusTools(undefined, async () => ({ code: 3, label: "Overcast" }), stubInputs);
+
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Location for the weather: 39.95, -75.17</li></ul>"
+    + "<h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
+
+function call(name: string, args: object): Promise<any> {
+    const def = [ ...tools ].find(([ n ]) => n === name)?.[1];
+    if (!def) throw new Error(`Tool ${name} not registered`);
+    return cls.init(() => def.execute(args)) as Promise<any>;
+}
+
+/** Sets the Caius clock. */
+const at = (stamp: string) => vi.stubEnv("CAIUS_NOW", stamp);
+
+/** The day's tasks in his order, each as its plain text with its state. */
+async function tasksOf(period: "day" | "week", date: string) {
+    const plan = await call("caius_plan", { period, date });
+    return plan.sections.flatMap((s: any) => s.tasks).map((t: any) => ({
+        text: t.text.replace(/\s*(?:\[from [^\]]*\]\([^)]*\)|_scheduled \[[^\]]*\]\([^)]*\)_)/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1"),
+        state: t.state
+    }));
+}
+
+/** The content of every day and week note, to see that a call changed none. */
+async function journal() {
+    return cls.init(async () => {
+        const notes = [ ...await store.search("#dateNote"), ...await store.search("#weekNote") ];
+        return Object.fromEntries(await Promise.all(notes.map(async (note) => [ note.noteId, await store.content(note.noteId) ] as const)));
+    });
+}
+
+/** Monday as it stood at 17:30: his three tickets in the order he took them. */
+async function monday(date: string) {
+    await cls.init(async () => {
+        const day = await store.calendarDay(date);
+        await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
+            li(`${date}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`),
+            li(`${date}-110`, `${zap("ZAP-110", "Review the import mapper change")} ~30m`),
+            li(`${date}-111`, `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`)
+        )}`);
+    });
+}
+
+beforeAll(async () => {
+    await sql_init.dbReady;
+    await cls.init(async () => {
+        const [ root ] = await store.search("#calendarRoot");
+        const calendarRoot = root ?? (await store.calendarDay("2026-11-02"), (await store.search("#calendarRoot"))[0]);
+        if (!calendarRoot) throw new Error("no #calendarRoot note");
+        await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
+        await store.addLabel(createChildNote("root", "🧭 How I work", STANDING), "assistantContext", "");
+    });
+});
+
+afterEach(() => {
+    vi.unstubAllEnvs();
+    jira.handoff.length = 0;
+    jira.asks.length = 0;
+});
+
+describe("a correction after the apply", () => {
+    it("Mon 17:30: '111 was later this week, not tomorrow' is a second apply that moves only 111 to the week, adds the Context line, and repeats without change", async () => {
+        const MON = "2026-11-02";
+        const TUE = "2026-11-03";
+        await monday(MON);
+        jira.handoff.push({ ...ticket("ZAP-111", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
+        at(`${MON}T17:30`);
+        const first = await call("caius_winddown_apply", { date: MON, done: [ "ZAP-110" ], evening: [ "Pack the climbing gym bag" ] });
+        expect(first.skipped).toEqual([]);
+        expect((await tasksOf("day", TUE)).map((task: any) => task.text)).toEqual([
+            "ZAP-101 Verify the export retry on staging", "ZAP-111 Check the invoice export in QA", "Pack the climbing gym bag"
+        ]);
+
+        at(`${MON}T17:31`);
+        const fix = await call("caius_winddown_apply", { date: MON, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
+        expect(fix.skipped).toEqual([]);
+        expect(fix.written).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "fate", detail: "2026-W45", status: "written" }),
+            expect.objectContaining({ kind: "context", status: "written" })
+        ]));
+        // 111 left Tuesday for the week; 101 and the bag stay on Tuesday, once each.
+        expect(await tasksOf("day", TUE)).toEqual([
+            { text: "ZAP-101 Verify the export retry on staging", state: "open" },
+            { text: "ZAP-111 Check the invoice export in QA ~30m", state: expect.not.stringMatching(/^open$/) },
+            { text: "Pack the climbing gym bag", state: "open" }
+        ]);
+        expect(await tasksOf("week", "2026-W45")).toEqual([ { text: "ZAP-111 Check the invoice export in QA", state: "open" } ]);
+        expect((await call("caius_context", { date: TUE })).context.map((line: any) => line.text)).toContain("ZAP-2590 is open");
+
+        const before = await journal();
+        const again = await call("caius_winddown_apply", { date: MON, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
+        expect(again.skipped).toEqual([]);
+        expect(again.written.filter((entry: any) => entry.status === "written")).toEqual([]);
+        expect(await journal()).toEqual(before);
+
+        // Put off to the week, 111 isn't offered for Tuesday the next morning.
+        at(`${TUE}T09:35`);
+        const inputs = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
+        expect(inputs.data.candidates.map((candidate: any) => candidate.candidateId)).not.toContain("ZAP-111");
+    });
+});

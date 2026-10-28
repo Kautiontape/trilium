@@ -91,7 +91,7 @@ In these conversations only these tools are available; every other Caius tool an
 | `caius_winddown_apply` | Wind down's one write. |
 | `load_skill`, note reads | This sheet, and reading a note when the step data points at one. |
 
-`Plan my day 2026-11-09` plans that day; `Wind down 2026-11-06` closes that day against the next workday. Each conversation is one question set, then one apply call that makes every write. You read, ask, pass his answers through as ids, and write the brief's prose. The tool does the rest.
+`Plan my day 2026-11-09` plans that day; `Wind down 2026-11-06` closes that day against the next workday. Each conversation is one question set, then one apply call that makes every write. You read, ask, pass his answers through as ids, and write the brief's prose. The tool does the rest. A correction he makes after the apply ("111 was later this week", "also ZAP-2590 is open") is one more call of the same apply tool for the same date, with only what he corrected: never another tool. It changes only what it names, and repeating it changes nothing.
 
 ### Plan my day
 

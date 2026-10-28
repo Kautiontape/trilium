@@ -424,9 +424,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
                 continue;
             }
             const to = fate.to ?? "";
+            // An item already in the period he sends it to is in place, as a repeated correction finds it.
+            if (!("proposed" in fate) && open.items.some((item) => item.listItemId === fate.listItemId && item.period === to)) {
+                written.push({ ...entry, status: "unchanged" });
+                continue;
+            }
             // A task he sends to a week is put off there, so its week item isn't offered for two workdays.
             if (!("proposed" in fate) && PERIODS.week.pattern.test(to)) {
-                const text = open.items.find((item) => item.listItemId === fate.listItemId)?.text;
+                const text = open.items.find((item) => item.listItemId === fate.listItemId)?.text ?? journalItem(fate.listItemId)?.text;
                 const key = text ? keysOf(text)[0] : undefined;
                 if (key) putOffWeek.push(key);
             }
