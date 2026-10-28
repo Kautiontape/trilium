@@ -102,6 +102,8 @@ export interface CaiusPlan {
         unestimatedCount: number;
         unestimatedMinutes: number;
         totalMinutes: number;
+        /** Minutes under Evening or Recharge, which the other counts leave out. */
+        eveningMinutes: number;
         /** `null` for a month, which has no target. */
         target: { min: number; max: number } | null;
         horizons: Record<string, number>;

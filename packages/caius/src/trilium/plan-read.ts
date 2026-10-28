@@ -7,7 +7,7 @@ import { scanDocs, type IndexedTask } from '../index/index.js';
 import { label, type NoteReader, type StoreNote } from './store.js';
 import { buildDoc, loadStateSymbols, type TriliumDoc } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
-import { headingsByLine, isSuggestedName, sectionKind, type SectionKind } from './sections.js';
+import { headingsByLine, isSuggestedName, normName, sectionKind, type SectionKind } from './sections.js';
 import { parentItemId } from './open.js';
 import { parseContext, periodSpan, type ContextLine } from './until.js';
 
@@ -80,6 +80,8 @@ export interface Capacity {
   /** unestimatedCount x 30 */
   unestimatedMinutes: number;
   totalMinutes: number;
+  /** Minutes of the live tasks under Evening or Recharge, which the counts above leave out: not work. */
+  eveningMinutes: number;
   /** Suggested range for this period (minutes), null when there is none (a month). */
   target: { min: number; max: number } | null;
   /** Live tasks by horizon (today, week, orbit, overdue, …). */
@@ -181,7 +183,8 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   // blank checkbox, not a task, and neither counts nor makes its parent a parent.
   const countable = main.filter((t) => t.live && t.text.trim() !== '');
   const parents = new Set(countable.filter((t) => t.parent !== null).map((t) => t.parent));
-  const counted = countable.filter((t) => !parents.has(t.text));
+  const evening = countable.filter((t) => !parents.has(t.text) && isEveningName(t.section));
+  const counted = countable.filter((t) => !parents.has(t.text) && !isEveningName(t.section));
   const estimated = counted.filter((t) => t.estMinutes !== null);
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;
@@ -203,6 +206,7 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
       unestimatedCount: unestimated,
       unestimatedMinutes: unestimated * DEFAULT_ESTIMATE,
       totalMinutes: planned + unestimated * DEFAULT_ESTIMATE,
+      eveningMinutes: evening.reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0),
       target: TARGETS[period],
       horizons,
     },
@@ -210,6 +214,13 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
     ...parseContext(doc.contextLines, periodSpan(period, key).start, planDate(period, key, now)),
   };
 }
+
+/** Whether a section is the evening, Evening or Recharge: its tasks are not work. */
+export function isEveningName(name: string | null): boolean {
+  return name !== null && EVENING_NAMES.has(normName(name));
+}
+
+const EVENING_NAMES = new Set(['evening', 'recharge']);
 
 /**
  * The day Context expires against: the day itself, or `now` when it falls inside the week or
@@ -237,6 +248,7 @@ function emptyView(period: PeriodKind, key: string): PlanView {
       unestimatedCount: 0,
       unestimatedMinutes: 0,
       totalMinutes: 0,
+      eveningMinutes: 0,
       target: TARGETS[period],
       horizons: {},
     },

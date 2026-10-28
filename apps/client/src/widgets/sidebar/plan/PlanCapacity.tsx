@@ -16,7 +16,7 @@ const UNESTIMATED_MINUTES = 30;
 /** How far past the top of the target the bar reaches, so that an overfull plan shows as one. */
 const METER_HEADROOM = 1.25;
 
-/** The planned minutes against the period's target, and the tasks still without an estimate. */
+/** The planned minutes against the period's target, the evening's minutes, and the tasks still without an estimate. */
 export default function PlanCapacity({ plan, onOpen }: {
     plan: CaiusPlan;
     onOpen: (task: PlanTaskRef) => void;
@@ -50,6 +50,11 @@ export default function PlanCapacity({ plan, onOpen }: {
                 ) : (
                     <div className="plan-capacity-summary">
                         {t("caius.plan.capacity_total", { total: formatDuration(capacity.totalMinutes) })}
+                    </div>
+                )}
+                {capacity.eveningMinutes > 0 && (
+                    <div className="plan-capacity-evening">
+                        {t("caius.plan.capacity_evening", { total: formatDuration(capacity.eveningMinutes) })}
                     </div>
                 )}
                 {capacity.unestimatedCount > 0 && (

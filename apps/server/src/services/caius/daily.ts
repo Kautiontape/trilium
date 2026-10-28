@@ -157,7 +157,7 @@ export async function nextOffer(store: NoteStore, targetDay: string, now: Date, 
  * values) doesn't hold it: how far the day is over the focus target (as `heavy`), its overlaps and,
  * when its evening has no task, the evening.
  */
-function nextAsks(read: DayRead, facts: { plan: PlanView; eveningMinutes: number; evening: boolean }, candidates: { minutes: number }[], asked: Set<string>) {
+function nextAsks(read: DayRead, facts: { plan: PlanView; evening: boolean }, candidates: { minutes: number }[], asked: Set<string>) {
     const plannedMinutes = workMinutes(facts);
     const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
     // Without the calendar, the target is that of a day with no meetings, so the day is not weighed.
@@ -380,9 +380,9 @@ function capacityOf(read: DayRead, plannedMinutes: number) {
     return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes, bookedRatio };
 }
 
-/** The minutes of work on a day's list: the plan's capacity total without the evening. */
-function workMinutes(facts: { plan: PlanView; eveningMinutes: number }): number {
-    return facts.plan.capacity.totalMinutes - facts.eveningMinutes;
+/** The minutes of work on a day's list: the plan's capacity total, which leaves the evening out. */
+function workMinutes(facts: { plan: PlanView }): number {
+    return facts.plan.capacity.totalMinutes;
 }
 
 /** The `#caiusAsked` value of the heavy day's question. */
@@ -777,7 +777,7 @@ function periodStart(key: string): string {
 /**
  * What a day's candidates are checked against: its plan, the week's items, the live keys, what is
  * already suggested or dismissed there and what Shawn closed lately (`closedKeys`), plus whether
- * the evening (Evening or Recharge) has a task and how many minutes it holds, which are not work.
+ * the evening (Evening or Recharge) has a task.
  */
 export async function dayFacts(store: NoteStore, date: string, now: Date) {
     const plan = await readPlan(store, "day", date, now);
@@ -789,15 +789,11 @@ export async function dayFacts(store: NoteStore, date: string, now: Date) {
     const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)), ...closed ];
     const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks)
         .filter((task) => isLive(task) && task.text.trim() !== "");
-    // As the plan's capacity counts them: a task with live sub-items counts through them, and an
-    // empty to-do is not a task.
-    const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
-    const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
     const notToday = new Set(await dayLabels(store, date, NOT_TODAY_LABEL));
     const putOffBefore = new Set(await dayLabels(store, dayKey(lastWorkday(localDay(date))), NOT_TODAY_LABEL));
     return {
         plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, notToday, putOffBefore, raised: await raisedAsks(store, now, date),
-        evening: eveningTasks.length > 0, eveningMinutes
+        evening: eveningTasks.length > 0
     };
 }
 

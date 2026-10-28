@@ -4498,6 +4498,7 @@
       "capacity": "Capacity",
       "capacity_of_target": "{{total}} planned of {{range}}",
       "capacity_total": "{{total}} planned",
+      "capacity_evening": "Evening: {{total}}",
       "duration_hm": "{{h}} h {{m}} m",
       "duration_h": "{{h}} h",
       "duration_m": "{{m}} m",

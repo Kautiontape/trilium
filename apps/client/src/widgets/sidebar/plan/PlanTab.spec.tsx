@@ -486,6 +486,23 @@ describe("PlanTab", () => {
         expect(await shown(0, null)).toBe("0 m planned");
     });
 
+    it("shows the evening's minutes on a second line, apart from the work, and leaves evening tasks out of the unestimated list", async () => {
+        const plan = dayPlan();
+        api.plan.mockResolvedValue({
+            ...plan,
+            sections: [ ...plan.sections, { name: "Evening", kind: "slot", tasks: [ planTask({ listItemId: "t4", text: "Laundry", section: "Evening" }) ] } ],
+            capacity: { ...plan.capacity, eveningMinutes: 45 }
+        });
+        const tab = await mount();
+        expect(text(tab, ".plan-capacity-summary")).toBe("1 h 15 m planned of 3–4 h");
+        expect(text(tab, ".plan-capacity-evening")).toBe("Evening: 45 m");
+        act(() => click(tab.querySelector(".plan-capacity-unestimated")));
+        expect(texts(tab, "#plan-capacity .plan-task-list li")).toEqual([ "No estimate" ]);
+
+        api.plan.mockResolvedValue(dayPlan());
+        expect((await mount()).querySelector(".plan-capacity-evening")).toBeNull();
+    });
+
     it("starts Plan my day or Wind down for the viewed day as a new conversation, and offers neither for a week", async () => {
         api.plan.mockImplementation(
             async (period: string, key: string) => ({ ...dayPlan(), period, key }));
@@ -581,7 +598,7 @@ function dayPlan(): CaiusPlan {
         dismissed: [],
         capacity: {
             plannedMinutes: 45, estimatedCount: 1, unestimatedCount: 1, unestimatedMinutes: 30,
-            totalMinutes: 75, target: { min: 180, max: 240 }, horizons: {}
+            totalMinutes: 75, eveningMinutes: 0, target: { min: 180, max: 240 }, horizons: {}
         }
     };
 }
