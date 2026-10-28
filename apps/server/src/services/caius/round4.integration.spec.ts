@@ -775,3 +775,12 @@ describe("fix round 1: answered.keep takes the line's id or ref", () => {
         }
     });
 });
+
+describe("fix round 1: the put-off description", () => {
+    it("M6: notToday says a put-off ask comes back as a Follow up, in both apply tools", () => {
+        for (const name of [ "caius_plan_apply", "caius_winddown_apply" ]) {
+            const schema = [ ...tools ].find(([ n ]) => n === name)?.[1].inputSchema as any;
+            expect(schema?.shape.notToday.description, name).toMatch(/an ask comes back as a Follow up/);
+        }
+    });
+});
