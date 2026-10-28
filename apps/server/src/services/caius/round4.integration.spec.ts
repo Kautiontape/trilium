@@ -784,3 +784,41 @@ describe("fix round 1: the put-off description", () => {
         }
     });
 });
+
+describe("fix round 1: a moved item is followed to its copy, not taken as in place", () => {
+    it("the bag went to Thursday as proposed; 'the bag is done too' ticks Thursday's copy, and 'drop Dave' drops his", async () => {
+        const DAY = "2027-08-18";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        await call("caius_winddown_apply", { date: DAY, done: [ "111" ] });
+        expect((await tasksOf("2027-08-19")).map((task: any) => [ task.text, task.state ])).toEqual([
+            [ "ZAP-101 Verify the export retry on staging", "open" ], [ "Message Dave if he knows anyone who will hang lights as a small job", "open" ],
+            [ "Pack the climbing gym bag", "open" ]
+        ]);
+        const later = await call("caius_winddown_apply", { date: DAY, done: [ "the bag" ], fates: [ { listItemId: "dave", drop: "not needed" } ] });
+        expect(later.skipped).toEqual([]);
+        expect((await tasksOf("2027-08-19")).map((task: any) => task.state)).toEqual([ "open", "cancelled", "done" ]);
+        expect(later.say).toMatch(/^Pack the climbing gym bag is done and Message Dave .* is dropped\.$/);
+        // Dave's copy is dropped now, so calling him done is stale, not already in place.
+        const after = await call("caius_winddown_apply", { date: DAY, done: [ "dave" ] });
+        expect(after.skipped).toEqual([ expect.objectContaining({ kind: "done", reason: "stale", text: "Message Dave if he knows anyone who will hang lights as a small job" }) ]);
+    });
+
+    it("Plan my day: a catch-up task's ref still names it after move_all moved it, so 'put it first' moves the copy", async () => {
+        await cls.init(async () => {
+            const tuesday = await store.calendarDay("2027-08-24");
+            await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("c-one", "First leftover ~30m"), li("c-two", "Second leftover ~30m"))}`);
+            const wednesday = await store.calendarDay("2027-08-25");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("c-own", "Own task ~30m"))}`);
+        });
+        at("2027-08-25T09:40");
+        const catchup = await call("caius_planday", { date: "2027-08-25", step: "catchup" });
+        const second = catchup.data.tasks.find((task: any) => task.listItemId === "c-two").ref;
+        await call("caius_plan_apply", { date: "2027-08-25", catchup: "move_all", brief: prose });
+        const moved = await call("caius_plan_apply", { date: "2027-08-25", move: [ { listItemId: second, first: true } ] });
+        expect(moved.skipped).toEqual([]);
+        const wednesday = (await tasksOf("2027-08-25")).map((task: any) => task.text);
+        expect(wednesday[0]).toBe("Second leftover");
+        expect(wednesday).toEqual(expect.arrayContaining([ "Own task", "First leftover" ]));
+    });
+});
