@@ -79,6 +79,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Once he says to stop, never ask about it again",
         "Map \"first\", \"after 105\" or \"before the report\" onto the accept's `first`, `before` or `after`",
         "Never refuse a reorder he asks for",
+        "\"Put X first\" or \"X after Y\", at any point in the conversation, even after the plan is written, is one `caius_plan_apply` call with only `move`: no `brief`, nothing else.",
         "name his work in the order of his list as this call leaves it",
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
         "An evening calendar event is not a task",

@@ -195,8 +195,14 @@ const planApply = z.object({
         acts: z.array(z.object({ range: z.string(), text: z.string() })).length(3).describe("The day in three acts, the third the evening"),
         sections: z.array(z.object({ title: z.string().trim().min(1), markdown: z.string() })).default([])
             .describe("Sections after the picks, such as Heads-up; Follow up is written by the tool")
-    }).describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes")
-});
+    }).optional().describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes. Left out only on a call that just moves items of his list")
+}).refine((input) => input.brief !== undefined || onlyMoves(input), "Give brief, unless the call only moves items of his list");
+
+/** Whether a Plan my day answer only reorders his list: `move` and nothing else. */
+export function onlyMoves(input: { move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; forward?: unknown[] }): boolean {
+    return input.move.length > 0 && input.catchup === undefined && !input.forward?.length
+        && [ input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.context ].every((answers) => answers.length === 0);
+}
 
 const windDownApply = z.object({
     date: periodKey("day").describe("The day being closed, YYYY-MM-DD; the rest works against the next workday"),

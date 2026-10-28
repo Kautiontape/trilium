@@ -4,7 +4,7 @@
  */
 
 import { dayCapacity } from "@triliumnext/caius";
-import { cls, sql_init } from "@triliumnext/core";
+import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
@@ -63,6 +63,25 @@ async function tasksOf(date: string) {
     }));
 }
 
+/** Monday 2 Nov's Jira: three hand-offs and Jordan's ask on ZAP-105 from Sunday. */
+function mondayJira() {
+    jira.handoff.push(
+        { ...ticket("ZAP-110", { summary: "Review the importer", status: "Code Review" }), daysInStatus: 2 },
+        { ...ticket("ZAP-111", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 },
+        { ...ticket("ZAP-101", { summary: "Verify the export retry on staging", status: "Dev Verify" }), daysInStatus: 6 }
+    );
+    jira.asks.push({
+        ticket: ticket("ZAP-105", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created: "2026-11-01T15:00:00.000-0500",
+        commentId: "c105", excerpt: "@Sam Example the rollout note is in the runbook now."
+    });
+}
+
+/** The labels of `name` on the day note of `date`. */
+async function labelsOf(date: string, name: string) {
+    const [ note ] = await cls.init(() => store.search(`#dateNote="${date}"`));
+    return note?.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) ?? [];
+}
+
 /** Wednesday 4 Nov as it stood at 17:45: two tickets, the Dave message and the gym bag. */
 async function wednesday(date = WED) {
     await cls.init(async () => {
@@ -90,6 +109,44 @@ afterEach(() => {
     vi.unstubAllEnvs();
     jira.handoff.length = 0;
     jira.asks.length = 0;
+});
+
+describe("reorder after the plan", () => {
+    it("Mon 09:40 'take 110, 111 and 101', then 'put 101 first': the move-only call reorders his list and rewrites only the header", async () => {
+        mondayJira();
+        at(`${MON}T09:40`);
+        const planned = await call("caius_plan_apply", { date: MON, accept: [ { candidateId: "110" }, { candidateId: "111" }, { candidateId: "101" } ], brief: prose });
+        expect(planned.skipped).toEqual([]);
+        const brief = await cls.init(() => store.content(planned.briefNoteId));
+        const asked = await labelsOf(MON, "caiusAsked");
+        const drawing = () => String(cls.init(() => becca.getNoteOrThrow(planned.headerNoteId).getAttachments().find((a) => a.title === "terrain.svg")?.getContent()));
+        expect(drawing().indexOf("ZAP-110")).toBeLessThan(drawing().indexOf("ZAP-101"));
+
+        at(`${MON}T09:41`);
+        const moved = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
+        expect(moved.skipped).toEqual([]);
+        expect(moved.written).toEqual([
+            expect.objectContaining({ kind: "move", status: "written", detail: "first" }),
+            expect.objectContaining({ kind: "header" })
+        ]);
+        expect(moved.say).toBe("ZAP-101 is first.");
+        expect((await tasksOf(MON)).map((task: any) => task.text)).toEqual([ "ZAP-101 Verify the export retry on staging", "ZAP-110 Review the importer", "ZAP-111 Check the invoice export in QA" ]);
+        // Nothing else: the brief, the questions answered and Suggested are as the plan left them.
+        expect(await cls.init(() => store.content(planned.briefNoteId))).toBe(brief);
+        expect(await labelsOf(MON, "caiusAsked")).toEqual(asked);
+        const plan = await call("caius_plan", { period: "day", date: MON });
+        expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-105") ]);
+        // The picks changed, so the header's drawing leads with ZAP-101, and his acts stay.
+        expect(drawing().indexOf("ZAP-101")).toBeLessThan(drawing().indexOf("ZAP-110"));
+        expect(await cls.init(() => store.content(planned.headerNoteId))).toContain("<strong>10:00 to 12:00</strong>");
+
+        const again = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
+        expect(again.written).toEqual([ expect.objectContaining({ kind: "move", status: "unchanged" }) ]);
+
+        // Monday's tickets are closed, so the later tests' days don't find them open.
+        const ids = plan.sections.flatMap((section: any) => section.tasks).map((task: any) => ({ noteId: plan.noteId, listItemId: task.listItemId, state: "done" }));
+        await call("caius_set_state", { items: ids });
+    });
 });
 
 describe("short references", () => {
