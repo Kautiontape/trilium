@@ -577,3 +577,39 @@ describe("fix round 1: a ref names the item the step showed", () => {
         expect((await tasksOf(DAY)).map((task: any) => task.text)).toEqual([ "Tidy the desk", "ZAP-172 Check the export", "Write the memo" ]);
     });
 });
+
+describe("fix round 1: a re-run by his words finds what the first run did", () => {
+    it("P4: the same wind-down by words twice: the second finds 111 and the bag done, skips nothing and changes nothing", async () => {
+        const DAY = "2027-05-12";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const answer = { date: DAY, done: [ "111", "the bag" ], fates: [ { listItemId: "dave", to: "d1" } ] };
+        expect((await call("caius_winddown_apply", answer)).skipped).toEqual([]);
+        const again = await call("caius_winddown_apply", answer);
+        expect(again.skipped).toEqual([]);
+        expect(again.say).toBe("Everything was already in place.");
+    });
+
+    it("P8: the same Plan my day accept by number twice: the second finds ZAP-174 on his list", async () => {
+        const DAY = "2027-05-17";
+        jira.handoff.push({ ...ticket("ZAP-174", { summary: "Check the export" }), daysInStatus: 2 });
+        at(`${DAY}T09:40`);
+        const answer = { date: DAY, accept: [ { candidateId: "174" } ], brief: prose };
+        expect((await call("caius_plan_apply", answer)).skipped).toEqual([]);
+        const again = await call("caius_plan_apply", answer);
+        expect(again.skipped).toEqual([]);
+        expect(again.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", id: "ZAP-174", status: "unchanged" }) ]));
+    });
+
+    it("a partial first run, then a re-run by words: 111 already done counts as answered, and the day ends wound down", async () => {
+        const DAY = "2027-05-19";
+        await wednesday(DAY);
+        at(`${DAY}T17:45`);
+        const first = await call("caius_winddown_apply", { date: DAY, done: [ "111", "laundry" ] });
+        expect(first.skipped).toEqual([ expect.objectContaining({ kind: "done", reason: "not_offered" }) ]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
+        const second = await call("caius_winddown_apply", { date: DAY, done: [ "111", "the bag" ] });
+        expect(second.skipped).toEqual([]);
+        expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
+    });
+});

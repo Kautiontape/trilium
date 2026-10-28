@@ -38,6 +38,7 @@ import { ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, findBrief, NOT_TODAY_LABEL
 import {
     catchupOf,
     closingLines,
+    closingPeriods,
     dateLabel,
     dayKey,
     type DayRead,
@@ -151,7 +152,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
         const pools = planPools(offer, catchupTasks, listed.days);
-        const table = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        const { table, items } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        pools.settled = settledOf(items, new Set([ date ]));
         const input = planAnswers(asked, pools, skipped, table);
         /** The result with `say`, its entries named by their text first. */
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
@@ -295,9 +297,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             candidates: named(withRefs(candidates, "c", (c) => c.candidateId), (c) => c.candidateId, (c) => c.text),
             list: named(withRefs(listItems(facts.plan), "l", (item) => item.listItemId), (item) => item.listItemId, (item) => item.text),
             lines: named(withRefs([ ...lines.keep, ...lines.carry ], "x", (line) => line.lineId), (line) => line.lineId, (line) => line.line),
-            days: dayNames(listed.days)
+            days: dayNames(listed.days),
+            settled: [],
+            taken: []
         };
-        const table = await refTable(store, now, known, facts.live, [ ...lines.keep, ...lines.carry ].map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        const { table, items } = await refTable(store, now, known, facts.live, [ ...lines.keep, ...lines.carry ].map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        const closing = closingPeriods(date).all;
+        pools.settled = settledOf(items, closing);
         const input = windDownAnswers(asked, pools, skipped, table);
         // The open items carry their note; only an id from elsewhere needs the Journal searched.
         const noteFor = async (listItemId: string) => open.items.find((item) => item.listItemId === listItemId)?.noteId ?? await noteOf(store, listItemId);
@@ -425,7 +431,7 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
         const catchupTasks = (await catchupOf(store, date, now)).tasks;
         const pools = planPools(offer, catchupTasks, namedDays(date, dayKey(nextWorkday(localDay(date)))).days);
         const known = new Map(offer.candidates.map((candidate) => [ candidate.candidateId, candidate ]));
-        const table = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
+        const { table } = await refTable(store, now, known, offer.day.live, offer.carry.map((line) => line.line), read.context.map((line) => line.text), read.inputs.jira);
         const input = planAnswers(asked, pools, skipped, table);
         const before = picksOf(offer.day.plan);
         await acceptAll(store, date, now, input, { known, moved: new Map() }, written, skipped);
@@ -463,8 +469,19 @@ function planPools(offer: Awaited<ReturnType<typeof planOffer>>, catchupTasks: A
         candidates: named(withRefs(offer.candidates, "c", (c) => c.candidateId), (c) => c.candidateId, (c) => c.text),
         list: named(withRefs(listItems(offer.day.plan), "l", (item) => item.listItemId), (item) => item.listItemId, (item) => item.text),
         lines: named(withRefs(offer.carry, "x", (line) => line.lineId), (line) => line.lineId, (line) => line.line),
-        days: dayNames(days)
+        days: dayNames(days),
+        settled: [],
+        // A candidate already taken is on his list by its key.
+        taken: listItems(offer.day.plan).flatMap((item) => {
+            const key = keysOf(item.text).find((k) => JIRA_KEY.test(k));
+            return key ? [ { id: key, ref: "", text: item.text } ] : [];
+        })
     };
+}
+
+/** The items of `periods` that are settled, done, moved or dropped, as names a re-run's answer can give. */
+function settledOf(items: (RefEntry & { period: string })[], periods: Set<string>): Named[] {
+    return items.filter((item) => item.settled && periods.has(item.period)).map(({ id, text }) => ({ id, ref: "", text }));
 }
 
 /** The days and weeks an answer can send a task to, by ref or his words. */
@@ -489,6 +506,10 @@ interface Pools {
     list: Named[];
     lines: Named[];
     days: Named[];
+    /** Items already settled, which a re-run's done or fate answer finds in place. */
+    settled: Named[];
+    /** His list by its keys, which a re-run's accept finds in place. */
+    taken: Named[];
 }
 
 /** `items` as names an answer can give: each with its id, ref and plain text; an item without an id or ref can't be named. */
@@ -513,8 +534,9 @@ interface RefEntry {
  * one is), and each Context line offered or in force (settled once in force). A ticket that has
  * left Jira since is in none of them.
  */
-async function refTable(store: NoteStore, now: Date, known: Map<string, Candidate>, live: Map<string, string[]>, offered: string[], inForce: string[], jira: DayRead["inputs"]["jira"]): Promise<Map<string, RefEntry>> {
+async function refTable(store: NoteStore, now: Date, known: Map<string, Candidate>, live: Map<string, string[]>, offered: string[], inForce: string[], jira: DayRead["inputs"]["jira"]) {
     const table = new Map<string, RefEntry>();
+    const items: (RefEntry & { period: string })[] = [];
     const { docs } = await loadJournal(store);
     const byPath = new Map(docs.map((doc) => [ doc.path, doc ]));
     for (const task of scanDocs(docs, TRILIUM_CONFIG, now).tasks) {
@@ -523,6 +545,7 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
         const entry = { id, text: plainText(withoutMoveLinks(task.text)), settled: !task.live };
         table.set(refOf("o", id), entry);
         table.set(refOf("l", id), entry);
+        items.push({ ...entry, period: /^Journal\/\w+\/([^/]+?)(?:\.md|\/)/.exec(task.file)?.[1] ?? "" });
     }
     const tickets = dayCandidates({ jira: { ...jira, done: [] }, live: new Map(), exclude: [] }).map(present);
     for (const candidate of [ ...tickets, ...known.values() ]) {
@@ -530,7 +553,7 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
     }
     for (const text of offered) table.set(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: false });
     for (const text of inForce) table.set(refOf("x", lineIdOf(text)), { id: lineIdOf(text), text, settled: true });
-    return table;
+    return { table, items };
 }
 
 /**
@@ -541,7 +564,7 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
  */
 function nameReader(skipped: Skipped[], table: Map<string, RefEntry>) {
     const held = new Set<string>();
-    const read = (kind: string, value: string, pools: Named[][]): string | null => {
+    const read = (kind: string, value: string, pools: Named[][], fallback: Named[][] = []): string | null => {
         // A ref that isn't in its pool any more names a settled item, which the write finds in place,
         // or one the step showed and that has left since: never another item.
         const ref = value.trim().toLowerCase();
@@ -551,7 +574,8 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>) {
             skipped.push({ kind, ...(entry ? { text: entry.text } : {}), reason: "stale" });
             return null;
         }
-        const found = resolveIn(pools, value);
+        // A name that matches nothing open can name what an earlier run already settled.
+        const found = resolveIn(pools, value) ?? resolveIn(fallback, value);
         if (found && "ambiguous" in found) {
             skipped.push({ kind, text: value, reason: "ambiguous", detail: found.ambiguous.join("; ") });
             for (const id of found.ids) held.add(id);
@@ -576,7 +600,7 @@ function nameReader(skipped: Skipped[], table: Map<string, RefEntry>) {
  */
 function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>): PlanApplyInput & { done: string[] } {
     const { read, place } = nameReader(skipped, table);
-    const { done, finished } = doneOf([], input.finished, [ pools.list ], read);
+    const { done, finished } = doneOf([], input.finished, [ pools.list ], [ pools.settled ], read);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
@@ -587,7 +611,7 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
         done,
         finished,
         accept: input.accept.flatMap((ref) => {
-            const id = read("accept", ref.candidateId, [ pools.candidates ]);
+            const id = read("accept", ref.candidateId, [ pools.candidates ], [ pools.taken ]);
             const at = place("place", ref, onList);
             return id === null || at === null ? [] : [ { ...at, candidateId: id } ];
         }),
@@ -625,18 +649,18 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         const id = read(kind, ref.lineId, [ pools.lines ]);
         return id === null ? [] : [ { lineId: id } ];
     };
-    const { done, finished } = doneOf(input.done, input.finished, [ pools.open ], read);
+    const { done, finished } = doneOf(input.done, input.finished, [ pools.open ], [ pools.settled ], read);
     return {
         ...input,
         done,
         finished,
         fates: input.fates.flatMap((fate) => {
-            const id = read("fate", fate.listItemId, [ pools.open ]);
+            const id = read("fate", fate.listItemId, [ pools.open ], [ pools.settled ]);
             const to = fate.to === undefined ? undefined : read("fate", fate.to, [ pools.days ]);
             return id === null || to === null ? [] : [ { ...fate, listItemId: id, ...(to === undefined ? {} : { to }) } ];
         }),
         accept: input.accept.flatMap((ref) => {
-            const id = read("accept", ref.candidateId, [ pools.candidates ]);
+            const id = read("accept", ref.candidateId, [ pools.candidates ], [ pools.taken ]);
             const at = place("place", ref, onList);
             return id === null || at === null ? [] : [ { ...at, candidateId: id } ];
         }),
@@ -658,9 +682,9 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
  * is not a Jira key, and the item each finished key names in `pools`, once. `finished` keeps only
  * the keys, which are recorded as finished whether or not they name an item.
  */
-function doneOf(said: string[], finished: string[], pools: Named[][], read: (kind: string, value: string, pools: Named[][]) => string | null) {
+function doneOf(said: string[], finished: string[], pools: Named[][], settled: Named[][], read: (kind: string, value: string, pools: Named[][], fallback?: Named[][]) => string | null) {
     const keys = finished.filter((value) => JIRA_KEY.test(value));
-    const done = new Set([ ...said, ...finished.filter((value) => !JIRA_KEY.test(value)) ].flatMap((value) => read("done", value, pools) ?? []));
+    const done = new Set([ ...said, ...finished.filter((value) => !JIRA_KEY.test(value)) ].flatMap((value) => read("done", value, pools, settled) ?? []));
     for (const key of keys) {
         const found = pools.map((pool) => resolveName(pool, key)).find((r) => r !== null);
         if (found && "id" in found) done.add(found.id);

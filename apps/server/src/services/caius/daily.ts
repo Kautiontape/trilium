@@ -752,11 +752,7 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
     const docs = (await loadJournal(store)).docs;
     const week = isoWeekKey(utcDay(date));
     const targetWeek = isoWeekKey(utcDay(targetDay));
-    const recent = new Set<string>();
-    for (let at = localDay(date), i = 0; i < RECENT_WORKDAYS; i++) {
-        at = lastWorkday(at);
-        recent.add(dayKey(at));
-    }
+    const recent = new Set(closingPeriods(date).recent);
     const tasks = openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, noon(date)));
     const group = (task: (typeof tasks)[number]) => task.period === date ? "today"
         : recent.has(task.period) ? "recent"
@@ -779,6 +775,16 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
 }
 
 const GROUPS = [ "today", "recent", "week" ];
+
+/** The periods a wind-down of `date` closes: the day, the last `RECENT_WORKDAYS` workdays before it and its ISO week. */
+export function closingPeriods(date: string): { recent: string[]; all: Set<string> } {
+    const recent: string[] = [];
+    for (let at = localDay(date), i = 0; i < RECENT_WORKDAYS; i++) {
+        at = lastWorkday(at);
+        recent.push(dayKey(at));
+    }
+    return { recent, all: new Set([ date, ...recent, isoWeekKey(utcDay(date)) ]) };
+}
 
 /** The first day of a day, ISO week or month key. */
 function periodStart(key: string): string {
