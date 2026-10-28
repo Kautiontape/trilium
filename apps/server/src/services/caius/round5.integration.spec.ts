@@ -465,6 +465,51 @@ describe("the header follows the drawing", () => {
     });
 });
 
+describe("fix round 1: the review's remaining scenarios", () => {
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+    const jordanAsk = (key: string, commentId: string, created: string) => jira.asks.push({
+        ticket: ticket(key, { summary: "Confirm the bucket" }), author: "Jordan Placeholder", created, commentId, excerpt: "Is the bucket right?"
+    });
+
+    it("I6 'answered jordan in chat, 120 not today' with 120 dismissed too: 120 is checked, nothing is written", async () => {
+        const DAY = "2027-11-24";
+        jordanAsk("ZAP-415", "c415", "2027-11-22T15:00:00.000-0500");
+        jira.handoff.push({ ...ticket("ZAP-120", { summary: "Tidy the gate" }), daysInStatus: 2 });
+        at(`${DAY}T09:40`);
+        const before = await journal();
+        const result = await call("caius_plan_apply", {
+            date: DAY, said: "answered jordan in chat, 120 not today", dismiss: [ { candidateId: "ZAP-415", answered: true }, { candidateId: "ZAP-120" } ], brief: prose
+        });
+        expect(result.written).toEqual([]);
+        expect(result.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-120"), missing: "dismiss" }) ]);
+        expect(await journal()).toEqual(before);
+    });
+
+    it("I1 in Plan my day: the same morning's correction of an overlap answer leaves one line, the right meeting gone, and the Heads-up says the new answer", async () => {
+        const DAY = "2027-12-15";
+        calendars[DAY] = [
+            event("10:00", "10:15", "Daily Standup"), event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding"),
+            event("15:00", "15:30", "Vendor Onboarding")
+        ];
+        at(`${DAY}T09:40`);
+        const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        const { overlapId } = inputs.data.overlaps[0];
+        const first = await call("caius_plan_apply", { date: DAY, said: "incident review", overlaps: [ { overlapId, take: "Incident Review" } ], brief: prose });
+        expect((await call("caius_plan", { period: "day", date: DAY })).meetings).toEqual([ "10:00 Daily Standup", "10:30 Incident Review", "15:00 Vendor Onboarding" ]);
+        expect(await cls.init(() => store.content(first.briefNoteId))).toContain("Taking Incident Review, not Vendor Onboarding, at 11:00");
+
+        at(`${DAY}T09:45`);
+        const fixed = await call("caius_plan_apply", { date: DAY, said: "actually vendor onboarding", overlaps: [ { overlapId, take: "Vendor Onboarding" } ], brief: prose });
+        expect(fixed.check).toBeUndefined();
+        expect((await call("caius_plan", { period: "day", date: DAY })).meetings).toEqual([ "10:00 Daily Standup", "11:00 Vendor Onboarding", "15:00 Vendor Onboarding" ]);
+        expect((await call("caius_context", { date: DAY })).context.map((line: any) => line.text)).toEqual([ "Taking Vendor Onboarding, not Incident Review, at 11:00" ]);
+        const brief = await cls.init(() => store.content(fixed.briefNoteId));
+        expect(brief).toContain("Taking Vendor Onboarding, not Incident Review, at 11:00");
+        expect(brief).not.toContain("Taking Incident Review");
+        delete calendars[DAY];
+    });
+});
+
 describe("acts stay inside the work window", () => {
     const cells = async (noteId: string) => [ ...(await cls.init(() => store.content(noteId))).matchAll(/<td><p><strong>([^<]*)<\/strong><\/p><p>([^<]*)<\/p><\/td>/g) ].map((m) => [ m[1], m[2] ]);
     const day = async (date: string, tasks: string[]) => cls.init(async () => {

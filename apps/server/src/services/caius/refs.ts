@@ -147,6 +147,11 @@ export function saidNames(said: string, names: string[]): boolean {
     return names.some((name) => heard.has(name));
 }
 
+/** The clauses of `said` that name an item by one of its `names`, as he wrote them. */
+export function clausesNaming(said: string, names: string[]): string[] {
+    return clausesOf(said).filter((clause) => tokens(clause).some((token) => names.includes(token)));
+}
+
 /**
  * The words an answer can name a candidate or follow-up by, lower case: its Jira key and number, its
  * author's names, and the longer words of its text.

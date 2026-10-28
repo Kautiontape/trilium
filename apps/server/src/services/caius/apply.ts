@@ -81,7 +81,7 @@ import {
     workBlocks
 } from "./daily.js";
 import { isInputWarning } from "./inputs/index.js";
-import { isRef, type Named, namesOf, refOf, resolveIn, resolveName, saidCloses, saidNames, saidPlaces, saysPhrase, vagueYes, withRefs } from "./refs.js";
+import { clausesNaming, isRef, type Named, namesOf, refOf, resolveIn, resolveName, saidCloses, saidNames, saidPlaces, saysPhrase, vagueYes, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
 import type { PlanApplyInput, WindDownApplyInput } from "./schemas.js";
 import { readAttachment, removeLabel } from "./store.js";
@@ -268,9 +268,14 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEvents(read) }));
         // A meeting he isn't taking leaves the Meetings block and the drawing written below.
         let taken = read;
+        let headsUp = offer.headsUp;
         await guarded({ kind: "overlap" }, skipped, async () => {
-            const declined = await takeOverlaps(store, date, now, read, input.overlaps, written, skipped);
-            taken = { ...read, inputs: withTaken(read.inputs, declined, read.rhythm) };
+            const { declined, events, lines } = await takeOverlaps(store, date, now, read, input.overlaps, written, skipped);
+            // The calendar is read again from the events with his earlier declines undone, so a correction brings its meeting back.
+            taken = { ...read, inputs: withTaken({ ...read.inputs, calendar: events }, declined, read.rhythm) };
+            // The brief's Heads-up says the answer as it now stands.
+            headsUp = offer.headsUp.map((line) => lines.get(line) ?? line);
+            for (const line of lines.values()) if (!headsUp.includes(line)) headsUp.push(line);
         });
 
         await guarded({ kind: "forward" }, skipped, async () => { for (const { listItemId, to } of input.forward ?? []) {
@@ -304,7 +309,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
         const answered = new Set(written.filter((entry) => entry.kind === "dismiss" && entry.id).map((entry) => entry.id));
-        const brief = await briefOf(deps, { date, brief: prose }, taken, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, offer.headsUp, weather)
+        const brief = await briefOf(deps, { date, brief: prose }, taken, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, headsUp, weather)
             .catch((e: unknown) => ({ error: "failed", detail: e instanceof Error ? e.message : String(e) }));
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
@@ -1233,7 +1238,7 @@ function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, poo
 /**
  * The dismissals his reply doesn't back, and what it seems to close that the call doesn't: each
  * dismissed item must be named in `said` (`namesOf`, from what it is known by or its line on the
- * day's Suggested `shelf`), not in a negated clause that closes it; and
+ * day's Suggested `shelf`), in at least one clause that isn't negated; and
  * an offered item (`items`) that a clause of his seems to dismiss or say he answered (`saidCloses`)
  * must be dismissed, with `answered` for the second.
  */
@@ -1250,8 +1255,10 @@ function dismissChecks(said: string, dismissed: { candidateId: string; answered?
         ...dismissed.flatMap((ref) => {
             const item = nameOf(ref.candidateId);
             if (!saidNames(said, namesFor(ref.candidateId))) return [ check(item, said, "dismiss", "caius.check.dismiss_unnamed") ];
-            const negated = heard.find((entry) => entry.id === ref.candidateId && NEGATED.test(entry.clause));
-            return negated ? [ check(item, negated.clause, "dismiss", "caius.check.dismiss_negated") ] : [];
+            // Every clause that names it says not: "120 not today", "don't dismiss 105".
+            const naming = clausesNaming(said, namesFor(ref.candidateId));
+            const [ first ] = naming;
+            return first && naming.every((clause) => NEGATED.test(clause)) ? [ check(item, first, "dismiss", "caius.check.dismiss_negated") ] : [];
         }),
         ...heard.filter((entry) => !NEGATED.test(entry.clause) || entry.answered).flatMap((entry) => {
             const given = dismissed.find((ref) => ref.candidateId === entry.id);
@@ -1695,14 +1702,17 @@ function suggestedLine(candidate: Candidate): string {
  * day's Context, with that Y event declined for the day (`#caiusDeclined=overlapId|start|title`). A
  * new answer to an overlap answered before replaces the earlier: its decline goes and its line is
  * rewritten, so the day holds one. The pairs are read with his own declines undone, so a re-run or a
- * correction finds the pair it answers. Answers the declines the day now holds.
+ * correction finds the pair it answers. Answers the declines the day now holds, the calendar with his
+ * earlier declines undone, and each answer's line by the line it replaced (or itself, when new).
  */
-async function takeOverlaps(store: NoteStore, day: string, now: Date, read: DayRead, answers: { overlapId: string; take: string }[], written: Written[], skipped: Skipped[]): Promise<string[]> {
+async function takeOverlaps(store: NoteStore, day: string, now: Date, read: DayRead, answers: { overlapId: string; take: string }[], written: Written[], skipped: Skipped[]) {
     const labels = await dayLabels(store, day, DECLINED_LABEL);
     const his = labels.map(declinedEvent).filter((event) => event !== null);
     const events = read.inputs.calendar.map((event) => his.some((each) => each.start === event.start && each.title === normName(event.title)) ? { ...event, declined: false } : event);
     const pairs = overlapPairs(events).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) }));
     const declined = [ ...labels ];
+    /** Each answer's line, by the line it replaced, or by itself when it is new. */
+    const lines = new Map<string, string>();
     for (const { overlapId, take } of answers) {
         const pair = pairs.find((candidate) => candidate.overlapId === overlapId);
         const taken = pair && [ pair.first, pair.second ].find((title) => normName(title) === normName(take) || saysPhrase(take, title));
@@ -1725,13 +1735,15 @@ async function takeOverlaps(store: NoteStore, day: string, now: Date, read: DayR
             const before = await store.content(note.noteId);
             const after = setContextLine(before, was, text, day);
             if (after !== null) await store.putContent(note.noteId, after, before);
+            lines.set(was, text);
         }
+        if (!earlier.length) lines.set(text, text);
         const { result } = await contextAddOn(store, { date: day, text }, now);
         record(written, skipped, { kind: "overlap", id: overlapId, text, detail: taken }, earlier.length ? { status: "updated" } : result);
         if (!labels.includes(value)) await labelDay(store, day, DECLINED_LABEL, [ value ]);
         if (!declined.includes(value)) declined.push(value);
     }
-    return declined;
+    return { declined, events, lines };
 }
 
 /** The overlaps offered in this call that his reply seems to answer, by naming one of their meetings, while the call doesn't. */
