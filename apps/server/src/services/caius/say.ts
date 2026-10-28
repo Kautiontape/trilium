@@ -14,7 +14,7 @@ import { dateLabel, plainText, weekdayName, withoutMoveLinks } from "./daily.js"
  * with one plain question when an answer held items for being ambiguous, or `held` holds the texts
  * of items an earlier call held.
  */
-export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [], asking = [], already = [] }: { day: string; held?: string[]; asking?: { intent: string; texts: string[] }[]; already?: { text: string; how: string }[] }): string {
+export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [], asking = [], already = [] }: { day: string; held?: HeldItem[]; asking?: { intent: string; texts: string[] }[]; already?: { text: string; how: string }[] }): string {
     const made = written.filter((entry) => entry.status === "written");
     const of = (...kinds: string[]) => made.filter((entry) => kinds.includes(entry.kind));
     const labels = (entries: { text?: string; id?: string }[]) => unique(entries.map((entry) => labelOf(entry.text ?? entry.id ?? "")));
@@ -87,10 +87,18 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
  * The one question about items held from an earlier call, by their texts: "Which do you mean:
  * ZAP-111 or ZAP-101?", "What about ZAP-101?" for one, or null for none. The catch-up step asks it too.
  */
-export function heldQuestion(held: string[]): string | null {
-    const labels = unique(held.map(labelOf));
+export function heldQuestion(held: HeldItem[]): string | null {
+    // Items held on several days are told apart by their day.
+    const days = new Set(held.map((item) => item.period).filter((period) => period && dateLabel(period)));
+    const labels = unique(held.map((item) => days.size > 1 && item.period ? `${labelOf(item.text)} (${dateLabel(item.period)})` : labelOf(item.text)));
     if (labels.length > 1) return t("caius.say.which_held", { matches: orList(labels) });
     return labels[0] ? t("caius.say.what_about", { item: labels[0] }) : null;
+}
+
+/** An item held from an earlier call: its words, and the period it sits on. */
+export interface HeldItem {
+    text: string;
+    period?: string;
 }
 
 /** Answers whose ambiguous items are held until he says which, so `say` asks. */

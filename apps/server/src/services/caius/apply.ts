@@ -162,7 +162,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const answer = <R extends { written: Written[]; skipped: Skipped[] }>(result: R) => {
             withTexts([ ...result.written, ...result.skipped ], pools, known, followed);
             const askedIds = new Set(planAsks.flatMap((ask) => ask.ids));
-            const stillHeld = heldTasks.filter((task) => task.listItemId && !input.done.includes(task.listItemId) && !askedIds.has(task.listItemId)).map((task) => task.text);
+            const stillHeld = heldTasks.filter((task) => task.listItemId && !input.done.includes(task.listItemId) && !askedIds.has(task.listItemId))
+                .map(({ text, period }) => ({ text, period }));
             const textOf = (id: string) => heldTasks.find((task) => task.listItemId === id)?.text ?? "";
             const asking = planAsks.map((ask) => ({ intent: ask.intent, texts: ask.ids.map(textOf).filter((text) => text !== "") }));
             return withDateLabels({ ...result, say: sayOf(result, { day: date, held: stillHeld, asking, already: input.already }) });
@@ -460,7 +461,10 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         withTexts([ ...written, ...skipped ], pools, known, followed);
         const textOf = (id: string) => open.items.find((item) => item.listItemId === id)?.text ?? "";
         const askedIds = new Set(holdAsks.flatMap((ask) => ask.ids));
-        const heldTexts = allHeld.filter((id) => !askedIds.has(id)).map(textOf).filter((text) => text !== "");
+        const heldTexts = allHeld.filter((id) => !askedIds.has(id)).flatMap((id) => {
+            const item = open.items.find((candidate) => candidate.listItemId === id);
+            return item ? [ { text: item.text, period: item.period } ] : [];
+        });
         const asking = holdAsks.map((ask) => ({ intent: ask.intent, texts: ask.ids.map(textOf).filter((text) => text !== "") }));
         const say = sayOf({ written, skipped }, { day: targetDay, held: heldTexts, asking, already: input.already });
         return {

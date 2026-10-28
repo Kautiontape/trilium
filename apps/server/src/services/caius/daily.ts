@@ -99,7 +99,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         const items = open.items.map((item) => ({
             ...item, ...(done.has(keysOf(item.text)[0] ?? "") ? { jiraDone: true } : {}), ...(item.listItemId && held.has(item.listItemId) ? { fate: { held: true } } : {})
         }));
-        const which = heldQuestion(items.filter((item) => item.listItemId && held.has(item.listItemId)).map((item) => item.text));
+        const which = heldQuestion(items.filter((item) => item.listItemId && held.has(item.listItemId)).map(({ text, period }) => ({ text, period })));
         const question = items.length ? [ t("caius.daily.open", { day: weekdayName(targetDay) }), ...(which ? [ which ] : []) ].join(" ") : null;
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
@@ -261,7 +261,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             ? t("caius.daily.catchup_days", { weekdays: t("caius.daily.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: tasks.length })
             : t("caius.daily.catchup", { weekday: names[0] ?? catchupDayName(last, date), count: tasks.length });
         // A task an ambiguous answer held is asked about on its own, as `say` asks it; no catch-up moves it.
-        const question = [ moving, heldQuestion(held.map((task) => task.text)) ].filter((q) => q !== null).join(" ") || null;
+        const question = [ moving, heldQuestion(held.map(({ text, period }) => ({ text, period }))) ].filter((q) => q !== null).join(" ") || null;
         return reply(standing, {
             lastWorkday: last, days, oldestDay: days[0] ?? null, moveTo: date, skipped, tasks: withRefs(tasks, "o", (task) => task.listItemId),
             ...(held.length ? { held: withRefs(held, "o", (task) => task.listItemId) } : {})

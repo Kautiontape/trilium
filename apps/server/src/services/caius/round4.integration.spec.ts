@@ -1111,3 +1111,22 @@ describe("fix round 3: hold and settled labels are cleaned up", () => {
         expect(await labelsOf(DAY, "caiusSettled")).toEqual([]);
     });
 });
+
+describe("fix round 3: held items on several days are named with their days", () => {
+    it("F6: Monday's 111 and Wednesday's 101 held together; Thursday's question names each one's day", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-12-06");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("d6-111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`);
+            const wednesday = await store.calendarDay("2027-12-08");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("d6-101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`))}`);
+        });
+        at("2027-12-08T17:45");
+        await call("caius_winddown_apply", { date: "2027-12-08", done: [ "the export" ] });
+        at("2027-12-09T09:30");
+        const catchup = await call("caius_planday", { date: "2027-12-09", step: "catchup" });
+        expect(catchup.question).toMatch(/Which do you mean: ZAP-111 \(Mon 6 Dec\) or ZAP-101 \(Wed 8 Dec\)\?$/);
+        const planned = await call("caius_plan_apply", { date: "2027-12-09", brief: prose });
+        expect(planned.say).toMatch(/Which do you mean: ZAP-111 \(Mon 6 Dec\) or ZAP-101 \(Wed 8 Dec\)\?$/);
+        await clearHolds("2027-12-08");
+    });
+});
