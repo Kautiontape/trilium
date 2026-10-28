@@ -543,6 +543,7 @@ describe("a Review goes straight on", () => {
         at(`${WED}T09:45`);
         const wound = await call("caius_winddown_apply", { date: MON, said: "nothing", evening: [] });
         expect(wound.next).toBe("planday");
+        expect(wound.nextCall).toBeUndefined();
         expect(wound.planday.catchup).toMatchObject({ step: "catchup", date: WED, question: null });
         expect(wound.planday.inputs).toMatchObject({ step: "inputs", date: WED, question: null });
         expect(wound.planday.inputs.data.list.map((item: any) => item.text)).toEqual([ "Message Dave about the lights" ]);

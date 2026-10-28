@@ -555,11 +555,18 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
     });
     if (!("nextCall" in result) || !result.nextCall) return result;
     // A morning Review goes straight on to today's plan: its steps run here, with what he already
-    // answered, so the reply asks the plan's questions and never whether to plan.
-    const answered = { evening: asked.evening, keep: [ ...asked.keep, ...asked.carry ].map((line) => line.lineId) };
-    const catchup = await planDay(deps, { date: targetDay, step: "catchup" });
-    const inputs = await planDay(deps, { date: targetDay, step: "inputs", answered });
-    return { ...result, planday: { catchup, inputs } };
+    // answered (the lines written, a vague yes's included), so the reply asks the plan's questions and
+    // never whether to plan. When they fail, the writes stand and the nextCall is left to make.
+    const kept = result.written.filter((entry) => (entry.kind === "keep" || entry.kind === "carry") && entry.id).map((entry) => entry.id ?? "");
+    const answered = { evening: asked.evening, keep: [ ...new Set([ ...asked.keep, ...asked.carry ].map((line) => line.lineId).concat(kept)) ] };
+    try {
+        const catchup = await planDay(deps, { date: targetDay, step: "catchup" });
+        const inputs = await planDay(deps, { date: targetDay, step: "inputs", answered });
+        const { nextCall: _nextCall, ...rest } = result;
+        return { ...rest, planday: { catchup, inputs } };
+    } catch {
+        return result;
+    }
 }
 
 /**

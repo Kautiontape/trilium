@@ -371,7 +371,9 @@ describe("review continues", () => {
         at("2027-02-03T09:45");
         const wound = await call("caius_winddown_apply", { date: "2027-02-01", done: [ "groceries" ] });
         expect(wound.next).toBe("planday");
-        expect(wound.nextCall).toEqual({ tool: "caius_planday", date: "2027-02-03" });
+        // Plan my day's steps ran in the apply, so there is no call left to make.
+        expect(wound.nextCall).toBeUndefined();
+        expect(wound.planday.catchup).toMatchObject({ step: "catchup", date: "2027-02-03" });
         expect(wound.say).toMatch(/ Now today's plan\.$/);
 
         // A day nothing recorded: the answers he gave in this conversation are passed through instead.
