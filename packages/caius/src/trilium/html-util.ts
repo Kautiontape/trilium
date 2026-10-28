@@ -159,7 +159,6 @@ export function liveDescendants(li: HTMLElement, states: StateSymbols): HTMLElem
   return li.querySelectorAll('li').filter((d) => d !== li && isLive(d, states));
 }
 
-/** `<aside class="admonition important">`: the critical block. */
 /** Whether the item is inside the Important block. */
 export function inCriticalAside(li: HTMLElement): boolean {
   for (let n = li.parentNode as HTMLElement | null; n; n = n.parentNode as HTMLElement | null) {
@@ -173,6 +172,7 @@ export function isIncludeNote(el: HTMLElement): boolean {
   return el.tagName === 'SECTION' && el.classList.contains('include-note');
 }
 
+/** `<aside class="admonition important">`: the critical block. */
 export function isCriticalAside(el: HTMLElement): boolean {
   return el.tagName === 'ASIDE' && el.classList.contains('admonition') && el.classList.contains('important');
 }

@@ -83,11 +83,6 @@ export function bulletTexts(lines: string[]): string[] {
 const TASK_MARK = /^(\s*(?:[-*+]|\d+[.)])\s+)\[.\]\s+/;
 
 /**
- * The markdown the scanner should see: task lines under the Suggested heading lose
- * their checkbox, so they never reach a horizon or capacity. Line numbers don't move.
- * `suggested` holds the 0-based lines that were task lines.
- */
-/**
  * `markdown` with the checkbox taken off every line inside Meetings and Context, so nothing there
  * is a task. Lines in `keep` (the Important block, which can sit under Context) are left alone.
  */
@@ -99,6 +94,11 @@ export function neutralizeProse(markdown: string, keep: Set<number>): string {
     .join('\n');
 }
 
+/**
+ * The markdown the scanner should see: task lines under the Suggested heading lose
+ * their checkbox, so they never reach a horizon or capacity. Line numbers don't move.
+ * `suggested` holds the 0-based lines that were task lines.
+ */
 export function neutralizeSuggested(markdown: string): { text: string; suggested: Set<number> } {
   const headings = headingsByLine(markdown);
   const suggested = new Set<number>();
