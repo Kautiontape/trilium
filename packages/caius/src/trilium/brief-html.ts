@@ -78,6 +78,21 @@ export function readHeader(html: string): { dateLine: string; headline: string; 
 }
 
 /**
+ * `html` with the list right under the heading `title` replaced by `list`, found as a parsed node so
+ * a list nested in it goes too; put right after the heading when it has none. Null without that
+ * heading. Nothing else changes.
+ */
+export function withListUnder(html: string, title: string, list: string): string | null {
+  const top = elements(parse(html, { comment: true }));
+  const at = top.findIndex((el) => /^H[1-6]$/.test(el.tagName) && el.text.trim() === title);
+  const heading = top[at];
+  if (!heading) return null;
+  const next = top[at + 1];
+  const old = next && (next.tagName === 'UL' || next.tagName === 'OL') ? next.range : [heading.range[1], heading.range[1]];
+  return apply(html, [{ start: old[0], end: old[1], text: list }]);
+}
+
+/**
  * The brief's body: the header's include-note, the picks as plain bullets under `picksTitle`, then
  * each section under its own heading. A section's `html` is trusted (rendered from markdown).
  */

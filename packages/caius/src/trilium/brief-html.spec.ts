@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefBodyHtml, headerHtml, includeNote, leadingInclude, readHeader, withInclude, withoutImages } from './brief-html.js';
+import { briefBodyHtml, headerHtml, includeNote, leadingInclude, readHeader, withInclude, withListUnder, withoutImages } from './brief-html.js';
 
 const INCLUDE = '<section class="include-note" data-note-id="hdr" data-box-size="full">&nbsp;</section>';
 
@@ -88,5 +88,17 @@ describe('withoutImages', () => {
     expect(withoutImages('<p>Seen <img src="https://tracker.example/p.png" alt=""> here.</p><figure class="image"><img src="x.png"><figcaption>c</figcaption></figure><p>End</p>'))
       .toBe('<p>Seen  here.</p><p>End</p>');
     expect(withoutImages('<p>No images</p>')).toBe('<p>No images</p>');
+  });
+});
+
+describe('withListUnder', () => {
+  const NEW = '<ul><li>Gamma</li><li>Alpha</li></ul>';
+  it('replaces the whole list under the heading, a nested list included, and nothing else', () => {
+    const html = '<p>x</p><h2>Get done today</h2><ul><li>Alpha<ul><li>ask Pat first</li></ul></li><li>Gamma</li></ul><h2>Notes</h2><p>y</p>';
+    expect(withListUnder(html, 'Get done today', NEW)).toBe(`<p>x</p><h2>Get done today</h2>${NEW}<h2>Notes</h2><p>y</p>`);
+  });
+  it('puts the list right after a heading that has none, and answers null without the heading', () => {
+    expect(withListUnder('<h2>Get done today</h2><h2>Notes</h2>', 'Get done today', NEW)).toBe(`<h2>Get done today</h2>${NEW}<h2>Notes</h2>`);
+    expect(withListUnder('<h2>Notes</h2>', 'Get done today', NEW)).toBeNull();
   });
 });

@@ -47,6 +47,6 @@ export type { WorkBlock, WorkTask } from './daily/blocks.js';
 export type { Rhythm } from './daily/standing.js';
 export { closedKeys, CLOSED_DAYS, dayCandidates, FINISHED_DAYS, FINISHED_LABEL, keysOf, liveKeys } from './daily/candidates.js';
 export type { Candidate, CandidateReason, JiraLike, TicketLike, WeekTaskLike } from './daily/candidates.js';
-export { briefBodyHtml, headerHtml, includeNote, leadingInclude, readHeader, withInclude, withoutImages } from './trilium/brief-html.js';
+export { briefBodyHtml, headerHtml, includeNote, leadingInclude, readHeader, withInclude, withListUnder, withoutImages } from './trilium/brief-html.js';
 export type { BriefAct } from './trilium/brief-html.js';
 export type { TerrainInput, TerrainEvent, TerrainWork, WeatherIcon } from './draw/terrain.js';

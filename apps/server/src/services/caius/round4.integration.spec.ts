@@ -927,3 +927,29 @@ describe("fix round 2: a hold that narrows to one item is resolved", () => {
         expect((await tasksOf("2027-09-30")).map((task: any) => task.text)).toContain("ZAP-101 Verify the export retry on staging");
     });
 });
+
+describe("fix round 2: rewritten picks survive a sub-bullet", () => {
+    it("N3: a pick with a sub-bullet he added; 'put gamma first' rewrites the whole list, well-formed, and the rest of the brief stays byte for byte", async () => {
+        const DAY = "2027-10-04";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("p-a", "Alpha task ~30m"), li("p-b", "Beta task ~30m"), li("p-g", "Gamma task ~30m"))}`);
+        });
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, brief: { ...prose, sections: [ { title: "Notes", markdown: "Keep it light." } ] } });
+        const before = await cls.init(() => store.content(planned.briefNoteId));
+        // He adds a sub-bullet under the first pick.
+        const nested = before.replace(/(<li[^>]*>Alpha task[^<]*)<\/li>/, "$1<ul><li>ask Pat first</li></ul></li>");
+        expect(nested).not.toBe(before);
+        await cls.init(() => store.putContent(planned.briefNoteId, nested));
+
+        await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "gamma", first: true } ] });
+        const after = await cls.init(() => store.content(planned.briefNoteId));
+        const picks = /<h2>Get done today<\/h2>(<ul>[\s\S]*?<\/ul>)<h2>/.exec(after)?.[1] ?? "";
+        expect([ ...picks.matchAll(/<li[^>]*>([^<]*)/g) ].map((m) => m[1])).toEqual([ "Gamma task (~30m)", "Alpha task (~30m)", "Beta task (~30m)" ]);
+        expect((after.match(/<ul>/g) ?? []).length).toBe((after.match(/<\/ul>/g) ?? []).length);
+        expect((after.match(/<li[ >]/g) ?? []).length).toBe((after.match(/<\/li>/g) ?? []).length);
+        const outside = (html: string) => html.replace(/<h2>Get done today<\/h2>[\s\S]*?(?=<h2>Notes<\/h2>)/, "");
+        expect(outside(after)).toBe(outside(nested));
+    });
+});

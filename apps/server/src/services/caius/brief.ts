@@ -18,6 +18,7 @@ import {
     readHeader,
     type StoreNote,
     withInclude,
+    withListUnder,
     withoutImages
 } from "@triliumnext/caius";
 import { createHash } from "crypto";
@@ -263,11 +264,7 @@ export async function rewritePicks(store: NoteStore, date: string, picks: BriefP
     const newId = () => `e${createHash("sha1").update(`${brief.noteId}:picks:${index++}`).digest("hex").slice(0, 32)}`;
     const lines = pickLines(picks);
     const list = lines.length ? ensureListItemIds(`<ul>${lines.map((line) => `<li>${escapeText(line)}</li>`).join("")}</ul>`, newId) : "";
-    return replace(store, brief.noteId, "brief", (before) => {
-        const at = before.indexOf(title) + title.length;
-        const old = /^<ul>[\s\S]*?<\/ul>/.exec(before.slice(at))?.[0] ?? "";
-        return `${before.slice(0, at)}${list}${before.slice(at + old.length)}`;
-    });
+    return replace(store, brief.noteId, "brief", (before) => withListUnder(before, t("caius.brief.picks_title"), list) ?? before);
 }
 
 /** Text as `briefBodyHtml` escapes it. */
