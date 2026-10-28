@@ -194,12 +194,24 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const kept = new Set<string>();
         // planAsks is filled here and read by `answer`, which runs after.
         const planAsks: HoldGroup[] = [];
+        const released: string[] = [];
         for (const day of await heldDays(store)) {
             const settled = await settleHolds(store, day, liveIds, new Map(input.done.map((id) => [ id, "done" ] as const)), [], (id) => items.find((item) => item.id === id)?.period);
             for (const id of settled.held) kept.add(id);
             planAsks.push(...settled.asks);
+            released.push(...settled.released);
         }
         for (const task of [ ...heldTasks ]) if (task.listItemId && !kept.has(task.listItemId)) heldTasks.splice(heldTasks.indexOf(task), 1);
+        // A released item comes to today, as a wind-down's freed item goes to its target day: the catch-up
+        // never moves a held item, and once its siblings are settled the walk can stop short of its day.
+        await guarded({ kind: "fate" }, skipped, async () => { for (const id of released) {
+            const item = items.find((candidate) => candidate.id === id);
+            const to = proposedForward(item?.period ?? "", date);
+            const noteId = item?.item?.noteId;
+            if (!item || !to || !noteId) continue;
+            const [ result ] = await forwardTasks(store, [ { noteId, listItemId: id, to } ], {});
+            record(written, skipped, { kind: "fate", id, text: item.text, detail: to }, result);
+        } });
 
         if (asked.acts) skipped.push({ kind: "acts", reason: "not_a_move", detail: "Acts go with a call that only moves items of his list" });
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));

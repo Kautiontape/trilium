@@ -1328,3 +1328,25 @@ describe("fix round 5: a Review of a day older than 3 workdays keeps its settled
         expect(await labelsOf(DAY, "caiusSettled")).toEqual(expect.arrayContaining([ `${DAY}-101`, `${DAY}-111` ]));
     });
 });
+
+describe("fix round 5: a hold settled in Plan my day", () => {
+    it("N1f: Thursday's 'ZAP-101 is finished' releases the previous Friday's 111, which comes to today and is said", async () => {
+        const FR = "2028-05-19", WE = "2028-05-24", TH = "2028-05-25";
+        await cls.init(async () => {
+            const friday = await store.calendarDay(FR);
+            await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("nf-111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`);
+            const wednesday = await store.calendarDay(WE);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("nf-101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`), li("nf-dave", "Message Dave about the lights"))}`);
+        });
+        at(`${WE}T17:45`);
+        const held = await call("caius_winddown_apply", { date: WE, done: [ "the export" ] });
+        expect(held.say).toMatch(/Which export: ZAP-1\d\d or ZAP-1\d\d\?$/);
+        at(`${TH}T09:30`);
+        const planned = await call("caius_plan_apply", { date: TH, finished: [ "ZAP-101" ], catchup: "move_all", brief: prose });
+        expect(planned.written).toContainEqual(expect.objectContaining({ kind: "fate", id: "nf-111", detail: TH, status: "written" }));
+        expect(planned.say).toMatch(/ZAP-111 moved to/);
+        expect(planned.say).not.toMatch(/\?$/);
+        expect(await labelsOf(WE, "caiusHeld")).toEqual([]);
+        expect(await tasksOf(TH)).toContainEqual({ text: "ZAP-111 Check the invoice export in QA", state: "open" });
+    });
+});
