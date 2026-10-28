@@ -31,6 +31,7 @@ import {
     keysOf,
     label,
     listItemsWithoutIds,
+    liveKeys,
     loadJournal,
     loadStateSymbols,
     meetingLines,
@@ -246,19 +247,31 @@ export function createCaiusService(
         /** `caius_inputs`, cached like the steps' reads; it reads no notes, so it takes no lock. */
         inputs: ({ refresh, ...input }: InputsToolInput) => cachedInputs(input, refresh),
 
-        /** Adds the items, except a Suggested item naming a key Shawn closed lately (`closedKeys`), skipped as `finished`. */
+        /**
+         * Adds the items, except a Suggested item naming a key Shawn closed lately (`closedKeys`),
+         * skipped as `finished`, and one without a key whose "Get X done" names a live task, skipped
+         * as `duplicate`: the library compares a keyless item's whole line, wrapper and all.
+         */
         add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => {
             const now = caiusNow();
             const docs = items.some((item) => item.suggested) ? await journalDocs(store) : null;
             const closed = docs ? await closedKeys(store, docs, now) : new Set<string>();
-            const closedKey = (item: AddInput["items"][number]) => item.suggested ? addKeys(item).find((key) => closed.has(key)) : undefined;
-            const added = await addTasks(store, items.filter((item) => closedKey(item) === undefined), { dryRun, now });
+            const live = docs ? liveKeys(docs, now) : new Map<string, string[]>();
+            const skipOf = (item: AddInput["items"][number]) => {
+                if (!item.suggested) return undefined;
+                const key = addKeys(item).find((k) => closed.has(k));
+                if (key) return { ...item, status: "skipped" as const, reason: "finished", detail: `${key} was closed lately: done, dismissed or called finished` };
+                const subject = item.source === undefined ? /^Get (.+?) done: because /.exec(item.text.trim())?.[1] : undefined;
+                if (subject && taskKeys(subject, []).some((k) => live.has(k))) {
+                    return { ...item, status: "skipped" as const, reason: "duplicate", detail: `already open in the Journal: ${subject}` };
+                }
+                return undefined;
+            };
+            const skips = items.map(skipOf);
+            const added = await addTasks(store, items.filter((_, i) => !skips[i]), { dryRun, now });
             let next = 0;
-            return withBlobIds(items.map((item) => {
-                const key = closedKey(item);
-                const result = key === undefined
-                    ? added[next++]
-                    : { ...item, status: "skipped" as const, reason: "finished", detail: `${key} was closed lately: done, dismissed or called finished` };
+            return withBlobIds(skips.map((skipped) => {
+                const result = skipped ?? added[next++];
                 if (!result) throw new Error("The library returned fewer results than it was given items");
                 return presentResult(result, html);
             }));

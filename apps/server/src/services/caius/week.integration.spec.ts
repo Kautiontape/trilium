@@ -598,3 +598,19 @@ describe("accepting past an Evening list", () => {
         expect(brief.data.header.work.find((block: any) => block.label === "ZAP-9")).toMatchObject({ start: "10:00", end: "10:45" });
     });
 });
+
+describe("a keyless suggestion of a live task", () => {
+    it("skips 'Sandbox first', already on the week's list, as a duplicate, written either way", async () => {
+        await cls.init(async () => {
+            const week = await store.calendarWeek("2026-W49");
+            await store.putContent(week.noteId, `<h2>Tasks</h2>${ul(li("sb1", "Sandbox first ~30m"))}`);
+        });
+        at("2026-12-02T09:30");
+        const added = await call("caius_add", { items: [
+            { date: "2026-12-02", suggested: true, title: "Sandbox first", because: "on the week's list", minutes: 30 },
+            { date: "2026-12-02", suggested: true, text: "Get Sandbox first done: because on the week's list (~30m)" }
+        ] });
+        expect(added.results.map((r: any) => [ r.status, r.reason ])).toEqual([ [ "skipped", "duplicate" ], [ "skipped", "duplicate" ] ]);
+        expect((await call("caius_plan", { period: "day", date: "2026-12-02" })).suggested).toEqual([]);
+    });
+});
