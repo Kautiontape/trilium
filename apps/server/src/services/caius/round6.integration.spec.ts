@@ -240,6 +240,28 @@ describe("the evening", () => {
         expect(await suggestedOf(DAY)).toEqual([]);
     });
 
+    it("'nothing for the evening' is an answer: no suggestion, in the plan's reply or the wind-down's the night before", async () => {
+        const DAY = "2030-06-13";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("h-1", "Write the runbook ~30m"))}`);
+        at(`${DAY}T09:40`);
+        const brief = { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] };
+        const planned = await call("caius_plan_apply", { date: DAY, said: "nothing for the evening", evening: [], eveningAnswered: true, brief });
+        expect(planned.skipped).toEqual([]);
+        expect(planned.say).not.toContain("Suggested");
+        expect(await suggestedOf(DAY)).toEqual([]);
+        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.evening.suggestion).toBeNull();
+
+        const MON = "2030-06-17";
+        const TUE = "2030-06-18";
+        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("h-2", "Write the release note ~30m"))}`);
+        at(`${MON}T17:30`);
+        expect((await call("caius_winddown_apply", { date: MON, said: "done. nothing tomorrow evening", done: [ "h-2" ], evening: [], eveningAnswered: true })).skipped).toEqual([]);
+        at(`${TUE}T09:40`);
+        expect((await call("caius_planday", { date: TUE, step: "inputs" })).data.evening.suggestion).toBeNull();
+        await call("caius_plan_apply", { date: TUE, said: "", brief });
+        expect(await suggestedOf(TUE)).toEqual([]);
+    });
+
     it("an evening with a calendar event, or a task he names in the reply, gets no suggestion", async () => {
         const MON = "2029-02-05";
         const TUE = "2029-02-06";

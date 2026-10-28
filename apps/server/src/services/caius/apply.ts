@@ -54,6 +54,7 @@ import {
     dayKey,
     type DayRead,
     EVENING_ID,
+    EVENING_NONE_ID,
     EVENING_SUGGESTED_ID,
     eveningEventTitles,
     drawnEvents,
@@ -272,7 +273,10 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEventTitles(read) }));
-        await guarded({ kind: "suggested" }, skipped, () => suggestEvening(store, date, now, offer.evening.suggestion, written, skipped));
+        // An evening he said holds nothing gets no suggestion, today or on a refresh.
+        const none = asked.eveningAnswered && !input.evening.length;
+        if (none) await labelDay(store, date, ASKED_LABEL, [ EVENING_NONE_ID ]);
+        await guarded({ kind: "suggested" }, skipped, () => suggestEvening(store, date, now, none ? null : offer.evening.suggestion, written, skipped));
         // A meeting he isn't taking leaves the Meetings block and the drawing written below.
         let taken = read;
         let headsUp = offer.headsUp;
@@ -542,6 +546,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEventTitles(read) }));
+        if (asked.eveningAnswered && !input.evening.length) await labelDay(store, targetDay, ASKED_LABEL, [ EVENING_NONE_ID ]);
         await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, input.overlaps, written, skipped));
         if (!failedCalendar(read)) await recordFocus(store, targetDay, read);
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.

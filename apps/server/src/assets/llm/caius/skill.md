@@ -132,6 +132,7 @@ An item with `park` has been carried on three workdays or more, and the `open` q
 - A ref names the same item for the whole conversation. One whose item changed since the step is skipped as `stale`: ask him about that item in one clause.
 - Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date. An answer may name only items the steps showed.
 - "Later this week" and "this week" are the week ref `w1` in `data.days`, and "next week" is `w2`: never a date.
+- When he says the evening holds nothing ("nothing tonight"), pass `evening: []` with `eveningAnswered: true`, in either apply: no suggestion is written. Leave `eveningAnswered` out when he didn't answer the evening question.
 - Ask every question a step's `question` holds: never fold one into a summary of what there is nothing to decide, such as "no evening tasks to decide on".
 - Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.
 - Never ask permission for anything the apply tool does.

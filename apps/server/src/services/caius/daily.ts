@@ -457,8 +457,9 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
  * The day's evening as the steps show it: his evening tasks, the calendar's evening events and
  * `suggestion`, the Suggested line the plan's apply writes while the evening has neither. The line
  * is his standing note's evening rule ("something away from screens, a chore or a Recharge item"),
- * sized by its evening minutes; it is null without a rule, or once the day was offered it
- * (`#caiusAsked=evening_suggested`, `asked`), whatever became of it.
+ * sized by its evening minutes; it is null without a rule, once the day was offered it
+ * (`#caiusAsked=evening_suggested`, `asked`), whatever became of it, or when he said the evening
+ * holds nothing (`evening_none`).
  */
 function eveningOf(day: Awaited<ReturnType<typeof dayFacts>>, read: DayRead, asked: Set<string>) {
     const tasks = listOf(day.plan).filter((task) => task.evening).map((task) => task.text);
@@ -466,7 +467,7 @@ function eveningOf(day: Awaited<ReturnType<typeof dayFacts>>, read: DayRead, ask
     const rule = eveningRule(read.standing.markdown);
     const line = rule ? `${rule.text}: because ${EVENING_REASON} (~${rule.minutes}m)` : null;
     const taken = new Set([ ...day.plan.dismissed, ...day.plan.suggested.flatMap((task) => keysOf(task.text)) ]);
-    const suggestion = line && !tasks.length && !events.length && !asked.has(EVENING_SUGGESTED_ID) && !keysOf(line).some((key) => taken.has(key)) ? line : null;
+    const suggestion = line && !tasks.length && !events.length && !asked.has(EVENING_SUGGESTED_ID) && !asked.has(EVENING_NONE_ID) && !keysOf(line).some((key) => taken.has(key)) ? line : null;
     return { tasks, events, suggestion };
 }
 
@@ -530,6 +531,8 @@ export const HEAVY_ID = "heavy";
 export const EVENING_ID = "evening";
 /** The `#caiusAsked` value of a day offered the evening suggestion, once. */
 export const EVENING_SUGGESTED_ID = "evening_suggested";
+/** The `#caiusAsked` value of a day whose evening he said holds nothing, which no suggestion fills. */
+export const EVENING_NONE_ID = "evening_none";
 
 /** An overlap's id for `#caiusAsked`: a hash of its two meetings and its time. */
 export function overlapIdOf(pair: { first: string; second: string; at: string }): string {

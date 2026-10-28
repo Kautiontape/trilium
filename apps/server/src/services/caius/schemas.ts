@@ -180,6 +180,9 @@ const moves = z.array(moveRef).default([]).describe("Only when the user asks to 
 const said = z.string().describe("His reply this call answers, word for word, such as \"110 is done. 111 later this week\". It never writes anything: when it seems to give an item something the call leaves out, nothing is written and the answer is a `check` to resolve. \"\" only for a call no reply of his asked for, such as a refresh");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
 
+/** His word that the evening holds nothing, which no suggestion then fills. */
+const eveningAnswered = z.boolean().optional().describe("true when he said the evening holds nothing (\"nothing tonight\"), with evening: []: no evening suggestion is written for the day. Leave it out when he didn't answer the evening question");
+
 /** The agent's word that it checked what the last call's `check` asked about. */
 const checked = z.boolean().optional().describe("true when the last call answered `check` and he didn't mean what his words seemed to say: the call is applied as given, without the check");
 
@@ -204,6 +207,7 @@ const planApply = z.object({
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): a ticket or week item is offered again on the next workday, an ask comes back as a Follow up. Not a dismissal"),
     dismiss: z.array(dismissRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key with answered: true. Each must be named in said (its key, number, author or a word of it), or the call answers a check"),
     evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
+    eveningAnswered,
     context: answerTexts("What the user said is worth knowing, each written as a Context line"),
     overlaps: overlapAnswers,
     forward: z.array(z.object({
@@ -257,6 +261,7 @@ const windDownApply = z.object({
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday: a ticket or week item is offered again the workday after, an ask comes back as a Follow up. Not a dismissal"),
     dismiss: z.array(dismissRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key with answered: true. Each must be named in said (its key, number, author or a word of it), or the call answers a check"),
     evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),
+    eveningAnswered,
     context: answerTexts("What the user said is worth knowing for the next workday, each a Context line"),
     overlaps: overlapAnswers
 });
