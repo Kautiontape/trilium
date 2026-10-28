@@ -42,7 +42,7 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -90,7 +90,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     if (step === "open") {
         const { standing, open, held } = await deps.locked("caius_winddown", async () => {
             const items = await stillOpen(deps.store, date, targetDay);
-            return { standing: await deps.standing(), open: items, held: await heldOn(deps.store, items.items.map((item) => item.period)) };
+            return { standing: await deps.standing(), open: items, held: await allHeld(deps.store) };
         });
         // Jira is asked about the items' own tickets, so an item it calls done can be named as such.
         const keys = open.items.map((item) => keysOf(item.text)[0]).filter((key): key is string => !!key && JIRA_KEY.test(key));
@@ -482,6 +482,8 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
     type Task = { noteId: string; listItemId: string | null; text: string; section: string | null; critical: boolean; period: string };
     const tasks: Task[] = [];
     const held: Task[] = [];
+    // A hold can name an item on another day than the one it was given on, so it is read Journal-wide.
+    const holding = await allHeld(store);
     for (let at = localDay(date), i = 0; !skipped && i < CATCHUP_DAYS; i++) {
         at = lastWorkday(at);
         const key = dayKey(at);
@@ -499,31 +501,44 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         }
         days.unshift(key);
         // A task an ambiguous wind-down answer held stays on its day until he says which.
-        const holding = new Set(dayNote.attributes.filter((a) => a.type === "label" && a.name === HELD_LABEL).map((a) => a.value));
         tasks.unshift(...live.filter((task) => !task.listItemId || !holding.has(task.listItemId)));
         held.unshift(...live.filter((task) => task.listItemId && holding.has(task.listItemId)));
         if (skippedHere) break;
     }
-    // A held task is asked about every morning until he names it, however long ago its day was closed.
-    for (const heldNote of await store.search(`#${HELD_LABEL}`)) {
-        const day = label(heldNote, PERIODS.day.label);
-        if (!day || day >= date || heldNote.type !== "text" || heldNote.isProtected) continue;
-        const ids = new Set(heldNote.attributes.filter((a) => a.type === "label" && a.name === HELD_LABEL).map((a) => a.value));
-        const found = mainTasks(await readPlan(store, "day", day, now))
-            .filter((task) => task.listItemId && ids.has(task.listItemId) && !held.some((h) => h.listItemId === task.listItemId))
-            .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: day }));
-        held.push(...found);
-        if (found.length && !days.includes(day)) days.push(day);
+    // A held task is asked about every morning until he names it, wherever it lives and however long ago its day was closed.
+    if (holding.size) {
+        const docs = (await loadJournal(store)).docs;
+        for (const task of openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, now))) {
+            if (!task.listItemId || !holding.has(task.listItemId) || task.parentListItemId || task.period >= date) continue;
+            if (held.some((h) => h.listItemId === task.listItemId)) continue;
+            held.push({ noteId: task.noteId, listItemId: task.listItemId, text: task.text, section: task.section, critical: task.critical, period: task.period });
+            if (PERIODS.day.pattern.test(task.period) && !days.includes(task.period)) days.push(task.period);
+        }
     }
     days.sort();
     held.sort((a, b) => a.period.localeCompare(b.period));
     return { lastWorkday: last, days, note, skipped, tasks, held };
 }
 
-/** The list items held (`#caiusHeld`) on the day notes of `periods`. The caller holds the lock. */
-export async function heldOn(store: NoteStore, periods: string[]): Promise<Set<string>> {
-    const days = [ ...new Set(periods) ].filter((period) => PERIODS.day.pattern.test(period));
-    return new Set((await Promise.all(days.map((day) => dayLabels(store, day, HELD_LABEL)))).flat());
+/** Every list item held (`#caiusHeld`) anywhere in the Journal, whichever day note the hold was given on. The caller holds the lock. */
+export async function allHeld(store: NoteStore): Promise<Set<string>> {
+    const held = new Set<string>();
+    for (const note of await store.search(`#${HELD_LABEL}`)) {
+        for (const a of note.attributes) if (a.type === "label" && a.name === HELD_LABEL) held.add(a.value);
+    }
+    return held;
+}
+
+/** The day notes that carry a hold (`#caiusHeld` or `#caiusHeldGroup`), by their day. The caller holds the lock. */
+export async function heldDays(store: NoteStore): Promise<string[]> {
+    const days = new Set<string>();
+    for (const name of [ HELD_LABEL, HELD_GROUP_LABEL ]) {
+        for (const note of await store.search(`#${name}`)) {
+            const day = label(note, PERIODS.day.label);
+            if (day) days.add(day);
+        }
+    }
+    return [ ...days ];
 }
 
 /** A plan's top-level tasks in any state. */

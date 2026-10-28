@@ -89,17 +89,17 @@ describe("Caius nudge route", () => {
     it("still flags a held day behind a later day that was closed, listing its held tasks", async () => {
         await cls.init(async () => {
             const wed = await store.calendarDay("2033-06-01");
-            await store.putContent(wed.noteId, `<h3>Work</h3>${ul(li("k1", "Check the export"), li("k2", "Verify the export"))}`);
-            await store.addLabel(wed.noteId, "caiusHeld", "k1");
-            await store.addLabel(wed.noteId, "caiusHeld", "k2");
+            await store.putContent(wed.noteId, `<h3>Work</h3>${ul(li("hk1", "Check the export"), li("hk2", "Verify the export"))}`);
+            await store.addLabel(wed.noteId, "caiusHeld", "hk1");
+            await store.addLabel(wed.noteId, "caiusHeld", "hk2");
             const thu = await store.calendarDay("2033-06-02");
-            await store.putContent(thu.noteId, `<h3>Work</h3>${ul(li("k3", "Thursday thing", true))}`);
+            await store.putContent(thu.noteId, `<h3>Work</h3>${ul(li("hk3", "Thursday thing", true))}`);
             setLabel(thu.noteId, "caiusWoundDown", "2033-06-02");
         });
         const { body } = await nudge("2033-06-03").expect(200);
         expect(body).toMatchObject({ state: "catchup", tasks: [] });
         expect(body.days).toContain("2033-06-01");
-        expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "k1", "k2" ]));
+        expect(body.held.map((task: { listItemId: string }) => task.listItemId)).toEqual(expect.arrayContaining([ "hk1", "hk2" ]));
     });
 
     it("walks past a missing day to the open one before it", async () => {

@@ -39,6 +39,7 @@ import {
     catchupOf,
     closingLines,
     closingPeriods,
+    heldDays,
     dateLabel,
     dayKey,
     type DayRead,
@@ -181,12 +182,12 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
                 record(written, skipped, { kind: "done", id: listItemId }, result);
             }
         });
-        // A held task he named is settled; a hold that narrows to one releases it.
-        for (const day of new Set(heldTasks.map((task) => task.period))) {
-            const live = new Set(heldTasks.filter((task) => task.period === day && task.listItemId && !input.done.includes(task.listItemId)).map((task) => task.listItemId ?? ""));
-            const kept = await settleHolds(store, day, live, new Set(input.done), []);
-            for (const id of live) if (!kept.includes(id)) heldTasks.splice(heldTasks.findIndex((task) => task.listItemId === id), 1);
-        }
+        // A held task he named is settled; a hold that narrows to one releases it. Holds are settled on
+        // every note they were given on, against what is open anywhere in the Journal.
+        const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
+        const kept = new Set<string>();
+        for (const day of await heldDays(store)) for (const id of await settleHolds(store, day, liveIds, new Set(input.done), [])) kept.add(id);
+        for (const task of [ ...heldTasks ]) if (task.listItemId && !kept.has(task.listItemId)) heldTasks.splice(heldTasks.indexOf(task), 1);
 
         if (asked.acts) skipped.push({ kind: "acts", reason: "not_a_move", detail: "Acts go with a call that only moves items of his list" });
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
@@ -344,13 +345,12 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // call names it: he named it, but which one is unclear.
         const namedNow = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.move.map((ref) => ref.listItemId) ]);
         const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
-        const held = await settleHolds(store, date, openIds, namedNow, input.heldGroups);
-        // An item an earlier day's wind-down held stays held too, released on its own note.
+        // A hold's items can live on several days, so whether one is still open is read across the Journal.
+        const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
+        const held = await settleHolds(store, date, liveIds, namedNow, input.heldGroups);
+        // An item an earlier wind-down held stays held too, settled on the note the hold was given on.
         const heldElsewhere: string[] = [];
-        for (const day of new Set(open.items.map((item) => item.period).filter((period) => period !== date && PERIODS.day.pattern.test(period)))) {
-            const live = new Set(open.items.filter((item) => item.period === day).flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
-            heldElsewhere.push(...await settleHolds(store, day, live, namedNow, []));
-        }
+        for (const day of (await heldDays(store)).filter((day) => day !== date)) heldElsewhere.push(...await settleHolds(store, day, liveIds, namedNow, []));
         const allHeld = [ ...held, ...heldElsewhere ];
         // A fate he named, then the proposed one for every item he didn't name and isn't held.
         const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...allHeld ]);

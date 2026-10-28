@@ -1011,3 +1011,38 @@ describe("fix round 2: a held item is never forwarded or forgotten by a later da
         expect((await tasksOf("2027-10-13")).slice(0, 2).map((task: any) => task.state)).toEqual([ "done", "done" ]);
     });
 });
+
+describe("fix round 3: a hold that spans two days", () => {
+    it("F0 (X1, X2): Monday's 111 and Wednesday's 101 held together; neither Thursday's move_all nor Thursday's wind-down moves either until he names one", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-11-01");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("x-111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`);
+            const wednesday = await store.calendarDay("2027-11-03");
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("x-101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`))}`);
+        });
+        at("2027-11-03T17:45");
+        const held = await call("caius_winddown_apply", { date: "2027-11-03", done: [ "the export" ] });
+        expect(held.say).toMatch(/Which export: ZAP-101 or ZAP-111\?$/);
+        const states = async () => [ ...(await tasksOf("2027-11-01")), ...(await tasksOf("2027-11-03")) ].map((task: any) => task.state);
+
+        // X1: Thursday morning's catch-up neither offers 111 to move nor moves it.
+        at("2027-11-04T09:30");
+        const catchup = await call("caius_planday", { date: "2027-11-04", step: "catchup" });
+        expect(catchup.data.tasks.map((task: any) => task.listItemId)).toEqual([]);
+        expect(catchup.data.held.map((task: any) => task.listItemId)).toEqual([ "x-111", "x-101" ]);
+        expect(catchup.question).toMatch(/Which do you mean: ZAP-1\d\d.* or ZAP-1\d\d.*\?$/);
+        const planned = await call("caius_plan_apply", { date: "2027-11-04", catchup: "move_all", brief: prose });
+        expect(planned.say).toMatch(/Which do you mean: ZAP-1\d\d.* or ZAP-1\d\d.*\?$/);
+        expect(await states()).toEqual([ "open", "open" ]);
+        expect((await tasksOf("2027-11-04")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
+
+        // X2: Thursday evening's wind-down with no answers forwards neither.
+        at("2027-11-04T17:30");
+        const thursday = await call("caius_winddown_apply", { date: "2027-11-04" });
+        expect(thursday.say).toMatch(/Which do you mean: ZAP-1\d\d.* or ZAP-1\d\d.*\?$/);
+        expect(await states()).toEqual([ "open", "open" ]);
+        expect((await tasksOf("2027-11-05")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
+        expect((await labelsOf("2027-11-03", "caiusHeld")).sort()).toEqual([ "x-101", "x-111" ]);
+        await clearHolds("2027-11-03");
+    });
+});
