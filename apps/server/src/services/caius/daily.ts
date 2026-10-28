@@ -88,15 +88,19 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     });
 
     if (step === "open") {
-        const { standing, open } = await deps.locked("caius_winddown", async () => ({
-            standing: await deps.standing(),
-            open: await stillOpen(deps.store, date, targetDay)
-        }));
+        const { standing, open, held } = await deps.locked("caius_winddown", async () => {
+            const items = await stillOpen(deps.store, date, targetDay);
+            return { standing: await deps.standing(), open: items, held: await heldOn(deps.store, items.items.map((item) => item.period)) };
+        });
         // Jira is asked about the items' own tickets, so an item it calls done can be named as such.
         const keys = open.items.map((item) => keysOf(item.text)[0]).filter((key): key is string => !!key && JIRA_KEY.test(key));
         const done = keys.length ? new Set((await deps.dayRead(targetDay, refresh, keys)).inputs.jira.done) : new Set<string>();
-        const items = open.items.map((item) => done.has(keysOf(item.text)[0] ?? "") ? { ...item, jiraDone: true } : item);
-        const question = items.length ? t("caius.daily.open", { day: weekdayName(targetDay) }) : null;
+        // A held item gets no fate until he says which, so it is asked about instead of sent on.
+        const items = open.items.map((item) => ({
+            ...item, ...(done.has(keysOf(item.text)[0] ?? "") ? { jiraDone: true } : {}), ...(item.listItemId && held.has(item.listItemId) ? { fate: { held: true } } : {})
+        }));
+        const which = heldQuestion(items.filter((item) => item.listItemId && held.has(item.listItemId)).map((item) => item.text));
+        const question = items.length ? [ t("caius.daily.open", { day: weekdayName(targetDay) }), ...(which ? [ which ] : []) ].join(" ") : null;
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
@@ -252,7 +256,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             standing: await deps.standing(),
             catchup: await catchupOf(deps.store, date, deps.now)
         }));
-        const names = days.map((day) => catchupDayName(day, date));
+        const names = days.filter((day) => tasks.some((task) => task.period === day)).map((day) => catchupDayName(day, date));
         const moving = !tasks.length ? null : names.length > 1
             ? t("caius.daily.catchup_days", { weekdays: t("caius.daily.list_and", { head: names.slice(0, -1).join(", "), last: names.at(-1) }), count: tasks.length })
             : t("caius.daily.catchup", { weekday: names[0] ?? catchupDayName(last, date), count: tasks.length });
@@ -467,8 +471,8 @@ const CATCHUP_DAYS = 5;
  * none live; one with nothing live that was wound down (`#caiusWoundDown`), recorded a skip
  * (`#caiusSkipCatchup`) or has a brief; one protected or not a text note, since Caius cannot read
  * it; or, after taking its tasks, one that recorded a skip, which covered the days before it. None once the day note carries
- * `#caiusSkipCatchup=<date>`. A task held on its day (`#caiusHeld`) is in `held`, not `tasks`: no
- * catch-up moves it. Answers the day note too, without creating it. The caller holds the lock.
+ * `#caiusSkipCatchup=<date>`. A task held on its day (`#caiusHeld`), any day before `date`, is in
+ * `held`, not `tasks`, and its day in `days`: no catch-up moves it, and every morning asks about it. Answers the day note too, without creating it. The caller holds the lock.
  */
 export async function catchupOf(store: NoteStore, date: string, now: Date) {
     const last = dayKey(lastWorkday(localDay(date)));
@@ -500,7 +504,26 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         held.unshift(...live.filter((task) => task.listItemId && holding.has(task.listItemId)));
         if (skippedHere) break;
     }
+    // A held task is asked about every morning until he names it, however long ago its day was closed.
+    for (const heldNote of await store.search(`#${HELD_LABEL}`)) {
+        const day = label(heldNote, PERIODS.day.label);
+        if (!day || day >= date || heldNote.type !== "text" || heldNote.isProtected) continue;
+        const ids = new Set(heldNote.attributes.filter((a) => a.type === "label" && a.name === HELD_LABEL).map((a) => a.value));
+        const found = mainTasks(await readPlan(store, "day", day, now))
+            .filter((task) => task.listItemId && ids.has(task.listItemId) && !held.some((h) => h.listItemId === task.listItemId))
+            .map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: day }));
+        held.push(...found);
+        if (found.length && !days.includes(day)) days.push(day);
+    }
+    days.sort();
+    held.sort((a, b) => a.period.localeCompare(b.period));
     return { lastWorkday: last, days, note, skipped, tasks, held };
+}
+
+/** The list items held (`#caiusHeld`) on the day notes of `periods`. The caller holds the lock. */
+export async function heldOn(store: NoteStore, periods: string[]): Promise<Set<string>> {
+    const days = [ ...new Set(periods) ].filter((period) => PERIODS.day.pattern.test(period));
+    return new Set((await Promise.all(days.map((day) => dayLabels(store, day, HELD_LABEL)))).flat());
 }
 
 /** A plan's top-level tasks in any state. */

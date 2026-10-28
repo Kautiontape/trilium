@@ -344,8 +344,15 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const namedNow = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.move.map((ref) => ref.listItemId) ]);
         const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
         const held = await settleHolds(store, date, openIds, namedNow, input.heldGroups);
+        // An item an earlier day's wind-down held stays held too, released on its own note.
+        const heldElsewhere: string[] = [];
+        for (const day of new Set(open.items.map((item) => item.period).filter((period) => period !== date && PERIODS.day.pattern.test(period)))) {
+            const live = new Set(open.items.filter((item) => item.period === day).flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
+            heldElsewhere.push(...await settleHolds(store, day, live, namedNow, []));
+        }
+        const allHeld = [ ...held, ...heldElsewhere ];
         // A fate he named, then the proposed one for every item he didn't name and isn't held.
-        const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...held ]);
+        const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...allHeld ]);
         const putOffWeek: string[] = [];
         const fates = [
             ...input.fates,
@@ -389,7 +396,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // What the fates move to the next workday can be placed by the id it had here; nothing else
         // can, a held item least of all, since it stays here.
         const toTarget = (item: (typeof open.items)[number]) => {
-            if (!item.listItemId || input.done.includes(item.listItemId) || held.includes(item.listItemId)) return false;
+            if (!item.listItemId || input.done.includes(item.listItemId) || allHeld.includes(item.listItemId)) return false;
             const fate = input.fates.find((f) => f.listItemId === item.listItemId);
             return fate ? fate.to === targetDay : "forward" in item.fate && item.fate.forward === targetDay;
         };
@@ -431,7 +438,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
         const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
         withTexts([ ...written, ...skipped ], pools, known, followed);
-        const heldTexts = held.map((id) => open.items.find((item) => item.listItemId === id)?.text ?? "");
+        const heldTexts = allHeld.map((id) => open.items.find((item) => item.listItemId === id)?.text ?? "");
         const say = sayOf({ written, skipped }, { day: targetDay, held: heldTexts, already: input.already });
         return {
             ...withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null, say: morning ? `${say} ${t("caius.say.next_planday")}` : say }),

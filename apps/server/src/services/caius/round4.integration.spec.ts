@@ -10,7 +10,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
 import { refOf } from "./refs.js";
-import { createBeccaStore, createChildNote } from "./store.js";
+import { createBeccaStore, createChildNote, removeLabel } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -75,6 +75,14 @@ function mondayJira() {
         ticket: ticket("ZAP-105", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created: "2026-11-01T15:00:00.000-0500",
         commentId: "c105", excerpt: "@Sam Example the rollout note is in the runbook now."
     });
+}
+
+/** Takes every hold off the day note of `date`, so a later test's catch-up doesn't ask about it. */
+async function clearHolds(date: string) {
+    const [ note ] = await cls.init(() => store.search(`#dateNote="${date}"`));
+    for (const a of note?.attributes ?? []) {
+        if (a.type === "label" && (a.name === "caiusHeld" || a.name === "caiusHeldGroup")) cls.init(() => removeLabel(note?.noteId ?? "", a.name, a.value));
+    }
 }
 
 /** The labels of `name` on the day note of `date`. */
@@ -215,6 +223,7 @@ describe("short references", () => {
         expect((await tasksOf("2026-11-19")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
         expect(applied.say).toBe("Message Dave if he knows anyone who will hang lights as a small job and Pack the climbing gym bag moved to Thu 19 Nov. "
             + "Which export: ZAP-111 or ZAP-101?");
+        await clearHolds("2026-11-18");
     });
 
     it("Plan my day takes refs and names anywhere it takes an id: a candidate, a place on his list and a move", async () => {
@@ -685,6 +694,7 @@ describe("fix round 1: an item held by an ambiguous answer stays held", () => {
         expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
         // Dave and the bag, which he didn't name, take their proposed fate.
         expect((await tasksOf("2027-06-10")).map((task: any) => task.text)).toEqual([ expect.stringContaining("Message Dave"), "Pack the climbing gym bag" ]);
+        await clearHolds(DAY);
     });
 });
 
@@ -703,6 +713,7 @@ describe("fix round 1: a held item isn't among what the wind-down moved", () => 
             expect.objectContaining({ kind: "move", id: "h-oth", reason: "not_on_list" })
         ]);
         expect((await tasksOf("2027-06-24")).map((task: any) => task.text)).toEqual([ "Water the plants", "Tidy", "Call the plumber" ]);
+        await clearHolds("2027-06-23");
     });
 });
 
@@ -736,6 +747,7 @@ describe("fix round 1: a finished key that two open items carry", () => {
         expect((await tasksOf(DAY)).map((task: any) => task.state)).toEqual([ "open", "open" ]);
         expect(await labelsOf(DAY, "caiusHeld")).toEqual([ "g-a", "g-b" ]);
         expect(applied.say).toMatch(/Which ZAP-106: Confirm the bucket or Write the rollout note\?$/);
+        await clearHolds(DAY);
     });
 });
 
@@ -765,6 +777,7 @@ describe("fix round 1: an ambiguous destination holds the item", () => {
         expect(await labelsOf(DAY, "caiusHeld")).toEqual([ `${DAY}-101` ]);
         expect(applied.say).not.toMatch(/ZAP-101[^?]*moved/);
         expect(applied.say).toMatch(/Which week: later this week or next week\?$/);
+        await clearHolds(DAY);
     });
 });
 
@@ -962,5 +975,32 @@ describe("fix round 2: acts outside a move are said, not dropped", () => {
         expect(applied.written).toEqual([ expect.objectContaining({ kind: "context", status: "written" }) ]);
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "acts", reason: "not_a_move" }) ]);
         expect(applied.say).toMatch(/[Tt]he acts go with a move/);
+    });
+});
+
+describe("fix round 2: a held item is never forwarded or forgotten by a later day", () => {
+    it("Wed's ambiguous done holds the exports; Thursday's wind-down neither forwards nor hides them; Monday still asks; naming them releases them", async () => {
+        await wednesday("2027-10-13");
+        at("2027-10-13T17:45");
+        await call("caius_winddown_apply", { date: "2027-10-13", done: [ "the export" ] });
+
+        at("2027-10-14T17:30");
+        const open = await call("caius_winddown", { date: "2027-10-14", step: "open" });
+        const exports = open.data.items.filter((item: any) => item.text.includes("export"));
+        expect(exports.map((item: any) => item.fate)).toEqual([ { held: true }, { held: true } ]);
+        expect(open.question).toMatch(/Which do you mean: ZAP-111 or ZAP-101\?$/);
+        const thursday = await call("caius_winddown_apply", { date: "2027-10-14" });
+        expect(thursday.say).toMatch(/Which do you mean: ZAP-111 or ZAP-101\?$/);
+        expect((await tasksOf("2027-10-13")).slice(0, 2).map((task: any) => task.state)).toEqual([ "open", "open" ]);
+        expect((await tasksOf("2027-10-15")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
+
+        at("2027-10-18T09:30");
+        const monday = await call("caius_planday", { date: "2027-10-18", step: "catchup" });
+        expect(monday.data.held.map((task: any) => task.listItemId)).toEqual([ "2027-10-13-111", "2027-10-13-101" ]);
+        expect(monday.question).toMatch(/Which do you mean: ZAP-111 or ZAP-101\?$/);
+        const named = await call("caius_plan_apply", { date: "2027-10-18", finished: [ "ZAP-111", "ZAP-101" ], brief: prose });
+        expect(named.say).not.toMatch(/\?$/);
+        expect(await labelsOf("2027-10-13", "caiusHeld")).toEqual([]);
+        expect((await tasksOf("2027-10-13")).slice(0, 2).map((task: any) => task.state)).toEqual([ "done", "done" ]);
     });
 });
