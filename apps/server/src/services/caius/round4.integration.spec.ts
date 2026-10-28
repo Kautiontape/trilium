@@ -181,7 +181,7 @@ describe("short references", () => {
         expect(await tasksOf(THU)).toEqual([ { text: "Message Dave if he knows anyone who will hang lights as a small job", state: "open" } ]);
     });
 
-    it("a name that matches more than one item is skipped as ambiguous, listing the matches, and the items keep their proposed fate", async () => {
+    it("a name that matches more than one item is skipped as ambiguous, listing the matches, and nothing is written for those items", async () => {
         await wednesday("2026-11-18");
         at("2026-11-18T17:45");
         const applied = await call("caius_winddown_apply", { date: "2026-11-18", done: [ "the export" ], fates: [ { listItemId: "the export", to: "d1" } ] });
@@ -189,11 +189,14 @@ describe("short references", () => {
             { kind: "done", text: "the export", reason: "ambiguous", detail: "ZAP-111 Check the invoice export in QA; ZAP-101 Verify the export retry on staging" },
             { kind: "fate", text: "the export", reason: "ambiguous", detail: "ZAP-111 Check the invoice export in QA; ZAP-101 Verify the export retry on staging" }
         ]);
-        // Neither is marked done: each keeps its proposed fate, open on the next workday.
-        expect((await tasksOf("2026-11-19")).slice(0, 2)).toEqual([
+        // Both stay open where they are; only Dave and the bag take their proposed fate.
+        expect((await tasksOf("2026-11-18")).slice(0, 2)).toEqual([
             { text: "ZAP-111 Check the invoice export in QA", state: "open" },
             { text: "ZAP-101 Verify the export retry on staging", state: "open" }
         ]);
+        expect((await tasksOf("2026-11-19")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
+        expect(applied.say).toBe("Message Dave if he knows anyone who will hang lights as a small job and Pack the climbing gym bag moved to Thu 19 Nov. "
+            + "'the export' is unchanged since it could be ZAP-111 or ZAP-101.");
     });
 
     it("Plan my day takes refs and names anywhere it takes an id: a candidate, a place on his list and a move", async () => {
@@ -477,6 +480,24 @@ describe("a place finds the copy the wind-down moved", () => {
         expect(plan.sections.flatMap((s: any) => s.tasks).map((t: any) => t.text)).toEqual([
             `Laundry [from Tue 13 Apr](#root/${tuesdayId})`, "Laundry [from Mon 12 Apr](#root/aMonday)", "Water the plants", "Other"
         ]);
+    });
+});
+
+describe("an accepted ask is no Follow up", () => {
+    it("Mon 'take 105', Mon night forwards it: on Tuesday it is a task on his list and no Follow up", async () => {
+        jira.asks.push({
+            ticket: ticket("ZAP-106", { summary: "Confirm the bucket" }), author: "Jordan Placeholder", created: "2027-04-18T15:00:00.000-0500",
+            commentId: "c106", excerpt: "Can you confirm the bucket?"
+        });
+        at("2027-04-19T09:40");
+        expect((await call("caius_plan_apply", { date: "2027-04-19", accept: [ { candidateId: "106" } ], brief: prose })).skipped).toEqual([]);
+        at("2027-04-19T17:30");
+        await call("caius_winddown_apply", { date: "2027-04-19" });
+        at("2027-04-20T09:35");
+        expect((await tasksOf("2027-04-20")).map((task: any) => task.text)).toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-106") ]));
+        const tuesday = await call("caius_planday", { date: "2027-04-20", step: "inputs", refresh: true });
+        expect(tuesday.data.followUps).toEqual([]);
+        expect((await call("caius_planday", { date: "2027-04-20", step: "brief" })).data.followUps).toEqual([]);
     });
 });
 

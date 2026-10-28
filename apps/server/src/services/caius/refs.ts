@@ -11,8 +11,8 @@ export interface Named {
     text: string;
 }
 
-/** What an answer names: one item's id, the texts of several that match, or null for none. */
-export type Resolved = { id: string } | { ambiguous: string[] } | null;
+/** What an answer names: one item's id, the texts and ids of several that match, or null for none. */
+export type Resolved = { id: string } | { ambiguous: string[]; ids: string[] } | null;
 
 /** `items` each with a `ref`, the prefix and its 1-based place: `o1`, `o2`… */
 export function withRefs<T extends object>(items: T[], prefix: string): (T & { ref: string })[] {
@@ -30,7 +30,7 @@ export function resolveName(pool: Named[], said: string): Resolved {
     if (exact) return { id: exact.id };
     const one = (matches: Named[]): Resolved => matches.length === 1 && matches[0]
         ? { id: matches[0].id }
-        : matches.length > 1 ? { ambiguous: matches.map((item) => item.text) } : null;
+        : matches.length > 1 ? { ambiguous: matches.map((item) => item.text), ids: matches.map((item) => item.id) } : null;
     if (JIRA_KEY.test(value)) return one(pool.filter((item) => jiraKeys(item.text).includes(value.toUpperCase())));
     if (/^\d+$/.test(value)) return one(pool.filter((item) => jiraKeys(item.text).some((key) => key.endsWith(`-${value}`))));
     const wanted = words(value).filter((word) => !FILLER.has(word));

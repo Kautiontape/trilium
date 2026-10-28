@@ -314,7 +314,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         } });
 
         // A fate he named, then the proposed one for every item he didn't name.
-        const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId) ]);
+        // An item an ambiguous answer matched stays where it is: he named it, but which one is unclear.
+        const given = new Set([ ...input.done, ...input.fates.map((fate) => fate.listItemId), ...input.held ]);
         const putOffWeek: string[] = [];
         const fates = [
             ...input.fates,
@@ -497,13 +498,16 @@ function named<T extends { ref: string }>(items: T[], id: (item: T) => string | 
 
 /**
  * Reads the names of one answer: the id each names, its own value when it names nothing the steps
- * showed (the write then says why), or null when it names several, skipped as ambiguous.
+ * showed (the write then says why), or null when it names several, skipped as ambiguous. `held`
+ * collects the ids an ambiguous answer matched, which nothing may write for.
  */
 function nameReader(skipped: Skipped[]) {
+    const held = new Set<string>();
     const read = (kind: string, value: string, pools: Named[][]): string | null => {
         const found = resolveIn(pools, value);
         if (found && "ambiguous" in found) {
             skipped.push({ kind, text: value, reason: "ambiguous", detail: found.ambiguous.join("; ") });
+            for (const id of found.ids) held.add(id);
             return null;
         }
         return found?.id ?? value;
@@ -515,7 +519,7 @@ function nameReader(skipped: Skipped[]) {
         const id = read(kind, by, pools);
         return id === null ? null : { ...at, ...(at.before !== undefined ? { before: id } : { after: id }) };
     };
-    return { read, place };
+    return { read, place, held };
 }
 
 /**
@@ -559,9 +563,12 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[]): P
     };
 }
 
-/** Wind down's answers with every name read as the id it names; an ambiguous one is left out, skipped. */
-function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[]): WindDownApplyInput {
-    const { read, place } = nameReader(skipped);
+/**
+ * Wind down's answers with every name read as the id it names; an ambiguous one is left out,
+ * skipped, and the open items it matched are `held`: they keep no proposed fate either.
+ */
+function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipped[]): WindDownApplyInput & { held: string[] } {
+    const { read, place, held } = nameReader(skipped);
     const onList = [ pools.list, pools.candidates, pools.open ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
@@ -594,7 +601,8 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         keep: input.keep.flatMap(line("keep")),
         carry: input.carry.flatMap(line("carry")),
         notToday: input.notToday.flatMap(candidate("not_today")),
-        dismiss: input.dismiss.flatMap(candidate("dismiss"))
+        dismiss: input.dismiss.flatMap(candidate("dismiss")),
+        held: [ ...held ]
     };
 }
 

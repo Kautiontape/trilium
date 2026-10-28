@@ -144,7 +144,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
  */
 export async function nextOffer(store: NoteStore, targetDay: string, now: Date, read: DayRead) {
     const facts = await dayFacts(store, targetDay, now);
-    const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, targetDay));
+    const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, targetDay), facts.live);
     const candidates = onOffer(dayCandidates({ jira: fresh, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
     const asked = new Set(await dayLabels(store, targetDay, ASKED_LABEL));
     return {
@@ -290,12 +290,13 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
-    const { plan, raised, seen } = await deps.locked("caius_planday", async () => ({
+    const { plan, raised, seen, live } = await deps.locked("caius_planday", async () => ({
         plan: await readPlan(deps.store, "day", date, deps.now),
         raised: await raisedAsks(deps.store, deps.now, date),
-        seen: await seenAsks(deps.store, date)
+        seen: await seenAsks(deps.store, date),
+        live: liveKeys((await loadJournal(deps.store)).docs, deps.now)
     }));
-    const followUps = followUpsOf(unraised(splitAsks(read.inputs.jira, seen).followed, raised));
+    const followUps = followUpsOf(unraised(splitAsks(read.inputs.jira, seen, live).followed, raised));
     const { start, end, workEnd, from } = read.rhythm;
     const events = drawnEvents(read);
     const { work, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now);
@@ -341,7 +342,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const lastContext = (await gatherContext(store, dayKey(lastWorkday(localDay(date))))).context;
     const plannedAt = brief ? label(brief, PLANNED_AT_LABEL) ?? null : null;
     const since = plannedAt ? localMoment(plannedAt) : undefined;
-    const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, date));
+    const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, date), day.live);
     const jira = unraised(followed, day.raised);
     const candidates = onOffer(dayCandidates({ jira: fresh, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
     const asked = await askedAbout(store, date);
@@ -574,12 +575,13 @@ async function seenAsks(store: NoteStore, day: string): Promise<Set<string>> {
 /**
  * `jira` split by each ticket's latest ask: `fresh` holds the asks not offered on an earlier day
  * (`seen`), which are candidates, and `followed` those that were, which only the Follow up raises.
+ * An ask whose ticket is `live` on a list was accepted, so it is no Follow up.
  */
-export function splitAsks(jira: CaiusInputs["jira"], seen: Set<string>): { fresh: CaiusInputs["jira"]; followed: CaiusInputs["jira"] } {
+export function splitAsks(jira: CaiusInputs["jira"], seen: Set<string>, live: Map<string, unknown>): { fresh: CaiusInputs["jira"]; followed: CaiusInputs["jira"] } {
     const old = new Set(latestAsks(jira.asks).filter((ask) => seen.has(`${ask.ticket.key}:${ask.commentId}`)).map((ask) => ask.ticket.key));
     return {
         fresh: { ...jira, asks: jira.asks.filter((ask) => !old.has(ask.ticket.key)) },
-        followed: { ...jira, asks: jira.asks.filter((ask) => old.has(ask.ticket.key)) }
+        followed: { ...jira, asks: jira.asks.filter((ask) => old.has(ask.ticket.key) && !live.has(ask.ticket.key)) }
     };
 }
 

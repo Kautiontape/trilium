@@ -28,7 +28,9 @@ describe("resolveName", () => {
     });
 
     it("answers ambiguous with the matching texts when more than one item matches", () => {
-        expect(resolveName(open, "the export")).toEqual({ ambiguous: [ "ZAP-111 Check the invoice export in QA", "ZAP-101 Verify the export retry on staging" ] });
+        expect(resolveName(open, "the export")).toEqual({
+            ambiguous: [ "ZAP-111 Check the invoice export in QA", "ZAP-101 Verify the export retry on staging" ], ids: [ "e111", "e101" ]
+        });
     });
 
     it("answers null when nothing matches, and a number matches only a key's own number", () => {

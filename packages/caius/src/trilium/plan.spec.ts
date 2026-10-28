@@ -224,7 +224,7 @@ describe('acceptTasks', () => {
     const out = await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es2' }, { noteId: 'd', listItemId: 'es1' }], base);
     expect(out.map((r) => r.status)).toEqual(['accepted', 'accepted']);
     expect([...f.html.d!.matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1])).toEqual(['e1', 'e2', 'es2', 'es1']);
-    expect(f.html.d!.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks']);
+    expect(f.html.d?.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks']);
   });
   it('without a section, skips an Evening list and goes straight under the Tasks heading, creating its list', async () => {
     const day = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es9', 'Get ZAP-9 Fix it done: because x (~45m)'));
@@ -260,7 +260,7 @@ describe('acceptTasks', () => {
     await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base);
     expect(f.html.d).toContain(`<span class="todo-list__label__description">Answer Jordan Placeholder's question on ${link} ~15m</span>`);
     const plan = await readPlan(f.api, 'day', DAY, now);
-    expect(plan.sections[0]!.tasks.map((t) => t.estMinutes)).toEqual([null, 15]);
+    expect(plan.sections[0]?.tasks.map((t) => t.estMinutes)).toEqual([null, 15]);
   });
   it('unwraps a suggestion that CKEditor saved with non-breaking spaces', async () => {
     const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-2">ZAP-2</a>';

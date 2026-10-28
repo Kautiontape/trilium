@@ -47,10 +47,10 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         ...(of("brief").length ? [ t("caius.say.brief") ] : [])
     ];
     const unnamed = skipped.filter((entry) => !entry.text && UNKNOWN.has(entry.reason)).length;
-    const missed = [
+    const missed = unique([
         ...skipped.flatMap((entry) => skipClause(entry)),
         ...(unnamed ? [ t("caius.say.unnamed", { count: unnamed }) ] : [])
-    ];
+    ]);
     const sentences = [ wrote, missed ].filter((clauses) => clauses.length).map((clauses) => `${capitalized(andList(clauses))}.`);
     return sentences.length ? sentences.join(" ") : t("caius.say.nothing");
 }
