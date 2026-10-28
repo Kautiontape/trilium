@@ -39,6 +39,7 @@ import {
     sectionOf,
     TRILIUM_CONFIG
 } from "@triliumnext/caius";
+import { createHash } from "crypto";
 import { t } from "i18next";
 
 import { BRIEF_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, findBrief } from "./brief.js";
@@ -79,7 +80,7 @@ const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 export async function windDown(deps: StepDeps, { date, step, refresh }: { date: string; step: WindDownStep; refresh?: boolean }) {
     const targetDay = dayKey(nextWorkday(localDay(date)));
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: WindDownStep | null) => fitted({
-        step, date, targetDay, targetDayName: weekdayName(targetDay), data, question, next,
+        ...withDateLabels({ step, date, targetDay, targetDayName: weekdayName(targetDay), data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
 
@@ -132,7 +133,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh }: { date: 
     const today = await deps.locked("caius_winddown", () => gatherContext(deps.store, date));
     const keep = today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)
-        .map((line) => ({ kind: "keep" as const, line: line.text, until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
+        .map((line) => ({ kind: "keep" as const, line: line.text, lineId: lineIdOf(line.text), until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
         .filter((line) => line.keys.length)
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
     const targetWeek = isoWeekKey(utcDay(targetDay));
@@ -153,7 +154,7 @@ const LABEL_LENGTH = 24;
 
 export async function planDay(deps: StepDeps, { date, step, refresh }: { date: string; step: PlanDayStep; refresh?: boolean }) {
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: PlanDayStep | null) => fitted({
-        step, date, data, question, next,
+        ...withDateLabels({ step, date, data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
     // A later day is planned on its own morning; a missed earlier one can still be planned.
@@ -275,7 +276,7 @@ function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEnt
     return inForce
         .filter((line) => !(line.period === "day" && line.until === undefined))
         .filter((line) => !reads.has(`${line.period}:${line.key}`) && (line.until === undefined || line.until >= day) && !readThen.has(sameContext(line.text)))
-        .map((line) => ({ kind: "carry" as const, line: line.text, ...(line.until ? { until: line.until } : {}) }));
+        .map((line) => ({ kind: "carry" as const, line: line.text, lineId: lineIdOf(line.text), ...(line.until ? { until: line.until } : {}) }));
 }
 
 /**
@@ -510,13 +511,14 @@ export function mainTasks(plan: PlanView): PlanTask[] {
 const isLive = (task: PlanTask) => task.state === "open" || task.state === "in_progress";
 
 /**
- * A candidate as the step reports it: its `kind` (`handoff`, `ask` or `week`), `Get X done` (a week
+ * A candidate as the step reports it: its `candidateId` (its first key: the ticket, or a hash of a
+ * week item's text), its `kind` (`handoff`, `ask` or `week`), `Get X done` (a week
  * item keeps its own text) with its reason in words, and for a ticket the `key` and `title` that
  * `caius_add` takes with `because` and `minutes`. A week item carries the `noteId` and `listItemId`
  * to forward instead.
  */
 export function present(candidate: Candidate) {
-    const { subject, reason, keys: _keys, ...rest } = candidate;
+    const { subject, reason, keys, ...rest } = candidate;
     const ticket = reason.kind === "week" ? {} : { key: candidate.source, title: subject.slice(candidate.source.length).trim() || subject };
     const because = reason.kind === "handoff"
         ? reason.days === null
@@ -525,8 +527,47 @@ export function present(candidate: Candidate) {
         : reason.kind === "ask"
             ? t("caius.daily.because_ask", { author: reason.author, weekday: weekdayName(dayKey(new Date(reason.created))) })
             : t("caius.daily.because_week");
-    return { kind: reason.kind, text: reason.kind === "week" ? subject : t("caius.daily.get_done", { subject }), ...ticket, because, ...rest };
+    return { candidateId: keys[0] ?? candidate.source, kind: reason.kind, text: reason.kind === "week" ? subject : t("caius.daily.get_done", { subject }), ...ticket, because, ...rest };
 }
+
+/**
+ * A Context line's id in the step data: a hash of its text as `sameContext` compares it, so two
+ * copies of one line share it.
+ */
+export function lineIdOf(text: string): string {
+    return `l${createHash("sha1").update(sameContext(text)).digest("hex").slice(0, 10)}`;
+}
+
+/**
+ * `value` with a `<field>Label` beside every field that holds a day (`Thu 5 Nov`) or an ISO week
+ * (`the week of Mon 2 Nov`), at any depth, so the agent never works out a weekday itself.
+ */
+export function withDateLabels<T>(value: T): T {
+    if (Array.isArray(value)) return value.map((item) => withDateLabels(item)) as T;
+    if (value === null || typeof value !== "object") return value;
+    const out: Record<string, unknown> = {};
+    for (const [ key, field ] of Object.entries(value)) {
+        out[key] = withDateLabels(field);
+        const label = typeof field === "string" ? dateLabel(field) : null;
+        if (label !== null && !(`${key}Label` in value)) out[`${key}Label`] = label;
+    }
+    return out as T;
+}
+
+/** A day as `Thu 5 Nov`, an ISO week as `the week of Mon 2 Nov`, anything else null. */
+export function dateLabel(key: string): string | null {
+    if (PERIODS.day.pattern.test(key)) {
+        const at = utcDay(key);
+        return t("caius.daily.day_label", {
+            weekday: t(`caius.short.weekdays.${WEEKDAYS[at.getUTCDay()]}`),
+            day: at.getUTCDate(),
+            month: t(`caius.short.months.${MONTHS[at.getUTCMonth()]}`)
+        });
+    }
+    return PERIODS.week.pattern.test(key) ? t("caius.daily.week_label", { monday: dateLabel(periodSpan("week", key).start) }) : null;
+}
+
+const MONTHS = [ "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december" ];
 
 const sameText = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 

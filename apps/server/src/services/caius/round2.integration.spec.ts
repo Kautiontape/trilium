@@ -14,6 +14,10 @@ import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
 
+const li = (id: string, text: string) =>
+    `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox" disabled="disabled">`
+    + `<span class="todo-list__label__description">${text}</span></label></li>`;
+const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>`;
 const bullets = (...items: string[]) => `<ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
 
 const MON = "2026-11-02";
@@ -97,5 +101,43 @@ describe("a day note's Context lasts its day", () => {
         expect(closing.data.noticed.map((n: any) => n.line)).not.toContain(line);
         at(`${FRI}T09:30`);
         expect((await call("caius_planday", { date: FRI, step: "inputs" })).data.carry.map((c: any) => c.line)).not.toContain(line);
+    });
+});
+
+describe("step data names every date and carries the ids the apply tools take", () => {
+    it("Mon 2 Nov: the catch-up says Friday 30 Oct, not Thursday", async () => {
+        at(`${MON}T09:40`);
+        const catchup = await call("caius_planday", { date: MON, step: "catchup" });
+        expect(catchup).toMatchObject({ date: MON, dateLabel: "Mon 2 Nov" });
+        expect(catchup.data).toMatchObject({ lastWorkday: "2026-10-30", lastWorkdayLabel: "Fri 30 Oct", moveTo: MON, moveToLabel: "Mon 2 Nov" });
+    });
+
+    it("Fri 13 Nov: the wind-down labels each fate and origin, and gives each line and candidate an id", async () => {
+        jira.handoff.push({ ...ticket("ZAP-110"), daysInStatus: 2 });
+        await cls.init(async () => {
+            const friday = await store.calendarDay("2026-11-13");
+            await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("f13a", "Write the runbook ~30m"))}`);
+            const week = await store.calendarWeek("2026-W46");
+            await store.putContent(week.noteId, `<h3>Context</h3>${bullets("Sam is out.")}<h2>☑️ Tasks</h2>${ul(li("w46a", "Tidy the backlog ~45m"))}`);
+        });
+        at("2026-11-13T17:30");
+        const open = await call("caius_winddown", { date: "2026-11-13", step: "open" });
+        expect(open).toMatchObject({ targetDay: "2026-11-16", targetDayLabel: "Mon 16 Nov" });
+        expect(open.data.items).toEqual([
+            expect.objectContaining({ listItemId: "f13a", period: "2026-11-13", periodLabel: "Fri 13 Nov", fate: { forward: "2026-11-16", forwardLabel: "Mon 16 Nov" } }),
+            expect.objectContaining({ listItemId: "w46a", period: "2026-W46", periodLabel: "the week of Mon 9 Nov", fate: { forward: "2026-W47", forwardLabel: "the week of Mon 16 Nov" } })
+        ]);
+
+        const next = await call("caius_winddown", { date: "2026-11-13", step: "next" });
+        expect(next.data.candidates.find((c: any) => c.key === "ZAP-110")).toMatchObject({ candidateId: "ZAP-110" });
+
+        const context = await call("caius_winddown", { date: "2026-11-13", step: "context" });
+        const carry = context.data.noticed.find((n: any) => n.kind === "carry");
+        expect(carry).toMatchObject({ line: "Sam is out.", lineId: expect.stringMatching(/^l[0-9a-f]{10}$/) });
+        expect(context.data).toMatchObject({ targetWeek: "2026-W47", targetWeekLabel: "the week of Mon 16 Nov", keepDate: "2026-11-16", keepDateLabel: "Mon 16 Nov" });
+
+        at("2026-11-16T09:30");
+        const monday = await call("caius_planday", { date: "2026-11-16", step: "inputs" });
+        expect(monday.data.carry).toEqual([ expect.objectContaining({ line: "Sam is out.", lineId: carry.lineId }) ]);
     });
 });
