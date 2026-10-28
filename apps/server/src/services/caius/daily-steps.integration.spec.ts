@@ -69,15 +69,16 @@ function callWith(registry: typeof tools, name: string, args: object): Promise<a
 }
 const call = (name: string, args: object) => callWith(tools, name, args);
 
-/** Plan my day, run on the morning of the day it plans, as `caius_planday` requires. */
-async function planday(args: { date: string; step: string; refresh?: boolean }): Promise<any> {
+/** A tool that refuses a later day, run on the morning of the day it plans or writes. */
+async function onItsMorning(name: string, args: { date: string }): Promise<any> {
     vi.stubEnv("CAIUS_NOW", `${args.date}T08:00`);
     try {
-        return await call("caius_planday", args);
+        return await call(name, args);
     } finally {
         vi.stubEnv("CAIUS_NOW", `${FRIDAY}T17:30`);
     }
 }
+const planday = (args: { date: string; step: string; refresh?: boolean }) => onItsMorning("caius_planday", args);
 
 const notes: Record<string, string> = {};
 
@@ -365,11 +366,11 @@ describe("caius_planday", () => {
 
     it("inputs: after a brief, offers only what is new since it was planned", async () => {
         const shape = (await planday({ date: MONDAY, step: "brief" })).data.shape;
-        expect((await call("caius_brief_write", { ...shape, headline: "Monday" })).plannedAt).toBe(`${FRIDAY}T17:30:00`);
+        expect((await onItsMorning("caius_brief_write", { ...shape, headline: "Monday" })).plannedAt).toBe(`${MONDAY}T08:00:00`);
 
-        jiraByDate[MONDAY]?.asks.push({ ticket: ticket("ZAP-106"), author: "Sam Example", created: "2026-11-08T12:00:00Z", commentId: "3", excerpt: "One more?" });
+        jiraByDate[MONDAY]?.asks.push({ ticket: ticket("ZAP-106"), author: "Sam Example", created: "2026-11-09T20:00:00Z", commentId: "3", excerpt: "One more?" });
         const answer = await planday({ date: MONDAY, step: "inputs", refresh: true });
-        expect(answer.data.plannedAt).toBe(`${FRIDAY}T17:30:00`);
+        expect(answer.data.plannedAt).toBe(`${MONDAY}T08:00:00`);
         expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-106" ]);
     });
 
@@ -396,7 +397,7 @@ describe("caius_planday", () => {
             const brief = await planday({ date: day, step: "brief", refresh: true });
             expect(brief).toMatchObject({ step: "brief", date: day });
             expect(inputsCalls.at(-1)).toMatchObject({ date: day, keys: [] });
-            const meetings = await call("caius_meetings", { date: day, dryRun: true });
+            const meetings = await onItsMorning("caius_meetings", { date: day, dryRun: true } as { date: string });
             expect(meetings).toMatchObject({ date: day, source: "calendar" });
         } finally {
             note.isProtected = false;

@@ -83,7 +83,7 @@ import {
     type WindDownInput
 } from "./schemas.js";
 import { findBrief, PLANNED_AT_LABEL, SKIP_CATCHUP_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, listPicks, mainTasks, planDay, type Standing, type StepDeps, windDown, workBlocks } from "./daily.js";
+import { catchupOf, type DayRead, listPicks, mainTasks, planDay, type Standing, type StepDeps, weekdayName, windDown, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, putAttachment, setLabel, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -302,6 +302,8 @@ export function createCaiusService(
          * empties the block.
          */
         meetings: async ({ date, items, dryRun, refresh }: MeetingsInput) => {
+            const later = laterDay(date);
+            if (later) return later;
             let lines = items;
             if (!lines) {
                 const { inputs } = await dayRead(date, refresh);
@@ -428,6 +430,8 @@ export function createCaiusService(
          * bars are that list laid out again. The weather is fetched before the lock.
          */
         briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
+            const later = laterDay(input.date);
+            if (later) return later;
             const weather = input.dryRun || latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude, input.date);
             return withCaiusLock("caius_brief_write", async () => {
                 // The picks and the work bars follow the main list as it stands, whatever the input says.
@@ -484,6 +488,15 @@ export function caiusNow(env: Record<string, string | undefined> = process.env):
 export function caiusDevNow(env: Record<string, string | undefined> = process.env): string | undefined {
     const at = clockOverride(env);
     return at ? localIso(at) : undefined;
+}
+
+/**
+ * `error: "not_today"` for a date after today by the Caius clock, as `caius_planday` answers: a later
+ * day is written on its own morning. Null for today or an earlier day.
+ */
+function laterDay(date: string) {
+    const today = currentKey("day", caiusNow());
+    return date > today ? { date, error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today }) } : null;
 }
 
 /** A moment as local `YYYY-MM-DDTHH:mm:ss`. */

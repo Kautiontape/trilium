@@ -1,5 +1,5 @@
 import type { NoteStore } from "@triliumnext/caius";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { caiusDevNow, caiusNow, createCaiusService } from "./service.js";
 
@@ -45,6 +45,8 @@ describe("the caius service writing Meetings", () => {
     } as unknown as NoteStore;
 
     it("replaces the block under the lock and leaves the task list alone", async () => {
+        vi.stubEnv("CAIUS_NOW", "2026-11-06T09:00");
+        onTestFinished(() => vi.unstubAllEnvs());
         const service = createCaiusService(store);
         const answer = await service.meetings({ date: "2026-11-06", items: [ "10:00 Standup" ] });
         expect(answer).toMatchObject({ source: "items", lines: [ "10:00 Standup" ] });

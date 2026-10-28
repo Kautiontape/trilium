@@ -104,7 +104,7 @@ export function createCaiusTools(
         },
 
         caius_meetings: {
-            description: "Write the Meetings block of a day note: plain clock lines such as \"10:00 Standup (Sam, Riley)\", never tasks. Without items, the lines come from the day's calendar: declined and all-day events left out, up to four first names, and (overlaps) on meetings that overlap. Replaces only that block; creates the day note if missing. dryRun shows the change without writing; in Plan my day it is written without asking.",
+            description: "Write the Meetings block of a day note, today or an earlier day (a later date answers error not_today): plain clock lines such as \"10:00 Standup (Sam, Riley)\", never tasks. Without items, the lines come from the day's calendar: declined and all-day events left out, up to four first names, and (overlaps) on meetings that overlap. Replaces only that block; creates the day note if missing. dryRun shows the change without writing; in Plan my day it is written without asking.",
             inputSchema: toolInputs.meetings,
             async: true,
             mutates: true,
@@ -128,7 +128,7 @@ export function createCaiusTools(
         },
 
         caius_brief_write: {
-            description: "Write the day's Morning Brief: a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines (only those that name a task of the day's main list, in its order; the rest come back in droppedPicks) and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it, with the work bars laid out again from the main list) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there, and records each ask in followUps that a section names (#caiusRaised), so it isn't raised again for 7 days. A re-run updates the same notes. dryRun shows the change without writing; in Plan my day it is written without asking.",
+            description: "Write the day's Morning Brief, today's or an earlier day's (a later date answers error not_today): a \"🌅 Morning Brief\" child of the day note holding the header's include-note, the picks as \"Get X done: because Y (~30m)\" lines (only those that name a task of the day's main list, in its order; the rest come back in droppedPicks) and each section rendered from markdown, plus its \"Header\" child with the date line, the headline, the drawing (as caius_header draws it, with the work bars laid out again from the main list) and the three acts. Adds one include-note of the header at the top of the day note if it isn't there, and records each ask in followUps that a section names (#caiusRaised), so it isn't raised again for 7 days. A re-run updates the same notes. dryRun shows the change without writing; in Plan my day it is written without asking.",
             inputSchema: toolInputs.briefWrite,
             async: true,
             mutates: true,

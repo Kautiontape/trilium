@@ -47,6 +47,16 @@ function call(name: string, args: object): Promise<any> {
     return cls.init(() => def.execute(args)) as Promise<any>;
 }
 
+/** `caius_meetings`, run on the morning of the day it writes, since it refuses a later day. */
+async function meetings(args: { date: string; items?: string[]; dryRun?: boolean; refresh?: boolean }): Promise<any> {
+    vi.stubEnv("CAIUS_NOW", `${args.date}T08:00`);
+    try {
+        return await call("caius_meetings", args);
+    } finally {
+        vi.stubEnv("CAIUS_NOW", `${FRIDAY}T17:30`);
+    }
+}
+
 async function dayNoteId(date: string): Promise<string | undefined> {
     return cls.init(async () => (await store.search(`#dateNote="${date}"`))[0]?.noteId);
 }
@@ -79,13 +89,13 @@ describe("caius_meetings", () => {
         ];
         const lines = [ "10:00 Standup (Sam, Riley)", "12:00 Release call (overlaps)", "12:30 Review (overlaps)" ];
 
-        const dry = await call("caius_meetings", { date: MONDAY, dryRun: true });
+        const dry = await meetings({ date: MONDAY, dryRun: true });
         expect(dry).toMatchObject({ date: MONDAY, source: "calendar", lines });
         expect(dry.results[0]).toMatchObject({ status: "dry-run", added: expect.stringContaining("10:00 Standup (Sam, Riley)") });
         expect(dry.results[0]).not.toHaveProperty("after");
         expect(await dayNoteId(MONDAY)).toBeUndefined();
 
-        const real = await call("caius_meetings", { date: MONDAY });
+        const real = await meetings({ date: MONDAY });
         expect(real.results[0]).toMatchObject({ status: "updated", detail: "created the day note" });
         const noteId = await dayNoteId(MONDAY);
         expect(noteId).toBeDefined();
@@ -95,7 +105,7 @@ describe("caius_meetings", () => {
     });
 
     it("writes the items it is given instead of the calendar's", async () => {
-        const answer = await call("caius_meetings", { date: MONDAY, items: [ "09:30 Early call" ] });
+        const answer = await meetings({ date: MONDAY, items: [ "09:30 Early call" ] });
         expect(answer).toMatchObject({ source: "items", lines: [ "09:30 Early call" ], results: [ { status: "updated" } ] });
         const html = await cls.init(async () => store.content((await dayNoteId(MONDAY)) ?? ""));
         expect(html).toContain("09:30 Early call");
@@ -104,7 +114,7 @@ describe("caius_meetings", () => {
 
     it("writes nothing when the calendar could not be read", async () => {
         calendarErrors["2026-11-10"] = [ { source: "calendar", error: "feed_0_http_404" } ];
-        const answer = await call("caius_meetings", { date: "2026-11-10" });
+        const answer = await meetings({ date: "2026-11-10" });
         expect(answer).toMatchObject({ status: "skipped", reason: "calendar_unavailable", errors: [ { source: "calendar", error: "feed_0_http_404" } ] });
         expect(await dayNoteId("2026-11-10")).toBeUndefined();
     });
@@ -115,15 +125,15 @@ describe("the inputs cache", () => {
 
     it("does not keep an answer with a failed source, keeps one with only warnings, and refreshes on request", async () => {
         calendarErrors["2026-11-17"] = [ { source: "calendar", error: "feed_0_timeout" } ];
-        await call("caius_meetings", { date: "2026-11-17", dryRun: true });
-        await call("caius_meetings", { date: "2026-11-17", dryRun: true });
+        await meetings({ date: "2026-11-17", dryRun: true });
+        await meetings({ date: "2026-11-17", dryRun: true });
         expect(callsFor("2026-11-17")).toBe(2);
 
         calendarErrors["2026-11-18"] = [ { source: "calendar", error: "feed_0_unknown_tz" }, { source: "jira", error: "asks_partial" } ];
-        await call("caius_meetings", { date: "2026-11-18", dryRun: true });
-        await call("caius_meetings", { date: "2026-11-18", dryRun: true });
+        await meetings({ date: "2026-11-18", dryRun: true });
+        await meetings({ date: "2026-11-18", dryRun: true });
         expect(callsFor("2026-11-18")).toBe(1);
-        await call("caius_meetings", { date: "2026-11-18", dryRun: true, refresh: true });
+        await meetings({ date: "2026-11-18", dryRun: true, refresh: true });
         expect(callsFor("2026-11-18")).toBe(2);
     });
 
@@ -170,7 +180,7 @@ describe("caius_context_add", () => {
 });
 
 describe("caius_brief_write", () => {
-    const BRIEF_DAY = "2026-11-12";
+    const BRIEF_DAY = "2026-11-05";
     const brief = {
         date: BRIEF_DAY,
         headline: "Ship the fix, then review",
@@ -230,7 +240,7 @@ describe("caius_brief_write", () => {
         const [ attachment ] = header?.getAttachments() ?? [];
         expect(attachment).toMatchObject({ role: "image", title: "terrain.svg" });
         const headerHtml = String(header?.getContent());
-        expect(headerHtml).toMatch(/^<p>Thursday · November 12 2026<\/p><h2>Ship the fix, then review<\/h2><p><img class="image_resized" style="width:100%;" src="api\/attachments\/[^/]+\/image\/terrain\.svg" alt="[^"]+"><\/p><figure class="table">/);
+        expect(headerHtml).toMatch(/^<p>Thursday · November 5 2026<\/p><h2>Ship the fix, then review<\/h2><p><img class="image_resized" style="width:100%;" src="api\/attachments\/[^/]+\/image\/terrain\.svg" alt="[^"]+"><\/p><figure class="table">/);
         expect(headerHtml.match(/<td>/g)).toHaveLength(3);
 
         const body = String(briefNote?.getContent());

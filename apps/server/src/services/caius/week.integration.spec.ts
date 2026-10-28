@@ -310,6 +310,15 @@ describe("never plan another day from a wind-down", () => {
         expect(await call("caius_planday", { date: THU, step: "catchup" })).toMatchObject({ step: "catchup", date: THU, next: "inputs" });
         expect(await call("caius_planday", { date: FRI, step: "catchup" })).toMatchObject({ step: "catchup", date: FRI, next: "inputs" });
     });
+
+    it("Fri 17:20: the brief and the Meetings block refuse Monday too, and still write a missed day", async () => {
+        at(`${FRI}T17:20`);
+        const shape = (await call("caius_planday", { date: FRI, step: "brief" })).data.shape;
+        expect(await call("caius_brief_write", { ...shape, date: MON9, headline: "Monday" })).toMatchObject({ date: MON9, error: "not_today" });
+        expect(await call("caius_brief_write", { ...shape, date: MON9, headline: "Monday", dryRun: true })).toMatchObject({ error: "not_today" });
+        expect(await call("caius_meetings", { date: MON9, items: [ "10:00 Standup" ] })).toMatchObject({ date: MON9, error: "not_today" });
+        expect(await call("caius_meetings", { date: THU, items: [ "10:00 Daily Standup" ], dryRun: true })).toMatchObject({ date: THU, source: "items" });
+    });
 });
 
 describe("the work layout starts at now", () => {
@@ -331,12 +340,12 @@ describe("the work layout starts at now", () => {
 });
 
 describe("weather by date", () => {
-    it("Wed 17:45: a brief written ahead for Thursday asks for Thursday's weather, and goes on without one", async () => {
-        at(`${WED}T17:45`);
+    it("Wed 09:40: the brief asks for the planned day's weather, and goes on without one", async () => {
+        at(`${WED}T09:40`);
         const shape = (await call("caius_planday", { date: WED, step: "brief" })).data.shape;
-        const written = await call("caius_brief_write", { ...shape, date: THU, headline: "Thursday", latitude: 39.95, longitude: -75.17 });
-        expect(written.plannedAt).toBe(`${WED}T17:45:00`);
-        expect(weatherCalls.at(-1)).toEqual([ 39.95, -75.17, THU ]);
+        const written = await call("caius_brief_write", { ...shape, headline: "Wednesday", latitude: 39.95, longitude: -75.17 });
+        expect(written.plannedAt).toBe(`${WED}T09:40:00`);
+        expect(weatherCalls.at(-1)).toEqual([ 39.95, -75.17, WED ]);
     });
 });
 
