@@ -96,9 +96,11 @@ async function register(app: express.Application) {
         app.use("/assets", persistentCacheStatic(path.join(publicDir, "assets")));
         app.use(`/src`, persistentCacheStatic(path.join(publicDir, "src")));
         app.use(`/${assetUrlFragment}/src`, persistentCacheStatic(path.join(publicDir, "src")));
-        app.use(`/${assetUrlFragment}/stylesheets`, persistentCacheStatic(path.join(publicDir, "stylesheets")));
+        // ktn: stylesheets and translations revalidate (ETag) instead of caching for a year. The fork
+        // deploys new builds under the same version, so the versioned URL doesn't change with them.
+        app.use(`/${assetUrlFragment}/stylesheets`, persistentCacheStatic(path.join(publicDir, "stylesheets"), { maxAge: 0 }));
         app.use(`/${assetUrlFragment}/fonts`, persistentCacheStatic(path.join(publicDir, "fonts")));
-        app.use(`/${assetUrlFragment}/translations/`, persistentCacheStatic(path.join(publicDir, "translations")));
+        app.use(`/${assetUrlFragment}/translations/`, persistentCacheStatic(path.join(publicDir, "translations"), { maxAge: 0 }));
         app.use(`/node_modules/`, persistentCacheStatic(path.join(publicDir, "node_modules")));
     }
     app.use(`/share/assets/fonts/`, express.static(path.join(getClientDir(), "fonts"), STATIC_OPTIONS));

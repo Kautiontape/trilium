@@ -157,6 +157,17 @@ describe("ModelSelection", () => {
         expect(onChange).toHaveBeenLastCalledWith([{ ...MODELS[0], isDefault: false }, MODELS[1], chosen]);
     });
 
+    it("refreshes the stored names of selected models from the fetched list", async () => {
+        const onChange = vi.fn();
+        const stale = { ...MODELS[0], name: "GPT", isDefault: true };
+        await renderSelection({ query: { provider: "openai" }, selected: [stale, MODELS[2]], onChange });
+        expect(onChange).toHaveBeenLastCalledWith([{ ...stale, name: "GPT-4.1" }, MODELS[2]]);
+
+        onChange.mockClear();
+        await renderSelection({ query: { provider: "openai" }, selected: [MODELS[0]], onChange });
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it("reset-to-defaults re-applies the recommended selection, dropping the rest", async () => {
         const onChange = vi.fn();
         // Start with everything selected, including the non-recommended model.
