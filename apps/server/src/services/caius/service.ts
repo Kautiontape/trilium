@@ -47,7 +47,8 @@ import {
     suggestedTasks,
     taskKeys,
     TRILIUM_CONFIG,
-    withListItemIds
+    withListItemIds,
+    workdayNow
 } from "@triliumnext/caius";
 import { becca, date_utils as dateUtils, markdownExportService, markdownImportService } from "@triliumnext/core";
 import { t } from "i18next";
@@ -82,7 +83,7 @@ import {
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { DECLINED_LABEL, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, dayLabels, listPicks, mainTasks, planDay, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
+import { catchupOf, type DayRead, dayLabels, listPicks, mainTasks, planDay, rolloverOf, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -156,13 +157,17 @@ export function createCaiusService(
      * notes are read under the lock, the sources outside it.
      */
     async function dayRead(date: string, refresh = false, extraKeys: string[] = []): Promise<DayRead> {
-        const { context, standing, week, closed, declined } = await withCaiusLock("caius_day_read", async () => ({
-            context: (await gatherContext(store, date)).context,
-            standing: await readStanding(),
-            week: await weekTasks(isoWeekKey(new Date(`${date}T00:00:00Z`))),
-            closed: await closedNow(),
-            declined: await dayLabels(store, date, DECLINED_LABEL)
-        }));
+        const { context, standing, week, closed, declined } = await withCaiusLock("caius_day_read", async () => {
+            const standing = await readStanding();
+            const now = workdayNow(caiusNow(), rolloverOf(readRhythm(standing.markdown)));
+            return {
+                context: (await gatherContext(store, date)).context,
+                standing,
+                week: await weekTasks(isoWeekKey(new Date(`${date}T00:00:00Z`)), now),
+                closed: await closedNow(now),
+                declined: await dayLabels(store, date, DECLINED_LABEL)
+            };
+        });
         const rhythm = readRhythm(standing.markdown);
         const lines = context.map((line) => line.text);
         const keys = [ ...new Set([ ...week.flatMap((task) => keysOf(task.text)), ...lines.flatMap((line) => keysOf(line)), ...extraKeys ]) ]
@@ -182,32 +187,46 @@ export function createCaiusService(
         return given.latitude !== undefined && given.longitude !== undefined ? { latitude: given.latitude, longitude: given.longitude } : null;
     }
 
+    /**
+     * The Caius clock as its workday sees it (`workdayNow`): before the rollover in the standing
+     * note's Rhythm, still the day before. Every "today" of a call comes from it. This reads the
+     * note under its own lock, so a call that holds the lock reads `todayHeld` instead.
+     */
+    async function today(): Promise<Date> {
+        return withCaiusLock("caius_standing", todayHeld);
+    }
+
+    /** `today()` for a call that already holds the lock. */
+    async function todayHeld(): Promise<Date> {
+        return workdayNow(caiusNow(), rolloverOf(readRhythm((await readStanding()).markdown)));
+    }
+
     /** The keys he closed lately (`closedKeys`); none without a Journal. The caller holds the lock. */
-    async function closedNow(): Promise<Set<string>> {
+    async function closedNow(now: Date): Promise<Set<string>> {
         const docs = await journalDocs(store);
-        return docs ? closedKeys(store, docs, caiusNow()) : new Set();
+        return docs ? closedKeys(store, docs, now) : new Set();
     }
 
     /** The live tasks of a week note; none when it is protected or not a text note, which `gatherContext` skips too. The caller holds the lock. */
-    async function weekTasks(week: string) {
+    async function weekTasks(week: string, now: Date) {
         const note = await findPeriodNote(store, "week", week);
         if (note && (note.type !== "text" || note.isProtected)) return [];
-        return mainTasks(await readPlan(store, "week", week, caiusNow()));
+        return mainTasks(await readPlan(store, "week", week, now));
     }
 
-    const stepDeps = (): StepDeps => ({ store, now: caiusNow(), locked: withCaiusLock, dayRead, standing: readStanding });
-    const applyDeps = (): ApplyDeps => {
-        const now = caiusNow();
-        return {
-            ...stepDeps(), now, place: () => placeOf(), weatherOf,
-            render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
-            plannedAt: localIso(now)
-        };
-    };
+    const stepDeps = async (): Promise<StepDeps> => ({ store, now: await today(), locked: withCaiusLock, dayRead, standing: readStanding });
+    const applyDeps = async (): Promise<ApplyDeps> => ({
+        ...await stepDeps(), place: () => placeOf(), weatherOf,
+        render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
+        plannedAt: localIso(caiusNow())
+    });
 
     return {
+        /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. A read, so it takes no lock and the status never waits on a write. */
+        rollover: async () => readRhythm((await readStanding()).markdown).rollover,
+
         plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
-            const now = caiusNow();
+            const now = await todayHeld();
             const key = date ?? currentKey(period, now);
             if (!isPeriodKey(period, key)) {
                 return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
@@ -222,7 +241,7 @@ export function createCaiusService(
         }),
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
-            const now = caiusNow();
+            const now = await todayHeld();
             const docs = await journalDocs(store);
             if (!docs) {
                 return { total: 0, tasks: [], ...NO_JOURNAL };
@@ -236,7 +255,7 @@ export function createCaiusService(
         }),
 
         explain: ({ noteId, listItemId }: ExplainInput) => withCaiusLock("caius_explain", async () => {
-            const now = caiusNow();
+            const now = await todayHeld();
             const docs = await journalDocs(store);
             if (!docs) {
                 return { error: "not_found", detail: "There is no Journal: no note carries #calendarRoot", ...NO_JOURNAL };
@@ -279,7 +298,8 @@ export function createCaiusService(
          */
         inputs: async ({ refresh, ...input }: InputsToolInput) => {
             const inputs = await cachedInputs(input, refresh);
-            return withoutClosed(inputs, await withCaiusLock("caius_inputs", closedNow));
+            const now = await today();
+            return withoutClosed(inputs, await withCaiusLock("caius_inputs", () => closedNow(now)));
         },
 
         /**
@@ -288,7 +308,7 @@ export function createCaiusService(
          * as `duplicate`: the library compares a keyless item's whole line, wrapper and all.
          */
         add: ({ items, dryRun, html }: AddInput) => withCaiusLock("caius_add", async () => {
-            const now = caiusNow();
+            const now = await todayHeld();
             const docs = items.some((item) => item.suggested) ? await journalDocs(store) : null;
             const closed = docs ? await closedKeys(store, docs, now) : new Set<string>();
             const live = docs ? liveKeys(docs, now) : new Map<string, string[]>();
@@ -350,7 +370,7 @@ export function createCaiusService(
          * empties the block.
          */
         meetings: async ({ date, items, dryRun, refresh }: MeetingsInput) => {
-            const later = laterDay(date);
+            const later = laterDay(date, await today());
             if (later) return later;
             let lines = items;
             if (!lines) {
@@ -370,13 +390,13 @@ export function createCaiusService(
 
         /** Adds a Context line; one given a date that `weekPlace` sends to a week goes to that week's note. */
         contextAdd: (input: ContextAddInput) => withCaiusLock("caius_context_add", async () => {
-            const { result, moved } = await contextAddOn(store, input, caiusNow());
+            const { result, moved } = await contextAddOn(store, input, await todayHeld());
             return withBlobIds([ moved ? { ...withDiff(result), detail: "moved to the week note" } : withDiff(result) ]);
         }),
 
         /** Writes each line he kept to the week note of `date`, the day planned or wound down to. */
         contextKeep: ({ date, lines, dryRun }: ContextKeepInput) => withCaiusLock("caius_context_keep", async () =>
-            withBlobIds((await contextKeepOn(store, date, lines, { dryRun, now: caiusNow() })).map((result) => withDiff(result)))),
+            withBlobIds((await contextKeepOn(store, date, lines, { dryRun, now: await todayHeld() })).map((result) => withDiff(result)))),
 
         /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
         skipCatchup: ({ date }: SkipCatchupInput) => withCaiusLock("caius_skip_catchup", () => skipCatchupOn(store, date)),
@@ -387,24 +407,24 @@ export function createCaiusService(
          * notes from today on.
          */
         finished: ({ keys, note: noteId }: FinishedInput) => withCaiusLock("caius_finished", async () => {
-            const now = caiusNow();
-            const today = currentKey("day", now);
+            const now = await todayHeld();
+            const day = currentKey("day", now);
             const note = noteId
                 ? await store.note(noteId).catch(() => undefined)
-                : await findPeriodNote(store, "day", today) ?? await store.calendarDay(today);
+                : await findPeriodNote(store, "day", day) ?? await store.calendarDay(day);
             if (!note) {
                 return { error: "not_found", detail: `Note '${noteId}' not found` };
             }
-            return finishedOn(store, keys, note, today, now);
+            return finishedOn(store, keys, note, day, now);
         }),
 
-        winddown: (input: WindDownInput) => windDown(stepDeps(), input),
+        winddown: async (input: WindDownInput) => windDown(await stepDeps(), input),
 
-        planday: (input: PlanDayInput) => planDay(stepDeps(), input),
+        planday: async (input: PlanDayInput) => planDay(await stepDeps(), input),
 
-        planApply: (input: PlanApplyInput) => planApply(applyDeps(), input),
+        planApply: async (input: PlanApplyInput) => planApply(await applyDeps(), input),
 
-        windDownApply: (input: WindDownApplyInput) => windDownApply(applyDeps(), input),
+        windDownApply: async (input: WindDownApplyInput) => windDownApply(await applyDeps(), input),
 
         /**
          * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and
@@ -413,7 +433,7 @@ export function createCaiusService(
          * brief, with the date and time it was planned, else `unplanned`. Reads only.
          */
         nudge: ({ date }: NudgeInput) => withCaiusLock("caius_nudge", async () => {
-            const { lastWorkday, days, note, tasks, held, heldOn } = await catchupOf(store, date, caiusNow());
+            const { lastWorkday, days, note, tasks, held, heldOn } = await catchupOf(store, date, await todayHeld());
             const woundDown = note ? label(note, WOUND_DOWN_LABEL) : undefined;
             if (woundDown !== undefined) {
                 const woundDownAt = woundDown.length > 10 ? woundDown : null;
@@ -433,7 +453,7 @@ export function createCaiusService(
 
         header: async ({ noteId, latitude, longitude, ...day }: HeaderInput) => {
             // The forecast can take 3 s, so it is fetched before the lock is taken. The drawing is today's.
-            const weather = latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude, currentKey("day", caiusNow()));
+            const weather = latitude === undefined || longitude === undefined ? undefined : await weatherOf(latitude, longitude, currentKey("day", await today()));
             return withCaiusLock("caius_header", async () => {
                 const note = await store.note(noteId).catch(() => undefined);
                 if (!note) {
@@ -454,23 +474,25 @@ export function createCaiusService(
          * bars are that list laid out again. The weather is fetched before the lock.
          */
         briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
-            const later = laterDay(input.date);
+            const { markdown } = await withCaiusLock("caius_standing", readStanding);
+            const rollover = rolloverOf(readRhythm(markdown));
+            const now = workdayNow(caiusNow(), rollover);
+            const later = laterDay(input.date, now);
             if (later) return later;
             const place = await placeOf({ latitude, longitude });
             const weather = input.dryRun || !place ? undefined : await weatherOf(place.latitude, place.longitude, input.date);
             return withCaiusLock("caius_brief_write", async () => {
                 // The picks and the work bars follow the main list as it stands, whatever the input says.
-                const now = caiusNow();
                 const day = await findPeriodNote(store, "day", input.date);
                 const plan = day && (day.type !== "text" || day.isProtected) ? null : await readPlan(store, "day", input.date, now);
                 const { kept, dropped } = plan ? listPicks(plan, input.picks) : { kept: input.picks, dropped: [] };
                 const span = { ...input.header, workEnd: input.header.workEnd ?? DEFAULT_WORK_END };
-                const header = plan ? { ...input.header, work: workBlocks(plan, span, input.header.events, input.date, now).work } : input.header;
+                const header = plan ? { ...input.header, work: workBlocks(plan, span, input.header.events, input.date, now, rollover).work } : input.header;
                 const result = await writeBrief({
                     store,
                     draw: (noteId) => drawHeader(noteId, header, weather).attachmentId,
                     render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
-                    plannedAt: localIso(now)
+                    plannedAt: localIso(caiusNow())
                 }, { ...input, picks: kept, header });
                 return { ...result, droppedPicks: dropped.map((pick) => pick.text), work: header.work };
             });
@@ -519,8 +541,8 @@ export function caiusDevNow(env: Record<string, string | undefined> = process.en
  * `error: "not_today"` for a date after today by the Caius clock, as `caius_planday` answers: a later
  * day is written on its own morning. Null for today or an earlier day.
  */
-function laterDay(date: string) {
-    const today = currentKey("day", caiusNow());
+function laterDay(date: string, now: Date) {
+    const today = currentKey("day", now);
     return date > today ? { date, error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today }) } : null;
 }
 

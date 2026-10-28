@@ -78,14 +78,14 @@ export function stepPeriod({ kind, anchor }: ViewedPeriod, delta: number): Viewe
 
 /**
  * Whether the period is due to be closed: a past one, today from 15:00, or the current week or
- * month.
+ * month. `clockMinutes` is the time of day in the workday, past 24:00 in the small hours.
  */
-export function isCloseable(period: ViewedPeriod, now: Date) {
+export function isCloseable(period: ViewedPeriod, now: Date, clockMinutes = now.getHours() * 60 + now.getMinutes()) {
     const key = periodKey(period);
     // Keys of one kind sort in time order as strings.
     const current = periodKey({ kind: period.kind, anchor: now });
     if (period.kind === "day") {
-        return key < current || (key === current && now.getHours() >= CLOSE_DAY_FROM_HOUR);
+        return key < current || (key === current && clockMinutes >= CLOSE_DAY_FROM_HOUR * 60);
     }
 
     return key <= current;

@@ -135,6 +135,8 @@ interface CaiusStatus {
     detail?: unknown;
     /** The server's local time, `YYYY-MM-DDTHH:mm:ss`, sent only when its dev clock is set. */
     now?: string;
+    /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. */
+    rollover?: string;
 }
 
 /** A Context line in force for a day, as `/api/caius/context` lists it. */
@@ -169,12 +171,26 @@ export type CaiusNudge = { date: string; lastWorkday: string } & (
 /** The gap between the server's dev clock and this browser's, in ms; 0 without a dev clock. */
 let clockOffset = 0;
 
+/** When the day rolls over, in minutes after midnight: 04:00 until the status has said. */
+let rolloverMinutes = 4 * 60;
+
 /**
  * The moment the Plan tab treats as now: the browser clock, or the server's when it runs a dev
- * `CAIUS_NOW` (known once `isCaiusEnabled()` has answered).
+ * `CAIUS_NOW` (known once `isCaiusEnabled()` has answered). Before the day's rollover it is the
+ * same clock time on the day before (as `workdayNow` in the library), so its date is the workday;
+ * read its time of day with `caiusClockMinutes`.
  */
 export function caiusNow() {
-    return new Date(Date.now() + clockOffset);
+    const at = new Date(Date.now() + clockOffset);
+    return at.getHours() * 60 + at.getMinutes() < rolloverMinutes
+        ? new Date(at.getFullYear(), at.getMonth(), at.getDate() - 1, at.getHours(), at.getMinutes(), at.getSeconds(), at.getMilliseconds())
+        : at;
+}
+
+/** Minutes into the workday of a `caiusNow()`: past `24 * 60` in the small hours. */
+export function caiusClockMinutes(now: Date) {
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    return minutes < rolloverMinutes ? minutes + 24 * 60 : minutes;
 }
 
 let statusRequest: Promise<boolean> | null = null;
@@ -209,6 +225,8 @@ async function fetchStatus() {
         lastKnownEnabled = status?.enabled === true;
         const serverNow = status?.now ? new Date(status.now).getTime() : NaN;
         clockOffset = Number.isNaN(serverNow) ? 0 : serverNow - Date.now();
+        const rollover = /^(\d{2}):(\d{2})$/.exec(status?.rollover ?? "");
+        rolloverMinutes = rollover ? Number(rollover[1]) * 60 + Number(rollover[2]) : 4 * 60;
     } catch {
         lastKnownEnabled = false;
         statusRequest = null;

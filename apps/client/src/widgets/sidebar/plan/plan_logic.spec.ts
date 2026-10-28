@@ -68,6 +68,9 @@ describe("plan periods", () => {
         expect(isCloseable(period("month", "2026-10"), at(9))).toBe(true);
         expect(isCloseable(period("month", "2026-11"), at(9))).toBe(false);
         expect(isCloseable(period("month", "2025-12"), at(9))).toBe(true);
+        // 01:30 after Tuesday's work is Tuesday at 25:30.
+        expect(isCloseable(day("2026-10-27"), new Date(2026, 9, 27, 1, 30), 25 * 60 + 30)).toBe(true);
+        expect(isCloseable(day("2026-10-27"), new Date(2026, 9, 27, 4, 0), 4 * 60)).toBe(false);
     });
 });
 

@@ -33,7 +33,8 @@ import {
     setStates,
     takeSuggested,
     TRILIUM_CONFIG,
-    weatherOfSvg
+    weatherOfSvg,
+    workdayClock
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
@@ -72,6 +73,7 @@ import {
     nextAsked,
     plainText,
     planFromOf,
+    rolloverOf,
     localDay,
     nextOffer,
     overlapIdOf,
@@ -576,7 +578,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             await guarded({ kind: "header", id: day }, skipped, () => redraw(store, day, dayRead, now, fetched, written, skipped));
         }
         // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
-        const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
+        const morning = targetDay === dayKey(now) && workdayClock(now, rolloverOf(read.rhythm)) < read.rhythm.workEnd;
         withTexts([ ...written, ...skipped ], pools, known, new Map([ ...followed, ...freed.map((fate) => [ fate.listItemId, journalItem(fate.listItemId)?.text ?? fate.listItemId ] as const) ]));
         const textOf = (id: string) => journalItem(id)?.text ?? "";
         const askedIds = new Set(holdAsks.flatMap((ask) => ask.ids));
@@ -824,9 +826,6 @@ function listedOf(listed: ReturnType<typeof namedDays>): Set<string> {
 }
 
 const EVENING = "Evening";
-
-/** The local time of `at` as `HH:MM`. */
-const hhmm = (at: Date) => `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
 
 /** What each kind of answer names its items from, each item with the ref its step gave it. */
 interface Pools {
@@ -1770,8 +1769,10 @@ function fromNow(acts: Prose["acts"], from: string | undefined): Prose["acts"] {
         const m = /^(\s*)(\d{1,2}:\d{2})(\s*(?:to|–|-)\s*)(\d{1,2}:\d{2})(\s*)$/.exec(act.range);
         if (!m?.[2] || !m[4]) return act;
         const clock = (time: string) => time.padStart(5, "0");
-        if (clock(m[4]) <= from) return { ...act, range: from };
-        return clock(m[2]) < from ? { ...act, range: `${m[1]}${from}${m[3]}${m[4]}${m[5]}` } : act;
+        // A time past 24:00 reads as the clock on the wall.
+        const shown = `${String(Number(from.slice(0, 2)) % 24).padStart(2, "0")}${from.slice(2)}`;
+        if (clock(m[4]) <= from) return { ...act, range: shown };
+        return clock(m[2]) < from ? { ...act, range: `${m[1]}${shown}${m[3]}${m[4]}${m[5]}` } : act;
     });
 }
 
@@ -1779,7 +1780,7 @@ function fromNow(acts: Prose["acts"], from: string | undefined): Prose["acts"] {
 function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date) {
     const { start, end, workEnd } = read.rhythm;
     const events = drawnEvents(read);
-    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now).work };
+    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now, rolloverOf(read.rhythm)).work };
 }
 
 /** A ticket candidate as its Suggested line: the shape `caius_add` writes, or an ask's "Answer X's question on KEY: because Y (~15m)". */
@@ -1885,7 +1886,7 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
         ...(weather ? { weather } : {})
     }, {
         date: input.date, headline: input.brief.headline, picks, sections, header,
-        acts: withEveningAct(fromNow(drawnActs(header, input.brief.acts, titlesOf(plan)), planFromOf(input.date, now, read.rhythm.start).planFrom), plan, header),
+        acts: withEveningAct(fromNow(drawnActs(header, input.brief.acts, titlesOf(plan)), planFromOf(input.date, now, read.rhythm).planFrom), plan, header),
         followUps: followUps.map(({ key, commentId }) => ({ key, commentId }))
     });
     if (result.error !== undefined) return { error: result.error, detail: result.detail };

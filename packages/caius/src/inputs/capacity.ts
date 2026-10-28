@@ -28,12 +28,10 @@ export interface CapacityOptions {
   workEnd?: string;
 }
 
-/** Minutes after midnight for `HH:MM` (`24:00` is allowed), or `undefined` for anything else. */
+/** Minutes after midnight for `HH:MM`, or `undefined` for anything else. Past `23:59` it counts on into the next morning, up to `29:59`. */
 export function parseClock(clock: string): number | undefined {
-  const match = /^([01]\d|2[0-4]):([0-5]\d)$/.exec(clock);
-  if (!match) return undefined;
-  const minutes = Number(match[1]) * 60 + Number(match[2]);
-  return minutes > 24 * 60 ? undefined : minutes;
+  const match = /^([0-2]\d):([0-5]\d)$/.exec(clock);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : undefined;
 }
 
 /**

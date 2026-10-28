@@ -98,11 +98,11 @@ const forwardItem = z.object({
         .describe("The note to forward the task to: a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
 });
 
-const headerClock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be HH:MM, such as 09:30");
+const headerClock = z.string().regex(/^([01]\d|2\d):[0-5]\d$/, "Must be HH:MM, such as 09:30; after midnight it counts on from 24:00, as 25:00");
 
 const headerDay = z.object({
     start: headerClock.describe("Where the day starts, HH:MM: standup, such as 10:00"),
-    end: headerClock.describe("Where the day ends, HH:MM: bedtime, such as 23:00"),
+    end: headerClock.describe("Where the day ends, HH:MM: bedtime, such as 23:00; 25:00 is 1:00 AM the next morning"),
     workEnd: headerClock.optional().describe("Where work ends and the evening begins, HH:MM. Defaults to 18:00."),
     events: z.array(z.object({
         start: headerClock,

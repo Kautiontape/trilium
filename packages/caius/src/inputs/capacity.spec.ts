@@ -49,6 +49,7 @@ describe('dayCapacity', () => {
     expect(parseClock('09:30')).toBe(570);
     expect(parseClock('24:00')).toBe(1440);
     expect(parseClock('9:30')).toBeUndefined();
-    expect(parseClock('25:00')).toBeUndefined();
+    expect(parseClock('25:00')).toBe(1500);
+    expect(parseClock('30:00')).toBeUndefined();
   });
 });

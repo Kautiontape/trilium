@@ -8,7 +8,7 @@ import appContext from "../../../components/app_context";
 import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
-    caiusApi, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, caiusOpener, type CaiusPeriodKind, type CaiusPlan,
+    caiusApi, caiusClockMinutes, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, caiusOpener, type CaiusPeriodKind, type CaiusPlan,
     isCaiusEnabled, RELOAD_TIMEOUT_MS, startCaiusConversation, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
@@ -113,7 +113,7 @@ export default function PlanTab() {
                             onChanged={refresh}
                         />
                     )}
-                    {current.plan.noteId && isCloseable(period, caiusNow()) && (
+                    {current.plan.noteId && isCloseable(period, caiusNow(), caiusClockMinutes(caiusNow())) && (
                         <PlanClose
                             key={key}
                             plan={current.plan}
