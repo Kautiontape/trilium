@@ -208,7 +208,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
 
     const { plan, raised } = await deps.locked("caius_planday", async () => ({
         plan: await readPlan(deps.store, "day", date, deps.now),
-        raised: await raisedAsks(deps.store, deps.now)
+        raised: await raisedAsks(deps.store, deps.now, date)
     }));
     const followUps = followUpsOf(unraised(read.inputs.jira, raised));
     const { start, end, workEnd, from } = read.rhythm;
@@ -302,13 +302,17 @@ export function fitted<R extends { data: Record<string, unknown> }>(reply: R): R
 /** Days a raised ask stays out of the follow-ups and candidates, unless a newer comment comes. */
 const RAISED_DAYS = 7;
 
-/** The asks briefs dated in the last `RAISED_DAYS` days raised, as `KEY:commentId`. The caller holds the lock. */
-async function raisedAsks(store: NoteStore, now: Date): Promise<Set<string>> {
+/**
+ * The asks raised by briefs dated in the last `RAISED_DAYS` days and before `day`, the day being
+ * planned, as `KEY:commentId`: a refresh of that day's own brief raises them again. The caller holds
+ * the lock.
+ */
+async function raisedAsks(store: NoteStore, now: Date, day: string): Promise<Set<string>> {
     const since = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - RAISED_DAYS));
     const raised = new Set<string>();
     for (const note of await store.search(`#${RAISED_LABEL}`)) {
         const date = label(note, BRIEF_LABEL);
-        if (!date || date < since) continue;
+        if (!date || date < since || date >= day) continue;
         for (const a of note.attributes) if (a.type === "label" && a.name === RAISED_LABEL) raised.add(a.value);
     }
     return raised;
@@ -485,7 +489,7 @@ async function dayFacts(store: NoteStore, date: string, now: Date) {
     const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
     const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
     return {
-        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, raised: await raisedAsks(store, now),
+        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, raised: await raisedAsks(store, now, date),
         evening: eveningTasks.length > 0, eveningMinutes
     };
 }

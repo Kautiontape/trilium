@@ -522,3 +522,22 @@ describe("where a Context line goes", () => {
         expect(week).toHaveLength(13);
     });
 });
+
+describe("a same-day refresh keeps the Follow up", () => {
+    it("09:35 raises the ask, 11:05 still has it, and the next morning drops it", async () => {
+        const day = "2026-11-26";
+        jira.asks.push({ ticket: ticket("ZAP-190"), author: "Riley Sample", created: "2026-11-25T15:00:00.000Z", commentId: "30", excerpt: "Is the bucket confirmed?" });
+        await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("q1", "Something ~30m"))}`));
+        const raised = (answer: any) => answer.data.followUps.map((f: any) => `${f.key}:${f.commentId}`);
+
+        at(`${day}T09:35`);
+        const morning = await call("caius_planday", { date: day, step: "brief", refresh: true });
+        expect(raised(morning)).toContain("ZAP-190:30");
+        await call("caius_brief_write", { ...morning.data.shape, headline: "Morning", sections: [ { title: "Follow up", markdown: "Riley asked on ZAP-190 whether the bucket is confirmed." } ] });
+
+        at(`${day}T11:05`);
+        expect(raised(await call("caius_planday", { date: day, step: "brief" }))).toContain("ZAP-190:30");
+        at("2026-11-27T09:30");
+        expect(raised(await call("caius_planday", { date: "2026-11-27", step: "brief", refresh: true }))).not.toContain("ZAP-190:30");
+    });
+});
