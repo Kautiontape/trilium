@@ -39,6 +39,7 @@ import { t } from "i18next";
 
 import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_LABEL, FOCUS_LABEL, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
+    allHeld as heldItems,
     catchupOf,
     closingLines,
     copyKey,
@@ -388,7 +389,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const settledBefore = new Set(closingNote ? closingNote.attributes.filter((a) => a.type === "label" && a.name === SETTLED_LABEL).map((a) => a.value) : []);
         pools.settled = settledOf(items, (item) => item.period === date || settledBefore.has(item.id), copies);
         // An item carried on three workdays or more is offered a month; it goes there only on his word.
-        const stale = await staleItems(store, now, open.items, targetDay);
+        // As the open step, a held item gets no park offer.
+        const heldOnes = await heldItems(store);
+        const stale = await staleItems(store, now, open.items.filter((item) => !item.listItemId || !heldOnes.has(item.listItemId)), targetDay);
         // On a vague yes the answers are what was offered, unless a question of its own is pending.
         // A bare yes to the park alone, as to the heavy day's move, takes the park and nothing more.
         const pending = lines.keep.length + lines.carry.length + asks.overlaps.length + (asks.over > 0 ? 1 : 0) + stale.size;
@@ -737,14 +740,21 @@ function orderHeadline(header: ReturnType<typeof headerOf>): string | undefined 
 function workHeadline(headline: string | undefined, plan: Awaited<ReturnType<typeof readPlan>>): string | undefined {
     const tasks = listOf(plan);
     const work = tasks.filter((task) => task.work).map((task) => task.label);
-    const labels = tasks.map((task) => task.label);
-    const titles = titlesOf(plan);
-    if (!headline || !work.length || !tasks.some((task) => !task.work && namesTask(headline, task.label, labels, titles))) return headline;
+    const wordsOf = (text: string): string[] => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+    const said = new Set(wordsOf(headline ?? ""));
+    // A task is named by its key, or by a word of four letters or more that is its alone and not a common one.
+    const names = (task: (typeof tasks)[number]) => task.keys.some((key) => JIRA_KEY.test(key) && (headline ?? "").toUpperCase().includes(key))
+        || wordsOf(task.text).some((word) => word.length >= 4 && said.has(word) && !COMMON_WORDS.has(word)
+            && !tasks.some((other) => other !== task && wordsOf(other.text).includes(word)));
+    if (!headline || !work.length || !tasks.some((task) => !task.work && names(task))) return headline;
     const [ first, ...rest ] = work;
     if (!rest.length) return t("caius.brief.start_headline", { first });
     const tail = rest.at(-1) ?? "";
     return t("caius.brief.order_headline", { first, rest: rest.length > 1 ? t("caius.daily.list_and", { head: rest.slice(0, -1).join(", "), last: tail }) : tail });
 }
+
+/** Words of four letters or more too common in a headline to name a task by. */
+const COMMON_WORDS = new Set([ "about", "after", "before", "then", "with", "from", "into", "over", "that", "this", "their", "there", "which", "until", "while", "first", "later", "today", "tonight", "evening", "morning", "afternoon", "work" ]);
 
 /** The brief's picks of a plan as they read, in order: the first work tasks of his list. */
 function picksOf(plan: Awaited<ReturnType<typeof readPlan>>): string {

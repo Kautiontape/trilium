@@ -291,4 +291,21 @@ describe("a stale errand", () => {
         ] } });
         expect(kept.headline).toBe("Verify the export retry, then the invoice check.");
     });
+
+    it("a headline that shares only a common word with a task that isn't work stays as sent", async () => {
+        const DAY = "2029-05-08";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${zap("ZAP-811", "Verify the export retry")} ~30m`))}<h3>Evening</h3>${ul(li("q-mom", "Call Mom about the flights"))}`);
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Verify the export retry, then think about the invoice.", acts: [
+            { range: "", text: "x" }, { range: "", text: "y" }
+        ] } });
+        expect(planned.headline).toBe("Verify the export retry, then think about the invoice.");
+
+        // A ticket under Chores is no work, and named by its key.
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${zap("ZAP-811", "Verify the export retry")} ~30m`))}<h3>Chores</h3>${ul(li("q-812", `${zap("ZAP-812", "Tidy the board")} ~15m`))}`);
+        const keyed = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "ZAP-812 then the export retry.", acts: [
+            { range: "", text: "x" }, { range: "", text: "y" }
+        ] } });
+        expect(keyed.headline).toBe("Start with ZAP-811.");
+    });
 });
