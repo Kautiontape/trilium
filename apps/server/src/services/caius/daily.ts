@@ -747,9 +747,13 @@ const EXCERPT_CHARS = 100;
 
 /** `text` on one line, cut at the last word that fits in `EXCERPT_CHARS`, with an ellipsis. */
 function shortExcerpt(text: string): string {
-    const line = text.replace(/\s+/g, " ").trim();
-    if (line.length <= EXCERPT_CHARS) return line;
-    const cut = line.slice(0, EXCERPT_CHARS);
+    return cutAtWord(text.replace(/\s+/g, " ").trim(), EXCERPT_CHARS);
+}
+
+/** `line` as it is when it fits in `max` characters, else cut at the last word that fits, with one ellipsis after it. */
+function cutAtWord(line: string, max: number): string {
+    if (line.length <= max) return line;
+    const cut = line.slice(0, max);
     const word = cut.lastIndexOf(" ");
     return `${(word > 0 ? cut.slice(0, word) : cut).replace(/[\s,;:.]+$/, "")}…`;
 }
@@ -846,7 +850,7 @@ export function plainText(text: string): string {
 function workLabel(text: string): string {
     const key = keysOf(text).find((k) => /^[A-Z][A-Z0-9]+-\d+$/.test(k));
     const plain = plainText(text);
-    return key ?? (plain.length > LABEL_LENGTH ? `${plain.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : plain);
+    return key ?? (plain.length > LABEL_LENGTH ? cutAtWord(plain, LABEL_LENGTH - 1) : plain);
 }
 
 /**

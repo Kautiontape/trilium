@@ -674,7 +674,7 @@ function drawnActs(header: ReturnType<typeof headerOf>, given: { text: string }[
         // An act that would start once work is over has no span: the evening act covers that time.
         if (start >= end) return [];
         const plain = first && last
-            ? { range: t("caius.brief.act_range", { start, end }), text: t("caius.brief.act_text", { items: group.map((task) => task.label).join(t("caius.brief.evening_then")) }) }
+            ? { range: t("caius.brief.act_range", { start, end }), text: actText(group.map((task) => task.label).join(t("caius.brief.evening_then"))) }
             : { range: t("caius.brief.act_range", { start, end }), text: t("caius.brief.open_time") };
         const other = groups[1 - i] ?? [];
         const words = given[i]?.text.trim();
@@ -684,6 +684,11 @@ function drawnActs(header: ReturnType<typeof headerOf>, given: { text: string }[
         return [ fits ? { range: plain.range, text: words } : plain ];
     });
     return [ ...acts, { range: "", text: "" } ];
+}
+
+/** An act's sentence from its bars' labels: a stop after them, unless the last is cut and already ends with an ellipsis. */
+function actText(items: string): string {
+    return items.endsWith("…") ? items : t("caius.brief.act_text", { items });
 }
 
 /**
