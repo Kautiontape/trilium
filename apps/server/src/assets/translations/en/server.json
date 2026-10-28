@@ -621,6 +621,7 @@
       "catchup_other": "{{- weekday}} has {{count}} open tasks. Move all to today, review them, or skip?",
       "heavy": "The day is {{percent}}% booked. Move '{{- task}}' to {{- day}}?",
       "follow_up": "Follow up",
+      "follow_up_line": "{{- author}} asked on {{- weekday}}: \"{{- excerpt}}\" ({{key}}). If you already answered in Chat, dismiss this.",
       "heads_up": "Heads-up",
       "carry_week": "Carry {{- lines}} into next week?",
       "carry_day": "Keep {{- lines}} going?",

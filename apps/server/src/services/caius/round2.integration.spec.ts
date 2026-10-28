@@ -175,3 +175,16 @@ describe("done means done everywhere in the step data", () => {
         expect(inputs.data.followUps.map((f: any) => f.key)).not.toContain("ZAP-104");
     });
 });
+
+describe("follow-ups are written by the tool", () => {
+    it("Mon 2 Nov: Jordan's ZAP-105 comment reads as a quote, not as an ask the agent reworded", async () => {
+        const excerpt = "The rollout note is now in the runbook, so the deploy can go ahead whenever the staging bucket name is confirmed by someone on your side.";
+        jira.asks.push({ ticket: ticket("ZAP-105"), author: "Jordan Placeholder", created: "2026-11-01T15:00:00.000Z", commentId: "50", excerpt });
+        at(`${MON}T09:40`);
+        const brief = await call("caius_planday", { date: MON, step: "brief", refresh: true });
+        const followUp = brief.data.followUps.find((f: any) => f.key === "ZAP-105");
+        expect(followUp.sentence).toBe("Jordan Placeholder asked on Sunday: \"The rollout note is now in the runbook, so the deploy can go ahead whenever the staging bucket name…\" (ZAP-105). If you already answered in Chat, dismiss this.");
+        // The brief's Follow up starts from the same sentences.
+        expect(brief.data.shape.sections[0]).toEqual({ title: "Follow up", markdown: `- ${followUp.sentence}` });
+    });
+});

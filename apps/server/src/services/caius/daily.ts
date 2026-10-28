@@ -237,7 +237,10 @@ export async function planDay(deps: StepDeps, { date, step, refresh }: { date: s
             date, headline: "",
             acts: [ { range: "", text: "" }, { range: "", text: "" }, { range: "", text: "" } ],
             picks: [],
-            sections: [ { title: t("caius.daily.follow_up"), markdown: "" }, { title: t("caius.daily.heads_up"), markdown: "" } ],
+            sections: [
+                { title: t("caius.daily.follow_up"), markdown: followUps.map((f) => `- ${f.sentence}`).join("\n") },
+                { title: t("caius.daily.heads_up"), markdown: "" }
+            ],
             header,
             followUps: followUps.map(({ key, commentId }) => ({ key, commentId })),
             ...coordinates
@@ -333,11 +336,29 @@ function unraised(jira: CaiusInputs["jira"], raised: Set<string>): CaiusInputs["
     return { ...jira, asks: jira.asks.filter((ask) => !quiet.has(ask.ticket.key)) };
 }
 
-/** What Follow up may raise: the latest ask per ticket, oldest first. A closed ticket's asks never reach here (`withoutClosed`). */
-function followUpsOf(jira: CaiusInputs["jira"]) {
+/**
+ * What Follow up may raise: the latest ask per ticket, oldest first, each with the `sentence` the
+ * brief writes as it is. A closed ticket's asks never reach here (`withoutClosed`).
+ */
+export function followUpsOf(jira: CaiusInputs["jira"]) {
     return latestAsks(jira.asks).map((ask) => ({
-        key: ask.ticket.key, commentId: ask.commentId, author: ask.author, created: ask.created, excerpt: ask.excerpt, url: ask.ticket.url
+        key: ask.ticket.key, commentId: ask.commentId, author: ask.author, created: ask.created, excerpt: ask.excerpt, url: ask.ticket.url,
+        sentence: t("caius.daily.follow_up_line", {
+            author: ask.author, weekday: weekdayName(dayKey(new Date(ask.created))), excerpt: shortExcerpt(ask.excerpt), key: ask.ticket.key
+        })
     }));
+}
+
+/** Longest excerpt a follow-up quotes before it is cut at a word. */
+const EXCERPT_CHARS = 100;
+
+/** `text` on one line, cut at the last word that fits in `EXCERPT_CHARS`, with an ellipsis. */
+function shortExcerpt(text: string): string {
+    const line = text.replace(/\s+/g, " ").trim();
+    if (line.length <= EXCERPT_CHARS) return line;
+    const cut = line.slice(0, EXCERPT_CHARS);
+    const word = cut.lastIndexOf(" ");
+    return `${(word > 0 ? cut.slice(0, word) : cut).replace(/[\s,;:.]+$/, "")}…`;
 }
 
 function latestAsks(asks: CaiusInputs["jira"]["asks"]) {
