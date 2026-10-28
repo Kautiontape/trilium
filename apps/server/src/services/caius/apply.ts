@@ -344,8 +344,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
     const targetDay = windDownTarget(date, deps.now);
     const read = await deps.dayRead(targetDay);
     // The next workday, when it has a brief, has its header drawn again after the writes, from its
-    // calendar, with the day's forecast fetched for a brief that kept no weather. The closed day's
-    // header stays as it was planned: its headline, drawing and acts were written together.
+    // calendar, with the day's forecast fetched for a brief that kept no weather.
     const briefed = new Map<string, { read: DayRead; fetched?: DayWeather }>();
     const place = await deps.place();
     const targetNote = await findPeriodNote(deps.store, "day", targetDay);
