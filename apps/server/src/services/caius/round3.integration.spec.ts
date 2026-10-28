@@ -294,7 +294,7 @@ describe("capacity is one honest number", () => {
 });
 
 describe("a morning Review goes on to Plan my day", () => {
-    it("Wed 11 09:45: the Review of Monday answers next: planday for today; an evening wind-down doesn't", async () => {
+    it("Wed 11 09:45: the Review of Monday answers next: planday for today; an evening wind-down or an evening Review doesn't", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2026-11-23");
             await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("rdav", "Message Dave about the lights"))}`);
@@ -304,6 +304,9 @@ describe("a morning Review goes on to Plan my day", () => {
         expect(review).toMatchObject({ targetDay: "2026-11-25", next: "planday" });
         at("2026-11-25T17:30");
         expect(await call("caius_winddown_apply", { date: "2026-11-25" })).toMatchObject({ targetDay: "2026-11-26", next: null });
+        // A Review pressed after work closes the older day against today, but doesn't plan it.
+        at("2026-11-26T18:30");
+        expect(await call("caius_winddown_apply", { date: "2026-11-24" })).toMatchObject({ targetDay: "2026-11-26", next: null });
     });
 });
 

@@ -328,12 +328,16 @@ export async function windDownApply(deps: ApplyDeps, input: WindDownApplyInput) 
                 if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
             });
         }
-        // A Review of an older day closes it against today, which Plan my day plans next in the same conversation.
-        return withDateLabels({ date, targetDay, written, skipped, next: targetDay === dayKey(now) ? "planday" : null });
+        // A morning Review of an older day closes it against today, which Plan my day plans next in the same conversation.
+        const morning = targetDay === dayKey(now) && hhmm(now) < read.rhythm.workEnd;
+        return withDateLabels({ date, targetDay, written, skipped, next: morning ? "planday" : null });
     });
 }
 
 const EVENING = "Evening";
+
+/** The local time of `at` as `HH:MM`. */
+const hhmm = (at: Date) => `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
 
 /** Runs one group of writes; a throw becomes one skipped entry, so the rest of the answer still comes back. */
 async function guarded(entry: { kind: string; id?: string }, skipped: Skipped[], work: () => Promise<unknown>) {
