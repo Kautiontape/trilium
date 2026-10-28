@@ -42,7 +42,7 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { BRIEF_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, findBrief } from "./brief.js";
+import { BRIEF_LABEL, findBrief, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL } from "./brief.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
@@ -104,8 +104,9 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
         const facts = await deps.locked("caius_winddown", () => dayFacts(deps.store, targetDay, deps.now));
+        // A raised ask stays on offer; only the Follow up leaves it out (`unraised`).
         const jira = unraised(read.inputs.jira, facts.raised);
-        const candidates = dayCandidates({ jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present);
+        const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
         const { eveningMinutes } = facts;
         const plannedMinutes = facts.plan.capacity.totalMinutes - eveningMinutes;
         const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
@@ -253,7 +254,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const plannedAt = brief ? label(brief, PLANNED_AT_LABEL) ?? null : null;
     const since = plannedAt ? localMoment(plannedAt) : undefined;
     const jira = unraised(read.inputs.jira, day.raised);
-    const candidates = dayCandidates({ jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present);
+    const candidates = onOffer(dayCandidates({ jira: read.inputs.jira, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
     return { day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context), jira };
 }
 
@@ -537,10 +538,17 @@ export async function dayFacts(store: NoteStore, date: string, now: Date) {
     // empty to-do is not a task.
     const parents = new Set(eveningTasks.filter((task) => task.parent !== null).map((task) => task.parent));
     const eveningMinutes = eveningTasks.filter((task) => !parents.has(task.text)).reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
+    const dayNote = plan.noteId ? await store.note(plan.noteId) : null;
+    const notToday = new Set(dayNote?.attributes.filter((a) => a.type === "label" && a.name === NOT_TODAY_LABEL).map((a) => a.value) ?? []);
     return {
-        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, raised: await raisedAsks(store, now, date),
+        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, notToday, raised: await raisedAsks(store, now, date),
         evening: eveningTasks.length > 0, eveningMinutes
     };
+}
+
+/** `candidates` without those he put off for the day (`#caiusNotToday` on its note), which come back on the next workday. */
+function onOffer<C extends { candidateId: string }>(candidates: C[], facts: { notToday: Set<string> }): C[] {
+    return candidates.filter((candidate) => !facts.notToday.has(candidate.candidateId));
 }
 
 /** The live top-level tasks of a plan, the Important block first, then in his order. */

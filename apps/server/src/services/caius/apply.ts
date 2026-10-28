@@ -91,7 +91,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         // Every candidate the day could offer, whatever was offered or added since: a re-run finds
         // those already in Suggested, and an id he named still resolves after the brief is written.
         const known = new Map([
-            ...dayCandidates({ jira: offer.jira, week: offer.day.week, live: offer.day.live, exclude: [ ...offer.day.plan.dismissed, ...offer.day.closed ] }).map(present),
+            ...dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: offer.day.live, exclude: [ ...offer.day.plan.dismissed, ...offer.day.closed ] }).map(present),
             ...offer.candidates
         ].map((candidate) => [ candidate.candidateId, candidate ]));
 
@@ -165,7 +165,7 @@ export async function planApply(deps: ApplyDeps, input: PlanApplyInput) {
         }
 
         // A pick's reason is its candidate's, live or not, so a re-run words the brief the same.
-        const reasons = new Map(dayCandidates({ jira: offer.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
+        const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
         const brief = await briefOf(deps, input, read, reasons, offer.jira, weather);
         if ("error" in brief) {

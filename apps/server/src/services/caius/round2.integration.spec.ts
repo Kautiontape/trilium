@@ -228,3 +228,28 @@ describe("the weather never depends on the agent", () => {
         expect(String(svg)).toContain("data-part=\"weather\"");
     });
 });
+
+/** A brief's prose, as the agent writes it. */
+const prose = { headline: "A light day", acts: [ { range: "10:00 to 12:00", text: "x" }, { range: "12:00 to 18:00", text: "y" }, { range: "Evening", text: "z" } ], sections: [] };
+
+describe("skip is not dismiss", () => {
+    it("Mon 2 Nov 'skip the rest': ZAP-110 and ZAP-105 are put off for Monday only, and offered again on Tuesday", async () => {
+        at(`${MON}T09:40`);
+        const monday = await call("caius_planday", { date: MON, step: "inputs", refresh: true });
+        const offered = monday.data.candidates.map((c: any) => c.candidateId);
+        expect(offered).toEqual(expect.arrayContaining([ "ZAP-110", "ZAP-105" ]));
+        const applied = await call("caius_plan_apply", { date: MON, notToday: [ { candidateId: "ZAP-110" }, { candidateId: "ZAP-105" } ], brief: prose });
+        expect(applied.skipped).toEqual([]);
+        const note = await cls.init(async () => store.note((await call("caius_plan", { period: "day", date: MON })).noteId));
+        expect(note.attributes.filter((a) => a.name === "caiusNotToday").map((a) => a.value).sort()).toEqual([ "ZAP-105", "ZAP-110" ]);
+        expect(note.attributes.filter((a) => a.name === "caiusDismissed")).toEqual([]);
+        // Monday itself no longer offers them, nor its Suggested holds them.
+        const forMonday = await call("caius_winddown", { date: "2026-10-30", step: "next" });
+        expect(forMonday.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-110");
+        expect(forMonday.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-105");
+
+        at(`${TUE}T09:35`);
+        const tuesday = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
+        expect(tuesday.data.candidates.map((c: any) => c.candidateId)).toEqual(expect.arrayContaining([ "ZAP-110", "ZAP-105" ]));
+    });
+});

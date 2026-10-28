@@ -282,11 +282,12 @@ describe("follow-ups are raised once", () => {
         expect(note.attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value)).toEqual([ "ZAP-104:2", "ZAP-130:20" ]);
     });
 
-    it("Thu 09:30: Plan my day and Wind down drop an ask raised on Monday until a newer comment comes", async () => {
+    it("Thu 09:30: Plan my day and Wind down leave an ask raised on Monday out of the Follow up until a newer comment comes, and keep it on offer", async () => {
         at(`${THU}T09:30`);
         const quiet = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
         expect(followUps(quiet)).toEqual([]);
-        expect(sources(quiet)).not.toContain("ZAP-130");
+        // Round 2: a raised ask that also left the candidates was never offered again after a skip.
+        expect(sources(quiet)).toContain("ZAP-130");
         expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([]);
 
         jira.asks.push(ask("ZAP-130", "21", "2026-11-04T15:00:00.000Z", "Jordan Placeholder"));
