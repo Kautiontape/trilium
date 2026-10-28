@@ -93,7 +93,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "In these conversations only these tools are available",
         "| `caius_planday` | Plan my day's steps: `catchup`, `inputs`. |",
         "| `caius_winddown_apply` | Wind down's one write. |",
-        "State capacity only from the step's `data.capacity`",
+        "State capacity only as the step's `data.capacity.sentence` words it, as it is",
         "When the apply answers with `nextCall`, call it at once, in this conversation: `caius_planday` for its `date`, from step `catchup`, without waiting for another press or another word from him.",
         "Pass `answered` to its `inputs` step: what he already said about the evening (even nothing) and the lines he said to keep, so it doesn't ask them again.",
         "Never ask what else to do when the step returns no candidates",

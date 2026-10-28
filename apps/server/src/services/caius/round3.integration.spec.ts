@@ -415,14 +415,20 @@ describe("capacity is one honest number", () => {
         });
         at(`${DAY}T09:30`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
-        expect(inputs.data.capacity).toEqual({ windowMinutes: 480, bookedMinutes: 285, openMinutes: 195, targetMinutes: 127, plannedMinutes: 30, bookedRatio: 0.59375 });
+        expect(inputs.data.capacity).toEqual({
+            windowMinutes: 480, bookedMinutes: 285, openMinutes: 195, targetMinutes: 127, plannedMinutes: 30, bookedRatio: 0.59375,
+            focus: { min: 120, max: 120 }, sentence: "4 h 45 m of meetings and 3 h 15 m open: 30 m planned against 2 h of focus time."
+        });
         expect(inputs.data.forwardSuggestion).toBeNull();
         expect(inputs.question).toBeNull();
         expect(inputs.data.summary).toBe("ZAP-150 fits; that's the day.");
 
         at(`${DAY}T09:00`);
         const before = await call("caius_winddown", { date: "2026-11-18", step: "next" });
-        expect(before.data.capacity).toEqual({ windowMinutes: 480, bookedMinutes: 285, openMinutes: 195, targetMinutes: 127, plannedMinutes: 30, bookedRatio: 0.59375 });
+        expect(before.data.capacity).toEqual({
+            windowMinutes: 480, bookedMinutes: 285, openMinutes: 195, targetMinutes: 127, plannedMinutes: 30, bookedRatio: 0.59375,
+            focus: { min: 120, max: 120 }, sentence: "4 h 45 m of meetings and 3 h 15 m open: 30 m planned against 2 h of focus time."
+        });
     });
 
     it("Thu 09:30, over the focus target on a heavy day: the move question, and no summary", async () => {

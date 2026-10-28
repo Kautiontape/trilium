@@ -315,3 +315,30 @@ describe("the header follows the drawing", () => {
         delete calendars[TUE];
     });
 });
+
+describe("one capacity figure", () => {
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+
+    it("the steps word the capacity with the focus the Plan tab shows: 3–4 h on a light day, the smaller figure on a heavy one", async () => {
+        const MON = "2027-02-01";
+        const THU = "2027-02-04";
+        calendars[MON] = [ event("10:00", "10:15", "Daily Standup"), event("11:00", "12:00", "Sprint Planning"), event("14:00", "14:30", "1:1 with Riley") ];
+        calendars[THU] = [
+            event("10:00", "10:15", "Daily Standup"), event("10:30", "11:30", "Incident Review"), event("11:00", "12:00", "Vendor Onboarding"),
+            event("13:00", "14:00", "Roadmap Review"), event("14:00", "15:00", "Design Workshop"), event("16:00", "17:00", "Interview Panel")
+        ];
+        at(`${MON}T09:40`);
+        const light = await call("caius_planday", { date: MON, step: "inputs", refresh: true });
+        expect(light.data.capacity).toMatchObject({ focus: { min: 180, max: 240 }, sentence: "1 h 45 m of meetings and 6 h 15 m open: nothing planned against 3–4 h of focus time." });
+        await call("caius_plan_apply", { date: MON, said: "", brief: prose });
+        expect((await call("caius_plan", { period: "day", date: MON })).capacity.target).toEqual({ min: 180, max: 240 });
+
+        at("2027-02-03T17:45");
+        const next = await call("caius_winddown", { date: "2027-02-03", step: "next" });
+        expect(next.data.capacity).toMatchObject({ focus: { min: 120, max: 120 }, sentence: "4 h 45 m of meetings and 3 h 15 m open: nothing planned against 2 h of focus time." });
+        await call("caius_winddown_apply", { date: "2027-02-03", said: "nothing" });
+        expect((await call("caius_plan", { period: "day", date: THU })).capacity.target).toEqual({ min: 120, max: 120 });
+        delete calendars[MON];
+        delete calendars[THU];
+    });
+});

@@ -95,8 +95,11 @@ function formatDuration(minutes: number) {
     return m === 0 ? t("caius.plan.duration_h", { h }) : t("caius.plan.duration_hm", { h, m });
 }
 
-/** `180, 240` → "3–4 h"; ends that are not whole hours are written out in full. */
+/** `180, 240` → "3–4 h", and one figure for equal ends; ends that are not whole hours are written out in full. */
 function formatRange(min: number, max: number) {
+    if (min === max) {
+        return formatDuration(min);
+    }
     if (min % 60 === 0 && max % 60 === 0) {
         return t("caius.plan.range_hours", { min: min / 60, max: max / 60 });
     }

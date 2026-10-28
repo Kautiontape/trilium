@@ -124,7 +124,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         const summary = calendarFailed
             ? { summary: t("caius.daily.capacity_unknown", { day: weekdayName(targetDay) }) }
             : questions.length ? {} : {
-                summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), focus: formatHours(targetMinutes) })
+                summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), focus: focusText(focusOf(read.inputs.capacity)) })
             };
         return reply(read.standing, {
             list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId),
@@ -392,11 +392,33 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
 
 /**
  * The day's one capacity block, which the steps show and their questions weigh: the work window,
- * what the meetings book of it and leave open, the focus target and the work planned.
+ * what the meetings book of it and leave open, the focus target and the work planned, with `focus`,
+ * the figure the Plan tab shows too, and `sentence`, the block in words for the chat.
  */
 function capacityOf(read: DayRead, plannedMinutes: number) {
     const { windowMinutes, bookedMinutes, openMinutes, targetMinutes, bookedRatio } = read.inputs.capacity;
-    return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes, bookedRatio };
+    const focus = focusOf(read.inputs.capacity);
+    const words = { booked: formatHours(bookedMinutes), open: formatHours(openMinutes), planned: formatHours(plannedMinutes), focus: focusText(focus) };
+    const sentence = t(plannedMinutes ? "caius.daily.capacity_line" : "caius.daily.capacity_line_empty", words);
+    return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes, bookedRatio, focus, sentence };
+}
+
+/** The day's focus as the Plan tab's day target reads it: 3 to 4 hours, or less when the meetings leave less. */
+const DAY_FOCUS = { min: 180, max: 240 };
+
+/**
+ * The focus figure of a day, which the chat and the Plan tab both show: the method's 3 to 4 hours,
+ * or, when the meetings leave less, the day's target rounded to the quarter hour.
+ */
+export function focusOf(capacity: { targetMinutes: number }): { min: number; max: number } {
+    if (capacity.targetMinutes >= DAY_FOCUS.min) return DAY_FOCUS;
+    const minutes = Math.round(capacity.targetMinutes / 15) * 15;
+    return { min: minutes, max: minutes };
+}
+
+/** A focus figure in words: "3–4 h" or "2 h". */
+export function focusText(focus: { min: number; max: number }): string {
+    return focus.min === focus.max ? formatHours(focus.min) : t("caius.daily.focus_range", { min: focus.min / 60, max: focus.max / 60 });
 }
 
 /** The minutes of work on a day's list: the plan's capacity total, which leaves the evening out. */

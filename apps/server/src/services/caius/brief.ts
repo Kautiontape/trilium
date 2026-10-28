@@ -48,6 +48,8 @@ export const ASK_SEEN_LABEL = "caiusAskSeen";
 export const ANSWERED_LABEL = "caiusAnswered";
 /** On a day note: a meeting he isn't taking that day, by its title, from his answer to an overlap; the day's calendar reads it as declined. */
 export const DECLINED_LABEL = "caiusDeclined";
+/** On a day note: the day's focus figure as the chat stated it, `min-max` in minutes (`180-240`, or `120-120` on a heavy day); the Plan tab shows it. */
+export const FOCUS_LABEL = "caiusFocus";
 /** On a day note: a candidate he said not today to, by its candidateId; offered again on the next workday. */
 export const NOT_TODAY_LABEL = "caiusNotToday";
 /** On a day note: the day was wound down, at `YYYY-MM-DDTHH:mm:ss`, so the catch-up looks no further back than it. */

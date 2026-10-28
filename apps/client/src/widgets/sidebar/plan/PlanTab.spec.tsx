@@ -483,6 +483,8 @@ describe("PlanTab", () => {
         expect(await shown(220, { min: 180, max: 240 })).toBe("3 h 40 m planned of 3–4 h");
         expect(await shown(45, { min: 720, max: 900 })).toBe("45 m planned of 12–15 h");
         expect(await shown(240, { min: 150, max: 240 })).toBe("4 h planned of 2 h 30 m–4 h");
+        // A heavy day's one focus figure, as the chat states it.
+        expect(await shown(30, { min: 120, max: 120 })).toBe("30 m planned of 2 h");
         expect(await shown(0, null)).toBe("0 m planned");
     });
 

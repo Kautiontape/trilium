@@ -81,7 +81,7 @@ import {
     type WindDownInput
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
-import { DECLINED_LABEL, findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { DECLINED_LABEL, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import { catchupOf, type DayRead, dayLabels, listPicks, mainTasks, planDay, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
@@ -212,7 +212,13 @@ export function createCaiusService(
             if (!isPeriodKey(period, key)) {
                 return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
             }
-            return readPlan(store, period, key, now);
+            const plan = await readPlan(store, period, key, now);
+            // A day's target is the focus the steps stated for it, when they did.
+            const [ focus ] = period === "day" ? await dayLabels(store, key, FOCUS_LABEL) : [];
+            const [ min, max ] = (focus ?? "").split("-").map(Number);
+            return min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && focus
+                ? { ...plan, capacity: { ...plan.capacity, target: { min, max } } }
+                : plan;
         }),
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {

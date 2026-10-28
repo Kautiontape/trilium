@@ -35,7 +35,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_LABEL, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_LABEL, FOCUS_LABEL, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     catchupOf,
     closingLines,
@@ -50,6 +50,7 @@ import {
     EVENING_ID,
     drawnEvents,
     failedCalendar,
+    focusOf,
     followUpsOf,
     HEAVY_ID,
     latestAsks,
@@ -273,6 +274,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         } else {
             await guarded({ kind: "meetings" }, skipped, async () => {
                 record(written, skipped, { kind: "meetings" }, await setMeetings(store, { date, lines: meetingLines(taken.inputs.calendar) }, {}));
+                await recordFocus(store, date, taken);
             });
         }
 
@@ -488,6 +490,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEvents(read) }));
         await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, asked.said, input.overlaps, written, skipped));
+        if (!failedCalendar(read)) await recordFocus(store, targetDay, read);
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
         // A day keeps open while a hold given on it remains, or one given elsewhere covers an item that lives on it.
@@ -1190,6 +1193,15 @@ async function labelDay(store: NoteStore, date: string, name: string, values: st
     for (const value of new Set(values)) {
         if (!note.attributes.some((a) => a.type === "label" && a.name === name && a.value === value)) await store.addLabel(note.noteId, name, value);
     }
+}
+
+/** Records on the day note of `day` the focus figure the steps stated for it (`#caiusFocus`), which the Plan tab shows. */
+async function recordFocus(store: NoteStore, day: string, read: DayRead) {
+    const { min, max } = focusOf(read.inputs.capacity);
+    const value = `${min}-${max}`;
+    const note = await findPeriodNote(store, "day", day) ?? await store.calendarDay(day);
+    for (const old of note.attributes.filter((a) => a.type === "label" && a.name === FOCUS_LABEL && a.value !== value)) removeLabel(note.noteId, FOCUS_LABEL, old.value);
+    await labelDay(store, day, FOCUS_LABEL, [ value ]);
 }
 
 /** Records the tickets he called finished on the day note of `date`. */

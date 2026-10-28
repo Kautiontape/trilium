@@ -218,7 +218,7 @@ describe("caius_winddown", () => {
     it("next: says the day fits when nothing needs asking", async () => {
         const answer = await call("caius_winddown", { date: TUESDAY, step: "next" });
         expect(answer.question).toBeNull();
-        expect(answer.data.summary).toBe("Wednesday holds 1 h 15 m of work against about 4 h of focus time. Fits.");
+        expect(answer.data.summary).toBe("Wednesday holds 1 h 15 m of work against 3–4 h of focus time. Fits.");
     });
 
     it("next: leaves the evening's tasks out of the work it weighs against the target", async () => {
@@ -226,7 +226,7 @@ describe("caius_winddown", () => {
         const answer = await call("caius_winddown", { date: WEDNESDAY, step: "next" });
         expect(answer.data.capacity).toMatchObject({ plannedMinutes: 180, targetMinutes: 240 });
         expect(answer.question).toBeNull();
-        expect(answer.data.summary).toBe("Thursday holds 3 h 45 m of work against about 4 h of focus time. Fits.");
+        expect(answer.data.summary).toBe("Thursday holds 3 h 45 m of work against 3–4 h of focus time. Fits.");
     });
 
     it("next: leaves empty to-dos out of the evening's minutes, as the plan's capacity does", async () => {
