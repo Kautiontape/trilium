@@ -42,8 +42,8 @@ The name is a nod to Caius Cosades, the laid-back spymaster in Morrowind who han
 - Taking an item from On deck onto the list moves the same `<li>` (same id, same text) out of the section into the main list, first, before or after an item of it, or into the Important block.
 
 **The rituals.**
-- **Wind down.** A leftover's proposed fate is the next workday's On deck, so leftovers no longer land on tomorrow's list unasked. An Important task still goes to the Important block. A fate he names for a day goes On deck unless he passes `onDeck: false` ("I need to do this Thursday") or `critical: true`. A day's own On deck items that were never planned are leftovers like any open task.
-- **Plan my day.** The `inputs` step offers the day's On deck items first, ahead of the candidates. Each gets a proposed fate: onto the list while the committed work stays within the focus target, back to the week once it doesn't. His answer changes any of them (`onDeck: [{ listItemId, first|before|after, critical, to, drop }]`); every item he doesn't name takes its proposed fate. So nothing stays on deck past planning.
+- **Wind down.** A leftover's proposed fate is the next workday's On deck, so leftovers no longer land on tomorrow's list unasked. An Important task still goes to the Important block, and an evening task (under Evening or Recharge) to the evening: the evening has its own time and isn't weighed against the work. A fate he names for a day goes On deck unless he passes `onDeck: false` ("I need to do this Thursday") or `critical: true`. A day's own On deck items that were never planned are leftovers like any open task.
+- **Plan my day.** The `inputs` step offers the day's On deck items first, ahead of the candidates. Each gets a proposed fate: onto the list while the committed work stays within the focus target, back to the week once it doesn't. His answer changes any of them (`onDeck: [{ listItemId, first|before|after, critical, to, drop }]`); every item he doesn't name takes its proposed fate, which the apply writes, as Wind down does with its proposals. The question names each proposal, so nothing moves that he wasn't shown. So nothing stays on deck past planning.
 - **Catch-up.** A missed day's On deck items are its leftovers too, and a day whose only live tasks are on deck is not closed. The catch-up's "Move all to today" in Plan my day puts them on today's list.
 
 ## Tool gating
@@ -55,4 +55,7 @@ The name is a nod to Caius Cosades, the laid-back spymaster in Morrowind who han
 - The overload flag weighs the next workday only. For another day he names ("add a 2 h task for Thursday"), Caius reads Thursday with `caius_plan` and `caius_inputs` first.
 - Wind down's candidates accepted for the next workday still go to the list proper, as before; they were offered as the next day's work.
 - Pushing a task to its project note is still not built.
-- The Plan tab shows On deck as its own group but has no action to commit an item; that happens in Plan my day or with the Task menu's Forward.
+- The Plan tab shows On deck as its own group but has no action to put an item on the day's list; that happens in Plan my day. Its Close card does give On deck items a fate, like any open task.
+- An On deck item without a list item id (typed by hand into a note Caius never wrote) can't be offered, so it gets no fate in Plan my day until `caius_assign_ids` runs. Wind down and the catch-up still count it.
+- "Would like" or "need to" is mapped by the agent from his words; no `said` check backs it, as one does for drops and parks.
+- The nudge bar's Move all to today keeps an On deck item on today's On deck, for Plan my day to place; Plan my day's own `move_all` puts every catch-up task on the list.

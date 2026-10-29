@@ -267,7 +267,9 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
         // On deck first: each item takes the fate he gave it, or the one the step proposed, so none stays on deck.
-        const deckPlaces = await onDeckFates(store, date, now, offer, input.onDeck.filter((answer) => !input.done.includes(answer.listItemId)), input.done, listedTo, written, skipped);
+        // An answer the name reader found settled (dropped) or followed to its moved copy is in place on a re-run.
+        const settledDeck = new Set([ ...pools.settled.map((item) => item.id), ...input.follows.keys() ]);
+        const deckPlaces = await onDeckFates(store, date, offer, input.onDeck.filter((answer) => !input.done.includes(answer.listItemId)), input.done, { listedTo, settled: settledDeck }, written, skipped);
 
         // What the catch-up moves here can be placed by the id it had on its own day.
         const moved = new Map(input.catchup === "move_all" ? catchupTasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, { text: task.text, noteId: task.noteId } ] as const ] : []) : []);
@@ -1625,12 +1627,13 @@ async function catchup(store: NoteStore, date: string, now: Date, answer: PlanAp
  * `unchanged`. Answers the places he gave items put on the list, which `acceptAll` makes after the
  * accepts, so they can name a candidate taken in the same call.
  */
-async function onDeckFates(store: NoteStore, date: string, now: Date, offer: Awaited<ReturnType<typeof planOffer>>, answers: PlanApplyInput["onDeck"], done: string[], listedTo: Set<string>, written: Written[], skipped: Skipped[]) {
+async function onDeckFates(store: NoteStore, date: string, offer: Awaited<ReturnType<typeof planOffer>>, answers: PlanApplyInput["onDeck"], done: string[], { listedTo, settled }: { listedTo: Set<string>; settled: Set<string> }, written: Written[], skipped: Skipped[]) {
     const places: PlanApplyInput["move"] = [];
     const offered = new Set(offer.onDeck.map((item) => item.listItemId));
     const onList = new Set(listItems(offer.day.plan).map((item) => item.listItemId));
+    // A re-run finds what the first run did: the item on his list, dropped, or moved on.
     for (const answer of answers.filter((a) => !offered.has(a.listItemId))) {
-        if (onList.has(answer.listItemId)) written.push({ kind: "deck", id: answer.listItemId, status: "unchanged" });
+        if (onList.has(answer.listItemId) || settled.has(answer.listItemId)) written.push({ kind: "deck", id: answer.listItemId, status: "unchanged" });
         else skipped.push({ kind: "deck", id: answer.listItemId, reason: "not_offered" });
     }
     const states = await loadStateSymbols(store);

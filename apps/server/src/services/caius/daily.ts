@@ -1250,13 +1250,13 @@ export function loadOf(read: DayRead, plan: PlanView, day: string, incoming = 0)
     const targetMinutes = read.inputs.capacity.targetMinutes;
     const overMinutes = Math.max(0, listMinutes + onDeckMinutes + incoming - targetMinutes);
     const words = {
-        day: weekdayName(day), meetings: formatHours(meetings), list: formatHours(listMinutes), deck: formatHours(onDeckMinutes + incoming),
-        focus: focusText(focusOf(read.inputs.capacity)), over: formatHours(overMinutes)
+        day: weekdayName(day), meetings: formatHours(meetings), list: formatHours(listMinutes), deck: formatHours(onDeckMinutes),
+        incoming: formatHours(incoming), focus: focusText(focusOf(read.inputs.capacity)), over: formatHours(overMinutes)
     };
+    const key = `caius.daily.${overMinutes > 0 ? "load_over" : "load_line"}${incoming > 0 ? "_incoming" : ""}`;
     return {
         meetingMinutes: meetings, listMinutes, onDeckMinutes, incomingMinutes: incoming, targetMinutes,
-        over: overMinutes > 0, overMinutes,
-        sentence: t(overMinutes > 0 ? "caius.daily.load_over" : "caius.daily.load_line", words)
+        over: overMinutes > 0, overMinutes, sentence: t(key, words)
     };
 }
 

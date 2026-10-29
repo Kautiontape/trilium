@@ -108,7 +108,7 @@ describe("a guide, not a script", () => {
         expect(next.data.load).toMatchObject({
             meetingMinutes: 105, listMinutes: 120, onDeckMinutes: 90, incomingMinutes: 115, targetMinutes: 240, over: true, overMinutes: 85
         });
-        expect(next.data.load.sentence).toBe("Thursday: 1 h 45 m of meetings, 2 h on the list and 3 h 25 m on deck, against 3–4 h of focus time. That's 1 h 25 m more than fits.");
+        expect(next.data.load.sentence).toBe("Thursday: 1 h 45 m of meetings, 2 h on the list, 1 h 30 m on deck and 1 h 55 m more if today's leftovers go there, against 3–4 h of focus time. That's 1 h 25 m more than fits.");
     });
 
     it("(b) Wed 17:40: 'I'd like to' goes on Thursday's On deck, 'I need to' on its list; Important and evening tasks keep their place", async () => {
@@ -188,5 +188,30 @@ describe("Plan my day", () => {
         });
         expect(again.skipped).toEqual([]);
         expect(again.written.filter((w: any) => w.kind !== "brief" && w.kind !== "meetings" && w.status !== "unchanged")).toEqual([]);
+    });
+
+    it("(d) Fri 09:30: a named drop and a named week, then the same call again, which finds both in place", async () => {
+        await cls.init(async () => {
+            const fri = await store.calendarDay(FRI);
+            await store.putContent(fri.noteId, `<h2>☑️ Tasks</h2>${ul(li("f1", "Friday thing ~30m"))}<h3>On deck</h3>${ul(li("fd1", "Sort the garage"), li("fd2", "Clean the gutters"))}`);
+        });
+        at(`${FRI}T09:30`);
+        const inputs = await call("caius_planday", { date: FRI, step: "inputs" });
+        const ref = (text: string) => inputs.data.onDeck.find((item: any) => item.text === text).ref;
+        const answer = {
+            date: FRI, said: "Drop the garage, it's sorted. Gutters to next week.", brief: prose,
+            onDeck: [ { listItemId: ref("Sort the garage"), drop: "it's sorted" }, { listItemId: ref("Clean the gutters"), to: "w2" } ]
+        };
+        const first = await call("caius_plan_apply", answer);
+        expect(first.skipped).toEqual([]);
+        const friday = await call("caius_plan", { period: "day", date: FRI });
+        expect(deckOf(friday)).toEqual([]);
+        expect(friday.onDeck.map((t: any) => t.state)).toEqual([ "cancelled", expect.stringMatching(/done|tombstone/) ]);
+        expect(listOf(await call("caius_plan", { period: "week", date: "2028-W11" }))).toEqual([ "Clean the gutters" ]);
+
+        const again = await call("caius_plan_apply", answer);
+        expect(again.skipped).toEqual([]);
+        expect(again.written.filter((w: any) => w.kind !== "brief" && w.kind !== "meetings" && w.status !== "unchanged")).toEqual([]);
+        expect(again.say).not.toContain("wasn't found");
     });
 });
