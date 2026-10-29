@@ -1,7 +1,11 @@
-# ktn pacman repository
+# ktn pacman package
 
 The `ktn desktop repo` workflow builds the Electron app from `ktn`, packages it for
-Arch, signs it, and publishes a pacman repository as assets on the `ktn-repo` release.
+Arch, signs it, and uploads it to this fork's `ktn-repo` release. That release is only
+a staging area. Clients install from the shared `[ktn]` repository,
+[Kautiontape/ktn-repo](https://github.com/Kautiontape/ktn-repo), listed at
+[kautiontape.com/arch](https://kautiontape.com/arch/). Its nightly publish downloads
+the `*.pkg.tar.zst` from here, re-signs it with its own key and adds it to `ktn.db`.
 
 Once set up, every machine tracks the fork with `pacman -Syu` like any other package.
 
@@ -10,9 +14,10 @@ push to ktn
  └─ ktn desktop repo
      ├─ electron-forge package        → app.asar
      ├─ makepkg (archlinux container) → triliumnext-ktn-bin-<ver>-x86_64.pkg.tar.zst
-     ├─ gpg --detach-sign             → .sig for package and database
-     ├─ repo-add                      → ktn.db / ktn.files
-     └─ gh release upload --clobber   → tag `ktn-repo`
+     ├─ gpg --detach-sign, repo-add   → .sig and ktn-trilium.db (unused downstream)
+     └─ gh release upload --clobber   → tag `ktn-repo` on this fork
+daily cron, or `gh workflow run publish --repo Kautiontape/ktn-repo`
+ └─ ktn-repo publish                  → re-signed into [ktn], tag `repo` on ktn-repo
 ```
 
 The package deliberately mirrors the AUR `triliumnext-bin` layout — system Electron,
@@ -22,10 +27,12 @@ desktop entry, icon and data directory keep working.
 
 ---
 
-## One-time: create the signing key
+## One-time: create the staging signing key
 
-Do this **once**, on a machine you trust. The private key never needs to leave it
-except as a GitHub secret.
+The workflow refuses to run without `ARCH_REPO_GPG_KEY`. ktn-repo discards this
+signature and signs with its own key, so no client trusts this one. Do this **once**,
+on a machine you trust. The private key never needs to leave it except as a GitHub
+secret.
 
 ```bash
 gpg --quick-generate-key "Shawn Squire (ktn repo) <shawn@shawnsquire.me>" rsa4096 sign never
@@ -46,14 +53,8 @@ gh secret set ARCH_REPO_GPG_PASSPHRASE --repo Kautiontape/trilium
 # (paste the passphrase; leave empty only if you generated the key without one)
 ```
 
-Export the **public** key — this is what every client machine needs:
-
-```bash
-gpg --armor --export "$KEYID" > ktn-repo.pub
-```
-
-Keep `ktn-repo.pub` somewhere you can reach from your other machines (it is not
-secret; committing it here or dropping it on the LAN is fine).
+Clients trust ktn-repo's key instead (`36EF1180D7CBA87C0C0F8CBCE480A935E543D3C8`,
+served at `https://kautiontape.com/arch/ktn-repo.pub`).
 
 ---
 
@@ -67,10 +68,15 @@ less ktn-bootstrap.sh      # it installs a trust anchor — worth a read
 sudo bash ktn-bootstrap.sh
 ```
 
-It fetches the signing key, **verifies its fingerprint against a pinned value**, adds
-it to the pacman keyring, appends the `[ktn]` repo to `/etc/pacman.conf` (backing the
-file up first), syncs, and installs `triliumnext-ktn-bin` — replacing the AUR
-`triliumnext-bin` if present. Every step is idempotent, so re-running is safe.
+It fetches ktn-repo's signing key, **verifies its fingerprint against a pinned value**,
+adds it to the pacman keyring, appends the `[ktn]` repo to `/etc/pacman.conf` (backing
+the file up first), then upgrades and installs `triliumnext-ktn-bin` in one
+`pacman -Syu`, replacing the AUR `triliumnext-bin` if present. Every step is
+idempotent, so re-running is safe.
+
+A machine set up before ktn-repo existed has `[ktn]` pointing at this fork's release,
+whose `ktn.db` stopped updating in July 2026. The script repoints that `Server` line
+(after a backup) instead of leaving it alone. Re-run it on any such machine.
 
 Deliberately *not* a `curl | sudo bash` one-liner: this establishes a package-signing
 trust anchor, so it should be read before it runs.
@@ -81,20 +87,20 @@ From then on, `sudo pacman -Syu` picks up every new `ktn` build.
 <summary>Equivalent manual steps</summary>
 
 ```bash
-sudo pacman-key --add packaging/arch/ktn-repo.pub
-sudo pacman-key --lsign-key C20F8574816A1B67C81E6F829DA4E0459723DB07
+curl -fsSLO https://kautiontape.com/arch/ktn-repo.pub
+sudo pacman-key --add ktn-repo.pub
+sudo pacman-key --lsign-key 36EF1180D7CBA87C0C0F8CBCE480A935E543D3C8
 ```
 
 ```ini
 # /etc/pacman.conf
 [ktn]
 SigLevel = Required
-Server = https://github.com/Kautiontape/trilium/releases/download/ktn-repo
+Server = https://github.com/Kautiontape/ktn-repo/releases/download/repo
 ```
 
 ```bash
-sudo pacman -Syu
-sudo pacman -S triliumnext-ktn-bin
+sudo pacman -Syu triliumnext-ktn-bin
 ```
 
 </details>
@@ -115,13 +121,14 @@ Electron to a major that Arch has not packaged yet, the build will produce a pac
 whose dependency cannot be satisfied. That is the correct failure — better than a
 package that installs and then refuses to launch.
 
-**The repository is public.** The fork is a public repo, so the release assets are
-world-readable. That is what lets the laptop update from anywhere without a VPN, but
+**The repository is public.** The fork and ktn-repo are public repos, so the release
+assets are world-readable. That is what lets the laptop update from anywhere without a VPN, but
 it does mean anyone can download your build. Nothing secret ships inside the package
 (your notes live in your data directory, not the asar), but be aware of it.
 
-**Uploads are not atomic.** The database and the package are uploaded in the same
-step but as separate assets. A `pacman -Syu` landing in that window can see a
-database referencing a package file that is not there yet; re-running fixes it.
+**Builds can reach clients up to a day late.** A push here only updates the staging
+release. Clients see the build after ktn-repo's next daily publish (cron 06:17 UTC,
+which GitHub often starts hours late), or right away with
+`gh workflow run publish --repo Kautiontape/ktn-repo`.
 
 **Only `x86_64` is built.** Add a second matrix leg if you ever want aarch64.
