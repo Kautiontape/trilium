@@ -30,6 +30,7 @@ describe("becca NoteStore", () => {
             childNoteIds: [],
             attributes: expect.arrayContaining([{ type: "label", name: "dateNote", value: "2031-03-04" }]),
             utcDateModified: expect.any(String),
+            utcDateCreated: expect.any(String),
         });
         expect(day.parentNoteIds).toHaveLength(1);
         expect(await inRequest(() => store.note(day.noteId))).toEqual(day);

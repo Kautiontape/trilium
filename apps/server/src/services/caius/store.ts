@@ -1,4 +1,4 @@
-import { isPeriodKey, type NoteStore, type StoreAttribute, type StoreNote } from "@triliumnext/caius";
+import { isPeriodKey, type NoteStore, oldestFirst, PERIODS, type StoreAttribute, type StoreNote } from "@triliumnext/caius";
 import { attributes as attributeService, type BNote, becca, date_notes as dateNotesService, note_service as noteService, search as searchService, SearchContext } from "@triliumnext/core";
 
 import sql from "../sql.js";
@@ -71,11 +71,19 @@ export function createBeccaStore(): NoteStore {
             return written;
         },
 
+        async periodNotes(labelName, key) {
+            return periodNotesOf(labelName, key).map(mapNote);
+        },
+
+        // The calendar service takes whichever note its search returns first, which for a period with
+        // two notes can be the newer, empty one. The oldest is the period's note, so it is looked up
+        // first, and the calendar only creates a note for a period that has none.
         async calendarDay(date) {
             if (!isPeriodKey("day", date)) {
                 throw new Error(`Date "${date}" is not valid.`);
             }
-            return mapNote(sql.transactional(() => dateNotesService.getDayNote(date)));
+            const [ oldest ] = periodNotesOf(PERIODS.day.label, date);
+            return mapNote(oldest ?? sql.transactional(() => dateNotesService.getDayNote(date)));
         },
 
         async calendarWeek(week) {
@@ -83,7 +91,8 @@ export function createBeccaStore(): NoteStore {
                 throw new Error(`Week "${week}" is not valid.`);
             }
 
-            const note = sql.transactional(() => dateNotesService.getWeekNote(week));
+            const [ oldest ] = periodNotesOf(PERIODS.week.label, week);
+            const note = oldest ?? sql.transactional(() => dateNotesService.getWeekNote(week));
             if (!note) {
                 throw new Error(`Week "${week}" not found. Check if week note is enabled.`);
             }
@@ -94,7 +103,8 @@ export function createBeccaStore(): NoteStore {
             if (!isPeriodKey("month", month)) {
                 throw new Error(`Month "${month}" is not valid.`);
             }
-            return mapNote(sql.transactional(() => dateNotesService.getMonthNote(month)));
+            const [ oldest ] = periodNotesOf(PERIODS.month.label, month);
+            return mapNote(oldest ?? sql.transactional(() => dateNotesService.getMonthNote(month)));
         },
 
         async addLabel(noteId, name, value) {
@@ -211,6 +221,21 @@ export async function withCaiusLock<T>(name: string, fn: () => Promise<T>): Prom
     }
 }
 
+/**
+ * Every note labelled `#labelName=key` under the calendar root, oldest first (`oldestFirst`):
+ * archived ones included and the hoisted note ignored, as the calendar service searches. None
+ * without a calendar root. The caller provides the `cls.init()` context.
+ */
+function periodNotesOf(labelName: string, key: string): BNote[] {
+    const root = attributeService.getNoteWithLabel("calendarRoot");
+    if (!root) return [];
+    const context = new SearchContext({ fastSearch: true, ignoreHoistedNote: true, includeArchivedNotes: true, ancestorNoteId: root.noteId });
+    const notes = searchService.findResultsWithQuery(`#${labelName}="${key}"`, context)
+        .map((result) => becca.notes[result.noteId])
+        .filter((note): note is BNote => !!note && note.getOwnedLabels(labelName).some((attr) => attr.value === key));
+    return oldestFirst(notes.map((note) => ({ noteId: note.noteId, utcDateCreated: note.utcDateCreated, note }))).map(({ note }) => note);
+}
+
 function getNote(noteId: string): BNote {
     const note = becca.getNote(noteId);
     if (!note) {
@@ -234,6 +259,7 @@ function mapNote(note: BNote): StoreNote {
         childNoteIds: note.getChildNotes().map((child) => child.noteId),
         attributes: mapAttributes(note),
         utcDateModified: note.utcDateModified ?? "",
+        utcDateCreated: note.utcDateCreated ?? "",
     };
 }
 

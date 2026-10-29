@@ -4,7 +4,7 @@
 
 import { now as clock } from '../clock.js';
 import { scanDocs, type IndexedTask } from '../index/index.js';
-import { label, type NoteReader, type StoreNote } from './store.js';
+import { oldestFirst, type NoteReader, type StoreNote } from './store.js';
 import { buildDoc, loadStateSymbols, type TriliumDoc } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import { headingsByLine, isSuggestedName, normName, sectionKind, type SectionKind } from './sections.js';
@@ -129,10 +129,44 @@ export function periodQuery(labelName: string, key: string): string {
   return `#${labelName}="${key}"`;
 }
 
-/** Find a periodic note by its label, without creating it. */
+/**
+ * Every note labelled for a period, without creating one, oldest first. Trilium's calendar can make
+ * a second note for a period it failed to find; the older one is the period's note, whatever the
+ * newer one holds, so callers take the first.
+ */
+export async function findPeriodNotes(api: NoteReader, period: PeriodKind, key: string): Promise<StoreNote[]> {
+  const name = PERIODS[period].label;
+  const found = api.periodNotes ? await api.periodNotes(name, key) : await api.search(periodQuery(name, key));
+  const exact = found.filter((n) => n.attributes.some((a) => a.type === 'label' && a.name === name && a.value === key));
+  return oldestFirst(exact.length ? exact : found);
+}
+
+/** Find a periodic note by its label, without creating it: the oldest of several (`findPeriodNotes`). */
 export async function findPeriodNote(api: NoteReader, period: PeriodKind, key: string): Promise<StoreNote | null> {
-  const found = await api.search(periodQuery(PERIODS[period].label, key));
-  return found.find((n) => label(n, PERIODS[period].label) === key) ?? found[0] ?? null;
+  return (await findPeriodNotes(api, period, key))[0] ?? null;
+}
+
+/**
+ * A warning for each period that has more than one note: "2026-10-28 has a second day note B; using
+ * the older A." Nothing is merged or deleted; the newer note's tasks still count as the period's
+ * open tasks (see `loadJournal`). Each period is looked at once.
+ */
+export async function duplicateWarnings(api: NoteReader, periods: { period: PeriodKind; key: string }[]): Promise<string[]> {
+  const warnings: string[] = [];
+  const seen = new Set<string>();
+  for (const { period, key } of periods) {
+    if (seen.has(key) || !isPeriodKey(period, key)) continue;
+    seen.add(key);
+    const [kept, ...others] = await findPeriodNotes(api, period, key);
+    if (!kept || !others.length) continue;
+    const ids = others.map((n) => n.noteId).join(', ');
+    warnings.push(
+      others.length === 1
+        ? `${key} has a second ${period} note ${ids}; using the older ${kept.noteId}.`
+        : `${key} has ${others.length} more ${period} notes (${ids}); using the oldest ${kept.noteId}.`,
+    );
+  }
+  return warnings;
 }
 
 /** The scanner's view of a doc's full text (Suggested items included), one PlanTask per task line. */
@@ -269,6 +303,23 @@ export async function readPlan(api: NoteReader, period: PeriodKind, key: string,
   const states = await loadStateSymbols(api);
   const doc = buildDoc(note, periodPath(period, key), await api.content(note.noteId), states);
   return buildPlanView(period, key, doc, dismissedKeys(note), now);
+}
+
+/**
+ * The plans of a period's other notes, newer than the one `readPlan` reads (`findPeriodNotes`),
+ * each read the same way. A protected or non-text one is left out. Their open tasks are still the
+ * period's open tasks, so what counts a period's leftovers counts these too.
+ */
+export async function readDuplicatePlans(api: NoteReader, period: PeriodKind, key: string, now: Date = clock()): Promise<PlanView[]> {
+  const others = (await findPeriodNotes(api, period, key)).slice(1).filter((note) => note.type === 'text' && !note.isProtected);
+  if (!others.length) return [];
+  const states = await loadStateSymbols(api);
+  const plans: PlanView[] = [];
+  for (const note of others) {
+    const doc = buildDoc(note, `Journal/${PERIODS[period].folder}/${key}/${key} (${note.noteId}).md`, await api.content(note.noteId), states);
+    plans.push(buildPlanView(period, key, doc, dismissedKeys(note), now));
+  }
+  return plans;
 }
 
 export { isSuggestedName };

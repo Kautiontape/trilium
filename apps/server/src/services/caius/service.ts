@@ -20,6 +20,7 @@ import {
     DEFAULT_WORK_END,
     diffSummary,
     dismissTasks,
+    duplicateWarnings,
     ensureListItemIds,
     findPeriodNote,
     forwardTasks,
@@ -38,7 +39,9 @@ import {
     openTasks,
     type OpenTask,
     parseSource,
+    type PeriodKind,
     presentResult,
+    readDuplicatePlans,
     readPlan,
     scanDocs,
     setMeetings,
@@ -83,7 +86,7 @@ import {
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { DECLINED_LABEL, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, dayLabels, listPicks, mainTasks, planDay, rolloverOf, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
+import { catchupOf, type DayRead, dayLabels, dayPeriods, listPicks, mainTasks, planDay, rolloverOf, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -207,6 +210,16 @@ export function createCaiusService(
         return docs ? closedKeys(store, docs, now) : new Set();
     }
 
+    /**
+     * `result` with `warnings` when a period in `periods` has more than one note: the oldest is the
+     * one used, and the others are named (`duplicateWarnings`). Nothing is merged or deleted. Takes
+     * the lock, so the caller doesn't hold it.
+     */
+    async function withDuplicates<R extends object>(result: R, periods: { period: PeriodKind; key: string }[]): Promise<R | (R & { warnings: string[] })> {
+        const warnings = await withCaiusLock("caius_duplicates", () => duplicateWarnings(store, periods));
+        return warnings.length ? { ...result, warnings } : result;
+    }
+
     /** The live tasks of a week note; none when it is protected or not a text note, which `gatherContext` skips too. The caller holds the lock. */
     async function weekTasks(week: string, now: Date) {
         const note = await findPeriodNote(store, "week", week);
@@ -232,12 +245,19 @@ export function createCaiusService(
                 return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
             }
             const plan = await readPlan(store, period, key, now);
+            // A second, newer note for the period is named, and its live tasks listed with their own
+            // noteId, so a task on it can still be found and moved.
+            const warnings = await duplicateWarnings(store, [ { period, key } ]);
+            const duplicates = warnings.length
+                ? (await readDuplicatePlans(store, period, key, now)).map((other) => ({ noteId: other.noteId, tasks: mainTasks(other) }))
+                : [];
+            const warned = warnings.length ? { ...plan, warnings, duplicates } : plan;
             // A day's target is the focus the steps stated for it, when they did.
             const [ focus ] = period === "day" ? await dayLabels(store, key, FOCUS_LABEL) : [];
             const [ min, max ] = (focus ?? "").split("-").map(Number);
             return min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && focus
-                ? { ...plan, capacity: { ...plan.capacity, target: { min, max } } }
-                : plan;
+                ? { ...warned, capacity: { ...plan.capacity, target: { min, max } } }
+                : warned;
         }),
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
@@ -418,13 +438,26 @@ export function createCaiusService(
             return finishedOn(store, keys, note, day, now);
         }),
 
-        winddown: async (input: WindDownInput) => windDown(await stepDeps(), input),
+        // Each step and apply names a second note for any day or week it reads (`dayPeriods`).
+        winddown: async (input: WindDownInput) => {
+            const deps = await stepDeps();
+            return withDuplicates(await windDown(deps, input), dayPeriods(input.date, deps.now));
+        },
 
-        planday: async (input: PlanDayInput) => planDay(await stepDeps(), input),
+        planday: async (input: PlanDayInput) => {
+            const deps = await stepDeps();
+            return withDuplicates(await planDay(deps, input), dayPeriods(input.date, deps.now));
+        },
 
-        planApply: async (input: PlanApplyInput) => planApply(await applyDeps(), input),
+        planApply: async (input: PlanApplyInput) => {
+            const deps = await applyDeps();
+            return withDuplicates(await planApply(deps, input), dayPeriods(input.date, deps.now));
+        },
 
-        windDownApply: async (input: WindDownApplyInput) => windDownApply(await applyDeps(), input),
+        windDownApply: async (input: WindDownApplyInput) => {
+            const deps = await applyDeps();
+            return withDuplicates(await windDownApply(deps, input), dayPeriods(input.date, deps.now));
+        },
 
         /**
          * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and
@@ -498,10 +531,14 @@ export function createCaiusService(
             });
         },
 
-        assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
+        assignIds: ({ noteId, dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);
+            if (noteId && docs && !docs.some((d) => d.noteId === noteId)) {
+                return { error: "not_found", detail: `Note '${noteId}' is not a Journal note Caius can read` };
+            }
             const results: AssignIdsResult[] = [];
-            for (const doc of docs ?? []) {
+            // `noteId` keeps it to one note, as a wind-down does for a task he named that has no id.
+            for (const doc of (docs ?? []).filter((d) => !noteId || d.noteId === noteId)) {
                 const result = await assignIdsInNote(store, doc.noteId, doc.path, { dryRun, html });
                 if (result) {
                     results.push(result);

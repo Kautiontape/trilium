@@ -8,8 +8,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
     insertNewBlock,
     isSelectionInCodeBlock,
+    leaveBlockQuoteFromEmptyLine,
     outdentListItemAtStart,
 } from "./chat_input_editing.js";
+import { editorHtmlToMarkdown } from "./chat_input_markdown.js";
 
 // Runs the real CKEditor (our chat plugin set) under happy-dom and asserts the model, so the
 // list/code Enter behavior is verified deterministically rather than by hand in the app.
@@ -88,29 +90,38 @@ describe("chat input editing", () => {
             expect(data).not.toContain("softBreak");
         });
 
-        it("keeps a single blank line in a quote instead of leaving (only exits after two)", () => {
+        it("leaves a block quote from an empty quote line (so the quote can be exited)", () => {
             _setModelData(
                 editor.model,
                 "<blockQuote><paragraph>quoted</paragraph><paragraph>[]</paragraph></blockQuote>",
             );
             insertNewBlock(editor);
-            const data = _getModelData(editor.model);
-            // Caret stays inside the quote (before the closing tag), with a second blank line added.
-            expect(data).toContain("[]</paragraph></blockQuote>");
-            expect(data).not.toContain("</blockQuote><paragraph>[]");
+            // The empty line leaves the quote and the caret lands in it, after the quote.
+            expect(_getModelData(editor.model)).toBe(
+                "<blockQuote><paragraph>quoted</paragraph></blockQuote><paragraph>[]</paragraph>",
+            );
         });
 
-        it("leaves a block quote after two trailing blank lines (so the quote can be exited)", () => {
+        it("splits a quote line into a new quote line when the line has text", () => {
             _setModelData(
                 editor.model,
-                "<blockQuote><paragraph>quoted</paragraph><paragraph></paragraph><paragraph>[]</paragraph></blockQuote>",
+                "<blockQuote><paragraph>quoted[]</paragraph></blockQuote>",
             );
             insertNewBlock(editor);
-            const data = _getModelData(editor.model);
-            // Both empty blocks are consumed and the caret lands in a paragraph after the quote.
-            expect(data).toContain("</blockQuote><paragraph>[]</paragraph>");
-            expect(data).toContain("quoted");
-            expect(data).not.toContain("<paragraph></paragraph>");
+            expect(_getModelData(editor.model)).toBe(
+                "<blockQuote><paragraph>quoted</paragraph><paragraph>[]</paragraph></blockQuote>",
+            );
+        });
+
+        it("splits the quote around an empty line in its middle", () => {
+            _setModelData(
+                editor.model,
+                "<blockQuote><paragraph>a</paragraph><paragraph>[]</paragraph><paragraph>b</paragraph></blockQuote>",
+            );
+            insertNewBlock(editor);
+            expect(_getModelData(editor.model)).toBe(
+                "<blockQuote><paragraph>a</paragraph></blockQuote><paragraph>[]</paragraph><blockQuote><paragraph>b</paragraph></blockQuote>",
+            );
         });
 
         it("splits a plain paragraph into a new paragraph", () => {
@@ -156,6 +167,58 @@ describe("chat input editing", () => {
         it("does nothing outside a list", () => {
             _setModelData(editor.model, "<paragraph>[]text</paragraph>");
             expect(outdentListItemAtStart(editor)).toBe(false);
+        });
+    });
+    describe("leaveBlockQuoteFromEmptyLine (Backspace)", () => {
+        it("turns an empty quote line into a normal line, where CKEditor would merge it into the line above", () => {
+            _setModelData(
+                editor.model,
+                "<blockQuote><paragraph>quoted</paragraph><paragraph>[]</paragraph></blockQuote>",
+            );
+            expect(leaveBlockQuoteFromEmptyLine(editor, { backspace: true })).toBe(true);
+            expect(_getModelData(editor.model)).toBe(
+                "<blockQuote><paragraph>quoted</paragraph></blockQuote><paragraph>[]</paragraph>",
+            );
+        });
+
+        it("leaves the quote's first line to CKEditor, which can take back the `> ` just typed", () => {
+            _setModelData(editor.model, "<blockQuote><paragraph>[]</paragraph></blockQuote>");
+            expect(leaveBlockQuoteFromEmptyLine(editor, { backspace: true })).toBe(false);
+            // Shift+Enter still leaves from it.
+            expect(leaveBlockQuoteFromEmptyLine(editor)).toBe(true);
+            expect(_getModelData(editor.model)).toBe("<paragraph>[]</paragraph>");
+        });
+
+        it("does nothing on a quote line with text, outside a quote, or in a list inside a quote", () => {
+            _setModelData(editor.model, "<blockQuote><paragraph>a</paragraph><paragraph>quoted[]</paragraph></blockQuote>");
+            expect(leaveBlockQuoteFromEmptyLine(editor, { backspace: true })).toBe(false);
+            _setModelData(editor.model, "<paragraph>a</paragraph><paragraph>[]</paragraph>");
+            expect(leaveBlockQuoteFromEmptyLine(editor, { backspace: true })).toBe(false);
+            _setModelData(
+                editor.model,
+                '<blockQuote><paragraph>a</paragraph><paragraph listIndent="0" listItemId="x" listType="bulleted">[]</paragraph></blockQuote>',
+            );
+            expect(leaveBlockQuoteFromEmptyLine(editor, { backspace: true })).toBe(false);
+        });
+
+        it("ends the quote where he left it: `> Quoted quoted quoted`, Shift+Enter, Backspace, `normal normal normal`", () => {
+            _setModelData(editor.model, "<blockQuote><paragraph>Quoted quoted quoted[]</paragraph></blockQuote>");
+            insertNewBlock(editor); // Shift+Enter
+            expect(leaveBlockQuoteFromEmptyLine(editor, { backspace: true })).toBe(true); // Backspace
+            editor.model.change((writer) => {
+                writer.insertText("normal normal normal", editor.model.document.selection.getFirstPosition()!);
+            });
+            expect(editorHtmlToMarkdown(editor.getData())).toBe("> Quoted quoted quoted\n\nnormal normal normal");
+        });
+
+        it("ends the quote the same way with Shift+Enter twice", () => {
+            _setModelData(editor.model, "<blockQuote><paragraph>Quoted quoted quoted[]</paragraph></blockQuote>");
+            insertNewBlock(editor);
+            insertNewBlock(editor);
+            editor.model.change((writer) => {
+                writer.insertText("normal normal normal", editor.model.document.selection.getFirstPosition()!);
+            });
+            expect(editorHtmlToMarkdown(editor.getData())).toBe("> Quoted quoted quoted\n\nnormal normal normal");
         });
     });
 });

@@ -29,6 +29,7 @@ import {
     nextWorkday,
     normName,
     type NoteStore,
+    type StoreNote,
     openTasks,
     overlapPairs,
     parseClock,
@@ -36,6 +37,7 @@ import {
     periodSpan,
     type PlanTask,
     type PlanView,
+    readDuplicatePlans,
     readPlan,
     type Rhythm,
     sameContext,
@@ -260,6 +262,24 @@ export async function closingLines(store: NoteStore, date: string, targetDay: st
         .filter((line) => line.keys.length && !asked.has(line.lineId))
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
     return { keep, carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
+}
+
+/**
+ * The periods a Wind down or Plan my day of `date` reads and writes: the day, the workdays its
+ * catch-up looks back at (which cover the wind-down's recent days), the day a wind-down works
+ * against, and the ISO weeks of both. A second note for any of them is named in a warning.
+ */
+export function dayPeriods(date: string, now: Date): { period: "day" | "week"; key: string }[] {
+    const target = windDownTarget(date, now);
+    const before: string[] = [];
+    for (let at = localDay(date), i = 0; i < CATCHUP_DAYS; i++) {
+        at = lastWorkday(at);
+        before.push(dayKey(at));
+    }
+    return [
+        ...[ date, ...before, target ].map((key) => ({ period: "day" as const, key })),
+        ...[ date, target ].map((day) => ({ period: "week" as const, key: isoWeekKey(utcDay(day)) }))
+    ];
 }
 
 /**
@@ -643,13 +663,14 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         const dayNote = await findPeriodNote(store, "day", key);
         if (!dayNote) continue;
         if (dayNote.type !== "text" || dayNote.isProtected) break;
-        const plan = await readPlan(store, "day", key, now);
-        const live = mainTasks(plan).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
+        // A second, newer note for the day is not the day's note, but its open tasks are the day's leftovers too.
+        const plans = [ await readPlan(store, "day", key, now), ...await readDuplicatePlans(store, "day", key, now) ];
+        const live = plans.flatMap(mainTasks).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
         const woundDown = label(dayNote, WOUND_DOWN_LABEL) !== undefined;
         const skippedHere = dayNote.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL);
         if (!live.length) {
             // A day he planned, skipped from or wound down was looked at, so the walk ends there.
-            if (woundDown || skippedHere || topLevel(plan).length || await findBrief(store, dayNote.noteId, key)) break;
+            if (woundDown || skippedHere || plans.some((plan) => topLevel(plan).length) || await findBrief(store, dayNote.noteId, key)) break;
             continue;
         }
         days.unshift(key);
@@ -686,7 +707,7 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
  */
 export async function allHeld(store: NoteStore): Promise<Map<string, { period: string; on: string }>> {
     const held = new Map<string, { period: string; on: string }>();
-    for (const note of await store.search(`#${HELD_LABEL}`)) {
+    for (const note of await periodNotesWith(store, HELD_LABEL)) {
         const day = label(note, PERIODS.day.label) ?? "";
         for (const a of note.attributes) {
             if (a.type !== "label" || a.name !== HELD_LABEL) continue;
@@ -716,12 +737,27 @@ function periodKind(key: string): "day" | "week" | "month" | null {
 export async function heldDays(store: NoteStore): Promise<string[]> {
     const days = new Set<string>();
     for (const name of [ HELD_LABEL, HELD_GROUP_LABEL ]) {
-        for (const note of await store.search(`#${name}`)) {
+        for (const note of await periodNotesWith(store, name)) {
             const day = label(note, PERIODS.day.label);
             if (day) days.add(day);
         }
     }
     return [ ...days ];
+}
+
+/**
+ * The notes carrying the label `name`, without a day note that is not its day's note: of two notes
+ * for one day, Caius's labels count only on the older (`findPeriodNote`), as every other read of a
+ * day's labels does, and a newer one's are left as they are. The caller holds the lock.
+ */
+export async function periodNotesWith(store: NoteStore, name: string): Promise<StoreNote[]> {
+    const notes: StoreNote[] = [];
+    for (const note of await store.search(`#${name}`)) {
+        const day = label(note, PERIODS.day.label);
+        if (day && PERIODS.day.pattern.test(day) && (await findPeriodNote(store, "day", day))?.noteId !== note.noteId) continue;
+        notes.push(note);
+    }
+    return notes;
 }
 
 /** A plan's top-level tasks in any state. */

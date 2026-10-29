@@ -116,6 +116,13 @@ export function formatShortDate(date: string | Date | number) {
     return `${part("weekday")} ${part("day")} ${part("month")}`;
 }
 
+/** Formats a date as its month's name, with the year when `withYear`: "October", "October 2025". */
+export function formatMonthName(date: string | Date | number, withYear = false) {
+    return getDateTimeFormatter(getFormattingLocale(), withYear ? "long-month-year" : "long-month", {
+        month: "long", ...(withYear ? { year: "numeric" as const } : {})
+    }).format(parseDate(date));
+}
+
 /**
  * Formatters are memoized because building one costs roughly thirty times what using one does --
  * `Intl.DateTimeFormat` resolves and parses the locale's CLDR data in its constructor, then formats

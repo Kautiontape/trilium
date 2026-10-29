@@ -23,8 +23,20 @@
             flex: 1 1 100%;
         }
 
+        /* The day, week or month the task comes from, just left of its Actions menu. */
+        .plan-pull-in-source {
+            margin-inline-start: auto;
+            color: var(--muted-text-color);
+            font-size: 0.9em;
+            white-space: nowrap;
+        }
+
         .plan-pull-in-actions {
             margin-inline-start: auto;
+        }
+
+        .plan-pull-in-source + .plan-pull-in-actions {
+            margin-inline-start: 0;
         }
     }
 

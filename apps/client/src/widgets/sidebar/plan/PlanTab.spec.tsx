@@ -253,6 +253,17 @@ describe("PlanTab", () => {
         expect(tab.textContent).not.toContain("→ 2026-10-27");
     });
 
+    it("names the day or week each Pull in task comes from, just left of its Actions menu", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const tab = await mount();
+
+        const rows = [ ...tab.querySelectorAll("#plan-pull-in .plan-pull-in-row") ];
+        expect(rows.map((row) => row.querySelector(".plan-pull-in-source")?.textContent)).toEqual([ "Sun 25 Oct", "Week 44" ]);
+        for (const row of rows) {
+            expect(row.querySelector(".plan-pull-in-source")?.nextElementSibling?.classList.contains("dropdown-stub")).toBe(true);
+        }
+    });
+
     it("pulls a task into the viewed period from the Actions menu", async () => {
         api.plan.mockResolvedValue(dayPlan());
         const tab = await mount();
@@ -318,6 +329,18 @@ describe("PlanTab", () => {
         expect(text(tab, "[data-lane=week] .plan-task-outcome"))
             .toBe("This task has no id yet. Open its note and save it first.");
         expect(tab.querySelector("[data-lane=overdue] .plan-task-outcome")).toBeNull();
+    });
+
+    it("offers the tasks of a second, newer note for the viewed day, and still leaves out the day's own", async () => {
+        api.plan.mockResolvedValue({ ...dayPlan(), warnings: [ "2026-10-27 has a second day note dup; using the older today." ], duplicates: [ { noteId: "dup", tasks: [] } ] });
+        api.open.mockResolvedValue({ total: 2, tasks: [
+            openTask({ noteId: "dup", period: "2026-10-27", listItemId: "d1", text: "Stray task", lane: "week" }),
+            openTask({ noteId: "child", period: "2026-10-27", listItemId: "c1", text: "Child task", lane: "week" })
+        ] });
+        const tab = await mount();
+
+        const rows = [ ...tab.querySelectorAll("#plan-pull-in .plan-pull-in-row") ].map((row) => row.textContent ?? "");
+        expect(rows).toEqual([ expect.stringContaining("Stray task") ]);
     });
 
     it("shows no Pull in card for a past period", async () => {

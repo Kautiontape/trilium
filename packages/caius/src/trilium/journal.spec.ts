@@ -3,7 +3,8 @@ import { scanDocs, type ScanResult } from '../index/index.js';
 import { loadJournal, type JournalLoad } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import { openTasks } from './open.js';
-import type { NoteReader, StoreNote } from './store.js';
+import { duplicateWarnings, findPeriodNote, findPeriodNotes, readDuplicatePlans } from './plan-read.js';
+import { oldestFirst, type NoteReader, type StoreNote } from './store.js';
 
 const now = new Date(2026, 9, 26); // Mon 26 Oct 2026, ISO week 44
 
@@ -122,5 +123,75 @@ describe('openTasks', () => {
     const open = openTasks(load.docs, result);
     expect(open.find((t) => t.text === 'Left behind')?.listItemId).toBe('e1');
     expect(open.find((t) => t.text === 'Today task')?.listItemId).toBeNull();
+  });
+});
+
+describe('a period with two notes', () => {
+  // The newer note comes first in the search, as Trilium's own search can return it.
+  const dupes: Record<string, StoreNote> = {
+    root: note('root', { calendarRoot: '' }),
+    newer: note('newer', { dateNote: '2026-10-28', caiusWoundDown: '2026-10-28T18:00:00' }, { utcDateCreated: '2026-10-28 19:00:00.000Z' }),
+    older: note('older', { dateNote: '2026-10-28' }, { utcDateCreated: '2026-10-28 07:00:00.000Z' }),
+  };
+  const html: Record<string, string> = {
+    newer: `<ul class="todo-list">${todoItem('n1', 'Stray task')}</ul>`,
+    older: `<ul class="todo-list">${todoItem('o1', 'Real task')}</ul>`,
+  };
+  const reader: NoteReader = {
+    ...fake,
+    async search(query) {
+      if (query === '#calendarRoot') return [dupes.root!];
+      return [dupes.newer!, dupes.older!];
+    },
+    async note(id) {
+      if (id === '_taskStates') throw new Error('not here');
+      return dupes[id]!;
+    },
+    async content(id) {
+      return html[id] ?? '';
+    },
+  };
+
+  it('is the older note, whatever the search returns first or the newer one carries', async () => {
+    expect((await findPeriodNote(reader, 'day', '2026-10-28'))?.noteId).toBe('older');
+    expect((await findPeriodNotes(reader, 'day', '2026-10-28')).map((n) => n.noteId)).toEqual(['older', 'newer']);
+    expect(await duplicateWarnings(reader, [{ period: 'day', key: '2026-10-28' }, { period: 'day', key: '2026-10-28' }])).toEqual([
+      '2026-10-28 has a second day note newer; using the older older.',
+    ]);
+  });
+
+  it('gives the older note the period\'s path and reads the newer as part of the period, so its open tasks still count', async () => {
+    const loaded = await loadJournal(reader);
+    expect(loaded.docs.map((d) => [d.path, d.noteId])).toEqual([
+      ['Journal/Daily/2026-10-28.md', 'older'],
+      ['Journal/Daily/2026-10-28/2026-10-28 (newer).md', 'newer'],
+    ]);
+    const open = openTasks(loaded.docs, scanDocs(loaded.docs, TRILIUM_CONFIG, new Date(2026, 9, 28, 12)));
+    expect(open.map((t) => [t.text, t.noteId, t.period, t.horizon])).toEqual([
+      ['Real task', 'older', '2026-10-28', 'today'],
+      ['Stray task', 'newer', '2026-10-28', 'today'],
+    ]);
+  });
+
+  it('reads the newer note\'s plan apart, for counting its leftovers', async () => {
+    const [plan, ...rest] = await readDuplicatePlans(reader, 'day', '2026-10-28', new Date(2026, 9, 28, 12));
+    expect(rest).toEqual([]);
+    expect(plan?.noteId).toBe('newer');
+    expect(plan?.sections.flatMap((s) => s.tasks).map((t) => t.listItemId)).toEqual(['n1']);
+  });
+
+  it('keeps the period\'s path for the older note when it is skipped, so the newer never stands in for it', async () => {
+    const locked: NoteReader = {
+      ...reader,
+      async search(query) {
+        if (query === '#calendarRoot') return [dupes.root!];
+        return [dupes.newer!, { ...dupes.older!, isProtected: true }];
+      },
+    };
+    expect((await loadJournal(locked)).docs.map((d) => d.path)).toEqual(['Journal/Daily/2026-10-28/2026-10-28 (newer).md']);
+  });
+
+  it('sorts a note without a creation time last', () => {
+    expect(oldestFirst([{ noteId: 'a' }, { noteId: 'b', utcDateCreated: '2026-10-28 19:00:00.000Z' }]).map((n) => n.noteId)).toEqual(['b', 'a']);
   });
 });

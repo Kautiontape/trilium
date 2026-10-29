@@ -5,6 +5,8 @@ import {
 import type {
     CaiusContextLine, CaiusForwardItem, CaiusPeriodKind, CaiusPlan, CaiusPlanTask, CaiusSetStateItem
 } from "../../../services/caius";
+import { t } from "../../../services/i18n";
+import { formatMonthName, formatShortDate } from "../../../utils/formatters";
 
 /** The period the Plan tab shows: its kind, and any local day inside it. */
 export interface ViewedPeriod {
@@ -58,6 +60,27 @@ export function parsePeriodKey(kind: CaiusPeriodKind, key: string): Date | null 
     }
 
     return periodKey({ kind, anchor }) === key ? anchor : null;
+}
+
+/**
+ * Where a Pull in task comes from, by its note's period: "Wed 28 Oct" for a day, "Week 44" for an
+ * ISO week, "October" for a month, each with the year when it isn't `now`'s. Any other period is
+ * shown as it is.
+ */
+export function sourceLabel(period: string, now: Date): string {
+    const kind = (Object.keys(KEY_PATTERNS) as CaiusPeriodKind[]).find((each) => KEY_PATTERNS[each].test(period));
+    const start = kind ? parsePeriodKey(kind, period) : null;
+    if (!kind || !start) {
+        return period;
+    }
+
+    const year = Number(period.slice(0, 4));
+    const otherYear = year !== now.getFullYear();
+    switch (kind) {
+        case "day": return otherYear ? t("caius.plan.source_day_year", { day: formatShortDate(start), year }) : formatShortDate(start);
+        case "week": return t(otherYear ? "caius.plan.source_week_year" : "caius.plan.source_week", { week: Number(period.slice(6)), year });
+        case "month": return formatMonthName(start, otherYear);
+    }
 }
 
 const KEY_PATTERNS: Record<CaiusPeriodKind, RegExp> = {

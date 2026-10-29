@@ -106,13 +106,18 @@ it("offers the caius skill only while it is registered, and names every tool the
         "At the end of a wind-down, never offer to run Plan my day for another day.",
         "Never run Plan my day for a future day: only the step says a day is later than today, by answering `not_today`."
     ]) expect(sheet, rule).toContain(rule);
-    // The opener conversations have only the step and apply tools, so their section names no other.
+    // The opener conversations have only the step and apply tools and what moving a task he names
+    // takes, so their section names no other.
     const openers = sheet.slice(sheet.indexOf("## Wind down and Plan my day"), sheet.indexOf("## Reading results"));
     for (const name of [
-        "caius_plan", "caius_open", "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
-        "caius_set_state", "caius_forward", "caius_assign_ids", "caius_context_add", "caius_context_keep", "caius_meetings",
+        "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
+        "caius_set_state", "caius_context_add", "caius_context_keep", "caius_meetings",
         "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
     ]) expect(openers, name).not.toMatch(new RegExp(`${name}(?![a-z_])`));
+    // A task the steps didn't offer is moved on its own, never through the apply or a new chat.
+    expect(openers).toContain("Never tell him to start a new chat for it, never pass it to the apply tool, and never move anything he didn't name.");
+    expect(openers).toContain("call `search_notes` yourself and say what you found");
+    expect(openers).toContain("when a step or apply answer has `warnings`, end the message with each warning as given");
     expect(openers).not.toContain("generic note tools");
     for (const old of [ "A ref holds only for the reply it came in", "and \"Anything for the evening?\"", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);

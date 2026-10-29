@@ -1,13 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CaiusPlan, CaiusPlanTask } from "../../../services/caius";
 import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
     acceptSections, capacityStatus, closeCandidates, closeFates, endsSoon, fateTarget, groupFates,
-    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, splitReason, stepPeriod, taskLabel,
+    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, sourceLabel, splitReason, stepPeriod, taskLabel,
     unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
+
+vi.mock("../../../services/i18n", async () => {
+    const { createInstance } = await import("i18next");
+    const translations = await import("../../../translations/en/translation.json");
+    const i18n = createInstance();
+    await i18n.init({
+        lng: "en",
+        interpolation: { escapeValue: false },
+        resources: { en: { translation: translations.default } }
+    });
+    return { t: i18n.t };
+});
 
 const NOW = new Date(2026, 9, 27, 10, 0);
 
@@ -269,5 +281,21 @@ describe("splitReason", () => {
         for (const text of [ "ZAP-101 — Verify the export retry on staging", "ZAP-111", "ZAP-111 (QA Testing, 3 days)", "Because of the freeze" ]) {
             expect(splitReason(text)).toEqual({ title: text, reason: null });
         }
+    });
+});
+
+describe("sourceLabel", () => {
+    it("names a day, an ISO week or a month, with the year only when it isn't this one", () => {
+        expect(sourceLabel("2026-10-28", NOW)).toBe("Wed 28 Oct");
+        expect(sourceLabel("2025-12-31", NOW)).toBe("Wed 31 Dec 2025");
+        expect(sourceLabel("2026-W44", NOW)).toBe("Week 44");
+        expect(sourceLabel("2025-W52", NOW)).toBe("Week 52, 2025");
+        expect(sourceLabel("2026-10", NOW)).toBe("October");
+        expect(sourceLabel("2025-10", NOW)).toBe("October 2025");
+    });
+
+    it("shows anything else as it is", () => {
+        expect(sourceLabel("2026-02-30", NOW)).toBe("2026-02-30");
+        expect(sourceLabel("", NOW)).toBe("");
     });
 });
