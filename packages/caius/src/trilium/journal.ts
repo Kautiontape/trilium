@@ -102,12 +102,18 @@ export async function loadJournal(api: NoteReader): Promise<JournalLoad> {
   // Oldest first, so of two notes for one period the older takes the period's path, as
   // `findPeriodNote` takes it. A newer one is read like a child of the period: its open tasks
   // still count as that period's, but it is never the period's note.
+  // The oldest holds the period's path even when it is skipped (protected, say), so a newer one
+  // never stands in for it.
+  const periods = new Set<string>();
   for (const note of oldestFirst(periodic)) {
     const kind = PERIODIC.find((p) => label(note, p.label) !== undefined);
     const key = kind && label(note, kind.label);
-    if (!kind || !key || !keep(note)) continue;
+    if (!kind || !key) continue;
     const base = `Journal/${kind.folder}/${key}`;
-    wanted.push({ note, path: claim(taken.has(`${base}.md`) ? `${base}/${key} (${note.noteId})` : base, note.noteId) });
+    const newer = periods.has(base);
+    periods.add(base);
+    if (!keep(note)) continue;
+    wanted.push({ note, path: claim(newer ? `${base}/${key} (${note.noteId})` : base, note.noteId) });
     for (const id of note.childNoteIds) {
       if (!periodicIds.has(id)) childIds.push({ id, dir: `Journal/${kind.folder}/${key}`, key });
     }

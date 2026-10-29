@@ -29,6 +29,7 @@ import {
     nextWorkday,
     normName,
     type NoteStore,
+    type StoreNote,
     openTasks,
     overlapPairs,
     parseClock,
@@ -706,7 +707,7 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
  */
 export async function allHeld(store: NoteStore): Promise<Map<string, { period: string; on: string }>> {
     const held = new Map<string, { period: string; on: string }>();
-    for (const note of await store.search(`#${HELD_LABEL}`)) {
+    for (const note of await periodNotesWith(store, HELD_LABEL)) {
         const day = label(note, PERIODS.day.label) ?? "";
         for (const a of note.attributes) {
             if (a.type !== "label" || a.name !== HELD_LABEL) continue;
@@ -736,12 +737,27 @@ function periodKind(key: string): "day" | "week" | "month" | null {
 export async function heldDays(store: NoteStore): Promise<string[]> {
     const days = new Set<string>();
     for (const name of [ HELD_LABEL, HELD_GROUP_LABEL ]) {
-        for (const note of await store.search(`#${name}`)) {
+        for (const note of await periodNotesWith(store, name)) {
             const day = label(note, PERIODS.day.label);
             if (day) days.add(day);
         }
     }
     return [ ...days ];
+}
+
+/**
+ * The notes carrying the label `name`, without a day note that is not its day's note: of two notes
+ * for one day, Caius's labels count only on the older (`findPeriodNote`), as every other read of a
+ * day's labels does, and a newer one's are left as they are. The caller holds the lock.
+ */
+export async function periodNotesWith(store: NoteStore, name: string): Promise<StoreNote[]> {
+    const notes: StoreNote[] = [];
+    for (const note of await store.search(`#${name}`)) {
+        const day = label(note, PERIODS.day.label);
+        if (day && PERIODS.day.pattern.test(day) && (await findPeriodNote(store, "day", day))?.noteId !== note.noteId) continue;
+        notes.push(note);
+    }
+    return notes;
 }
 
 /** A plan's top-level tasks in any state. */

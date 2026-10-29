@@ -180,6 +180,17 @@ describe('a period with two notes', () => {
     expect(plan?.sections.flatMap((s) => s.tasks).map((t) => t.listItemId)).toEqual(['n1']);
   });
 
+  it('keeps the period\'s path for the older note when it is skipped, so the newer never stands in for it', async () => {
+    const locked: NoteReader = {
+      ...reader,
+      async search(query) {
+        if (query === '#calendarRoot') return [dupes.root!];
+        return [dupes.newer!, { ...dupes.older!, isProtected: true }];
+      },
+    };
+    expect((await loadJournal(locked)).docs.map((d) => d.path)).toEqual(['Journal/Daily/2026-10-28/2026-10-28 (newer).md']);
+  });
+
   it('sorts a note without a creation time last', () => {
     expect(oldestFirst([{ noteId: 'a' }, { noteId: 'b', utcDateCreated: '2026-10-28 19:00:00.000Z' }]).map((n) => n.noteId)).toEqual(['b', 'a']);
   });

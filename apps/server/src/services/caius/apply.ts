@@ -77,6 +77,7 @@ import {
     localDay,
     nextOffer,
     overlapIdOf,
+    periodNotesWith,
     planDay,
     planOffer,
     present,
@@ -1398,7 +1399,7 @@ const EVENING_NAMES = new Set([ "evening", "recharge" ]);
  */
 async function pruneSettled(store: NoteStore, date: string, today: string, closed: boolean) {
     const oldest = closingPeriods(today).recent.at(-1) ?? today;
-    for (const note of await store.search(`#${SETTLED_LABEL}`)) {
+    for (const note of await periodNotesWith(store, SETTLED_LABEL)) {
         const day = label(note, PERIODS.day.label);
         if (!day || day === date || !(day < oldest || (closed && day < date))) continue;
         for (const a of note.attributes) if (a.type === "label" && a.name === SETTLED_LABEL) removeLabel(note.noteId, SETTLED_LABEL, a.value);

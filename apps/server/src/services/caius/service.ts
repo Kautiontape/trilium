@@ -41,6 +41,7 @@ import {
     parseSource,
     type PeriodKind,
     presentResult,
+    readDuplicatePlans,
     readPlan,
     scanDocs,
     setMeetings,
@@ -244,8 +245,13 @@ export function createCaiusService(
                 return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
             }
             const plan = await readPlan(store, period, key, now);
+            // A second, newer note for the period is named, and its live tasks listed with their own
+            // noteId, so a task on it can still be found and moved.
             const warnings = await duplicateWarnings(store, [ { period, key } ]);
-            const warned = warnings.length ? { ...plan, warnings } : plan;
+            const duplicates = warnings.length
+                ? (await readDuplicatePlans(store, period, key, now)).map((other) => ({ noteId: other.noteId, tasks: mainTasks(other) }))
+                : [];
+            const warned = warnings.length ? { ...plan, warnings, duplicates } : plan;
             // A day's target is the focus the steps stated for it, when they did.
             const [ focus ] = period === "day" ? await dayLabels(store, key, FOCUS_LABEL) : [];
             const [ min, max ] = (focus ?? "").split("-").map(Number);
@@ -527,6 +533,9 @@ export function createCaiusService(
 
         assignIds: ({ noteId, dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);
+            if (noteId && docs && !docs.some((d) => d.noteId === noteId)) {
+                return { error: "not_found", detail: `Note '${noteId}' is not a Journal note Caius can read` };
+            }
             const results: AssignIdsResult[] = [];
             // `noteId` keeps it to one note, as a wind-down does for a task he named that has no id.
             for (const doc of (docs ?? []).filter((d) => !noteId || d.noteId === noteId)) {

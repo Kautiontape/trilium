@@ -96,7 +96,7 @@ In these conversations only these tools are available; every other Caius tool an
 
 **A task the steps didn't offer.** An item the steps showed goes through the apply tool, which takes only those. When he asks to move a task they didn't show ("move the dentist one from 18 Oct to Friday"), move it on its own, in the same conversation:
 
-1. Find it: `caius_plan` for the day, week or month he names, or `caius_open` when he names none. Take its `noteId` and `listItemId` from there, and nothing else from what they return.
+1. Find it: `caius_plan` for the day, week or month he names (a task on a second note for that day is under its `duplicates`), or `caius_open` when he names none. Take its `noteId` and `listItemId` from there, and nothing else from what they return.
 2. When it has no `listItemId`, call `caius_assign_ids` with its `noteId` and `dryRun: false`, then `caius_plan` again.
 3. Map where he wants it to `data.days`, `data.weeks` or `data.months`, as for any answer, and call `caius_forward` once with `noteId`, `listItemId` and `to`. No dry run: his ask is the yes.
 4. Say in one clause what moved, or why it didn't (the result's reason).

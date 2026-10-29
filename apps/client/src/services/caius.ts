@@ -108,6 +108,10 @@ export interface CaiusPlan {
         target: { min: number; max: number } | null;
         horizons: Record<string, number>;
     };
+    /** Set when the period has more than one note: one line per newer note, which this plan is not. */
+    warnings?: string[];
+    /** Each newer note for the period, with its live tasks. */
+    duplicates?: { noteId: string; tasks: CaiusPlanTask[] }[];
 }
 
 export type CaiusLane =

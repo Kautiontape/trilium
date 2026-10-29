@@ -83,8 +83,10 @@ export default function PlanPullIn({ plan, lanes, onOpen, onChanged }: {
     return (
         <RightPanelWidget id="plan-pull-in" title={t("caius.plan.pull_in")}>
             {lanes.map(({ lane, total, tasks }) => {
+                // A second, newer note for the period is not this note: its tasks can be pulled in.
+                const duplicates = new Set(plan.duplicates?.map((other) => other.noteId));
                 const elsewhere = tasks.filter((task) =>
-                    task.noteId !== plan.noteId && task.period !== plan.key);
+                    task.noteId !== plan.noteId && (task.period !== plan.key || duplicates.has(task.noteId)));
                 const hidden = total - tasks.length;
                 return (
                     <section key={lane} className="plan-lane" data-lane={lane}>

@@ -69,6 +69,7 @@ describe("moving a task the wind-down didn't offer", () => {
         const done = await call("caius_assign_ids", { noteId: oldDay, dryRun: false });
         expect(done).toMatchObject({ notes: 1, added: 1 });
         expect(await content(otherDay)).not.toContain("data-list-item-id");
+        expect(await call("caius_assign_ids", { noteId: "root", dryRun: false })).toMatchObject({ error: "not_found" });
 
         const plan = await call("caius_plan", { period: "day", date: OLD });
         const task = plan.sections.flatMap((s: any) => s.tasks).find((t: any) => t.text.startsWith("Return the library book"));

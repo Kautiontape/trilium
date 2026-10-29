@@ -78,6 +78,7 @@ beforeAll(async () => {
         spuriousDay = spurious.noteId;
         await store.putContent(spuriousDay, `<h2>☑️ Tasks</h2>${ul(li("s1", "Stray task on the second note ~15m"))}`);
         await store.addLabel(spuriousDay, "caiusWoundDown", `${WED}T18:00:00`);
+        await store.addLabel(spuriousDay, "caiusHeld", `s1@${WED}`);
         const month = (await store.note(spurious.parentNoteIds[0]!)).parentNoteIds[0]!;
         spuriousWeek = createChildNote(month, "Week 6 (again)", `<h2>☑️ Tasks</h2>${ul(li("sw1", "Stray week task"))}`);
         await store.addLabel(spuriousWeek, "weekNote", WEEK);
@@ -106,6 +107,8 @@ describe("a day with two notes", () => {
         expect(plan.noteId).toBe(realDay);
         expect(plan.sections.flatMap((s: any) => s.tasks).map((t: any) => t.listItemId)).toEqual([ "r1", "r2" ]);
         expect(plan.warnings).toEqual([ `${WED} has a second day note ${spuriousDay}; using the older ${realDay}.` ]);
+        // The newer note's live tasks are listed with its own id, so one can still be found and moved.
+        expect(plan.duplicates).toEqual([ { noteId: spuriousDay, tasks: [ expect.objectContaining({ noteId: spuriousDay, listItemId: "s1" }) ] } ]);
         expect(labelled("dateNote", WED).sort()).toEqual([ realDay, spuriousDay ].sort());
     });
 
@@ -116,11 +119,12 @@ describe("a day with two notes", () => {
         expect(labelled("weekNote", WEEK)).toHaveLength(2);
     });
 
-    it("counts the newer note's open tasks in the next morning's catch-up, and ignores its wind-down label", async () => {
+    it("counts the newer note's open tasks in the next morning's catch-up, and ignores its wind-down and hold labels", async () => {
         at(`${THU}T09:00`);
         const catchup = await call("caius_planday", { date: THU, step: "catchup" });
         expect(catchup.data.days).toEqual([ WED ]);
         expect(catchup.data.tasks.map((t: any) => t.listItemId).sort()).toEqual([ "r1", "r2", "s1" ]);
+        expect(catchup.data.held).toBeUndefined();
         expect(catchup.warnings).toEqual(expect.arrayContaining([ `${WED} has a second day note ${spuriousDay}; using the older ${realDay}.` ]));
     });
 

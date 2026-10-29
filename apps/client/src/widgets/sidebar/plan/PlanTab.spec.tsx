@@ -331,6 +331,18 @@ describe("PlanTab", () => {
         expect(tab.querySelector("[data-lane=overdue] .plan-task-outcome")).toBeNull();
     });
 
+    it("offers the tasks of a second, newer note for the viewed day, and still leaves out the day's own", async () => {
+        api.plan.mockResolvedValue({ ...dayPlan(), warnings: [ "2026-10-27 has a second day note dup; using the older today." ], duplicates: [ { noteId: "dup", tasks: [] } ] });
+        api.open.mockResolvedValue({ total: 2, tasks: [
+            openTask({ noteId: "dup", period: "2026-10-27", listItemId: "d1", text: "Stray task", lane: "week" }),
+            openTask({ noteId: "child", period: "2026-10-27", listItemId: "c1", text: "Child task", lane: "week" })
+        ] });
+        const tab = await mount();
+
+        const rows = [ ...tab.querySelectorAll("#plan-pull-in .plan-pull-in-row") ].map((row) => row.textContent ?? "");
+        expect(rows).toEqual([ expect.stringContaining("Stray task") ]);
+    });
+
     it("shows no Pull in card for a past period", async () => {
         activeNote.current = buildNote({
             id: "yesterday", title: "26", "#dateNote": "2026-10-26", content: DAY_HTML
