@@ -28,6 +28,8 @@ export interface OpenTask {
   sectionKind: SectionKind;
   /** Inside an Important block (importance tier 3 in the derived markdown only). */
   critical: boolean;
+  /** Under the On deck heading: intended for its day, not committed. */
+  onDeck: boolean;
   /** Position in the note's priority order among the tasks listed here: critical first, then document order. */
   rank: number;
 }
@@ -65,6 +67,7 @@ export function openTasks(docs: TriliumDoc[], result: ScanResult): OpenTask[] {
       section,
       sectionKind: sectionKind(section),
       critical: docByPath.get(t.file)?.critical.has(t.line) ?? false,
+      onDeck: docByPath.get(t.file)?.onDeck.has(t.line) ?? false,
       rank: 0,
       };
     });
@@ -111,6 +114,7 @@ export function suggestedTasks(docs: TriliumDoc[], now: Date): OpenTask[] {
         section,
         sectionKind: sectionKind(section),
         critical: false,
+        onDeck: false,
         rank: i,
       };
     });

@@ -1,5 +1,5 @@
 // Read one periodic note (day, week or month) as a plan: critical block, tasks
-// by section in priority order, the Suggested lane, what was dismissed, and
+// by section in priority order, the On deck tasks, the Suggested lane, what was dismissed, and
 // how much time the live tasks add up to. Read-only; never creates a note.
 
 import { now as clock } from '../clock.js';
@@ -82,6 +82,8 @@ export interface Capacity {
   totalMinutes: number;
   /** On a day note, minutes of the live tasks under Evening or Recharge, which the counts above leave out: not work. */
   eveningMinutes: number;
+  /** Minutes of the live On deck tasks (unestimated at 30), which the counts above leave out: not committed. */
+  onDeckMinutes: number;
   /** Suggested range for this period (minutes), null when there is none (a month). */
   target: { min: number; max: number } | null;
   /** Live tasks by horizon (today, week, orbit, overdue, …). */
@@ -96,6 +98,8 @@ export interface PlanView {
   critical: PlanTask[];
   sections: PlanSection[];
   top3: PlanTask[];
+  /** The tasks under the On deck heading, in any state: intended for the day, tracked, but not on the list until planned. */
+  onDeck: PlanTask[];
   suggested: PlanTask[];
   /** Source keys dismissed on this note (`#caiusDismissed`). */
   dismissed: string[];
@@ -197,7 +201,9 @@ const strip = ({ line: _l, horizon: _h, live: _v, ...task }: PlanTask & { line: 
 export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, dismissed: string[], now: Date): PlanView {
   const all = planTasks(doc, now).tasks;
   const isSuggested = (t: { line: number }) => doc.suggested.has(t.line);
-  const main = all.filter((t) => !isSuggested(t));
+  const isOnDeck = (t: { line: number }) => doc.onDeck.has(t.line);
+  const main = all.filter((t) => !isSuggested(t) && !isOnDeck(t));
+  const deck = all.filter(isOnDeck);
   const critical = main.filter((t) => t.critical);
 
   const sections: PlanSection[] = [];
@@ -224,8 +230,11 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   const estimated = counted.filter((t) => t.estMinutes !== null);
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;
+  const deckCountable = deck.filter((t) => t.live && t.text.trim() !== '');
+  const deckParents = new Set(deckCountable.filter((t) => t.parent !== null).map((t) => t.parent));
+  const onDeckMinutes = deckCountable.filter((t) => !deckParents.has(t.text)).reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0);
   const horizons: Record<string, number> = {};
-  for (const t of main.filter((x) => x.live)) horizons[t.horizon ?? 'none'] = (horizons[t.horizon ?? 'none'] ?? 0) + 1;
+  for (const t of [...main, ...deck].filter((x) => x.live)) horizons[t.horizon ?? 'none'] = (horizons[t.horizon ?? 'none'] ?? 0) + 1;
 
   return {
     period,
@@ -234,6 +243,7 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
     critical: critical.map(strip),
     sections,
     top3,
+    onDeck: deck.map(strip),
     suggested: all.filter((t) => isSuggested(t) && t.live).map(strip),
     dismissed,
     capacity: {
@@ -243,6 +253,7 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
       unestimatedMinutes: unestimated * DEFAULT_ESTIMATE,
       totalMinutes: planned + unestimated * DEFAULT_ESTIMATE,
       eveningMinutes: evening.reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0),
+      onDeckMinutes,
       target: TARGETS[period],
       horizons,
     },
@@ -276,6 +287,7 @@ function emptyView(period: PeriodKind, key: string): PlanView {
     critical: [],
     sections: [],
     top3: [],
+    onDeck: [],
     suggested: [],
     dismissed: [],
     capacity: {
@@ -285,6 +297,7 @@ function emptyView(period: PeriodKind, key: string): PlanView {
       unestimatedMinutes: 0,
       totalMinutes: 0,
       eveningMinutes: 0,
+      onDeckMinutes: 0,
       target: TARGETS[period],
       horizons: {},
     },

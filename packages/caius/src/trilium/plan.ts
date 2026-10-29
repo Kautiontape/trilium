@@ -13,6 +13,7 @@ import { scanTokens } from '../core/index.js';
 import { loadJournal, loadStateSymbols } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
 import type { NoteChange } from './forward.js';
+import { inspectItem } from './forward-html.js';
 import type { StoreNote, NoteStore } from './store.js';
 import { JIRA_BASE, markdownLinks, parseEstimate, parseSource, taskKeys } from './keys.js';
 import {
@@ -27,6 +28,7 @@ import {
   placeTask,
   setTaskState,
   suggestedItems,
+  takeOnDeck,
   takeSuggested,
   type StateAction,
   type Target,
@@ -39,10 +41,12 @@ export interface AddRequest {
   date?: string;
   week?: string;
   month?: string;
-  /** Exactly one of section, critical or suggested. */
+  /** Exactly one of section, critical, suggested or onDeck. */
   section?: string;
   critical?: boolean;
   suggested?: boolean;
+  /** A day only: the On deck section, intended for the day but not committed. */
+  onDeck?: boolean;
   text: string;
   /** A Jira key, or a URL; written into the task as a link and used to spot duplicates. */
   source?: string;
@@ -67,6 +71,16 @@ export interface ItemRequest {
   reason?: string;
 }
 
+/** An On deck task put on his list: the end of his main list, or first, before or after an item of it, or the Important block. */
+export interface CommitRequest {
+  noteId: string;
+  listItemId: string;
+  first?: boolean;
+  before?: string;
+  after?: string;
+  critical?: boolean;
+}
+
 export interface MoveRequest {
   noteId: string;
   listItemId: string;
@@ -81,6 +95,7 @@ export type PlanSkip =
   | 'not_in_main_list'
   | 'not_live'
   | 'not_suggested'
+  | 'not_on_deck'
   | 'prose_section'
   | 'already_done'
   | 'already_doing'
@@ -159,10 +174,11 @@ function periodOf(req: AddRequest): { period: PeriodKind; key: string } | string
 }
 
 function targetOf(req: AddRequest): Target | string {
-  const given = [req.section !== undefined, !!req.critical, !!req.suggested].filter(Boolean).length;
-  if (given !== 1) return 'give exactly one of section, critical, suggested';
+  const given = [req.section !== undefined, !!req.critical, !!req.suggested, !!req.onDeck].filter(Boolean).length;
+  if (given !== 1) return 'give exactly one of section, critical, suggested, onDeck';
   if (req.critical) return { kind: 'critical' };
   if (req.suggested) return { kind: 'suggested' };
+  if (req.onDeck) return req.date !== undefined ? { kind: 'onDeck' } : 'only a day note has an On deck section';
   return req.section!.trim() ? { kind: 'section', name: req.section!.trim() } : 'section name is empty';
 }
 
@@ -329,6 +345,38 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
     }
     if (!(await api.putContent(req.noteId, after, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
     return { ...req, status: 'accepted', listItemId: req.listItemId };
+  });
+}
+
+/**
+ * Puts On deck tasks on his list, each the same item (id, text, state, sub-items): into the
+ * Important block, or at the end of his main list and then first, before or after an item of it.
+ * An item already off the deck and live is `unchanged`, so a re-run writes nothing.
+ */
+export async function commitTasks(api: NoteStore, reqs: CommitRequest[], opts: PlanOptions = {}): Promise<Done<CommitRequest>[]> {
+  const states = opts.states ?? (await loadStateSymbols(api));
+  return eachSequentially(reqs, async (req) => {
+    if (!validItem(req)) return skip(req, 'bad_request', 'need noteId and listItemId');
+    const given = [!!req.first, req.before !== undefined, req.after !== undefined, !!req.critical].filter(Boolean).length;
+    if (given > 1) return skip(req, 'bad_request', 'give at most one of first, before, after or critical');
+    const loaded = await loadNote(api, req.noteId);
+    if ('problem' in loaded) return skip(req, 'unreadable', loaded.problem);
+    const html = await api.content(req.noteId);
+    const taken = takeOnDeck(html, req.listItemId, states);
+    if (!taken.ok) {
+      if (taken.reason !== 'not_on_deck') return skip(req, taken.reason);
+      return inspectItem(html, req.listItemId, states).ok ? { ...req, status: 'unchanged', detail: 'already on the list' } : skip(req, 'not_on_deck');
+    }
+    let after = req.critical ? placeTask(taken.html, taken.markup, { kind: 'critical' }) : placeInMainList(taken.html, taken.markup);
+    const place = req.first ? { first: true as const } : req.before !== undefined ? { before: req.before } : req.after !== undefined ? { after: req.after } : null;
+    if (place) {
+      const moved = moveInMainList(after, req.listItemId, place);
+      if (!moved.ok) return skip(req, moved.reason, 'the item it is placed by must be in his main list');
+      after = moved.html;
+    }
+    if (opts.dryRun) return { ...req, status: 'moved', dryRun: true, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };
+    if (!(await api.putContent(req.noteId, after, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
+    return { ...req, status: 'moved' };
   });
 }
 

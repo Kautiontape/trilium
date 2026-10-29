@@ -14,7 +14,7 @@
 import type { VaultDoc } from '../index/index.js';
 import { label, oldestFirst, type NoteReader, type StoreNote } from './store.js';
 import { htmlToMarkdownWithIds, DEFAULT_STATE_SYMBOLS, type StateSymbols } from './markdown.js';
-import { bulletTexts, neutralizeProse, neutralizeSuggested, proseKinds } from './sections.js';
+import { bulletTexts, neutralizeProse, neutralizeSuggested, onDeckLines, proseKinds } from './sections.js';
 
 export interface TriliumDoc extends VaultDoc {
   noteId: string;
@@ -22,6 +22,8 @@ export interface TriliumDoc extends VaultDoc {
   fullText: string;
   /** 0-based lines of task lines under the Suggested heading. */
   suggested: Set<number>;
+  /** 0-based lines of task lines under the On deck heading: live tasks, apart from the committed list. */
+  onDeck: Set<number>;
   /** 0-based lines of tasks inside an Important block (they end in `!!!` in the text). */
   critical: Set<number>;
   /** 0-based line of `text` → the Trilium `data-list-item-id` of the `<li>` it came from. */
@@ -149,6 +151,7 @@ export function buildDoc(note: StoreNote, path: string, html: string, states: St
     text,
     fullText: markdown,
     suggested,
+    onDeck: onDeckLines(markdown, critical),
     critical,
     itemIds,
     meetings: under('meetings'),

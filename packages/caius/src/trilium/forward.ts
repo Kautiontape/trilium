@@ -21,6 +21,13 @@ export interface ForwardRequest {
   listItemId: string;
   /** Target day YYYY-MM-DD, ISO week YYYY-Www or month YYYY-MM. */
   to: string;
+  /**
+   * true: the copy goes in the target day's On deck (a day only); false: in the list proper. Left
+   * out, it keeps the source's placement: an On deck task forwarded to a day stays On deck.
+   */
+  onDeck?: boolean;
+  /** true: the copy goes in the target's Important block. */
+  critical?: boolean;
 }
 
 /** Weeks and months are only needed when a request targets one. */
@@ -107,6 +114,8 @@ async function forwardOne(
   if (!req.noteId || !req.listItemId || !kind) {
     return skip('bad_request', 'need noteId, listItemId and to as YYYY-MM-DD, YYYY-Www or YYYY-MM');
   }
+  if (req.onDeck && kind !== 'day') return skip('bad_request', 'only a day note has an On deck section');
+  if (req.onDeck && req.critical) return skip('bad_request', 'give onDeck or critical, not both');
 
   const source = await api.note(req.noteId);
   if (source.type !== 'text' || source.isProtected) return skip('unreadable', 'source is protected or not a text note');
@@ -150,6 +159,9 @@ async function forwardOne(
       sourceLabel,
       ...(backLinkLabel ? { backLinkLabel } : {}),
       newId: opts.newId,
+      ...(req.onDeck !== undefined ? { onDeck: req.onDeck } : {}),
+      ...(req.critical ? { critical: true } : {}),
+      toDay: kind === 'day',
     });
     if (!inserted.ok) return skip(inserted.reason);
     newTarget = inserted.html;
