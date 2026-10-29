@@ -37,7 +37,7 @@ Most write tools take an `items` list, `dryRun`, and `html: true` on a dry run t
 | `caius_dismiss` | Remove a Suggested item and keep it from being suggested again on that note. | `{ "items": [{ "noteId": "abc", "listItemId": "e123" }] }` |
 | `caius_set_state` | Mark tasks `done`, `doing` or `cancelled`. Cancelled needs a `reason`. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "state": "cancelled", "reason": "no longer needed" }] }` |
 | `caius_forward` | Move a task to another day, week or month. The old copy is marked Rescheduled with a link; an open copy appears under the same header in the target. | `{ "items": [{ "noteId": "abc", "listItemId": "e123", "to": "2026-W45" }] }` |
-| `caius_assign_ids` | Give every Journal list item that has no `listItemId` one, so the other tools can target it. Reports per note how many items get an id and, on a dry run, their text. It is a dry run unless `dryRun` is `false`. Only when the user asks; show him the dry run first. | `{}` for the dry run, then `{ "dryRun": false }` |
+| `caius_assign_ids` | Give every Journal list item that has no `listItemId` one, so the other tools can target it; with `noteId`, only that note's. Reports per note how many items get an id and, on a dry run, their text. It is a dry run unless `dryRun` is `false`. Only when the user asks; show him the dry run first. | `{}` for the dry run, then `{ "dryRun": false }` |
 | `caius_inputs` | Read the day's Jira hand-offs, asks and done checks, the calendar events and the capacity the meetings leave. Read-only; pass the day's Context lines. A failed source is named in `errors`. | `{ "date": "2026-10-27", "context": ["ZAP-2590 is open"] }` |
 | `caius_meetings` | Write the day note's Meetings block: clock lines, never tasks. Without `items` the lines come from the calendar. Replaces only that block. | `{ "date": "2026-11-09", "dryRun": true }` |
 | `caius_context_add` | Add one Context line to a day note (`date`) or a week note (`week`), with an optional `until`. Text already in force is a `duplicate`. | `{ "week": "2026-W46", "text": "Sam is out all week", "until": "2026-11-13", "dryRun": true }` |
@@ -89,9 +89,19 @@ In these conversations only these tools are available; every other Caius tool an
 | `caius_plan_apply` | Plan my day's one write. |
 | `caius_winddown` | Wind down's steps: `open`, `next`, `context`. |
 | `caius_winddown_apply` | Wind down's one write. |
-| `load_skill`, note reads | This sheet, and reading a note when the step data points at one. |
+| `caius_plan`, `caius_open`, `caius_assign_ids`, `caius_forward` | Moving a task he names that the steps didn't offer; see below. Never for anything else. |
+| `load_skill`, note reads, `search_notes` | This sheet, reading a note when the step data points at one, and searching his notes when he asks about something in them. |
 
 `Plan my day 2026-11-09` plans that day; `Wind down 2026-11-06` closes that day against the next workday. Each conversation is one question set, then one apply call that makes every write. You read, ask, pass his answers through as ids, and write the brief's prose. The tool does the rest. A correction he makes after the apply ("111 was later this week", "also ZAP-2590 is open") is one more call of the same apply tool for the same date, with his correction in `said` and only what he corrected (in Plan my day, with the brief's prose again): never another tool. It changes only what it names, and repeating it changes nothing.
+
+**A task the steps didn't offer.** An item the steps showed goes through the apply tool, which takes only those. When he asks to move a task they didn't show ("move the dentist one from 18 Oct to Friday"), move it on its own, in the same conversation:
+
+1. Find it: `caius_plan` for the day, week or month he names, or `caius_open` when he names none. Take its `noteId` and `listItemId` from there, and nothing else from what they return.
+2. When it has no `listItemId`, call `caius_assign_ids` with its `noteId` and `dryRun: false`, then `caius_plan` again.
+3. Map where he wants it to `data.days`, `data.weeks` or `data.months`, as for any answer, and call `caius_forward` once with `noteId`, `listItemId` and `to`. No dry run: his ask is the yes.
+4. Say in one clause what moved, or why it didn't (the result's reason).
+
+Never tell him to start a new chat for it, never pass it to the apply tool, and never move anything he didn't name.
 
 ### Plan my day
 
@@ -140,6 +150,8 @@ An item with `park` has been carried on three workdays or more, and the `open` q
 - Start the message with its first question or item: no preamble of your own about what follows, such as "Here's everything in one message:", "Here's my one question for you:" or a count of what is left. A step's own words, such as the `open` question's "Here's what's left", are not a preamble: keep them as they are.
 - Write what he should read after your last tool call, as a message of its own: in these conversations, text you write in the same message as a tool call is never shown.
 - Never narrate tools, ids, protocol or data quality. Never mention ids, steps, tools, arrays, fields, permissions or "the wrong value", in the message or while you work: no "I need the candidateId", no "no keep/carry lines".
+- The one exception: when a step or apply answer has `warnings`, end the message with each warning as given, on a line of its own, even after a `say`. A warning names a day or week with a second note; Caius used the older one. Never offer to delete or merge either note.
+- When he asks about something in his notes, or you would tell him to search them ("Search your notes for 'Sean'"), call `search_notes` yourself and say what you found in one clause: the note and what it says, or that nothing matched. Never hand the search back to him.
 - The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it; a meeting that moved is a fact in your message, not a question.
 - Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral: "Taking Vendor Onboarding, not Incident Review", "the 6pm call covers it". Never name him in the third person.
 - A Context line skipped as `third_person` is not written: reword it in his voice and call the same apply again with `said` and only that line in `context`, no `brief`, then reply.
@@ -173,6 +185,8 @@ Each write returns one result per item, with a status:
 
 A skipped item is often right. Report it to the user instead of working around it.
 
+`warnings` on an answer names a day, week or month with more than one note: "2026-10-28 has a second day note B; using the older A." Caius reads and writes the older note and still counts the other's open tasks. Tell the user each warning as given. Never delete, merge or edit either note to fix it; that is his call.
+
 `journal: false` on an answer from `caius_open`, `caius_explain` or `caius_assign_ids` means this Trilium has no Journal (no note carries `#calendarRoot`). That is not "nothing to do": say so to the user rather than reporting an empty plan.
 
 ## Rules
@@ -182,3 +196,4 @@ A skipped item is often right. Report it to the user instead of working around i
 - Only pull down the cascade. Do not add a task to a week note that isn't in the month, unless the user says so.
 - The daily brief writes only to Suggested (`caius_add` with `suggested: true`, `key`, `title`, `because` and `minutes`). It never writes above that section, and it does not suggest something already open anywhere in the Journal or already dismissed.
 - After an `edited` skip, read the note again with `caius_plan` before you run the item again.
+- Do the work yourself. When you would tell the user to search his notes for something ("Search your notes for 'Sean'"), run `search_notes` and report what you found instead.
