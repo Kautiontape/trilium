@@ -253,6 +253,17 @@ describe("PlanTab", () => {
         expect(tab.textContent).not.toContain("→ 2026-10-27");
     });
 
+    it("names the day or week each Pull in task comes from, just left of its Actions menu", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const tab = await mount();
+
+        const rows = [ ...tab.querySelectorAll("#plan-pull-in .plan-pull-in-row") ];
+        expect(rows.map((row) => row.querySelector(".plan-pull-in-source")?.textContent)).toEqual([ "Sun 25 Oct", "Week 44" ]);
+        for (const row of rows) {
+            expect(row.querySelector(".plan-pull-in-source")?.nextElementSibling?.classList.contains("dropdown-stub")).toBe(true);
+        }
+    });
+
     it("pulls a task into the viewed period from the Actions menu", async () => {
         api.plan.mockResolvedValue(dayPlan());
         const tab = await mount();

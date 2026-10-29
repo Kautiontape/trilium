@@ -3,7 +3,7 @@ import "./PlanPullIn.css";
 import { useState } from "preact/hooks";
 
 import {
-    caiusApi, type CaiusItemResult, type CaiusLane, type CaiusOpenTask, type CaiusPlan,
+    caiusApi, type CaiusItemResult, type CaiusLane, caiusNow, type CaiusOpenTask, type CaiusPlan,
     type CaiusTaskState, caiusWrite, describeOutcome, findOpenEditors
 } from "../../../services/caius";
 import dialog from "../../../services/dialog";
@@ -14,7 +14,7 @@ import Dropdown from "../../react/Dropdown";
 import { FormListItem } from "../../react/FormList";
 import LinkButton from "../../react/LinkButton";
 import RightPanelWidget from "../RightPanelWidget";
-import { taskLabel } from "./plan_logic";
+import { sourceLabel, taskLabel } from "./plan_logic";
 import type { PlanTaskRef } from "./PlanTab";
 
 /**
@@ -145,6 +145,7 @@ function PullInRow({ task, outcome, onOpen, onPullIn, onDone, onDrop }: {
                         text={t("caius.plan.days_late", { count: task.daysLate })}
                     />
                 )}
+                <span className="plan-pull-in-source">{sourceLabel(task.period, caiusNow())}</span>
                 <Dropdown
                     className="plan-pull-in-actions"
                     text={t("caius.plan.actions")}
