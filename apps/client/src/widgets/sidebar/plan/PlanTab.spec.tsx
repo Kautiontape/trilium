@@ -550,6 +550,27 @@ describe("PlanTab", () => {
         expect((await mount()).querySelector(".plan-capacity-evening")).toBeNull();
     });
 
+    it("shows a day's On deck as its own group, apart from the capacity, and no group when it has none", async () => {
+        const plan = dayPlan();
+        api.plan.mockResolvedValue({
+            ...plan,
+            onDeck: [
+                planTask({ listItemId: "d1", text: "Tidy the garage", section: "On deck", estMinutes: 45 }),
+                planTask({ listItemId: "d2", text: "Read the RFC", section: "On deck" }),
+                planTask({ listItemId: "d3", text: "Gone", section: "On deck", state: "tombstone" })
+            ],
+            capacity: { ...plan.capacity, onDeckMinutes: 75 }
+        });
+        const tab = await mount();
+        expect(texts(tab, "#plan-on-deck .plan-task-list li")).toEqual([ "Tidy the garage", "Read the RFC" ]);
+        expect(text(tab, ".plan-on-deck-total")).toBe("1 h 15 m on deck, not counted until Plan my day puts it on the list");
+        // The capacity is the committed list's alone.
+        expect(text(tab, ".plan-capacity-summary")).toBe("1 h 15 m planned of 3–4 h");
+
+        api.plan.mockResolvedValue(dayPlan());
+        expect((await mount()).querySelector("#plan-on-deck")).toBeNull();
+    });
+
     it("starts Plan my day or Wind down for the viewed day as a new conversation, and offers neither for a week", async () => {
         api.plan.mockImplementation(
             async (period: string, key: string) => ({ ...dayPlan(), period, key }));

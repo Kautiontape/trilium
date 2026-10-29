@@ -5,7 +5,7 @@ import froca from "../../../services/froca";
 import { buildNote } from "../../../test/easy-froca";
 import {
     acceptSections, capacityStatus, closeCandidates, closeFates, endsSoon, fateTarget, groupFates,
-    isCloseable, listedFates, parsePeriodKey, periodKey, periodOfNote, sourceLabel, splitReason, stepPeriod, taskLabel,
+    isCloseable, listedFates, onDeckTasks, parsePeriodKey, periodKey, periodOfNote, sourceLabel, splitReason, stepPeriod, taskLabel,
     unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
 
@@ -146,6 +146,16 @@ describe("plan tasks", () => {
     it("asks a fate of every live task its parent does not carry", () => {
         expect(closeCandidates(plan).map((t) => t.listItemId))
             .toEqual([ "k", "a", "b", "c", "e1" ]);
+    });
+
+    it("asks a fate of the day's On deck tasks too, which are tracked but apart from the list", () => {
+        const decked = { ...planOf([ task({ listItemId: "a", text: "On the list" }) ]), onDeck: [
+            task({ listItemId: "d1", text: "Maybe", section: "On deck" }),
+            task({ listItemId: "d2", text: "Done already", section: "On deck", state: "done" })
+        ] };
+        expect(closeCandidates(decked).map((t) => t.listItemId)).toEqual([ "a", "d1" ]);
+        expect(onDeckTasks(decked).map((t) => t.listItemId)).toEqual([ "d1" ]);
+        expect(unestimatedTasks(decked).map((t) => t.listItemId)).toEqual([ "a" ]);
     });
 
     it("rates capacity against the target", () => {

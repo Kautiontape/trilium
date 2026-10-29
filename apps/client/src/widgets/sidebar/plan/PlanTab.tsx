@@ -31,6 +31,7 @@ import {
     type ViewedPeriod
 } from "./plan_logic";
 import PlanPullIn from "./PlanPullIn";
+import PlanOnDeck from "./PlanOnDeck";
 import PlanSuggested from "./PlanSuggested";
 
 /** The lanes Pull in offers tasks from, in order. */
@@ -98,6 +99,7 @@ export default function PlanTab() {
                         <div className="plan-no-note">{t("caius.plan.no_note")}</div>
                     )}
                     <PlanCapacity plan={current.plan} onOpen={openTask} />
+                    <PlanOnDeck plan={current.plan} onOpen={openTask} />
                     {current.context && <PlanContext date={key} lines={current.context} />}
                     <PlanSuggested
                         key={key}

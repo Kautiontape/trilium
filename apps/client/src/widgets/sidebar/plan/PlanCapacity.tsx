@@ -85,7 +85,7 @@ export default function PlanCapacity({ plan, onOpen }: {
 }
 
 /** `220` → "3 h 40 m", `45` → "45 m", `240` → "4 h", `0` → "0 m". */
-function formatDuration(minutes: number) {
+export function formatDuration(minutes: number) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
     if (h === 0) {
