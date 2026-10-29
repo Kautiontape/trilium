@@ -69,9 +69,9 @@ it("offers the caius skill only while it is registered, and names every tool the
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
         "When the catch-up step asks about held items (`data.held`), one he says is done goes in `finished`; anything else he says about them is `catchup: \"review\"`.",
         "Never ask permission for anything the apply tool does.",
-        "Never claim a write that isn't in the result: its `say` is the whole recap.",
+        "Never claim a write that isn't in the result: its `say` is the whole recap of the apply.",
         "After the apply, reply with the result's `say`, then the headline and the top pick, and nothing else.",
-        "After the apply, reply with the result's `say` and nothing else.",
+        "After the apply, reply with the result's `say` and nothing else, but for one sentence when the result's `load.over` is true",
         "Never narrate tools, ids, protocol or data quality.",
         "Never write \"still\", \"outstanding\", \"unanswered\", \"waiting\", \"no reply\" or \"haven't answered\".",
         "Only \"drop\", \"cancel\" or \"not doing\" drops a task or dismisses a candidate; anything vaguer (\"skip that\", \"not now\") is `notToday`",
@@ -88,10 +88,9 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
         "An evening calendar event is not a task",
         "`say` names the skip (\"Call Mom is already on the calendar\")",
-        "In these conversations only these tools are available",
-        "| `caius_planday` | Plan my day's steps: `catchup`, `inputs`. |",
-        "| `caius_winddown_apply` | Wind down's one write. |",
-        "State capacity only as the step's `data.capacity.sentence` words it, as it is",
+        "Every Caius tool is available, with the note reads and `search_notes`; the generic note tools that write are off",
+        "Each ritual has a goal, and the steps below are the default path to it",
+        "State capacity only as the step's `data.capacity.sentence` or `data.load.sentence` words it, as it is",
         "When the apply answers with `planday`, a morning Review of an older day closed it against today, and Plan my day's `catchup` and `inputs` steps have already run for today",
         "Never ask whether to plan or whether to write the brief, and never call those steps again.",
         "Never ask what else to do when the step returns no candidates",
@@ -106,19 +105,31 @@ it("offers the caius skill only while it is registered, and names every tool the
         "At the end of a wind-down, never offer to run Plan my day for another day.",
         "Never run Plan my day for a future day: only the step says a day is later than today, by answering `not_today`."
     ]) expect(sheet, rule).toContain(rule);
-    // The opener conversations have only the step and apply tools and what moving a task he names
-    // takes, so their section names no other.
+    // A guide, not a script: an ask off the path is answered in the same conversation with the right tool.
     const openers = sheet.slice(sheet.indexOf("## Wind down and Plan my day"), sheet.indexOf("## Reading results"));
-    for (const name of [
-        "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
-        "caius_set_state", "caius_context_add", "caius_context_keep", "caius_meetings",
-        "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
-    ]) expect(openers, name).not.toMatch(new RegExp(`${name}(?![a-z_])`));
-    // A task the steps didn't offer is moved on its own, never through the apply or a new chat.
-    expect(openers).toContain("Never tell him to start a new chat for it, never pass it to the apply tool, and never move anything he didn't name.");
+    for (const name of [ "caius_add", "caius_inputs", "caius_plan", "caius_forward", "caius_assign_ids", "search_notes" ]) {
+        expect(openers, name).toMatch(new RegExp(`${name}(?![a-z_])`));
+    }
+    expect(openers).toContain("Never tell him to start a new chat for it, and never tell him a tool is switched off.");
+    expect(openers).toContain("Never pass it to the apply tool, and never move anything he didn't name.");
     expect(openers).toContain("call `search_notes` yourself and say what you found");
     expect(openers).toContain("when a step or apply answer has `warnings`, end the message with each warning as given");
-    expect(openers).not.toContain("generic note tools");
+    // What holds while he flexes, and the pushback.
+    for (const rule of [
+        "One fate per leftover", "Nothing lands untracked", "Write only what he said.", "is a dry run first, shown to him, and written on his yes",
+        "Push back when an ask undoes the goal, then do what he decides.",
+        "When the answer to his question depends on data", "Never state a guess as fact",
+        "When `load.over` is true", "split it, or send it up to the week to sort out when he plans", "It is advice: when he says to do it anyway, do it",
+        "`caius_add` to that day, with `onDeck: true` when he would like to do it then",
+        "\"need to\", \"have to\", \"must\" put it on that day's list",
+        "`data.onDeck` is the day's On deck", "Every item he doesn't name takes its proposed fate, so none stays on deck.",
+        "open with one line on yesterday from `data.yesterday`"
+    ]) expect(openers, rule).toContain(rule);
+    // Who he is comes first, and the tools' words stay factual.
+    expect(sheet.indexOf("## Who you are")).toBeLessThan(sheet.indexOf("## The Journal"));
+    expect(sheet).toContain("You are Caius, the planner for his Journal, and you speak in the first person.");
+    expect(sheet).toContain("The words the tools return (`say`, the steps' questions and summaries) stay as they are");
+    expect(sheet).toContain("Never quote the game or play the character.");
     for (const old of [ "A ref holds only for the reply it came in", "and \"Anything for the evening?\"", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
     }
