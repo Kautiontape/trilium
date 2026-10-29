@@ -73,6 +73,11 @@ describe('placing On deck', () => {
     expect(placeForwarded(html, '<li>NEW</li>', null)).toMatch(/^<h2>☑️ Tasks<\/h2><ul class="todo-list"><li>NEW<\/li><\/ul><h3>Evening<\/h3>/);
   });
 
+  it('puts a task into an empty main Tasks heading rather than a second one', () => {
+    const html = `<h2>☑️ Tasks</h2><h3>Evening</h3>${ul(li('e1', 'Laundry'))}`;
+    expect(placeForwarded(html, '<li>NEW</li>', null)).toBe(`<h2>☑️ Tasks</h2><ul class="todo-list"><li>NEW</li></ul><h3>Evening</h3>${ul(li('e1', 'Laundry'))}`);
+  });
+
   it('takes an item off the deck unchanged, and the heading with the last one', () => {
     const one = TASKS + `<h3>On deck</h3>${ul(li('d1', 'Tidy the garage'))}` + SUGGESTED;
     const taken = takeOnDeck(one, 'd1', DEFAULT_STATE_SYMBOLS);

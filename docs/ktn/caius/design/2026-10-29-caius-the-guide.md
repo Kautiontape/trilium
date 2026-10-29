@@ -57,5 +57,6 @@ The name is a nod to Caius Cosades, the laid-back spymaster in Morrowind who han
 - Pushing a task to its project note is still not built.
 - The Plan tab shows On deck as its own group but has no action to put an item on the day's list; that happens in Plan my day. Its Close card does give On deck items a fate, like any open task.
 - An On deck item without a list item id (typed by hand into a note Caius never wrote) can't be offered, so it gets no fate in Plan my day until `caius_assign_ids` runs. Wind down and the catch-up still count it.
+- An item freed when an ambiguous hold is settled gets the plain forward to the next workday (its list), not its On deck: the hold's record doesn't keep its heading.
 - "Would like" or "need to" is mapped by the agent from his words; no `said` check backs it, as one does for drops and parks.
 - The nudge bar's Move all to today keeps an On deck item on today's On deck, for Plan my day to place; Plan my day's own `move_all` puts every catch-up task on the list.

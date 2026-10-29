@@ -267,13 +267,14 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
         // On deck first: each item takes the fate he gave it, or the one the step proposed, so none stays on deck.
-        // An answer the name reader found settled (dropped) or followed to its moved copy is in place on a re-run.
-        const settledDeck = new Set([ ...pools.settled.map((item) => item.id), ...input.follows.keys() ]);
-        const deckPlaces = await onDeckFates(store, date, offer, input.onDeck.filter((answer) => !input.done.includes(answer.listItemId)), input.done, { listedTo, settled: settledDeck }, written, skipped);
+        // An item an ambiguous answer matched stays on deck until he says which.
+        const { places: deckPlaces, moved: deckMoved } = await onDeckFates(store, date, offer, input.onDeck.filter((answer) => !input.done.includes(answer.listItemId)), [ ...input.done, ...input.deckHeld ], {
+            listedTo, settled: new Set(pools.settled.map((item) => item.id)), follows: input.follows
+        }, written, skipped);
 
         // What the catch-up moves here can be placed by the id it had on its own day.
         const moved = new Map(input.catchup === "move_all" ? catchupTasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, { text: task.text, noteId: task.noteId } ] as const ] : []) : []);
-        await acceptAll(store, date, now, { accept: input.accept, move: [ ...deckPlaces, ...input.move ] }, { known, moved }, written, skipped);
+        await acceptAll(store, date, now, { accept: input.accept, move: [ ...deckPlaces, ...input.move ] }, { known, moved: new Map([ ...moved, ...deckMoved ]) }, written, skipped);
 
         await guarded({ kind: "keep" }, skipped, async () => { for (const { lineId } of input.keep) {
             const line = offer.carry.find((c) => c.lineId === lineId);
@@ -506,12 +507,34 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
                 }),
             ...freed
         ];
+        // An item he gives a place on the next workday's list ("the bike first") goes on that list, not on deck.
+        const placed = new Set([ ...input.move.flatMap((ref) => [ ref.listItemId, ref.before, ref.after ]), ...input.accept.flatMap((ref) => [ ref.before, ref.after ]) ]
+            .filter((id): id is string => !!id));
+        // A moved item he names again is followed to its copy: by source, the copy he means.
+        const copyOf = new Map([ ...input.follows ].map(([ copy, { source, period } ]) => [ source, { id: copy, period } ]));
         await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {
             const noteId = await noteFor(fate.listItemId);
-            // A day he names takes it on its On deck ("I'd like to"), unless he needs to (onDeck: false) or it is critical.
+            // A day he names takes it on its On deck ("I'd like to"), unless he needs to (onDeck: false), it is
+            // critical, or he gave it a place on that day's list. Left unsaid, an Important or evening task keeps its place.
             const toDay = fate.to !== undefined && PERIODS.day.pattern.test(fate.to);
-            const placing = !toDay ? {} : fate.critical ? { critical: true } : fate.proposed ? (fate.onDeck ? { onDeck: true } : {}) : { onDeck: fate.onDeck !== false };
+            const source = open.items.find((item) => item.listItemId === fate.listItemId);
+            const keeps = !!source && (source.critical || EVENING_NAMES.has(normName(source.section ?? "")));
+            const placing: { onDeck?: boolean; critical?: boolean } = !toDay ? {}
+                : fate.critical ? { critical: true }
+                    : fate.onDeck === false || (fate.to === targetDay && placed.has(fate.listItemId)) ? { onDeck: false }
+                        : fate.proposed ? (fate.onDeck ? { onDeck: true } : {})
+                            : fate.onDeck === true || !keeps ? { onDeck: true } : {};
             const entry = { kind: "fate", id: fate.listItemId, ...(fate.drop ? { detail: "dropped" } : { detail: fate.to, ...("onDeck" in placing && placing.onDeck ? { onDeck: true } : {}) }) };
+            // A correction from "I'd like to" to "I need to" for the same day takes its copy off that day's deck.
+            const copy = copyOf.get(fate.listItemId);
+            if (!fate.proposed && copy && copy.period === fate.to && (placing.onDeck === false || placing.critical)) {
+                const copyNote = await noteOf(store, copy.id);
+                const [ result ] = copyNote
+                    ? await commitTasks(store, [ { noteId: copyNote, listItemId: copy.id, ...(placing.critical ? { critical: true } : {}) } ], { states })
+                    : [ { status: "skipped", reason: "not_found" } ];
+                record(written, skipped, { ...entry, onDeck: false }, result?.status === "skipped" && result.reason === "not_on_deck" ? { status: "unchanged" } : result);
+                continue;
+            }
             if (!shownItems.has(fate.listItemId)) {
                 await notShown(store, now, entry, written, skipped);
                 continue;
@@ -1043,15 +1066,18 @@ interface Already {
  * skipped. `done` holds the items of his list or the catch-up that `finished` names: by a ticket
  * key, or by anything else he called done.
  */
-function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): PlanApplyInput & { done: string[]; unmatched: string[]; follows: Follows; already: Already[] } {
-    const { read, place, follows, already } = nameReader(skipped, table, copies, collided);
+function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], table: Map<string, RefEntry>, copies?: Copies, collided?: Map<string, RefEntry[]>): PlanApplyInput & { done: string[]; unmatched: string[]; follows: Follows; already: Already[]; deckHeld: string[] } {
+    const { read, place, follows, already, held } = nameReader(skipped, table, copies, collided);
+    const deckIds = new Set(pools.deck.map((item) => item.id));
+    /** On deck items an answer matched without saying which, or whose day or place was unclear: they stay on deck. */
+    const deckHeld = new Set<string>();
     const { done, finished, unmatched } = doneOf([], input.finished, [ pools.list, pools.open, pools.deck ], [ pools.settled ], pools.candidates, read);
     const onList = [ pools.list, pools.candidates, pools.open, pools.deck ];
     const candidate = (kind: string) => (ref: { candidateId: string }) => {
         const id = read(kind, ref.candidateId, [ pools.candidates ]);
         return id === null ? [] : [ { ...ref, candidateId: id } ];
     };
-    return {
+    const answers = {
         ...input,
         done,
         finished,
@@ -1073,9 +1099,10 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
             return id === null ? [] : [ { lineId: id } ];
         }),
         onDeck: input.onDeck.flatMap((answer) => {
-            const id = read("deck", answer.listItemId, [ pools.deck ], [ pools.settled ], false, answer.drop ? "drop" : "deck");
+            const id = read("deck", answer.listItemId, [ pools.deck ], [ pools.settled ], true, answer.drop ? "drop" : "deck");
             const to = answer.to === undefined ? undefined : read("deck", answer.to, [ pools.days ]);
             const at = place("place", answer, onList);
+            if (id !== null && (to === null || at === null)) deckHeld.add(id);
             return id === null || to === null || at === null ? [] : [ { ...at, listItemId: id, ...(to === undefined ? {} : { to }) } ];
         }),
         notToday: input.notToday.flatMap(candidate("not_today")),
@@ -1086,6 +1113,31 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
             return id === null || to === null ? [] : [ { listItemId: id, to } ];
         }) } : {})
     };
+    for (const id of held) if (deckIds.has(id)) deckHeld.add(id);
+    // An On deck item named in a move, a forward or as a place is given its fate as an On deck answer,
+    // so its proposed fate never runs first: a move or place puts it on his list, a forward sends it on.
+    const answered = new Set(answers.onDeck.map((answer) => answer.listItemId));
+    const deckAnswer = (listItemId: string, fate: Omit<PlanApplyInput["onDeck"][number], "listItemId">) => {
+        if (answered.has(listItemId) || deckHeld.has(listItemId)) return;
+        answered.add(listItemId);
+        answers.onDeck.push({ listItemId, ...fate });
+    };
+    answers.move = answers.move.filter(({ listItemId, ...at }) => {
+        if (!deckIds.has(listItemId)) return true;
+        deckAnswer(listItemId, at);
+        return false;
+    });
+    if (answers.forward) {
+        answers.forward = answers.forward.filter(({ listItemId, to }) => {
+            if (!deckIds.has(listItemId)) return true;
+            deckAnswer(listItemId, to === input.date ? {} : { to });
+            return false;
+        });
+    }
+    for (const ref of [ ...answers.accept, ...answers.move, ...answers.onDeck ]) {
+        for (const anchor of [ ref.before, ref.after ]) if (anchor && deckIds.has(anchor)) deckAnswer(anchor, {});
+    }
+    return { ...answers, deckHeld: [ ...deckHeld ] };
 }
 
 /**
@@ -1122,7 +1174,8 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
             // A moved item already where he sends it is in place: its source answers unchanged.
             const copy = follows.get(id);
             const item = copy && !fate.drop && copy.period === to ? copy.source : id;
-            if (copy && item === copy.source) already.push({ text: copy.text, how: "moved" });
+            // A change of placement on that day ("I need to", critical) is no repeat: the apply moves the copy.
+            if (copy && item === copy.source && fate.onDeck !== false && !fate.critical) already.push({ text: copy.text, how: "moved" });
             return [ { ...fate, listItemId: item, ...(to === undefined ? {} : { to }) } ];
         }),
         accept: input.accept.flatMap((ref) => {
@@ -1623,22 +1676,68 @@ async function catchup(store: NoteStore, date: string, now: Date, answer: PlanAp
  * Plan my day's On deck fates: every item the `inputs` step offered gets the fate he named in
  * `answers` (onto the list, critical, to a listed day, week or month, or dropped with his reason) or
  * else the one the step proposed: onto the list while it fits, back up to the week once it doesn't.
- * Items he called done are left to the done answer. An answer naming an item already on his list is
- * `unchanged`. Answers the places he gave items put on the list, which `acceptAll` makes after the
+ * Items he called done, and items an ambiguous answer matched, are left as they are. An answer about
+ * an item an earlier call already settled is a correction, made where the item now lives: dropped,
+ * sent on, brought back from the week onto today's list, or placed; one already in place is `unchanged`. Answers the places he gave items put on the list, which `acceptAll` makes after the
  * accepts, so they can name a candidate taken in the same call.
  */
-async function onDeckFates(store: NoteStore, date: string, offer: Awaited<ReturnType<typeof planOffer>>, answers: PlanApplyInput["onDeck"], done: string[], { listedTo, settled }: { listedTo: Set<string>; settled: Set<string> }, written: Written[], skipped: Skipped[]) {
+async function onDeckFates(store: NoteStore, date: string, offer: Awaited<ReturnType<typeof planOffer>>, answers: PlanApplyInput["onDeck"], skip: string[], { listedTo, settled, follows }: { listedTo: Set<string>; settled: Set<string>; follows: Follows }, written: Written[], skipped: Skipped[]) {
     const places: PlanApplyInput["move"] = [];
+    /** Items brought back onto today's list as new copies, by the id he named them by, for their places. */
+    const moved = new Map<string, { text: string; noteId: string }>();
     const offered = new Set(offer.onDeck.map((item) => item.listItemId));
     const onList = new Set(listItems(offer.day.plan).map((item) => item.listItemId));
-    // A re-run finds what the first run did: the item on his list, dropped, or moved on.
-    for (const answer of answers.filter((a) => !offered.has(a.listItemId))) {
-        if (onList.has(answer.listItemId) || settled.has(answer.listItemId)) written.push({ kind: "deck", id: answer.listItemId, status: "unchanged" });
-        else skipped.push({ kind: "deck", id: answer.listItemId, reason: "not_offered" });
-    }
     const states = await loadStateSymbols(store);
+    // An answer about an item an earlier call already gave a fate (it is on his list now, or its copy is
+    // in a week, or it was dropped) is a correction: it is made where the item lives, or found in place.
+    for (const answer of answers.filter((a) => !offered.has(a.listItemId))) {
+        const id = answer.listItemId;
+        const copy = follows.get(id);
+        const live = onList.has(id) || !!copy;
+        await guarded({ kind: "deck", id }, skipped, async () => {
+            if (!live) {
+                if (settled.has(id) && answer.drop) written.push({ kind: "deck", id, status: "unchanged" });
+                else skipped.push({ kind: "deck", id, reason: settled.has(id) ? "not_live" : "not_offered" });
+                return;
+            }
+            const noteId = await noteOf(store, id);
+            if (!noteId) {
+                skipped.push({ kind: "deck", id, reason: "not_found" });
+                return;
+            }
+            if (answer.drop) {
+                const [ result ] = await setStates(store, "drop", [ { noteId, listItemId: id, reason: answer.drop } ], { states });
+                record(written, skipped, { kind: "fate", id, detail: "dropped" }, result);
+                return;
+            }
+            const to = answer.to !== undefined && answer.to !== date ? answer.to : copy ? date : undefined;
+            if (to !== undefined) {
+                if (answer.to !== undefined && !listedTo.has(to)) {
+                    skipped.push({ kind: "deck", id, reason: "not_a_listed_day", detail: NOT_LISTED });
+                    return;
+                }
+                if (copy?.period === to || (!copy && to === date)) {
+                    written.push({ kind: "deck", id, status: "unchanged" });
+                    return;
+                }
+                // Back from the week onto today's list, or on to where he says.
+                const onto = to !== date ? {} : answer.critical ? { critical: true } : { onDeck: false };
+                const [ result ] = await forwardTasks(store, [ { noteId, listItemId: id, to, ...onto } ], {});
+                record(written, skipped, to === date ? { kind: "deck", id } : { kind: "fate", id, detail: to, ...(PERIODS.day.pattern.test(to) ? { onDeck: true } : {}) }, result);
+                if (to === date && copy && result?.status === "moved" && (answer.first || answer.before !== undefined || answer.after !== undefined)) {
+                    moved.set(id, { text: copy.text, noteId: "" });
+                    places.push({ listItemId: id, ...(answer.first ? { first: true } : answer.before !== undefined ? { before: answer.before } : { after: answer.after }) });
+                }
+                return;
+            }
+            // On his list already: a place he gives is made after the accepts.
+            if (answer.first || answer.before !== undefined || answer.after !== undefined) {
+                places.push({ listItemId: id, ...(answer.first ? { first: true } : answer.before !== undefined ? { before: answer.before } : { after: answer.after }) });
+            } else written.push({ kind: "deck", id, status: "unchanged" });
+        });
+    }
     for (const item of offer.onDeck) {
-        if (done.includes(item.listItemId)) continue;
+        if (skip.includes(item.listItemId)) continue;
         const answer = answers.find((a) => a.listItemId === item.listItemId);
         const ref = { noteId: item.noteId, listItemId: item.listItemId };
         await guarded({ kind: "deck", id: item.listItemId }, skipped, async () => {
@@ -1666,7 +1765,7 @@ async function onDeckFates(store: NoteStore, date: string, offer: Awaited<Return
             }
         });
     }
-    return places;
+    return { places, moved };
 }
 
 /**

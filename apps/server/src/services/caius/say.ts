@@ -103,7 +103,7 @@ export interface HeldItem {
 }
 
 /** Answers whose ambiguous items are held until he says which, so `say` asks. */
-const HOLDING = new Set([ "done", "fate", "move" ]);
+const HOLDING = new Set([ "done", "fate", "move", "deck" ]);
 
 /** Words a which-question leaves out of what he said: "the export is done" asks "Which export". */
 const QUESTION_FILLER = new Set([ "the", "a", "an", "my", "is", "are", "was", "done", "finished", "first", "it", "that", "this" ]);

@@ -215,3 +215,81 @@ describe("Plan my day", () => {
         expect(again.say).not.toContain("wasn't found");
     });
 });
+
+describe("corrections and places, Wed 5 to Fri 7 Apr 2028", () => {
+    const AWED = "2028-04-05";
+    const ATHU = "2028-04-06";
+    const AFRI = "2028-04-07";
+    const AMON = "2028-04-10";
+
+    it("Wind down: a named day keeps an Important or evening task in place, a place puts a leftover on the list, and 'need to' takes a deck copy onto the list", async () => {
+        await cls.init(async () => {
+            const wed = await store.calendarDay(AWED);
+            await store.putContent(wed.noteId, critical(li("ac", "Pay the gas ~10m"))
+                + `<h2>☑️ Tasks</h2>${ul(li("aa", "Alpha task ~30m"), li("ab", "Fix the bike ~30m"))}<h3>Evening</h3>${ul(li("ae", "Fold laundry"))}`);
+        });
+        at(`${AWED}T17:30`);
+        await call("caius_winddown", { date: AWED, step: "open" });
+        const first = await call("caius_winddown_apply", {
+            date: AWED, said: "Gas and laundry Thursday. The bike first tomorrow.",
+            fates: [ { listItemId: "ac", to: ATHU }, { listItemId: "ae", to: ATHU } ], move: [ { listItemId: "ab", first: true } ]
+        });
+        expect(first.skipped).toEqual([]);
+        let thursday = await call("caius_plan", { period: "day", date: ATHU });
+        expect(thursday.critical.map((t: any) => plain(t.text))).toEqual([ "Pay the gas" ]);
+        expect(listOf(thursday)).toEqual([ "Fix the bike", "Fold laundry" ]);
+        expect(thursday.sections.find((s: any) => s.name === "Evening")?.tasks.map((t: any) => plain(t.text))).toEqual([ "Fold laundry" ]);
+        expect(deckOf(thursday)).toEqual([ "Alpha task" ]);
+
+        // "Actually I need to do Alpha tomorrow."
+        const fix = await call("caius_winddown_apply", { date: AWED, said: "Actually I need to do Alpha tomorrow.", fates: [ { listItemId: "aa", to: ATHU, onDeck: false } ] });
+        expect(fix.skipped).toEqual([]);
+        expect(fix.say).not.toContain("already moved");
+        thursday = await call("caius_plan", { period: "day", date: ATHU });
+        expect(deckOf(thursday)).toEqual([]);
+        expect(listOf(thursday)).toEqual([ "Fix the bike", "Alpha task", "Fold laundry" ]);
+        const again = await call("caius_winddown_apply", { date: AWED, said: "Actually I need to do Alpha tomorrow.", fates: [ { listItemId: "aa", to: ATHU, onDeck: false } ] });
+        expect(again.written.filter((w: any) => w.status !== "unchanged" && w.kind !== "header")).toEqual([]);
+    });
+
+    it("Plan my day: an ambiguous answer holds both items on deck, a move or forward of a deck item is its fate, and corrections act where the item now is", async () => {
+        await cls.init(async () => {
+            const fri = await store.calendarDay(AFRI);
+            await store.putContent(fri.noteId, `<h2>☑️ Tasks</h2>${ul(li("fa", "Friday thing ~3h"))}<h3>On deck</h3>${ul(
+                li("fg1", "Garage shelf one"), li("fg2", "Garage shelf two"), li("fbig", "Big thing ~2h"), li("fy", "Yodel chore"), li("fr", "Report draft")
+            )}`);
+        });
+        at(`${AFRI}T09:30`);
+        const inputs = await call("caius_planday", { date: AFRI, step: "inputs" });
+        const ref = (text: string) => inputs.data.onDeck.find((item: any) => item.text === text).ref;
+        expect(inputs.data.onDeck.map((item: any) => "list" in item.fate)).toEqual([ true, true, false, false, false ]);
+
+        const first = await call("caius_plan_apply", {
+            date: AFRI, said: "Garage shelf next week. Yodel first. Report Monday.", brief: prose,
+            onDeck: [ { listItemId: "garage shelf", to: "w2" } ], move: [ { listItemId: ref("Yodel chore"), first: true } ], forward: [ { listItemId: ref("Report draft"), to: AMON } ]
+        });
+        expect(first.skipped).toEqual([ expect.objectContaining({ kind: "deck", reason: "ambiguous" }) ]);
+        expect(first.say).toMatch(/Which garage shelf: Garage shelf one or Garage shelf two\?/);
+        let friday = await call("caius_plan", { period: "day", date: AFRI });
+        expect(deckOf(friday)).toEqual([ "Garage shelf one", "Garage shelf two" ]);
+        expect(listOf(friday)).toEqual([ "Yodel chore", "Friday thing" ]);
+        expect(deckOf(await call("caius_plan", { period: "day", date: AMON }))).toEqual([ "Report draft" ]);
+        expect(listOf(await call("caius_plan", { period: "week", date: "2028-W14" }))).toEqual([ "Big thing" ]);
+
+        // "Shelf one today, shelf two next week. Big thing back on today after all, and drop the yodel."
+        at(`${AFRI}T09:40`);
+        const fix = await call("caius_plan_apply", {
+            date: AFRI, said: "Shelf one today, shelf two next week. Big thing back on today after all, and drop the yodel.", brief: prose,
+            onDeck: [
+                { listItemId: ref("Garage shelf one") }, { listItemId: ref("Garage shelf two"), to: "w2" },
+                { listItemId: ref("Big thing"), first: true }, { listItemId: ref("Yodel chore"), drop: "not needed" }
+            ]
+        });
+        expect(fix.skipped).toEqual([]);
+        friday = await call("caius_plan", { period: "day", date: AFRI });
+        expect(deckOf(friday)).toEqual([]);
+        expect(listOf(friday)).toEqual([ "Big thing", "Friday thing", "Garage shelf one" ]);
+        expect(friday.sections.flatMap((s: any) => s.tasks).find((t: any) => t.text.startsWith("Yodel")).state).toBe("cancelled");
+        expect(listOf(await call("caius_plan", { period: "week", date: "2028-W15" }))).toEqual([ "Garage shelf two" ]);
+    });
+});

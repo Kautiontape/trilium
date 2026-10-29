@@ -237,7 +237,10 @@ export function placeForwarded(html: string, item: string, section: string | nul
     else if (!apart && isTodoList(el)) return apply(html, [insertInList(html, el, item)]);
     else if (!apart && isPlaceholder(el)) return apply(html, [{ start: el.range[0], end: el.range[1], text: newList(item) }]);
   }
-  // A new Tasks list goes above the evening, On deck and Suggested.
+  // His main Tasks heading with no list under it takes one; else a new Tasks list goes above the
+  // evening, On deck and Suggested.
+  const main = mainHeadingIndex(top);
+  if (main >= 0) return intoFound(scanSection(top, main), top[main]!.range[1]);
   const evening = top.find((e) => isHeading(e) && EVENING_NAMES.has(normName(e.text)));
   const tail = tailStart(top);
   const at = evening && (!tail || evening.range[0] < tail.range[0]) ? evening : tail;
