@@ -70,6 +70,7 @@ import {
     loadOf,
     listOf,
     mainTasks,
+    deckTasks,
     type NamedDay,
     namedDays,
     nextAsked,
@@ -1759,6 +1760,7 @@ async function placeOnList(store: NoteStore, date: string, now: Date, entry: { k
     if (!place.first && by === undefined) return;
     const plan = await readPlan(store, "day", date, now);
     const tasks = mainTasks(plan);
+    const deck = deckTasks(plan);
     const refsOf = (ref: string) => {
         const text = refs.known.get(ref)?.text ?? refs.moved.get(ref)?.text;
         return [ ref, ...(text ? keysOf(withoutMoveLinks(text)) : []) ];
@@ -1768,7 +1770,10 @@ async function placeOnList(store: NoteStore, date: string, now: Date, entry: { k
         if (exact) return exact;
         const matches = tasks.filter((task) => keysOf(withoutMoveLinks(task.text)).some((key) => refsOf(ref).includes(key)));
         const origin = refs.moved.get(ref)?.noteId;
-        return (origin ? matches.find((task) => task.text.includes(`(#root/${origin})`)) : undefined) ?? matches[0];
+        const copy = origin ? matches.find((task) => task.text.includes(`(#root/${origin})`)) : undefined;
+        // A moved item whose copy went on deck is not on his list: never another task with its words.
+        if (!copy && origin && deck.some((task) => task.text.includes(`(#root/${origin})`) && keysOf(withoutMoveLinks(task.text)).some((key) => refsOf(ref).includes(key)))) return undefined;
+        return copy ?? matches[0];
     };
     const task = find(item);
     const anchor = by === undefined ? undefined : find(by)?.listItemId ?? undefined;

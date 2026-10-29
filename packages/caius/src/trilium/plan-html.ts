@@ -191,9 +191,9 @@ export function placeTask(html: string, item: string, target: Target, position?:
  * Where `forward` puts a copy: an On deck item (`section` On deck) in the target's On deck; the
  * list under the header with the same name; for an Evening or
  * Recharge task, any evening heading, else a new `### <name>` above On deck or Suggested;
- * else the first task list outside the critical block, On deck, Suggested, Meetings and Context (an Important
+ * else the first task list outside the critical block, the evening, On deck, Suggested, Meetings and Context (an Important
  * item goes to the target's Important block instead), else a new
- * "Tasks" list (above On deck or Suggested). An untouched template's placeholder is
+ * "Tasks" list (above the evening, On deck or Suggested). An untouched template's placeholder is
  * replaced rather than left above the new list.
  */
 export function placeForwarded(html: string, item: string, section: string | null, important = false): string {
@@ -225,19 +225,24 @@ export function placeForwarded(html: string, item: string, section: string | nul
     }
   }
 
-  let inSuggested = false;
+  // The first list of his work: not On deck, Suggested, Meetings, Context or the evening, which a
+  // task of the day never falls into unasked.
+  let apart = false;
   const tracker = new ProseTracker();
   for (const el of top) {
     if (isHeading(el)) {
-      inSuggested = isTailName(el.text);
+      apart = isTailName(el.text) || EVENING_NAMES.has(normName(el.text));
       tracker.enter(el.text, levelOf(el));
     } else if (tracker.kind) continue;
-    else if (!inSuggested && isTodoList(el)) return apply(html, [insertInList(html, el, item)]);
-    else if (!inSuggested && isPlaceholder(el)) return apply(html, [{ start: el.range[0], end: el.range[1], text: newList(item) }]);
+    else if (!apart && isTodoList(el)) return apply(html, [insertInList(html, el, item)]);
+    else if (!apart && isPlaceholder(el)) return apply(html, [{ start: el.range[0], end: el.range[1], text: newList(item) }]);
   }
+  // A new Tasks list goes above the evening, On deck and Suggested.
+  const evening = top.find((e) => isHeading(e) && EVENING_NAMES.has(normName(e.text)));
   const tail = tailStart(top);
+  const at = evening && (!tail || evening.range[0] < tail.range[0]) ? evening : tail;
   const block = NEW_TASKS_SECTION + newList(item);
-  return tail ? apply(html, [insertAt(tail.range[0], block)]) : html + block;
+  return at ? apply(html, [insertAt(at.range[0], block)]) : html + block;
 }
 
 /** Headings of the evening, whose tasks aren't work, so an accepted item never lands under one unasked. */

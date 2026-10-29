@@ -217,11 +217,14 @@ describe("a place can name what the same call writes", () => {
         });
         at("2027-03-01T17:30");
         const wound = await call("caius_winddown_apply", {
-            date: "2027-03-01", fates: [ { listItemId: "s305", to: "2027-03-02" } ],
+            // A place on Tuesday's list says he needs to do them then: onto the list, not On deck.
+            date: "2027-03-01", fates: [ { listItemId: "s305", to: "2027-03-02", onDeck: false }, { listItemId: "s311", to: "2027-03-02", onDeck: false } ],
             move: [ { listItemId: "s305", first: true }, { listItemId: "s311", after: "s305" } ]
         });
         expect(wound.skipped).toEqual([]);
-        expect(await listed("2027-03-02")).toEqual([ expect.stringContaining("ZAP-305"), expect.stringContaining("ZAP-311"), "Already there", "Tidy the desk" ]);
+        expect(await listed("2027-03-02")).toEqual([ expect.stringContaining("ZAP-305"), expect.stringContaining("ZAP-311"), "Already there" ]);
+        // The desk he didn't name goes on Tuesday's On deck, as proposed.
+        expect((await call("caius_plan", { period: "day", date: "2027-03-02" })).onDeck.map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Tidy the desk" ]);
     });
 
     it("accept [{321, after: 320}, {320}]: a candidate taken later in the call is a place", async () => {

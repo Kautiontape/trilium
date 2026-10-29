@@ -67,6 +67,12 @@ describe('placing On deck', () => {
     expect(placeInMainList(TASKS + DECK, '<li>NEW</li>')).toContain('Write the spec ~1h</span></label></li><li>NEW</li></ul><h3>On deck</h3>');
   });
 
+  it('puts a task committed to a day with only an evening and On deck in a new Tasks list above the evening, never under it', () => {
+    const html = `<h3>Evening</h3>${ul(li('e1', 'Laundry'))}` + DECK;
+    expect(placeInMainList(html, '<li>NEW</li>')).toMatch(/^<h2>☑️ Tasks<\/h2><ul class="todo-list"><li>NEW<\/li><\/ul><h3>Evening<\/h3>/);
+    expect(placeForwarded(html, '<li>NEW</li>', null)).toMatch(/^<h2>☑️ Tasks<\/h2><ul class="todo-list"><li>NEW<\/li><\/ul><h3>Evening<\/h3>/);
+  });
+
   it('takes an item off the deck unchanged, and the heading with the last one', () => {
     const one = TASKS + `<h3>On deck</h3>${ul(li('d1', 'Tidy the garage'))}` + SUGGESTED;
     const taken = takeOnDeck(one, 'd1', DEFAULT_STATE_SYMBOLS);

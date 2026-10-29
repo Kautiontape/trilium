@@ -161,7 +161,9 @@ describe("a week with two notes", () => {
         expect(plan.warnings).toEqual([ `${WEEK} has a second week note ${spuriousWeek}; using the older ${realWeek}.` ]);
 
         const thursday = labelled("dateNote", THU)[0]!;
-        const before = (await call("caius_plan", { period: "day", date: THU })).sections.flatMap((s: any) => s.tasks);
+        const thursdayPlan = await call("caius_plan", { period: "day", date: THU });
+        // The wind-down above left "Write the report" on Thursday's On deck.
+        const before = [ ...thursdayPlan.sections.flatMap((s: any) => s.tasks), ...thursdayPlan.onDeck ];
         const task = before.find((t: any) => t.text.startsWith("Write the report"));
         const dry = await call("caius_forward", { items: [ { noteId: thursday, listItemId: task.listItemId, to: WEEK } ], dryRun: true });
         expect(dry.results[0]).toMatchObject({ status: "moved", dryRun: true });
