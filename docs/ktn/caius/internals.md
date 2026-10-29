@@ -40,7 +40,13 @@ The note's HTML becomes markdown only to be parsed: text is not escaped (so `~2h
 
 ### Sections, critical, Suggested
 
-Each task gets a `section` (nearest heading above) and a `sectionKind`: `slot` for Morning / Afternoon / Evening, `area` for Foundation / Growth / Recharge, otherwise `group`. Names compare ignoring case, emoji and spacing. A task inside an Important block is critical: the derived markdown gets a trailing `!!!` (tier 3) and nothing is written back. Tasks under Suggested lose their checkbox in what the scanner sees, so they reach no horizon and no capacity.
+Each task gets a `section` (nearest heading above) and a `sectionKind`: `slot` for Morning / Afternoon / Evening, `area` for Foundation / Growth / Recharge, `deck` for On deck, otherwise `group`. Names compare ignoring case, emoji and spacing. A task inside an Important block is critical: the derived markdown gets a trailing `!!!` (tier 3) and nothing is written back. Tasks under Suggested lose their checkbox in what the scanner sees, so they reach no horizon and no capacity.
+
+### On deck
+
+Tasks under the On deck heading keep their checkbox, so the scanner, the lanes, `liveKeys` and the duplicate check all see them. `onDeckLines` (`sections.ts`) records their lines in `TriliumDoc.onDeck`, leaving out a line in an Important block; `openTasks` marks each `onDeck`. `buildPlanView` takes them out of `sections`, `critical`, `top3` and the capacity counts into `PlanView.onDeck`, and adds `capacity.onDeckMinutes` (live, a task with live sub-items through its sub-items, 30 for one without an estimate). So everything built from `sections` (`mainTasks`, `listOf`, `listItems`, the drawing, the picks, `workMinutes`) is the committed list. What counts leftovers adds them back: `leftovers` and `topLevel` in `daily.ts`, which the catch-up and the held-item reads use.
+
+Placement (`plan-html.ts`): `placeTask` with `{ kind: 'onDeck' }` adds to the On deck list, or creates `<hN>On deck</hN>` just above Suggested at its level (`newHeaderLevel` without one), and never replaces the template placeholder. A section Caius creates goes above On deck (`tailStart`); `placeForwarded`'s fallback skips On deck, Suggested and evening lists, and a new `☑️ Tasks` list goes above the evening, On deck and Suggested; `mainHeadingIndex` and `newHeaderLevel` ignore On deck. `insertCopy` (`forward-html.ts`) puts the copy on the target's On deck when `onDeck` is true, or, left out, when it comes from On deck and `toDay`; `critical` puts it in the Important block. `takeOnDeck` lifts a top-level live item off the deck unchanged, with its list and heading when it was the last; `commitTasks` (`plan.ts`) places it at the end of the main list or in the Important block and then, in the same write, first, before or after an item (`moveInMainList`). An item already off the deck is `unchanged`.
 
 ### Meetings and Context
 
@@ -190,6 +196,8 @@ The lock is never taken twice by one call, since it isn't re-entrant.
 
 **Lanes in the wind-down.** `open` works out lanes from noon of `date`, not from now, so a wind-down run the next morning still treats `date` as today.
 
+**On deck in the steps.** `stillOpen` proposes `dayFate`: the target day's On deck, or the plain forward for an Important or evening task. The `next` step adds `deckItems`, `meetingsOf` and `loadOf` (the load, with `incoming` from the items the open step proposes for the target day, the evening's left out). `planOffer` adds `deckOffer`, the proposed fates against the focus target, and the `inputs` step `yesterdayOf`. `fitted` never cuts `onDeck` or `meetings`. The apply reads the same offer: `onDeckFates` (`apply.ts`) gives each item his fate or its proposed one before the accepts, and hands the places he gave to `acceptAll`'s moves. `placeOnList` skips a moved item whose copy went on deck rather than take another task with its words.
+
 **`caius_brief_write`** (`brief.ts`) finds the brief as the push script does: a child of the day note labelled `#morningBrief=<date>` without `#morningBriefPage` or `#morningBriefRevision`. It reads the day note's children rather than searching, since a search leaves protected notes out. It finds the header as the brief's child titled `Header`. A protected brief or Header, or a protected child of the brief whose title can't be read, gets `{ error: "bad_request" }` before anything is written. `#caiusPlannedAt` is set only after all three content writes went through, so a write that lost its compare-and-swap leaves the previous plan's time, and the answer's `plannedAt` is null. `NoteStore` can neither create a child note nor set a label in place, so two helpers sit beside `putAttachment` in `store.ts`:
 - `createChildNote` creates the note through `noteService.createNewNote`.
 - `setLabel` sets a label through `BNote.setLabel`, so a re-run replaces `#caiusPlannedAt` instead of adding a second one.
@@ -199,6 +207,10 @@ Each runs in its own transaction. Content goes through the store's compare-and-s
 **The apply tools** (`apply.ts`). Each takes the lock once. `dayRead`, the standing note's coordinates (`placeOf`, under its own short lock) and the forecast are read first, outside it. Under the lock the apply reads the step data again through the functions the steps use (`planOffer`, `nextOffer`, `closingLines`, `stillOpen`, `catchupOf`), so an id resolves against exactly what the step offered, and against every candidate the day could offer, for a re-run after the brief moved `#caiusPlannedAt`. The writes go through the library and the lock-free helpers in `writes.ts` (`contextAddOn`, `contextKeepOn`, `skipCatchupOn`, `finishedOn`, `drawHeader`, `weekPlace`), which the single-purpose tools call too; the entry points never call one another, since the lock isn't re-entrant. Each library result is filed by `record()`: a skip as `duplicate`, `already_moved`, `already_done` or `already_cancelled` is `unchanged`, which is what makes a re-run write nothing. The labels it sets on day notes: `#caiusNotToday`, `#caiusAsked` (line, overlap and heavy-day ids), `#caiusWoundDown`.
 
 **Strings.** The questions, the reasons, the date line and the pick line are in the server catalogue under `caius.brief.*` and `caius.daily.*`. The `(until …)` suffix is not, because `parseContext` reads it back in English.
+
+## Tool gating
+
+`claude_agent.ts` treats a conversation whose first user message is an opener as Caius's (`isCaiusConversation`): its system prompt gains `CAIUS_PROMPT`, which names the agent Caius and has it load the skill, and its MCP server and `disallowedTools` leave out only the generic note tools that write (`genericNoteWrites`). Every Caius tool stays.
 
 ## Not done
 
