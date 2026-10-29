@@ -525,10 +525,11 @@ export function createCaiusService(
             });
         },
 
-        assignIds: ({ dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
+        assignIds: ({ noteId, dryRun, html }: AssignIdsInput) => withCaiusLock("caius_assign_ids", async () => {
             const docs = await journalDocs(store);
             const results: AssignIdsResult[] = [];
-            for (const doc of docs ?? []) {
+            // `noteId` keeps it to one note, as a wind-down does for a task he named that has no id.
+            for (const doc of (docs ?? []).filter((d) => !noteId || d.noteId === noteId)) {
                 const result = await assignIdsInNote(store, doc.noteId, doc.path, { dryRun, html });
                 if (result) {
                     results.push(result);

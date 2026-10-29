@@ -778,8 +778,9 @@ export class ClaudeAgentProvider implements LlmProvider {
             // over its stdio control channel — no localhost HTTP endpoint, no
             // open port, and no dependency on the user-facing `mcpEnabled`
             // toggle (which exists to expose notes to *external* clients).
-            // In Plan my day and Wind down every Journal write goes through the Caius apply tools,
-            // and the agent reads only through the steps, so it asks only the questions they return.
+            // In Plan my day and Wind down every Journal write goes through the Caius apply tools, but
+            // for a task he asks to move that the steps didn't offer, and the agent reads the day only
+            // through the steps, so it asks only the questions they return.
             // The server leaves those tools out, so the agent never calls one and meets a denial.
             const denied = caius ? [ ...await genericNoteWrites(), ...CAIUS_CONVERSATION_DISALLOWED ] : [];
             options.mcpServers = {
@@ -800,11 +801,14 @@ const CAIUS_OPENER = /^(?:Plan my day|Wind down) \d{4}-\d{2}-\d{2}$/;
 
 /**
  * The Caius tools a Plan my day or Wind down conversation must not use: all but the steps
- * (`caius_planday`, `caius_winddown`) and the apply tools (`caius_plan_apply`, `caius_winddown_apply`).
+ * (`caius_planday`, `caius_winddown`), the apply tools (`caius_plan_apply`, `caius_winddown_apply`)
+ * and what moving a task he names takes. The apply only moves what the steps offered; a task he
+ * asks to move that they didn't is found with `caius_plan` or `caius_open`, given an id with
+ * `caius_assign_ids` when it has none, and moved with `caius_forward`.
  */
 const CAIUS_CONVERSATION_DISALLOWED = [
-    "caius_plan", "caius_open", "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
-    "caius_set_state", "caius_forward", "caius_assign_ids", "caius_context_add", "caius_context_keep", "caius_meetings",
+    "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
+    "caius_set_state", "caius_context_add", "caius_context_keep", "caius_meetings",
     "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
 ];
 

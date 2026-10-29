@@ -282,6 +282,7 @@ const reads = {
         date: periodKey("day").describe("The day to gather Context for, YYYY-MM-DD")
     }),
     assignIds: z.object({
+        noteId: z.string().min(1).optional().describe("Only this Journal note. Without it, every Journal note."),
         dryRun: z.boolean().default(true).describe("Report what would change without writing anything. Defaults to true; pass false to write."),
         html
     })
