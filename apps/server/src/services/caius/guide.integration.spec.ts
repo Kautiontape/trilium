@@ -29,7 +29,7 @@ const WEEK = "2028-W10";
 /** A Wednesday with nothing open around it. */
 const QUIET = "2028-03-22";
 
-const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: "feed_0" });
+const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
 const calendars: Record<string, CalendarEvent[]> = {
     [THU]: [ event("10:00", "10:15", "Standup"), event("13:00", "14:00", "Design review"), event("15:00", "15:30", "Pickup for HT") ]
 };
