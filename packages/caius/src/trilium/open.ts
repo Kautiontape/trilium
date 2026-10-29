@@ -19,6 +19,8 @@ export interface OpenTask {
   state: 'open' | 'in_progress';
   horizon: string | null;
   text: string;
+  /** Minutes from its `~est` token, null without one. */
+  estMinutes: number | null;
   /** The parent task's text, when this is a sub-item. */
   parent: string | null;
   /** The parent task's list item id, when this is a sub-item and the parent has one. */
@@ -59,6 +61,7 @@ export function openTasks(docs: TriliumDoc[], result: ScanResult): OpenTask[] {
       state: t.state as OpenTask['state'],
       horizon: t.horizon,
       text: t.text,
+      estMinutes: t.estMinutes,
       parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
       parentListItemId: parentItemId(
         { itemIds: idsByPath.get(t.file) ?? new Map() },
@@ -109,6 +112,7 @@ export function suggestedTasks(docs: TriliumDoc[], now: Date): OpenTask[] {
         state: t.state as OpenTask['state'],
         horizon: null,
         text: t.text,
+        estMinutes: t.estMinutes,
         parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
         parentListItemId: parentItemId(doc, t.parentRowid === null ? undefined : taskByRowid.get(t.parentRowid)),
         section,

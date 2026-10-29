@@ -127,7 +127,10 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
 
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
-        const { facts, candidates, jira, asks } = await deps.locked("caius_winddown", () => nextOffer(deps.store, targetDay, deps.now, read));
+        const { facts, candidates, jira, asks, incoming } = await deps.locked("caius_winddown", async () => ({
+            ...await nextOffer(deps.store, targetDay, deps.now, read),
+            incoming: (await stillOpen(deps.store, date, targetDay)).items.filter((item) => "forward" in item.fate && item.fate.forward === targetDay && !isEveningName(item.section))
+        }));
         const { plannedMinutes, candidateMinutes, over, overlaps, askEvening } = asks;
         const targetMinutes = read.inputs.capacity.targetMinutes;
         const evening = { hasTask: facts.evening };
@@ -144,8 +147,11 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
             };
         return reply(read.standing, {
             list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId),
+            onDeck: deckItems(facts.plan),
+            meetings: meetingsOf(read),
             candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId),
             capacity: capacityOf(read, plannedMinutes),
+            load: loadOf(read, facts.plan, targetDay, incoming.reduce((sum, item) => sum + item.minutes, 0)),
             overlaps, evening, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
     }
@@ -360,8 +366,11 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
     const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
-        const offer = await deps.locked("caius_planday", () => planOffer(deps.store, date, deps.now, read));
-        const { day: facts, plannedAt, candidates, jira, headsUp, overlaps, forwardSuggestion, fits } = offer;
+        const { offer, yesterday } = await deps.locked("caius_planday", async () => ({
+            offer: await planOffer(deps.store, date, deps.now, read),
+            yesterday: await yesterdayOf(deps.store, date, deps.now)
+        }));
+        const { day: facts, plannedAt, candidates, jira, headsUp, overlaps, forwardSuggestion, fits, onDeck } = offer;
         // What he already answered in this conversation is not asked again.
         // A kept line can be given by its words, its lineId or its ref.
         const kept = new Set(answered?.keep ?? []);
@@ -373,7 +382,9 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             : { lines: null, current: facts.plan.meetings, changed: false };
         const nextDay = dayKey(nextWorkday(localDay(date)));
         // The day being planned is in the week its lines go to, so the question never says "next week".
+        // On deck comes first: it is what he meant to do today.
         const questions = [
+            ...(onDeck.length ? [ deckQuestion(onDeck) ] : []),
             ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
             ...(forwardSuggestion ? [ t("caius.daily.heavy", {
                 percent: Math.round(read.inputs.capacity.bookedRatio * 100), task: forwardSuggestion.text, day: weekdayName(nextDay)
@@ -382,7 +393,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered }:
             ...(askEvening ? [ t("caius.daily.evening") ] : [])
         ];
         return reply(read.standing, {
-            plannedAt, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, overlaps,
+            yesterday, plannedAt, onDeck, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, overlaps,
             capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x", (line) => line.lineId),
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, evening: offer.evening, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
@@ -460,7 +471,8 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
         ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: dayKey(nextWorkday(localDay(date))) }
         : null;
     const labels = list.filter((task) => !task.evening).map((task) => task.label);
-    const fits = heavy && !over && labels.length
+    const onDeck = deckOffer(day.plan, date, read);
+    const fits = heavy && !over && labels.length && !onDeck.length
         ? t("caius.daily.heavy_fits", { tasks: labels.length > 1 ? t("caius.daily.list_and", { head: labels.slice(0, -1).join(", "), last: labels.at(-1) }) : labels[0], count: labels.length })
         : null;
     // His answer to an overlap is news for the day it is about, as a line whose range starts that day is.
@@ -473,8 +485,64 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
         overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID), offeredAsks: offeredAsks(fresh, candidates),
-        evening: eveningOf(day, read, askedToday)
+        evening: eveningOf(day, read, askedToday), onDeck
     };
+}
+
+/**
+ * The day's On deck as Plan my day offers it, first: each live item with the fate the plan proposes,
+ * `{ list: true }` while the committed work and the items before it stay within the focus target,
+ * `{ forward: <week> }` (back up to the week) once one doesn't. Every item gets a fate, so nothing
+ * stays on deck past planning.
+ */
+export function deckOffer(plan: PlanView, date: string, read: DayRead) {
+    const week = isoWeekKey(utcDay(date));
+    let room = read.inputs.capacity.targetMinutes - plan.capacity.totalMinutes;
+    return deckItems(plan).map((item) => {
+        const fits = item.minutes <= room;
+        if (fits) room -= item.minutes;
+        return { ...item, fate: fits ? { list: true as const } : { forward: week } };
+    });
+}
+
+/** The one On deck question, naming each item and where it is proposed to go. */
+export function deckQuestion(items: { text: string; fate: { list: true } | { forward: string } }[]): string {
+    const quote = (list: { text: string }[]) => {
+        const quoted = list.map((item) => `'${item.text}'`);
+        return quoted.length > 1 ? t("caius.daily.list_and", { head: quoted.slice(0, -1).join(", "), last: quoted.at(-1) }) : quoted[0] ?? "";
+    };
+    const fit = items.filter((item) => "list" in item.fate);
+    const rest = items.filter((item) => !("list" in item.fate));
+    if (!rest.length) return t("caius.daily.deck_fits", { items: quote(fit), count: fit.length });
+    if (!fit.length) return t("caius.daily.deck_none", { items: quote(rest), count: rest.length });
+    return t("caius.daily.deck_some", { fits: quote(fit), rest: quote(rest), count: rest.length });
+}
+
+/**
+ * How the last workday before `date` closed, for Plan my day to open with: its top-level tasks done,
+ * moved on, dropped and left open (On deck included), whether it was wound down or planned, and
+ * what sits on `date`'s On deck now. `sentence` says it in words. The caller holds the lock.
+ */
+export async function yesterdayOf(store: NoteStore, date: string, now: Date) {
+    const day = dayKey(lastWorkday(localDay(date)));
+    const note = await findPeriodNote(store, "day", day);
+    const today = await readPlan(store, "day", date, now);
+    const landed = deckTasks(today).map((task) => plainText(withoutMoveLinks(task.text)));
+    if (!note || note.type !== "text" || note.isProtected) {
+        return { date: day, done: 0, moved: 0, dropped: 0, open: 0, woundDown: false, planned: false, onDeck: landed, sentence: t("caius.daily.yesterday_empty", { day: weekdayName(day) }) };
+    }
+    const tasks = [ await readPlan(store, "day", day, now), ...await readDuplicatePlans(store, "day", day, now) ].flatMap(topLevel);
+    const moved = tasks.filter((task) => task.state === "tombstone" || SCHEDULED.test(task.text)).length;
+    const done = tasks.filter((task) => task.state === "done" && !SCHEDULED.test(task.text)).length;
+    const dropped = tasks.filter((task) => task.state === "cancelled").length;
+    const open = tasks.filter((task) => isLive(task)).length;
+    const woundDown = label(note, WOUND_DOWN_LABEL) !== undefined;
+    const planned = !!await findBrief(store, note.noteId, day);
+    const counts = { day: weekdayName(day), done, moved, dropped, open };
+    const sentence = !tasks.length
+        ? t("caius.daily.yesterday_empty", { day: weekdayName(day) })
+        : [ t("caius.daily.yesterday", counts), t(woundDown ? "caius.daily.yesterday_wound_down" : "caius.daily.yesterday_not_wound_down") ].join(" ");
+    return { date: day, done, moved, dropped, open, woundDown, planned, onDeck: landed, sentence };
 }
 
 /**
@@ -665,7 +733,8 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         if (dayNote.type !== "text" || dayNote.isProtected) break;
         // A second, newer note for the day is not the day's note, but its open tasks are the day's leftovers too.
         const plans = [ await readPlan(store, "day", key, now), ...await readDuplicatePlans(store, "day", key, now) ];
-        const live = plans.flatMap(mainTasks).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
+        // An On deck task that was never planned is a leftover like any other.
+        const live = plans.flatMap(leftovers).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
         const woundDown = label(dayNote, WOUND_DOWN_LABEL) !== undefined;
         const skippedHere = dayNote.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL);
         if (!live.length) {
@@ -688,7 +757,7 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         if (!kind || (kind === "day" ? period >= date : periodStart(period) > date)) continue;
         const periodNote = await findPeriodNote(store, kind, period);
         if (!periodNote || periodNote.type !== "text" || periodNote.isProtected) continue;
-        for (const task of mainTasks(await readPlan(store, kind, period, now))) {
+        for (const task of leftovers(await readPlan(store, kind, period, now))) {
             if (!task.listItemId || holding.get(task.listItemId)?.period !== period || held.some((h) => h.listItemId === task.listItemId)) continue;
             held.push({ noteId: task.noteId, listItemId: task.listItemId, text: task.text, section: task.section, critical: task.critical, period });
             if (kind === "day" && !days.includes(period)) days.push(period);
@@ -760,9 +829,9 @@ export async function periodNotesWith(store: NoteStore, name: string): Promise<S
     return notes;
 }
 
-/** A plan's top-level tasks in any state. */
+/** A plan's top-level tasks in any state, On deck included. */
 function topLevel(plan: PlanView): PlanTask[] {
-    return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].filter((task) => task.parent === null && task.text.trim() !== "");
+    return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ].filter((task) => task.parent === null && task.text.trim() !== "");
 }
 
 /**
@@ -787,9 +856,12 @@ function carryLines(inForce: ContextEntry[], day: string, dayContext: ContextEnt
  */
 export const MAX_REPLY_CHARS = 20_000;
 
+/** Lists a step never cuts: every On deck item needs its fate, and an answer about the meetings needs them all. */
+const WHOLE = new Set([ "onDeck", "meetings" ]);
+
 /**
  * `reply` with its longest `data` lists cut from the end until its JSON is at most
- * `MAX_REPLY_CHARS`, and `data.omitted` counting what each list lost.
+ * `MAX_REPLY_CHARS`, and `data.omitted` counting what each list lost. `onDeck` and `meetings` stay whole.
  */
 export function fitted<R extends { data: Record<string, unknown> }>(reply: R): R {
     let size = JSON.stringify(reply).length;
@@ -798,7 +870,7 @@ export function fitted<R extends { data: Record<string, unknown> }>(reply: R): R
     const omitted: Record<string, number> = {};
     while (size > MAX_REPLY_CHARS) {
         const [ field, list ] = Object.entries(data)
-            .filter((entry): entry is [ string, unknown[] ] => Array.isArray(entry[1]) && entry[1].length > 0)
+            .filter((entry): entry is [ string, unknown[] ] => Array.isArray(entry[1]) && entry[1].length > 0 && !WHOLE.has(entry[0]))
             .sort((a, b) => JSON.stringify(b[1]).length - JSON.stringify(a[1]).length)[0] ?? [];
         if (!field || !list) break;
         const cut = Math.max(1, Math.ceil(list.length * (size - MAX_REPLY_CHARS + 100) / JSON.stringify(list).length));
@@ -1059,14 +1131,23 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
         .sort((a, b) => GROUPS.indexOf(group(a) ?? "") - GROUPS.indexOf(group(b) ?? ""))
         .map((task) => ({
             group: group(task), noteId: task.noteId, listItemId: task.listItemId, text: task.text, period: task.period,
-            section: task.section, critical: task.critical,
-            fate: group(task) !== "week" ? { forward: targetDay } : week === targetWeek ? { stay: week } : { forward: targetWeek }
+            section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
+            fate: group(task) !== "week" ? dayFate(task, targetDay) : week === targetWeek ? { stay: week } : { forward: targetWeek }
         }));
     const oldestDate = older.map((task) => periodStart(task.period)).sort()[0] ?? null;
     return { items, olderCount: older.length, oldestDate };
 }
 
 const GROUPS = [ "today", "recent", "week" ];
+
+/**
+ * The fate a wind-down proposes for a day's leftover: the target day's On deck, since he would like
+ * to get to it then but hasn't committed to it. An Important task stays important, and an evening
+ * task stays in the evening, which has its own time and isn't weighed against the work.
+ */
+function dayFate(task: { critical: boolean; section: string | null }, targetDay: string): { forward: string; onDeck?: true } {
+    return task.critical || isEveningName(task.section) ? { forward: targetDay } : { forward: targetDay, onDeck: true };
+}
 
 /**
  * Where a wind-down that closes on `targetDay` proposes an open item of `period` goes: a week item to
@@ -1127,12 +1208,62 @@ function onOffer<C extends { candidateId: string; kind: string }>(candidates: C[
         && !(candidate.kind === "week" && facts.putOffBefore.has(candidate.candidateId)));
 }
 
-/** The live top-level tasks of a plan, the Important block first, then in his order. */
+/** The live top-level tasks of a plan, the Important block first, then in his order. On deck is not on his list: see `deckTasks`. */
 export function mainTasks(plan: PlanView): PlanTask[] {
     return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].filter((task) => isLive(task) && task.parent === null);
 }
 
+/** The live top-level tasks of a plan's On deck, in order. */
+export function deckTasks(plan: PlanView): PlanTask[] {
+    return plan.onDeck.filter((task) => isLive(task) && task.parent === null);
+}
+
+/** Every live top-level task of a plan a day leaves behind: his list, then On deck. */
+export function leftovers(plan: PlanView): PlanTask[] {
+    return [ ...mainTasks(plan), ...deckTasks(plan) ];
+}
+
+/** A day's On deck as the steps show it: each live item's id, plain text and minutes (30 without an estimate), with its ref. */
+export function deckItems(plan: PlanView) {
+    return withRefs(deckTasks(plan).flatMap((task) => task.listItemId
+        ? [ { listItemId: task.listItemId, noteId: task.noteId, text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE } ]
+        : []), "o", (item) => item.listItemId);
+}
+
+/** The day's meetings as the steps show them, titles and times: every event he hasn't declined, all-day ones marked. */
+export function meetingsOf(read: DayRead): { start: string; end: string; title: string; allDay?: true }[] {
+    return read.inputs.calendar.filter((e) => !e.declined)
+        .map((e) => ({ start: e.start, end: e.end, title: e.title, ...(e.allDay ? { allDay: true as const } : {}) }));
+}
+
+/**
+ * A day's load against its focus target: the meetings' booked time, the committed list's work, On
+ * deck and `incoming` (what a wind-down's proposed fates would add), with `over` when the list, On
+ * deck and the incoming work together pass the target. Advice for the agent to push back with,
+ * never a block. Null when the calendar couldn't be read, since the target is then a guess.
+ */
+export function loadOf(read: DayRead, plan: PlanView, day: string, incoming = 0) {
+    if (failedCalendar(read)) return null;
+    const meetings = read.inputs.capacity.bookedMinutes;
+    const listMinutes = plan.capacity.totalMinutes;
+    const onDeckMinutes = plan.capacity.onDeckMinutes;
+    const targetMinutes = read.inputs.capacity.targetMinutes;
+    const overMinutes = Math.max(0, listMinutes + onDeckMinutes + incoming - targetMinutes);
+    const words = {
+        day: weekdayName(day), meetings: formatHours(meetings), list: formatHours(listMinutes), deck: formatHours(onDeckMinutes + incoming),
+        focus: focusText(focusOf(read.inputs.capacity)), over: formatHours(overMinutes)
+    };
+    return {
+        meetingMinutes: meetings, listMinutes, onDeckMinutes, incomingMinutes: incoming, targetMinutes,
+        over: overMinutes > 0, overMinutes,
+        sentence: t(overMinutes > 0 ? "caius.daily.load_over" : "caius.daily.load_line", words)
+    };
+}
+
 const isLive = (task: PlanTask) => task.state === "open" || task.state === "in_progress";
+
+/** Whether a heading is the evening, whose tasks are not work. */
+const isEveningName = (name: string | null) => EVENING_SECTIONS.has(normName(name ?? ""));
 
 /**
  * A candidate as the step reports it: its `candidateId` (its first key: the ticket, or a hash of a
