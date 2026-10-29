@@ -19,7 +19,7 @@ import MaskedIcon from "../../react/MaskedIcon.js";
 import AddProviderModal, { type LlmProviderConfig, type ProviderStep } from "../options/llm/AddProviderModal.js";
 import { providerIconUrl } from "../options/llm/provider_icons.js";
 import { computeContextUsage } from "./chat_context_usage.js";
-import { insertNewBlock as insertNewBlockCommand, isSelectionInCodeBlock, outdentListItemAtStart } from "./chat_input_editing.js";
+import { insertNewBlock as insertNewBlockCommand, isSelectionInCodeBlock, leaveBlockQuoteFromEmptyLine, outdentListItemAtStart } from "./chat_input_editing.js";
 import { editorHtmlToMarkdown } from "./chat_input_markdown.js";
 import { shortModelName } from "./model_name.js";
 import ReasoningEffortDropdown from "./ReasoningEffortDropdown.js";
@@ -357,7 +357,7 @@ export default function ChatInputBar({
                                 // into newlines, so multi-line snippets can be typed.
                                     if (isSelectionInCodeBlock(editor)) return;
                                     // Shift+Enter builds blocks — a new list item / paragraph, or exiting an empty
-                                    // list item / code-block line — so lists and blocks can be built while plain
+                                    // list item / quote line / code-block line — so lists and blocks can be built while plain
                                     // Enter submits. Normally handled by the keydown keystroke below; this is a
                                     // fallback for the rare case where the keystroke doesn't cancel the event.
                                     if (data.isSoft) {
@@ -386,8 +386,10 @@ export default function ChatInputBar({
                             // bullet-less continuation block — confusing in a simple chat input. The list handles
                             // this on the `delete` view event (fired from `beforeinput`), so intercepting on the
                             // earlier `keydown` and cancelling suppresses that event before the list can merge.
+                            // Likewise Backspace on an empty quote line leaves the quote, where CKEditor would
+                            // merge the line back into the quoted one above it.
                             editor.keystrokes.set("Backspace", (_keyEvtData, cancel) => {
-                                if (outdentListItemAtStart(editor)) cancel();
+                                if (outdentListItemAtStart(editor) || leaveBlockQuoteFromEmptyLine(editor, { backspace: true })) cancel();
                             });
                             // Capture pasted images at the DOM layer so CKEditor doesn't
                             // try to embed them as base64 data URLs inside the editor.

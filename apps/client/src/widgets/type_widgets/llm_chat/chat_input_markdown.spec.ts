@@ -26,6 +26,14 @@ describe("editorHtmlToMarkdown", () => {
         expect(editorHtmlToMarkdown("<blockquote><p>a</p><p>b</p></blockquote>")).toBe("> a\n>\n> b");
     });
 
+    it("ends a quote at its last line, so a line typed after it is not quoted", () => {
+        expect(editorHtmlToMarkdown("<blockquote><p>Quoted quoted quoted</p></blockquote><p>normal normal normal</p>"))
+            .toBe("> Quoted quoted quoted\n\nnormal normal normal");
+        // A quote split around a line taken out of it stays two quotes.
+        expect(editorHtmlToMarkdown("<blockquote><p>a</p></blockquote><p>b</p><blockquote><p>c</p></blockquote>"))
+            .toBe("> a\n\nb\n\n> c");
+    });
+
     it("keeps hard breaks between quote lines so the attribution stays on its own line", () => {
         // <br> lines (as the quote-reply feature inserts) keep their `  ` markdown hard break, so
         // multi-line quotes and the trailing "Show quote source" attribution don't collapse.

@@ -15,7 +15,7 @@ export function isSelectionInCodeBlock(editor: CKTextEditor): boolean {
  * adding another block — the chat routes these gestures through keydown keystrokes, which bypass the
  * List/BlockQuote/CodeBlock handlers that would natively do this on the `enter` view event:
  *  - on an EMPTY list item → leave the list (`outdentList` → paragraph);
- *  - in a quote, after two trailing blank lines → leave the quote; otherwise add a new block;
+ *  - on an EMPTY line in a quote → leave the quote (that line becomes a normal paragraph);
  *  - in a code block, after two trailing blank lines → leave the block; otherwise add a newline;
  *  - otherwise → split into a new list item / paragraph (`enter`).
  *
@@ -31,7 +31,7 @@ export function insertNewBlock(editor: CKTextEditor): void {
         editor.execute("outdentList");
         return;
     }
-    if (leaveBlockQuoteAfterBlankLines(editor)) {
+    if (leaveBlockQuoteFromEmptyLine(editor)) {
         return;
     }
     if (isSelectionInCodeBlock(editor)) {
@@ -102,33 +102,29 @@ function leaveCodeBlockAfterBlankLines(editor: CKTextEditor): boolean {
 }
 
 /**
- * When the caret is in an empty block inside a quote whose previous sibling is also an empty block (two
- * trailing blank lines), leave the quote: consume both blank lines and place the caret in a paragraph
- * after the quote. Mirrors the code-block rule so a single blank line can be kept for spacing. Returns
- * whether it left the quote.
+ * When the caret is on an empty line (an empty paragraph) inside a quote, take that line out of the
+ * quote: it becomes a normal paragraph after it, the quote is split around it when the line sits in
+ * the middle, and an emptied quote goes away. CKEditor does this natively only on plain Enter and on
+ * Backspace in the quote's *first* block; the chat routes Shift/Ctrl/Alt+Enter and Backspace through
+ * keystrokes, so both ways out work on any empty quote line: `> quoted`, Shift+Enter, Backspace (or
+ * Shift+Enter again), and what follows is no longer quoted. With `backspace`, the quote's first line
+ * is left to CKEditor, which leaves the quote too, or takes back the `> ` autoformat just typed.
+ * Returns whether it left the quote.
  */
-function leaveBlockQuoteAfterBlankLines(editor: CKTextEditor): boolean {
+export function leaveBlockQuoteFromEmptyLine(editor: CKTextEditor, { backspace = false } = {}): boolean {
     const selection = editor.model.document.selection;
-    if (!selection.isCollapsed || !editor.commands.get("blockQuote")?.value)
-        return false;
     const block = selection.getFirstPosition()?.parent;
-    if (!block?.is("element") || !block.isEmpty) return false;
-    const prevBlock = block.previousSibling;
-    const quote = block.parent;
     if (
-        !prevBlock?.is("element") ||
-        !prevBlock.isEmpty ||
-        !quote?.is("element", "blockQuote")
+        !selection.isCollapsed ||
+        !block?.is("element", "paragraph") ||
+        !block.isEmpty ||
+        block.hasAttribute("listItemId") ||
+        !block.parent?.is("element", "blockQuote") ||
+        (backspace && !block.previousSibling)
     ) {
         return false;
     }
-    editor.model.change((writer) => {
-        writer.remove(prevBlock);
-        writer.remove(block);
-        const paragraph = writer.createElement("paragraph");
-        writer.insert(paragraph, writer.createPositionAfter(quote));
-        writer.setSelection(paragraph, "in");
-        if (quote.isEmpty) writer.remove(quote);
-    });
+    if (!editor.commands.get("blockQuote")?.isEnabled) return false;
+    editor.execute("blockQuote", { forceValue: false });
     return true;
 }
