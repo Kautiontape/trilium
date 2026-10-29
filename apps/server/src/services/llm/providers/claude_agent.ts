@@ -725,10 +725,13 @@ export class ClaudeAgentProvider implements LlmProvider {
         // no-parts case (the markdown hints are always appended).
         /* v8 ignore next */
         const prompt = buildSystemPrompt(messages, promptConfig) ?? "";
+        if (!isCaiusConversation(messages)) return prompt;
+        // A Plan my day or Wind down conversation is Caius's: the skill sheet says who he is and how the rituals go.
+        const caius = `${prompt}\n\n${CAIUS_PROMPT}`;
         // The CLI tells the agent the real date; in dev the Caius clock can be elsewhere, so a
         // Plan my day or Wind down conversation is told the clock's date too.
-        const clock = isCaiusConversation(messages) ? clockOverride() : null;
-        return clock ? `${prompt}\n\nToday's date is ${dayOf(clock)}, by the planning clock.` : prompt;
+        const clock = clockOverride();
+        return clock ? `${caius}\n\nToday's date is ${dayOf(clock)}, by the planning clock.` : caius;
     }
 
     /** Options shared by every agent invocation. */
@@ -778,11 +781,11 @@ export class ClaudeAgentProvider implements LlmProvider {
             // over its stdio control channel — no localhost HTTP endpoint, no
             // open port, and no dependency on the user-facing `mcpEnabled`
             // toggle (which exists to expose notes to *external* clients).
-            // In Plan my day and Wind down every Journal write goes through the Caius apply tools, but
-            // for a task he asks to move that the steps didn't offer, and the agent reads the day only
-            // through the steps, so it asks only the questions they return.
+            // In Plan my day and Wind down every Journal write goes through the Caius tools: the agent
+            // has all of them, to follow whatever he asks in the middle of the ritual, but none of the
+            // generic note tools that write, so a task never changes behind Caius's markup and guards.
             // The server leaves those tools out, so the agent never calls one and meets a denial.
-            const denied = caius ? [ ...await genericNoteWrites(), ...CAIUS_CONVERSATION_DISALLOWED ] : [];
+            const denied = caius ? await genericNoteWrites() : [];
             options.mcpServers = {
                 trilium: { type: "sdk", name: "trilium", instance: await createMcpServer({ omit: denied }) }
             };
@@ -799,18 +802,8 @@ export class ClaudeAgentProvider implements LlmProvider {
 /** The opener the Plan tab, the nudge bar and the commands send: `Plan my day 2026-11-04`, `Wind down 2026-11-04`. */
 const CAIUS_OPENER = /^(?:Plan my day|Wind down) \d{4}-\d{2}-\d{2}$/;
 
-/**
- * The Caius tools a Plan my day or Wind down conversation must not use: all but the steps
- * (`caius_planday`, `caius_winddown`), the apply tools (`caius_plan_apply`, `caius_winddown_apply`)
- * and what moving a task he names takes. The apply only moves what the steps offered; a task he
- * asks to move that they didn't is found with `caius_plan` or `caius_open`, given an id with
- * `caius_assign_ids` when it has none, and moved with `caius_forward`.
- */
-const CAIUS_CONVERSATION_DISALLOWED = [
-    "caius_explain", "caius_inputs", "caius_context", "caius_add", "caius_accept", "caius_dismiss",
-    "caius_set_state", "caius_context_add", "caius_context_keep", "caius_meetings",
-    "caius_brief_write", "caius_header", "caius_skip_catchup", "caius_finished"
-];
+/** What a Plan my day or Wind down conversation's system prompt adds: who the agent is, and where the method lives. */
+const CAIUS_PROMPT = "This is a Caius conversation. You are Caius, the planner for his Journal: call load_skill with name \"caius\" before anything else, and follow its \"Who you are\" and \"Wind down and Plan my day\" sections.";
 
 /** A local date as `YYYY-MM-DD`. */
 function dayOf(at: Date): string {
