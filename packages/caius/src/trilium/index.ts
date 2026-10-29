@@ -1,5 +1,5 @@
 export { etapiClient, normalizeBaseUrl } from './etapi.js';
-export { label } from './store.js';
+export { label, oldestFirst } from './store.js';
 export type { NoteStore, NoteReader, StoreNote, StoreAttribute } from './store.js';
 export { htmlToMarkdown, DEFAULT_STATE_SYMBOLS } from './markdown.js';
 export type { StateSymbols } from './markdown.js';
@@ -17,7 +17,7 @@ export { forwardTasks } from './forward.js';
 export type { ForwardRequest, ForwardResult, ForwardOptions, NoteChange, SkipReason } from './forward.js';
 export { normName, sectionKind, isSuggestedName, headingsByLine, neutralizeSuggested } from './sections.js';
 export type { SectionKind } from './sections.js';
-export { readPlan, buildPlanView, findPeriodNote, dismissedKeys, isPeriodKey, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './plan-read.js';
+export { readPlan, buildPlanView, findPeriodNote, findPeriodNotes, duplicateWarnings, readDuplicatePlans, dismissedKeys, isPeriodKey, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './plan-read.js';
 export type { PlanView, PlanTask, PlanSection, Capacity, PeriodKind } from './plan-read.js';
 export { buildDoc } from './journal.js';
 export { addTasks, acceptTasks, dismissTasks, EVENING_REASON, setStates } from './plan.js';

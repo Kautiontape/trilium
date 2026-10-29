@@ -20,6 +20,7 @@ import {
     DEFAULT_WORK_END,
     diffSummary,
     dismissTasks,
+    duplicateWarnings,
     ensureListItemIds,
     findPeriodNote,
     forwardTasks,
@@ -38,6 +39,7 @@ import {
     openTasks,
     type OpenTask,
     parseSource,
+    type PeriodKind,
     presentResult,
     readPlan,
     scanDocs,
@@ -83,7 +85,7 @@ import {
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { DECLINED_LABEL, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, dayLabels, listPicks, mainTasks, planDay, rolloverOf, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
+import { catchupOf, type DayRead, dayLabels, dayPeriods, listPicks, mainTasks, planDay, rolloverOf, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -207,6 +209,16 @@ export function createCaiusService(
         return docs ? closedKeys(store, docs, now) : new Set();
     }
 
+    /**
+     * `result` with `warnings` when a period in `periods` has more than one note: the oldest is the
+     * one used, and the others are named (`duplicateWarnings`). Nothing is merged or deleted. Takes
+     * the lock, so the caller doesn't hold it.
+     */
+    async function withDuplicates<R extends object>(result: R, periods: { period: PeriodKind; key: string }[]): Promise<R | (R & { warnings: string[] })> {
+        const warnings = await withCaiusLock("caius_duplicates", () => duplicateWarnings(store, periods));
+        return warnings.length ? { ...result, warnings } : result;
+    }
+
     /** The live tasks of a week note; none when it is protected or not a text note, which `gatherContext` skips too. The caller holds the lock. */
     async function weekTasks(week: string, now: Date) {
         const note = await findPeriodNote(store, "week", week);
@@ -232,12 +244,14 @@ export function createCaiusService(
                 return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
             }
             const plan = await readPlan(store, period, key, now);
+            const warnings = await duplicateWarnings(store, [ { period, key } ]);
+            const warned = warnings.length ? { ...plan, warnings } : plan;
             // A day's target is the focus the steps stated for it, when they did.
             const [ focus ] = period === "day" ? await dayLabels(store, key, FOCUS_LABEL) : [];
             const [ min, max ] = (focus ?? "").split("-").map(Number);
             return min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && focus
-                ? { ...plan, capacity: { ...plan.capacity, target: { min, max } } }
-                : plan;
+                ? { ...warned, capacity: { ...plan.capacity, target: { min, max } } }
+                : warned;
         }),
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
@@ -418,13 +432,26 @@ export function createCaiusService(
             return finishedOn(store, keys, note, day, now);
         }),
 
-        winddown: async (input: WindDownInput) => windDown(await stepDeps(), input),
+        // Each step and apply names a second note for any day or week it reads (`dayPeriods`).
+        winddown: async (input: WindDownInput) => {
+            const deps = await stepDeps();
+            return withDuplicates(await windDown(deps, input), dayPeriods(input.date, deps.now));
+        },
 
-        planday: async (input: PlanDayInput) => planDay(await stepDeps(), input),
+        planday: async (input: PlanDayInput) => {
+            const deps = await stepDeps();
+            return withDuplicates(await planDay(deps, input), dayPeriods(input.date, deps.now));
+        },
 
-        planApply: async (input: PlanApplyInput) => planApply(await applyDeps(), input),
+        planApply: async (input: PlanApplyInput) => {
+            const deps = await applyDeps();
+            return withDuplicates(await planApply(deps, input), dayPeriods(input.date, deps.now));
+        },
 
-        windDownApply: async (input: WindDownApplyInput) => windDownApply(await applyDeps(), input),
+        windDownApply: async (input: WindDownApplyInput) => {
+            const deps = await applyDeps();
+            return withDuplicates(await windDownApply(deps, input), dayPeriods(input.date, deps.now));
+        },
 
         /**
          * The state of the nudge bar on the day note of `date`, by the rules of the `catchup` step and

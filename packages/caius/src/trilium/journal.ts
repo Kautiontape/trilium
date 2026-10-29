@@ -6,11 +6,13 @@
 //   #weekNote=2026-W44     → Journal/Weekly/2026-W44.md
 //   #monthNote=2026-10     → Journal/Monthly/2026-10.md
 // A periodic note's direct children (not themselves periodic) count as part of
-// that period: Journal/Daily/2026-10-26/2026-10-26 <title>.md. Protected notes,
-// non-text notes and the morning brief's own notes (#morningBrief) are skipped.
+// that period: Journal/Daily/2026-10-26/2026-10-26 <title>.md. So does a newer
+// second note for the same period: Journal/Daily/2026-10-26/2026-10-26 (<noteId>).md.
+// Protected notes, non-text notes and the morning brief's own notes
+// (#morningBrief) are skipped.
 
 import type { VaultDoc } from '../index/index.js';
-import { label, type NoteReader, type StoreNote } from './store.js';
+import { label, oldestFirst, type NoteReader, type StoreNote } from './store.js';
 import { htmlToMarkdownWithIds, DEFAULT_STATE_SYMBOLS, type StateSymbols } from './markdown.js';
 import { bulletTexts, neutralizeProse, neutralizeSuggested, proseKinds } from './sections.js';
 
@@ -97,11 +99,15 @@ export async function loadJournal(api: NoteReader): Promise<JournalLoad> {
   };
 
   const childIds: { id: string; dir: string; key: string }[] = [];
-  for (const note of periodic) {
+  // Oldest first, so of two notes for one period the older takes the period's path, as
+  // `findPeriodNote` takes it. A newer one is read like a child of the period: its open tasks
+  // still count as that period's, but it is never the period's note.
+  for (const note of oldestFirst(periodic)) {
     const kind = PERIODIC.find((p) => label(note, p.label) !== undefined);
     const key = kind && label(note, kind.label);
     if (!kind || !key || !keep(note)) continue;
-    wanted.push({ note, path: claim(`Journal/${kind.folder}/${key}`, note.noteId) });
+    const base = `Journal/${kind.folder}/${key}`;
+    wanted.push({ note, path: claim(taken.has(`${base}.md`) ? `${base}/${key} (${note.noteId})` : base, note.noteId) });
     for (const id of note.childNoteIds) {
       if (!periodicIds.has(id)) childIds.push({ id, dir: `Journal/${kind.folder}/${key}`, key });
     }

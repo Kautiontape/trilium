@@ -36,6 +36,7 @@ import {
     periodSpan,
     type PlanTask,
     type PlanView,
+    readDuplicatePlans,
     readPlan,
     type Rhythm,
     sameContext,
@@ -260,6 +261,24 @@ export async function closingLines(store: NoteStore, date: string, targetDay: st
         .filter((line) => line.keys.length && !asked.has(line.lineId))
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
     return { keep, carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
+}
+
+/**
+ * The periods a Wind down or Plan my day of `date` reads and writes: the day, the workdays its
+ * catch-up looks back at (which cover the wind-down's recent days), the day a wind-down works
+ * against, and the ISO weeks of both. A second note for any of them is named in a warning.
+ */
+export function dayPeriods(date: string, now: Date): { period: "day" | "week"; key: string }[] {
+    const target = windDownTarget(date, now);
+    const before: string[] = [];
+    for (let at = localDay(date), i = 0; i < CATCHUP_DAYS; i++) {
+        at = lastWorkday(at);
+        before.push(dayKey(at));
+    }
+    return [
+        ...[ date, ...before, target ].map((key) => ({ period: "day" as const, key })),
+        ...[ date, target ].map((day) => ({ period: "week" as const, key: isoWeekKey(utcDay(day)) }))
+    ];
 }
 
 /**
@@ -643,13 +662,14 @@ export async function catchupOf(store: NoteStore, date: string, now: Date) {
         const dayNote = await findPeriodNote(store, "day", key);
         if (!dayNote) continue;
         if (dayNote.type !== "text" || dayNote.isProtected) break;
-        const plan = await readPlan(store, "day", key, now);
-        const live = mainTasks(plan).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
+        // A second, newer note for the day is not the day's note, but its open tasks are the day's leftovers too.
+        const plans = [ await readPlan(store, "day", key, now), ...await readDuplicatePlans(store, "day", key, now) ];
+        const live = plans.flatMap(mainTasks).map(({ noteId, listItemId, text, section, critical }) => ({ noteId, listItemId, text, section, critical, period: key }));
         const woundDown = label(dayNote, WOUND_DOWN_LABEL) !== undefined;
         const skippedHere = dayNote.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL);
         if (!live.length) {
             // A day he planned, skipped from or wound down was looked at, so the walk ends there.
-            if (woundDown || skippedHere || topLevel(plan).length || await findBrief(store, dayNote.noteId, key)) break;
+            if (woundDown || skippedHere || plans.some((plan) => topLevel(plan).length) || await findBrief(store, dayNote.noteId, key)) break;
             continue;
         }
         days.unshift(key);

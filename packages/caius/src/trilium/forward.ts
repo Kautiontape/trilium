@@ -12,7 +12,7 @@
 
 import { label, type NoteReader, type NoteStore, type StoreNote } from './store.js';
 import { loadStateSymbols } from './journal.js';
-import { isPeriodKey, PERIODS, periodQuery, type PeriodKind } from './plan-read.js';
+import { findPeriodNote, isPeriodKey, type PeriodKind } from './plan-read.js';
 import { backLinkTarget, periodLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
 import type { StateSymbols } from './markdown.js';
 
@@ -74,8 +74,8 @@ export async function forwardTasks(api: ForwardStore, requests: ForwardRequest[]
     if (periods.has(key)) return periods.get(key)!;
     let note: StoreNote | null;
     if (opts.dryRun) {
-      // The calendar endpoint creates missing notes, so a dry run only searches.
-      note = (await api.search(periodQuery(PERIODS[kind].label, key)))[0] ?? null;
+      // The calendar endpoint creates missing notes, so a dry run only searches, for the note it would use.
+      note = await findPeriodNote(api, kind, key);
     } else {
       const create = { day: api.calendarDay, week: api.calendarWeek, month: api.calendarMonth }[kind];
       if (!create) throw new Error(`this store cannot create ${kind} notes`);

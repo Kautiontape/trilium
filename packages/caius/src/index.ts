@@ -1,7 +1,7 @@
 export { etapiClient, normalizeBaseUrl } from './trilium/etapi.js';
 export { dayCapacity, parseClock, DEFAULT_WORK_START, DEFAULT_WORK_END, FOCUS_FACTOR, MAX_TARGET_MINUTES } from './inputs/capacity.js';
 export type { DayCapacity, CapacityMeeting, CapacityOptions } from './inputs/capacity.js';
-export { label, withListItemIds } from './trilium/store.js';
+export { label, oldestFirst, withListItemIds } from './trilium/store.js';
 export { ensureListItemIds, listItemsWithoutIds } from './trilium/html-util.js';
 export type { NoteStore, NoteReader, StoreNote, StoreAttribute } from './trilium/store.js';
 export { htmlToMarkdown, DEFAULT_STATE_SYMBOLS } from './trilium/markdown.js';
@@ -21,7 +21,7 @@ export { forwardTasks } from './trilium/forward.js';
 export type { ForwardRequest, ForwardResult, ForwardOptions, NoteChange, SkipReason } from './trilium/forward.js';
 export { normName, sectionKind, isSuggestedName, headingsByLine, neutralizeSuggested } from './trilium/sections.js';
 export type { SectionKind } from './trilium/sections.js';
-export { readPlan, buildPlanView, findPeriodNote, isoWeekKey, dismissedKeys, isPeriodKey, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './trilium/plan-read.js';
+export { readPlan, buildPlanView, findPeriodNote, findPeriodNotes, duplicateWarnings, readDuplicatePlans, isoWeekKey, dismissedKeys, isPeriodKey, periodPath, PERIODS, DISMISSED_LABEL, DEFAULT_ESTIMATE } from './trilium/plan-read.js';
 export type { PlanView, PlanTask, PlanSection, Capacity, PeriodKind } from './trilium/plan-read.js';
 export { buildDoc } from './trilium/journal.js';
 export { addTasks, acceptTasks, dismissTasks, EVENING_REASON, moveTasks, setStates } from './trilium/plan.js';

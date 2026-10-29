@@ -1,8 +1,7 @@
 // Synthetic Trilium HTML and a fake note store, shared by the planning tests.
 // Nothing here is real note text.
 
-import type { NoteStore } from './store.js';
-import type { StoreNote } from './store.js';
+import { oldestFirst, type NoteStore, type StoreNote } from './store.js';
 
 export const STATES = new Map([
   ['doing', '/'],
@@ -27,6 +26,7 @@ export const periodNote = (noteId: string, name: string, key: string, extra: Par
   childNoteIds: [],
   attributes: [{ type: 'label', name, value: key }],
   utcDateModified: '2026-10-26 08:00:00.000Z',
+  utcDateCreated: '2026-10-26 08:00:00.000Z',
   ...extra,
 });
 
@@ -61,6 +61,8 @@ export function fakeTrilium(
     html[n.noteId] = template;
     return n;
   };
+  const period = (name: string, key: string) =>
+    oldestFirst(Object.values(notes).filter((n) => n.attributes.some((a) => a.name === name && a.value === key)))[0];
   const api: NoteStore = {
     async search(q) {
       if (q === '#calendarRoot') return [periodNote('root', 'calendarRoot', '')];
@@ -84,14 +86,15 @@ export function fakeTrilium(
       html[id] = body;
       return true;
     },
+    // As the server's store: the oldest of a period's notes, created only when it has none.
     async calendarDay(date) {
-      return Object.values(notes).find((n) => n.attributes.some((a) => a.name === 'dateNote' && a.value === date)) ?? create('dateNote', date);
+      return period('dateNote', date) ?? create('dateNote', date);
     },
     async calendarWeek(week) {
-      return Object.values(notes).find((n) => n.attributes.some((a) => a.name === 'weekNote' && a.value === week)) ?? create('weekNote', week);
+      return period('weekNote', week) ?? create('weekNote', week);
     },
     async calendarMonth(month) {
-      return Object.values(notes).find((n) => n.attributes.some((a) => a.name === 'monthNote' && a.value === month)) ?? create('monthNote', month);
+      return period('monthNote', month) ?? create('monthNote', month);
     },
     async addLabel(noteId, name, value) {
       log.push(`label ${noteId} ${name}=${value}`);
