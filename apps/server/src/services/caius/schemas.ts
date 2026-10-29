@@ -37,6 +37,7 @@ const addItem = z.object({
     section: z.string().optional().describe("Heading to add the task under"),
     critical: z.boolean().optional().describe("Add the task to the Important block"),
     suggested: z.boolean().optional().describe("Add the task to the Suggested section, from key, title, because and minutes"),
+    onDeck: z.boolean().optional().describe("A day only: add the task to the day's On deck section, for something he would like to do that day (\"I'd like to do X Thursday\"). Tracked, but not on his list until Plan my day puts it there. For something he needs to do that day, give a section or critical instead"),
     text: z.string().optional().describe("The task text. Not for a Suggested item, unless already in its \"Get KEY title done: because why (~30m)\" shape."),
     key: z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase()).optional()
         .describe("Suggested: the Jira key, linked in the line"),
@@ -49,8 +50,11 @@ const addItem = z.object({
     (item) => [item.date, item.week, item.month].filter((v) => v !== undefined).length === 1,
     "Give exactly one of date, week or month"
 ).refine(
-    (item) => [item.section !== undefined, item.critical, item.suggested].filter(Boolean).length === 1,
-    "Give exactly one of section, critical or suggested"
+    (item) => [item.section !== undefined, item.critical, item.suggested, item.onDeck].filter(Boolean).length === 1,
+    "Give exactly one of section, critical, suggested or onDeck"
+).refine(
+    (item) => !item.onDeck || item.date !== undefined,
+    "Only a day note has an On deck section: give date with onDeck"
 ).refine(
     (item) => item.suggested || (!!item.text?.trim() && [item.key, item.title, item.because, item.minutes].every((v) => v === undefined)),
     "Give text; key, title, because and minutes are for a Suggested item"
@@ -95,8 +99,11 @@ const forwardItem = z.object({
         (to) => isPeriodKey("day", to) || isPeriodKey("week", to) || isPeriodKey("month", to),
         "Forwarding takes a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM that exists"
     )
-        .describe("The note to forward the task to: a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM")
-});
+        .describe("The note to forward the task to: a day YYYY-MM-DD, an ISO week YYYY-Www or a month YYYY-MM"),
+    onDeck: z.boolean().optional().describe("true: the copy goes in the target day's On deck (he would like to do it then); false: on its list proper (he needs to). Left out, it keeps its placement: an On deck task stays On deck when forwarded to a day"),
+    critical: z.boolean().optional().describe("true: the copy goes in the target's Important block (it must happen)")
+}).refine((item) => !(item.onDeck && item.critical), "Give onDeck or critical, not both")
+    .refine((item) => !item.onDeck || isPeriodKey("day", item.to), "Only a day note has an On deck section");
 
 const headerClock = z.string().regex(/^([01]\d|2\d):[0-5]\d$/, "Must be HH:MM, such as 09:30; after midnight it counts on from 24:00, as 25:00");
 
@@ -194,12 +201,23 @@ const overlapAnswers = z.array(z.object({
     take: z.string().trim().min(1).describe("The meeting he takes, by its title as the step gives it")
 })).default([]).describe("His answer to each overlap question: the meeting he takes. Written as \"Taking X, not Y, at 11:00\" in the day's Context, and the other meeting leaves the day's Meetings, drawing and capacity");
 
+const onDeckAnswers = z.array(z.object({
+    listItemId: z.string().min(1).describe(`An On deck item of the day: ${NAMED}`),
+    ...place,
+    critical: z.boolean().optional().describe("true puts it in the Important block"),
+    to: z.string().min(1).optional().describe(`Send it on instead of onto the list, such as back up to the week. ${DESTINATION}`),
+    drop: z.string().trim().min(1).optional().describe("Only when the user says drop, cancel or not doing: the user's reason")
+}).refine((item) => [ item.first || undefined, item.before, item.after, item.critical || undefined, item.to, item.drop ].filter((v) => v !== undefined).length <= 1,
+    "Give at most one of first, before, after, critical, to or drop")).default([])
+    .describe("His fate for each On deck item he named: onto his list (at the end, or first, before or after an item, or critical), to a day, week or month, or dropped. Every On deck item he didn't name takes the fate the inputs step proposed");
+
 const planApply = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
     said,
     checked,
     asOffered,
     catchup: z.enum([ "move_all", "skip", "review" ]).optional().describe("The answer to the catch-up question, when one was asked"),
+    onDeck: onDeckAnswers,
     accept: z.array(acceptRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after)"),
     move: moves,
     keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
@@ -227,17 +245,17 @@ const planApply = z.object({
         .describe("Only with a call that just moves: the headline for the new order. Without it, a move that changes the picks writes a plain one")
 }).refine((input) => input.brief !== undefined || onlyMoves(input) || onlyContext(input), "Give brief, unless the call only moves items of his list or only adds Context lines");
 
-type Answers = { move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; overlaps: unknown[]; forward?: unknown[] };
+type Answers = { onDeck?: unknown[]; move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; overlaps: unknown[]; forward?: unknown[] };
 
 /** Whether a Plan my day answer only reorders his list: `move` and nothing else. */
 export function onlyMoves(input: Answers): boolean {
-    return input.move.length > 0 && input.catchup === undefined && !input.forward?.length
+    return input.move.length > 0 && input.catchup === undefined && !input.forward?.length && !input.onDeck?.length
         && [ input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.context, input.overlaps ].every((answers) => answers.length === 0);
 }
 
 /** Whether a Plan my day answer only adds Context lines, as the retry of a line skipped as third person does. */
 export function onlyContext(input: Answers): boolean {
-    return input.context.length > 0 && input.catchup === undefined && !input.forward?.length
+    return input.context.length > 0 && input.catchup === undefined && !input.forward?.length && !input.onDeck?.length
         && [ input.move, input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.overlaps ].every((answers) => answers.length === 0);
 }
 
@@ -250,8 +268,11 @@ const windDownApply = z.object({
     fates: z.array(z.object({
         listItemId: z.string().min(1).describe(`An open item: ${NAMED}`),
         to: z.string().min(1).optional().describe(`Where the user sends it. ${DESTINATION}`),
+        onDeck: z.boolean().optional().describe("With a day in to: false when he needs to do it that day (\"I need to\", \"must\"), which puts it on that day's list proper. Left out, a day's task goes on its On deck: he would like to do it then"),
+        critical: z.boolean().optional().describe("With a day in to: true when he says it is critical, which puts it in that day's Important block"),
         drop: z.string().trim().min(1).optional().describe("Only when the user says drop, cancel or not doing: the user's reason")
-    }).refine((fate) => (fate.to === undefined) !== (fate.drop === undefined), "Give exactly one of to or drop")).default([])
+    }).refine((fate) => (fate.to === undefined) !== (fate.drop === undefined), "Give exactly one of to or drop")
+        .refine((fate) => !(fate.onDeck && fate.critical), "Give onDeck or critical, not both")).default([])
         .describe("Fates the user named. Every open item not named keeps the fate the open step proposed"),
     accept: z.array(acceptRef).default([]).describe("Candidates the user took for the next workday, in the user's order; each goes to the end of the list unless the user names a place (first, before or after)"),
     move: moves,
@@ -387,7 +408,7 @@ export const routeInputs = {
     accept: writes(acceptItem.safeExtend(version)),
     dismiss: writes(dismissItem.extend(version)),
     setState: writes(stateItem.safeExtend(version)),
-    forward: writes(forwardItem.extend(version)),
+    forward: writes(forwardItem.safeExtend(version)),
     /** The Plan tab's Close: forwards, then state changes, behind one version check. */
     apply: z.object({
         forwards: z.array(forwardItem).default([]),

@@ -5,7 +5,7 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { isSuggestedName, normName, proseKind, ProseTracker } from './sections.js';
+import { isOnDeckName, isSuggestedName, normName, proseKind, ProseTracker } from './sections.js';
 import {
   apply,
   checkboxEdit,
@@ -13,6 +13,7 @@ import {
   elements,
   findItem,
   isCriticalAside,
+  inCriticalAside,
   inProseSection,
   isHeading,
   isIncludeNote,
@@ -29,7 +30,13 @@ import {
   type ItemState,
 } from './html-util.js';
 
-export type Target = { kind: 'section'; name: string } | { kind: 'critical' } | { kind: 'suggested' };
+export type Target = { kind: 'section'; name: string } | { kind: 'critical' } | { kind: 'suggested' } | { kind: 'onDeck' };
+
+/** The heading On deck is written under, as Caius creates it. */
+export const ON_DECK = 'On deck';
+
+/** Whether a heading closes the note: On deck or Suggested, which new headers go above. */
+const isTailName = (name: string) => isSuggestedName(name) || isOnDeckName(name);
 
 const NEW_TASKS_SECTION = '<h2>☑️ Tasks</h2>';
 
@@ -73,14 +80,19 @@ export function inProseById(html: string, id: string): boolean {
   return !!li && inProseSection(root, li);
 }
 
-/** True when the note has a task outside Suggested, so an untouched template can be told apart. */
+/** True when the note has a committed task (outside Suggested and On deck), so an untouched template can be told apart. */
 function hasRealTasks(root: HTMLElement): boolean {
-  return root.querySelectorAll('li').some((li) => isTask(li) && !isSuggestedName(sectionOf(root, li)) && !inProseSection(root, li));
+  return root.querySelectorAll('li').some((li) => isTask(li) && !isTailName(sectionOf(root, li) ?? '') && !inProseSection(root, li));
+}
+
+/** Where a new section goes: just above On deck, else above Suggested, else at the end; null for the end. */
+function tailStart(top: HTMLElement[]): HTMLElement | null {
+  return top.find((e) => isHeading(e) && isOnDeckName(e.text)) ?? top.find((e) => isHeading(e) && isSuggestedName(e.text)) ?? null;
 }
 
 /** Level for a header Caius creates: one below the template's lone title, else the level in use. */
 function newHeaderLevel(top: HTMLElement[]): number {
-  const heads = top.filter((e) => isHeading(e) && !isSuggestedName(e.text));
+  const heads = top.filter((e) => isHeading(e) && !isTailName(e.text));
   if (!heads.length) return 2;
   if (heads.length === 1) return normName(heads[0]!.text) === 'tasks' ? Math.min(levelOf(heads[0]!) + 1, 6) : levelOf(heads[0]!);
   return Math.max(...heads.map(levelOf));
@@ -110,10 +122,11 @@ function importantBlockAt(top: HTMLElement[]): number {
 
 /**
  * Put a ready-made `<li>` into the note. Section: the list under the matching
- * header (created, above Suggested, if missing). Critical: the Important block
- * (created at the top if missing). Suggested: its list, with the section kept
+ * header (created, above On deck or Suggested, if missing). Critical: the Important block
+ * (created at the top if missing). On deck: its list, the section created just above Suggested
+ * (at its level) when missing. Suggested: its list, with the section kept
  * last. An untouched template's `[…]` placeholder is replaced by the first
- * real task, but left alone when only Suggested is being filled.
+ * real task, but left alone when only On deck or Suggested is being filled.
  */
 export function placeTask(html: string, item: string, target: Target, position?: number): string {
   const root = parse(html, { comment: true });
@@ -133,6 +146,7 @@ export function placeTask(html: string, item: string, target: Target, position?:
   };
 
   if (target.kind === 'section' && isSuggestedName(target.name)) target = { kind: 'suggested' };
+  if (target.kind === 'section' && isOnDeckName(target.name)) target = { kind: 'onDeck' };
 
   if (target.kind === 'critical') {
     const aside = top.find(isCriticalAside);
@@ -143,6 +157,14 @@ export function placeTask(html: string, item: string, target: Target, position?:
       for (const filler of elements(aside).filter(isFiller)) edits.push({ start: filler.range[0], end: filler.range[1], text: '' });
       edits.push(insertAt(aside.range[1] - '</aside>'.length, newList(item)));
     } else edits.push(insertAt(importantBlockAt(top), `<aside class="admonition important">${newList(item)}</aside>`));
+  } else if (target.kind === 'onDeck') {
+    const deckIdx = top.findIndex((e) => isHeading(e) && isOnDeckName(e.text));
+    if (deckIdx >= 0) intoHeading(deckIdx);
+    else {
+      const suggested = top[suggestedIdx];
+      const level = suggested ? levelOf(suggested) : newHeaderLevel(top);
+      edits.push(insertAt(suggested ? suggested.range[0] : html.length, `<h${level}>${ON_DECK}</h${level}>${newList(item)}`));
+    }
   } else if (target.kind === 'suggested') {
     if (suggestedIdx >= 0) intoHeading(suggestedIdx);
     else {
@@ -154,26 +176,28 @@ export function placeTask(html: string, item: string, target: Target, position?:
     if (i >= 0) intoHeading(i);
     else {
       const level = newHeaderLevel(top);
-      const at = suggestedIdx >= 0 ? top[suggestedIdx]!.range[0] : html.length;
+      const at = tailStart(top)?.range[0] ?? html.length;
       edits.push(insertAt(at, `<h${level}>${escapeHtml(target.name.trim())}</h${level}>${newList(item)}`));
     }
   }
 
-  if (target.kind !== 'suggested' && placeholder && placeholder !== replaced && !hasRealTasks(root)) {
+  if (target.kind !== 'suggested' && target.kind !== 'onDeck' && placeholder && placeholder !== replaced && !hasRealTasks(root)) {
     edits.push({ start: placeholder.range[0], end: placeholder.range[1], text: '' });
   }
   return apply(html, edits);
 }
 
 /**
- * Where `forward` puts a copy: the list under the header with the same name; for an Evening or
- * Recharge task, any evening heading, else a new `### <name>` above Suggested;
- * else the first task list outside the critical block, Suggested, Meetings and Context (an Important
+ * Where `forward` puts a copy: an On deck item (`section` On deck) in the target's On deck; the
+ * list under the header with the same name; for an Evening or
+ * Recharge task, any evening heading, else a new `### <name>` above On deck or Suggested;
+ * else the first task list outside the critical block, the evening, On deck, Suggested, Meetings and Context (an Important
  * item goes to the target's Important block instead), else a new
- * "Tasks" list (above Suggested). An untouched template's placeholder is
+ * "Tasks" list (above the evening, On deck or Suggested). An untouched template's placeholder is
  * replaced rather than left above the new list.
  */
 export function placeForwarded(html: string, item: string, section: string | null, important = false): string {
+  if (section !== null && isOnDeckName(section)) return placeTask(html, item, { kind: 'onDeck' });
   if (important) return placeTask(html, item, { kind: 'critical' });
   const root = parse(html, { comment: true });
   const top = elements(root);
@@ -188,7 +212,7 @@ export function placeForwarded(html: string, item: string, section: string | nul
     const i = top.findIndex((e) => {
       if (!isHeading(e)) return false;
       tracker.enter(e.text, levelOf(e));
-      return norm(e.text) === norm(section) && !isSuggestedName(e.text) && !tracker.kind;
+      return norm(e.text) === norm(section) && !isTailName(e.text) && !tracker.kind;
     });
     if (i >= 0) return intoFound(scanSection(top, i), top[i]!.range[1]);
     // An evening task stays in the evening: under any Evening or Recharge heading, else a new one.
@@ -196,24 +220,32 @@ export function placeForwarded(html: string, item: string, section: string | nul
       const evening = top.findIndex((e) => isHeading(e) && EVENING_NAMES.has(normName(e.text)));
       if (evening >= 0) return intoFound(scanSection(top, evening), top[evening]!.range[1]);
       const block = `<h3>${escapeHtml(section.trim())}</h3>${newList(item)}`;
-      const suggestedAt = top.find((e) => isHeading(e) && isSuggestedName(e.text));
-      return suggestedAt ? apply(html, [insertAt(suggestedAt.range[0], block)]) : html + block;
+      const tail = tailStart(top);
+      return tail ? apply(html, [insertAt(tail.range[0], block)]) : html + block;
     }
   }
 
-  let inSuggested = false;
+  // The first list of his work: not On deck, Suggested, Meetings, Context or the evening, which a
+  // task of the day never falls into unasked.
+  let apart = false;
   const tracker = new ProseTracker();
   for (const el of top) {
     if (isHeading(el)) {
-      inSuggested = isSuggestedName(el.text);
+      apart = isTailName(el.text) || EVENING_NAMES.has(normName(el.text));
       tracker.enter(el.text, levelOf(el));
     } else if (tracker.kind) continue;
-    else if (!inSuggested && isTodoList(el)) return apply(html, [insertInList(html, el, item)]);
-    else if (!inSuggested && isPlaceholder(el)) return apply(html, [{ start: el.range[0], end: el.range[1], text: newList(item) }]);
+    else if (!apart && isTodoList(el)) return apply(html, [insertInList(html, el, item)]);
+    else if (!apart && isPlaceholder(el)) return apply(html, [{ start: el.range[0], end: el.range[1], text: newList(item) }]);
   }
-  const suggested = top.find((e) => isHeading(e) && isSuggestedName(e.text));
+  // His main Tasks heading with no list under it takes one; else a new Tasks list goes above the
+  // evening, On deck and Suggested.
+  const main = mainHeadingIndex(top);
+  if (main >= 0) return intoFound(scanSection(top, main), top[main]!.range[1]);
+  const evening = top.find((e) => isHeading(e) && EVENING_NAMES.has(normName(e.text)));
+  const tail = tailStart(top);
+  const at = evening && (!tail || evening.range[0] < tail.range[0]) ? evening : tail;
   const block = NEW_TASKS_SECTION + newList(item);
-  return suggested ? apply(html, [insertAt(suggested.range[0], block)]) : html + block;
+  return at ? apply(html, [insertAt(at.range[0], block)]) : html + block;
 }
 
 /** Headings of the evening, whose tasks aren't work, so an accepted item never lands under one unasked. */
@@ -266,7 +298,7 @@ export function moveInMainList(html: string, id: string, place: MainListPlace): 
 
 /** The index in `top` of the main Tasks heading: the first `h2` that is not Suggested, Meetings, Context or an evening heading. */
 function mainHeadingIndex(top: HTMLElement[]): number {
-  return top.findIndex((e) => e.tagName === 'H2' && !isSuggestedName(e.text) && !proseKind(e.text) && !EVENING_NAMES.has(normName(e.text)));
+  return top.findIndex((e) => e.tagName === 'H2' && !isTailName(e.text) && !proseKind(e.text) && !EVENING_NAMES.has(normName(e.text)));
 }
 
 export type TakeProblem = 'not_found' | 'not_live' | 'not_suggested';
@@ -331,22 +363,44 @@ export function takeSuggested(html: string, id: string): ({ ok: true; html: stri
   const { li } = found;
   const list = li.parentNode as HTMLElement;
   const only = elements(list).filter((c) => c.tagName === 'LI').length === 1;
-  const heading = only ? loneHeading(html, root, list) : null;
+  const heading = only ? loneHeading(html, root, list, isSuggestedName) : null;
   const [start, end] = heading ? [heading.range[0], list.range[1]] : only ? list.range : li.range;
   return { ok: true, html: apply(html, [{ start, end, text: '' }]), ...itemFacts(html, li) };
 }
 
+export type DeckProblem = 'not_found' | 'not_live' | 'not_on_deck';
+
 /**
- * The Suggested heading right above `list` when the list is all its section holds: nothing but
+ * Take a top-level task off the On deck list, unchanged (its id, text, state and sub-items), to put
+ * on his list: its list goes when it was the last item, and the heading when nothing else is under it.
+ */
+export function takeOnDeck(html: string, id: string, states: StateSymbols): { ok: true; html: string; markup: string } | { ok: false; reason: DeckProblem } {
+  const root = parse(html, { comment: true });
+  const li = findItem(root, id);
+  if (!li || !isTask(li)) return { ok: false, reason: 'not_found' };
+  const nested = li.parentNode?.parentNode;
+  if (nested instanceof HTMLElement && nested.tagName === 'LI') return { ok: false, reason: 'not_on_deck' };
+  if (inProseSection(root, li) || inCriticalAside(li) || !isOnDeckName(sectionOf(root, li))) return { ok: false, reason: 'not_on_deck' };
+  const state = itemState(li, states);
+  if (state !== 'open' && state !== 'doing') return { ok: false, reason: 'not_live' };
+  const list = li.parentNode as HTMLElement;
+  const only = elements(list).filter((c) => c.tagName === 'LI').length === 1;
+  const heading = only ? loneHeading(html, root, list, isOnDeckName) : null;
+  const [start, end] = heading ? [heading.range[0], list.range[1]] : only ? list.range : li.range;
+  return { ok: true, html: apply(html, [{ start, end, text: '' }]), markup: html.slice(li.range[0], li.range[1]) };
+}
+
+/**
+ * The heading (`named`: Suggested or On deck) right above `list` when the list is all its section holds: nothing but
  * spaces between them, and nothing after the list before a heading of the same level or higher.
  */
-function loneHeading(html: string, root: HTMLElement, list: HTMLElement): HTMLElement | null {
+function loneHeading(html: string, root: HTMLElement, list: HTMLElement, named: (name: string) => boolean): HTMLElement | null {
   if (list.parentNode !== root) return null;
   const top = elements(root);
   const at = top.indexOf(list);
   const heading = top[at - 1];
   const next = top[at + 1];
-  if (!heading || !isHeading(heading) || !isSuggestedName(heading.text)) return null;
+  if (!heading || !isHeading(heading) || !named(heading.text)) return null;
   if (html.slice(heading.range[1], list.range[0]).trim()) return null;
   if (next && !(isHeading(next) && levelOf(next) <= levelOf(heading))) return null;
   if (html.slice(list.range[1], next?.range[0] ?? html.length).trim()) return null;

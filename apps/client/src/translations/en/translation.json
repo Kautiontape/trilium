@@ -4501,6 +4501,8 @@
       "capacity_of_target": "{{total}} planned of {{range}}",
       "capacity_total": "{{total}} planned",
       "capacity_evening": "Evening: {{total}}",
+      "on_deck": "On deck",
+      "on_deck_total": "{{total}} on deck, not counted until Plan my day puts it on the list",
       "duration_hm": "{{h}} h {{m}} m",
       "duration_h": "{{h}} h",
       "duration_m": "{{m}} m",

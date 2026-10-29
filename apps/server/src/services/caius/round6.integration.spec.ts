@@ -166,7 +166,8 @@ describe("the evening", () => {
         const review = await call("caius_winddown_apply", { date: MON, said: "carry it" });
         expect(review.skipped).toEqual([]);
         const inputs = review.planday.inputs;
-        expect(inputs.question).toBeNull();
+        // Dave, carried to today, waits on its On deck; that is the plan's only question.
+        expect(inputs.question).toBe("On deck: 'Message Dave if he knows anyone who will hang lights as a small job'. All of it fits, so it goes on your list unless you say otherwise.");
         expect(inputs.data.candidates).toEqual([]);
         expect(inputs.data.evening).toEqual({ tasks: [], events: [], suggestion: SUGGESTION });
 
@@ -175,7 +176,7 @@ describe("the evening", () => {
         ] } });
         expect(planned.skipped).toEqual([]);
         expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "suggested", status: "written", text: "Something away from screens, a chore or a Recharge item" }) ]));
-        expect(planned.say).toBe("Something away from screens, a chore or a Recharge item is in Suggested, the meetings are updated and the brief is written.");
+        expect(planned.say).toBe("Message Dave if he knows anyone who will hang lights as a small job is on your list, Something away from screens, a chore or a Recharge item is in Suggested, the meetings are updated and the brief is written.");
         expect(await suggestedOf(WED)).toEqual([ SUGGESTION ]);
 
         // A refresh doesn't offer it again, and the step says so.
@@ -207,7 +208,7 @@ describe("the evening", () => {
 
         at(`${THU}T09:30`);
         const inputs = await call("caius_planday", { date: THU, step: "inputs" });
-        expect(inputs.question).toBeNull();
+        expect(inputs.question).toBe("On deck: 'Message Dave about the lights'. All of it fits, so it goes on your list unless you say otherwise.");
         expect(inputs.data.evening).toEqual({ tasks: [], events: [], suggestion: SUGGESTION });
         const planned = await call("caius_plan_apply", { date: THU, said: "", brief: { headline: "Message Dave.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
         expect(planned.skipped).toEqual([]);
@@ -286,8 +287,12 @@ describe("the evening", () => {
 
 describe("a stale errand", () => {
     const DAVE = "Message Dave if he knows anyone who will hang lights as a small job";
-    const textsOf = async (period: "day" | "month", date: string) => (await call("caius_plan", { period, date })).sections
-        .flatMap((s: any) => s.tasks).map((t: any) => ({ text: t.text.replace(/\s*(?:\[from [^\]]*\]\([^)]*\)|_scheduled \[[^\]]*\]\([^)]*\)_)/g, ""), state: t.state }));
+    // His list, then On deck, where a carried leftover waits.
+    const textsOf = async (period: "day" | "month", date: string) => {
+        const plan = await call("caius_plan", { period, date });
+        return [ ...plan.sections.flatMap((s: any) => s.tasks), ...plan.onDeck ]
+            .map((t: any) => ({ text: t.text.replace(/\s*(?:\[from [^\]]*\]\([^)]*\)|_scheduled \[[^\]]*\]\([^)]*\)_)/g, ""), state: t.state }));
+    };
     /** Dave on `days[0]`, forwarded by three wind-downs, so the fourth day's wind-down offers the park. */
     const carriedThrice = async (days: string[]) => {
         await dayWith(days[0] ?? "", `<h2>☑️ Tasks</h2>${ul(li(`d-${days[0]}`, DAVE))}`);
@@ -316,7 +321,8 @@ describe("a stale errand", () => {
         expect(result.skipped).toEqual([]);
         expect(fatesOf(result)).toEqual([ FRI ]);
         expect(await textsOf("month", "2030-04")).toEqual([]);
-        expect((await textsOf("day", FRI)).map((task: any) => task.text)).toEqual([ DAVE, expect.stringContaining("ZAP-901") ]);
+        // The accepted ticket is on Friday's list; Dave, carried as proposed, waits on its On deck.
+        expect((await textsOf("day", FRI)).map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-901"), DAVE ]);
         expect((await call("caius_plan", { period: "day", date: FRI })).suggested).toEqual([]);
     });
 
@@ -350,7 +356,7 @@ describe("a stale errand", () => {
         const result = await call("caius_winddown_apply", { date: DAY, said: "971 is finished, the rest is fine", finished: [ "ZAP-971" ], asOffered: true });
         expect(result.skipped).toEqual([]);
         expect(result.written.filter((entry: any) => entry.kind === "accept").map((entry: any) => entry.id)).toEqual([ "ZAP-972" ]);
-        expect((await textsOf("day", "2030-09-03")).map((task: any) => task.text)).toEqual([ "Write the release note", expect.stringContaining("ZAP-972") ]);
+        expect((await textsOf("day", "2030-09-03")).map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-972"), "Write the release note" ]);
     });
 
     it("a bare yes with only the park on offer and no fate in the call is a check; checked, the item takes its proposed fate", async () => {

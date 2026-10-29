@@ -144,12 +144,17 @@ export function planTasks(plan: CaiusPlan) {
     return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ];
 }
 
+/** The live top-level tasks of a day's On deck, in order. */
+export function onDeckTasks(plan: CaiusPlan) {
+    return (plan.onDeck ?? []).filter((task) => isLive(task) && task.parent === null);
+}
+
 /**
- * The live tasks that need a fate to close the period. A sub-item of a live task, told by its
- * parent's list item id, is left out: its parent's forward or drop carries it along.
+ * The live tasks that need a fate to close the period, On deck included. A sub-item of a live task,
+ * told by its parent's list item id, is left out: its parent's forward or drop carries it along.
  */
 export function closeCandidates(plan: CaiusPlan) {
-    const live = planTasks(plan).filter(isLive);
+    const live = [ ...planTasks(plan), ...(plan.onDeck ?? []) ].filter(isLive);
     const liveIds = new Set(live.map((task) => task.listItemId).filter((id) => id !== null));
     return live.filter((task) => !task.parentListItemId || !liveIds.has(task.parentListItemId));
 }

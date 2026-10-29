@@ -7,7 +7,8 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { escapeHtml, placeForwarded } from './plan-html.js';
+import { escapeHtml, ON_DECK, placeForwarded } from './plan-html.js';
+import { isOnDeckName } from './sections.js';
 import {
   apply,
   checkboxEdit,
@@ -52,6 +53,12 @@ export interface CopyOptions {
   backLinkLabel?: string;
   states: StateSymbols;
   newId?: () => string;
+  /** Where the copy goes: true, the target's On deck; false, the list proper; left out, as the source sits (`toDay`). */
+  onDeck?: boolean;
+  /** True puts the copy in the target's Important block. */
+  critical?: boolean;
+  /** Whether the target is a day: only a day has On deck, so an On deck task left to its placement goes to a week's or month's list. */
+  toDay?: boolean;
 }
 
 export type MarkResult = { ok: true; html: string } | { ok: false; reason: ItemProblem; scheduledTo: string[] };
@@ -218,7 +225,8 @@ function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): stri
 }
 
 /**
- * Copy an item from the source note's HTML into the target note's HTML: under
+ * Copy an item from the source note's HTML into the target note's HTML: into the target's On deck
+ * when `onDeck` says so (or, left out, when it comes from On deck and goes to a day), else under
  * the heading with the same name if the target has one, else the target's first
  * task list, else a new "☑️ Tasks" list at the end.
  */
@@ -228,7 +236,13 @@ export function insertCopy(targetHtml: string, sourceHtml: string, id: string, o
   if (!('li' in found)) return { ok: false, ...found };
   const section = sectionLabel(sourceRoot, found.li);
   const item = buildCopy(sourceHtml, found.li, opts);
-  return { ok: true, html: placeForwarded(targetHtml, item, section, inCriticalAside(found.li)), section };
+  const important = inCriticalAside(found.li);
+  const fromDeck = section !== null && isOnDeckName(section) && !important;
+  const deck = opts.critical ? false : (opts.onDeck ?? (fromDeck && opts.toDay === true));
+  const placed = deck
+    ? placeForwarded(targetHtml, item, ON_DECK)
+    : placeForwarded(targetHtml, item, fromDeck ? null : section, important || !!opts.critical);
+  return { ok: true, html: placed, section };
 }
 
 /**

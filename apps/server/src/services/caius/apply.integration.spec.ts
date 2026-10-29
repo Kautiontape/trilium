@@ -280,9 +280,11 @@ describe("caius_winddown_apply", () => {
             [ "done", "Tue 3 Nov", "Message Dave" ], [ "done", null, "[ZAP-111](ht" ], [ "done", "week 45", "[ZAP-101](ht" ], [ "done", "Tue 3 Nov", "Laundry _sch" ]
         ]);
         const tuesday = await call("caius_plan", { period: "day", date: "2026-11-03" });
+        // Dave, proposed for Tuesday, waits on its On deck; the evening's Laundry stays in the evening.
         expect(tuesday.sections.flatMap((s: any) => s.tasks).filter((t: any) => t.state === "open").map(textOf)).toEqual([
-            expect.stringContaining("Message Dave"), "Laundry [from Mon 2 Nov](#root/" + monday.noteId + ")"
+            "Laundry [from Mon 2 Nov](#root/" + monday.noteId + ")"
         ]);
+        expect(tuesday.onDeck.filter((t: any) => t.state === "open").map(textOf)).toEqual([ expect.stringContaining("Message Dave") ]);
         // The forwarded Laundry stays in the evening, which is why the evening answer is already written.
         expect(tuesday.sections.find((s: any) => s.name === "Evening")?.tasks.map(textOf)).toEqual([ expect.stringMatching(/^Laundry \[from Mon 2 Nov\]/) ]);
         expect(tuesday.suggested.map(textOf)).toEqual([ expect.stringContaining("ZAP-110") ]);

@@ -133,7 +133,7 @@ describe("step data names every date and carries the ids the apply tools take", 
         const open = await call("caius_winddown", { date: "2026-11-13", step: "open" });
         expect(open).toMatchObject({ targetDay: "2026-11-16", targetDayLabel: "Mon 16 Nov" });
         expect(open.data.items).toEqual([
-            expect.objectContaining({ listItemId: "f13a", period: "2026-11-13", periodLabel: "Fri 13 Nov", fate: { forward: "2026-11-16", forwardLabel: "Mon 16 Nov" } }),
+            expect.objectContaining({ listItemId: "f13a", period: "2026-11-13", periodLabel: "Fri 13 Nov", fate: { forward: "2026-11-16", forwardLabel: "Mon 16 Nov", onDeck: true } }),
             expect.objectContaining({ listItemId: "w46a", period: "2026-W46", periodLabel: "the week of Mon 9 Nov", fate: { forward: "2026-W47", forwardLabel: "the week of Mon 16 Nov" } })
         ]);
 
@@ -439,7 +439,9 @@ describe("a wind-down of an older day works against today", () => {
         const applied = await call("caius_winddown_apply", { date: "2027-01-11", evening: [ "Laundry" ] });
         expect(applied).toMatchObject({ targetDay: "2027-01-13" });
         const today = await call("caius_plan", { period: "day", date: "2027-01-13" });
-        expect(today.sections.flatMap((s: any) => s.tasks).map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Renew the domain", "Laundry" ]);
+        // The leftover waits on today's On deck, for the plan that follows the Review.
+        expect(today.onDeck.map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Renew the domain" ]);
+        expect(today.sections.flatMap((s: any) => s.tasks).map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Laundry" ]);
     });
 });
 
@@ -491,9 +493,11 @@ describe("evening stays evening", () => {
         const wound = await call("caius_winddown_apply", { date: "2027-02-01", evening: [ "Laundry" ] });
         expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "evening", status: "unchanged" }) ]));
         const tuesday = await call("caius_plan", { period: "day", date: "2027-02-02" });
+        // The work leftover waits on Tuesday's On deck; the evening's stays in the evening.
         expect(tuesday.sections.map((section: any) => [ section.name, section.tasks.map((t: any) => String(t.text).split(" [")[0]) ])).toEqual([
-            [ "☑️ Tasks", [ "Write the report" ] ], [ "Evening", [ "Laundry" ] ]
+            [ "Evening", [ "Laundry" ] ]
         ]);
+        expect(tuesday.onDeck.map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Write the report" ]);
         at("2027-02-02T09:40");
         const applied = await call("caius_plan_apply", { date: "2027-02-02", brief: prose });
         const brief = await cls.init(() => store.content(applied.briefNoteId));

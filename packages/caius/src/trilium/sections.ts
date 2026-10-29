@@ -1,8 +1,9 @@
 // Section structure of a note's derived markdown: which heading sits above each
-// line, what kind of section it is, and which task lines fall under "Suggested".
+// line, what kind of section it is, and which task lines fall under "Suggested" or "On deck".
 // Pure string work, shared by journal loading, the day view and open-trilium.
 
-export type SectionKind = 'slot' | 'area' | 'group';
+/** `deck` is the On deck section: tasks intended for the day, tracked but not committed. */
+export type SectionKind = 'slot' | 'area' | 'group' | 'deck';
 
 const SLOTS = new Set(['morning', 'afternoon', 'evening']);
 const AREAS = new Set(['foundation', 'growth', 'recharge']);
@@ -14,7 +15,22 @@ export function normName(name: string): string {
 
 export function sectionKind(name: string | null): SectionKind {
   const n = name === null ? '' : normName(name);
-  return SLOTS.has(n) ? 'slot' : AREAS.has(n) ? 'area' : 'group';
+  return SLOTS.has(n) ? 'slot' : AREAS.has(n) ? 'area' : n === 'ondeck' ? 'deck' : 'group';
+}
+
+/** The On deck heading: tasks he would like to do that day, tracked but not counted until planned. */
+export function isOnDeckName(name: string | null): boolean {
+  return name !== null && normName(name) === 'ondeck';
+}
+
+/** The 0-based lines of task lines under the On deck heading, except those in `critical` (an Important block wins). */
+export function onDeckLines(markdown: string, critical: Set<number>): Set<number> {
+  const headings = headingsByLine(markdown);
+  const lines = new Set<number>();
+  markdown.split('\n').forEach((line, i) => {
+    if (isOnDeckName(headings[i]!) && !HEADING.test(line) && TASK_MARK.test(line) && !critical.has(i)) lines.add(i);
+  });
+  return lines;
 }
 
 export function isSuggestedName(name: string | null): boolean {

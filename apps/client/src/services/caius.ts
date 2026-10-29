@@ -94,6 +94,8 @@ export interface CaiusPlan {
     critical: CaiusPlanTask[];
     sections: { name: string | null; kind: string | null; tasks: CaiusPlanTask[] }[];
     top3: CaiusPlanTask[];
+    /** A day's On deck: tasks intended for it, tracked but not on the list until planned. */
+    onDeck?: CaiusPlanTask[];
     suggested: CaiusPlanTask[];
     dismissed: string[];
     capacity: {
@@ -104,6 +106,8 @@ export interface CaiusPlan {
         totalMinutes: number;
         /** Minutes under Evening or Recharge, which the other counts leave out. */
         eveningMinutes: number;
+        /** Minutes of the live On deck tasks, which the other counts leave out until they are planned. */
+        onDeckMinutes?: number;
         /** `null` for a month, which has no target. */
         target: { min: number; max: number } | null;
         horizons: Record<string, number>;

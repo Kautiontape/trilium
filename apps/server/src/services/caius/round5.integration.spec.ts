@@ -53,7 +53,8 @@ const prose = { headline: "A light day", acts: [ { range: "10:00 to 12:00", text
 /** The day's tasks in his order, each as its plain text with its state. */
 async function tasksOf(period: "day" | "week", date: string) {
     const plan = await call("caius_plan", { period, date });
-    return plan.sections.flatMap((s: any) => s.tasks).map((t: any) => ({
+    // His list, then On deck: a leftover a wind-down proposes for a day waits there.
+    return [ ...plan.sections.flatMap((s: any) => s.tasks), ...plan.onDeck ].map((t: any) => ({
         text: t.text.replace(/\s*(?:\[from [^\]]*\]\([^)]*\)|_scheduled \[[^\]]*\]\([^)]*\)_)/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1"),
         state: t.state
     }));
@@ -112,8 +113,9 @@ describe("a correction after the apply", () => {
         at(`${MON}T17:30`);
         const first = await call("caius_winddown_apply", { date: MON, said: "110 is done. evening pack the climbing gym bag", done: [ "ZAP-110" ], evening: [ "Pack the climbing gym bag" ] });
         expect(first.skipped).toEqual([]);
+        // The evening's bag on Tuesday's list, the two tickets on its On deck.
         expect((await tasksOf("day", TUE)).map((task: any) => task.text)).toEqual([
-            "ZAP-101 Verify the export retry on staging", "ZAP-111 Check the invoice export in QA", "Pack the climbing gym bag"
+            "Pack the climbing gym bag", "ZAP-101 Verify the export retry on staging", "ZAP-111 Check the invoice export in QA"
         ]);
 
         at(`${MON}T17:31`);
@@ -125,9 +127,9 @@ describe("a correction after the apply", () => {
         ]));
         // 111 left Tuesday for the week; 101 and the bag stay on Tuesday, once each.
         expect(await tasksOf("day", TUE)).toEqual([
+            { text: "Pack the climbing gym bag", state: "open" },
             { text: "ZAP-101 Verify the export retry on staging", state: "open" },
-            { text: "ZAP-111 Check the invoice export in QA ~30m", state: expect.not.stringMatching(/^open$/) },
-            { text: "Pack the climbing gym bag", state: "open" }
+            { text: "ZAP-111 Check the invoice export in QA ~30m", state: expect.not.stringMatching(/^open$/) }
         ]);
         expect(await tasksOf("week", "2026-W45")).toEqual([ { text: "ZAP-111 Check the invoice export in QA", state: "open" } ]);
         expect((await call("caius_context", { date: TUE })).context.map((line: any) => line.text)).toContain("ZAP-2590 is open");
@@ -652,8 +654,12 @@ describe("a Review goes straight on", () => {
         expect(wound.next).toBe("planday");
         expect(wound.nextCall).toBeUndefined();
         expect(wound.planday.catchup).toMatchObject({ step: "catchup", date: WED, question: null });
-        expect(wound.planday.inputs).toMatchObject({ step: "inputs", date: WED, question: null });
-        expect(wound.planday.inputs.data.list.map((item: any) => item.text)).toEqual([ "Message Dave about the lights" ]);
+        // Dave waits on today's On deck, so the plan's only question is the On deck one: the evening isn't asked again.
+        expect(wound.planday.inputs).toMatchObject({
+            step: "inputs", date: WED, question: "On deck: 'Message Dave about the lights'. All of it fits, so it goes on your list unless you say otherwise."
+        });
+        expect(wound.planday.inputs.data.onDeck).toEqual([ expect.objectContaining({ text: "Message Dave about the lights", fate: { list: true } }) ]);
+        expect(wound.planday.inputs.data.list).toEqual([]);
     });
 });
 

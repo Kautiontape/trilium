@@ -67,3 +67,8 @@
         color: var(--muted-text-color);
     }
 }
+
+.plan-tab .plan-on-deck-total {
+    font-size: 0.85em;
+    color: var(--muted-text-color);
+}

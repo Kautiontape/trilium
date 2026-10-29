@@ -19,6 +19,8 @@ export interface OpenTask {
   state: 'open' | 'in_progress';
   horizon: string | null;
   text: string;
+  /** Minutes from its `~est` token, null without one. */
+  estMinutes: number | null;
   /** The parent task's text, when this is a sub-item. */
   parent: string | null;
   /** The parent task's list item id, when this is a sub-item and the parent has one. */
@@ -28,6 +30,8 @@ export interface OpenTask {
   sectionKind: SectionKind;
   /** Inside an Important block (importance tier 3 in the derived markdown only). */
   critical: boolean;
+  /** Under the On deck heading: intended for its day, not committed. */
+  onDeck: boolean;
   /** Position in the note's priority order among the tasks listed here: critical first, then document order. */
   rank: number;
 }
@@ -57,6 +61,7 @@ export function openTasks(docs: TriliumDoc[], result: ScanResult): OpenTask[] {
       state: t.state as OpenTask['state'],
       horizon: t.horizon,
       text: t.text,
+      estMinutes: t.estMinutes,
       parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
       parentListItemId: parentItemId(
         { itemIds: idsByPath.get(t.file) ?? new Map() },
@@ -65,6 +70,7 @@ export function openTasks(docs: TriliumDoc[], result: ScanResult): OpenTask[] {
       section,
       sectionKind: sectionKind(section),
       critical: docByPath.get(t.file)?.critical.has(t.line) ?? false,
+      onDeck: docByPath.get(t.file)?.onDeck.has(t.line) ?? false,
       rank: 0,
       };
     });
@@ -106,11 +112,13 @@ export function suggestedTasks(docs: TriliumDoc[], now: Date): OpenTask[] {
         state: t.state as OpenTask['state'],
         horizon: null,
         text: t.text,
+        estMinutes: t.estMinutes,
         parent: t.parentRowid === null ? null : (textByRowid.get(t.parentRowid) ?? null),
         parentListItemId: parentItemId(doc, t.parentRowid === null ? undefined : taskByRowid.get(t.parentRowid)),
         section,
         sectionKind: sectionKind(section),
         critical: false,
+        onDeck: false,
         rank: i,
       };
     });

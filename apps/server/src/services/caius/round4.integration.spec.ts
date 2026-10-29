@@ -56,10 +56,10 @@ const at = (stamp: string) => vi.stubEnv("CAIUS_NOW", stamp);
 /** A brief's prose, as the agent writes it. */
 const prose = { headline: "A light day", acts: [ { range: "10:00 to 12:00", text: "x" }, { range: "12:00 to 18:00", text: "y" }, { range: "Evening", text: "z" } ], sections: [] };
 
-/** The day's tasks in his order, each as its plain text with its state. */
+/** The day's tasks in his order, each as its plain text with its state, then its On deck tasks. */
 async function tasksOf(date: string) {
     const plan = await call("caius_plan", { period: "day", date });
-    return plan.sections.flatMap((s: any) => s.tasks).map((t: any) => ({
+    return [ ...plan.sections.flatMap((s: any) => s.tasks), ...plan.onDeck ].map((t: any) => ({
         text: t.text.replace(/\s*(?:\[from [^\]]*\]\([^)]*\)|_scheduled \[[^\]]*\]\([^)]*\)_)/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1"),
         state: t.state
     }));
@@ -222,7 +222,8 @@ describe("short references", () => {
             { text: "ZAP-101 Verify the export retry on staging", state: "open" }
         ]);
         expect((await tasksOf("2026-11-19")).map((task: any) => task.text).join()).not.toContain("ZAP-1");
-        expect(applied.say).toBe("Message Dave if he knows anyone who will hang lights as a small job and Pack the climbing gym bag moved to Thu 19 Nov. "
+        // Dave goes on Thursday's On deck; the bag, an evening task, stays in the evening.
+        expect(applied.say).toBe("Message Dave if he knows anyone who will hang lights as a small job moved to Thu 19 Nov's On deck and Pack the climbing gym bag moved to Thu 19 Nov. "
             + "Which export: ZAP-111 or ZAP-101?");
         await clearHolds("2026-11-18");
     });
@@ -261,10 +262,10 @@ describe("'done' means done", () => {
             expect.objectContaining({ kind: "finished", id: "ZAP-111" }),
             expect.objectContaining({ kind: "finished", id: "ZAP-101" })
         ]));
-        // Only Dave goes on to Thursday, with the evening's Laundry.
+        // Only Dave goes on to Thursday, on its On deck, with the evening's Laundry on the list.
         expect(await tasksOf("2026-12-03")).toEqual([
-            { text: "Message Dave if he knows anyone who will hang lights as a small job", state: "open" },
-            { text: "Laundry", state: "open" }
+            { text: "Laundry", state: "open" },
+            { text: "Message Dave if he knows anyone who will hang lights as a small job", state: "open" }
         ]);
     });
 
@@ -294,7 +295,7 @@ describe("the result is the recap", () => {
             date: "2026-12-16", done: [ "111", "101", "the bag", "groceries" ], fates: [ { listItemId: "dave", to: "d1" } ], evening: [ "Water the plants" ]
         });
         expect(applied.say).toBe("ZAP-111, ZAP-101 and Pack the climbing gym bag are done, "
-            + "Message Dave if he knows anyone who will hang lights as a small job moved to Thu 17 Dec and Water the plants is on Thursday evening. "
+            + "Message Dave if he knows anyone who will hang lights as a small job moved to Thu 17 Dec's On deck and Water the plants is on Thursday evening. "
             + "'groceries' wasn't found.");
         expect(applied.say).not.toMatch(/2026-12-16-|\b[ocl]\d\b|\d{4}-\d{2}-\d{2}/);
     });
@@ -345,7 +346,10 @@ describe("a question answered once stays answered", () => {
         expect(next.question).toContain(EVENING);
         await call("caius_winddown_apply", { date: "2027-01-18", done: [ "groceries" ] });
         const inputs = await call("caius_planday", { date: "2027-01-20", step: "inputs", refresh: true });
-        expect(inputs.question).toBeNull();
+        // Dave went on today's On deck, which the plan asks about; the evening it doesn't ask again.
+        expect(inputs.data.onDeck.map((item: any) => item.text)).toEqual([ expect.stringContaining("Message Dave about the lights") ]);
+        expect(inputs.question).toMatch(/^On deck: 'Message Dave about the lights/);
+        expect(inputs.question).not.toContain(EVENING);
     });
 
     it("Wed 17:45: an overlap on Thursday asked in the wind-down isn't asked again in Thursday's plan", async () => {
@@ -501,7 +505,9 @@ describe("a place finds the copy the wind-down moved", () => {
         });
         at("2027-04-13T17:30");
         const applied = await call("caius_winddown_apply", {
-            date: "2027-04-13", fates: [ { listItemId: "t-wat", to: "w1" } ], move: [ { listItemId: "t-lau", first: true }, { listItemId: "t-wat", after: "Other" } ]
+            // "Laundry first" puts it on Wednesday's list, not its On deck.
+            date: "2027-04-13", fates: [ { listItemId: "t-wat", to: "w1" }, { listItemId: "t-lau", to: "2027-04-14", onDeck: false } ],
+            move: [ { listItemId: "t-lau", first: true }, { listItemId: "t-wat", after: "Other" } ]
         });
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "move", id: "t-wat", reason: "not_on_list" }) ]);
         const plan = await call("caius_plan", { period: "day", date: "2027-04-14" });
@@ -695,7 +701,8 @@ describe("fix round 1: an item held by an ambiguous answer stays held", () => {
         expect((await tasksOf(DAY)).slice(0, 2).map((task: any) => task.state)).toEqual([ "open", "open" ]);
         expect(await labelsOf(DAY, "caiusWoundDown")).toEqual([]);
         // Dave and the bag, which he didn't name, take their proposed fate.
-        expect((await tasksOf("2027-06-10")).map((task: any) => task.text)).toEqual([ expect.stringContaining("Message Dave"), "Pack the climbing gym bag" ]);
+        // The bag stays in the evening; Dave goes on Thursday's On deck.
+        expect((await tasksOf("2027-06-10")).map((task: any) => task.text)).toEqual([ "Pack the climbing gym bag", expect.stringContaining("Message Dave") ]);
         await clearHolds(DAY);
     });
 });
@@ -830,13 +837,14 @@ describe("fix round 1: a moved item is followed to its copy, not taken as in pla
         await wednesday(DAY);
         at(`${DAY}T17:45`);
         await call("caius_winddown_apply", { date: DAY, done: [ "111" ] });
+        // The bag stays in Thursday's evening; ZAP-101 and Dave go on its On deck.
         expect((await tasksOf("2027-08-19")).map((task: any) => [ task.text, task.state ])).toEqual([
-            [ "ZAP-101 Verify the export retry on staging", "open" ], [ "Message Dave if he knows anyone who will hang lights as a small job", "open" ],
-            [ "Pack the climbing gym bag", "open" ]
+            [ "Pack the climbing gym bag", "open" ], [ "ZAP-101 Verify the export retry on staging", "open" ],
+            [ "Message Dave if he knows anyone who will hang lights as a small job", "open" ]
         ]);
         const later = await call("caius_winddown_apply", { date: DAY, done: [ "the bag" ], fates: [ { listItemId: "dave", drop: "not needed" } ] });
         expect(later.skipped).toEqual([]);
-        expect((await tasksOf("2027-08-19")).map((task: any) => task.state)).toEqual([ "open", "cancelled", "done" ]);
+        expect((await tasksOf("2027-08-19")).map((task: any) => task.state)).toEqual([ "done", "open", "cancelled" ]);
         expect(later.say).toMatch(/^Pack the climbing gym bag is done and Message Dave .* is dropped\.$/);
         // Dave's copy is dropped now, so calling him done is stale, not already in place.
         const after = await call("caius_winddown_apply", { date: DAY, done: [ "dave" ] });
@@ -1278,7 +1286,7 @@ describe("fix round 4: a hold settled from a day whose window doesn't reach the 
         await heldAcrossDays(MO, WE, "nb");
         at("2028-03-23T09:30");
         const review = await call("caius_winddown_apply", { date: MO, fates: [ { listItemId: "ZAP-111", to: "2028-03-24" } ] });
-        expect(review.say).toMatch(/^ZAP-111 moved to Fri 24 Mar\. And ZAP-101: is that the one that's done\?/);
+        expect(review.say).toMatch(/^ZAP-111 moved to Fri 24 Mar's On deck\. And ZAP-101: is that the one that's done\?/);
         expect(await labelsOf(WE, "caiusHeld")).toEqual([ `nb-101@${WE}` ]);
         await clearHolds(WE);
     });
@@ -1325,7 +1333,7 @@ describe("fix round 5: a Review of a day older than 3 workdays keeps its settled
         }
         at(`${TODAY}T09:30`);
         const review = await call("caius_winddown_apply", { date: DAY, done: [ "ZAP-101" ] });
-        expect(review.say).toMatch(/^ZAP-101 is done and ZAP-111 moved to Mon 15 May\./);
+        expect(review.say).toMatch(/^ZAP-101 is done and ZAP-111 moved to Mon 15 May's On deck\./);
         expect(await labelsOf(DAY, "caiusWoundDown")).toHaveLength(1);
         expect(await labelsOf(DAY, "caiusSettled")).toEqual(expect.arrayContaining([ `${DAY}-101`, `${DAY}-111` ]));
     });

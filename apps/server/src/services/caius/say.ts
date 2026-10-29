@@ -26,7 +26,8 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
     const moves = new Map<string, Written[]>();
     for (const entry of of("fate", "forward")) {
         if (entry.detail === "dropped") continue;
-        const to = dateLabel(entry.detail ?? "") ?? entry.detail ?? "";
+        const day = dateLabel(entry.detail ?? "") ?? entry.detail ?? "";
+        const to = entry.onDeck ? t("caius.say.on_deck_of", { day }) : day;
         moves.set(to, [ ...(moves.get(to) ?? []), entry ]);
     }
     const caught = of("catchup").filter((entry) => entry.detail !== "skip");
@@ -39,7 +40,7 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         ...clause("done", of("done")),
         ...[ ...moves ].map(([ to, entries ]) => t("caius.say.moved", { items: andList(labels(entries)), to })),
         ...clause("dropped", of("fate").filter((entry) => entry.detail === "dropped")),
-        ...clause("accepted", of("accept")),
+        ...clause("accepted", of("accept", "deck")),
         ...of("place", "move").filter((entry) => entry.detail).map((entry) => t(`caius.say.${entry.detail}`, {
             item: labelOf(entry.text ?? entry.id ?? ""), anchor: labelOf(entry.anchor ?? "")
         })),
@@ -102,7 +103,7 @@ export interface HeldItem {
 }
 
 /** Answers whose ambiguous items are held until he says which, so `say` asks. */
-const HOLDING = new Set([ "done", "fate", "move" ]);
+const HOLDING = new Set([ "done", "fate", "move", "deck" ]);
 
 /** Words a which-question leaves out of what he said: "the export is done" asks "Which export". */
 const QUESTION_FILLER = new Set([ "the", "a", "an", "my", "is", "are", "was", "done", "finished", "first", "it", "that", "this" ]);

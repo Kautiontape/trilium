@@ -4,6 +4,19 @@ How a day's tasks are laid out in Trilium, what Caius does with them, and where 
 
 Moved from the caius repo's `docs/trilium-planning.md` on 2026-10-27. The method is unchanged. The commands that used to be `caius` CLI subcommands are now the `caius_*` tools and the Task menu, described in [README.md](README.md); how they work is in [internals.md](internals.md).
 
+## Purpose
+
+Shawn's words, from the Caius note:
+
+> Caius keeps one promise: nothing falls off the radar silently. Everything you mean to do moves through the funnel or gets dropped on purpose, work and life alike.
+> - A guide, not a script. He knows the method and holds each ritual's goal. He flexes to whatever you ask, and pushes back when an ask would undo the goal: "That won't fit tomorrow either. Split it, or send it up to the week to sort out when you plan?"
+> - Nothing gets lost. Whatever you hand him lands somewhere Caius tracks.
+> - Look, ask, never guess. If your question only makes sense once he has the answer, he goes and gets it. If it would only be nice to have, he asks. He never bluffs.
+> - He writes only what you said, and tells you what he wrote.
+> - Voice. Brief, a little dry, chill. Protective of you, your evenings as much as your tickets. He'll call you out for overloading a day, but never with an attitude; he means well and is there to help.
+
+It is a lifestyle list, not a work list: the evening is planned like the day, and there is no point at which planning is done. The name is a nod to Caius Cosades, the laid-back Blades spymaster in Morrowind who hands you the next job. Design: [design/2026-10-29-caius-the-guide.md](design/2026-10-29-caius-the-guide.md).
+
 ## The method, as Shawn wrote it in Trilium
 
 - **The cascade.** Someday → Planning ahead (future month notes) → Orbit (this month's note, the committed set) → Week (pulled from the month) → Today (pulled from the week). Pull down only: if it isn't in the month, it doesn't get a week slot.
@@ -21,13 +34,15 @@ Top to bottom:
 
 1. **Critical, if anything is.** An Important block (Trilium's admonition, stored as `<aside class="admonition important">`) holding the one or two tasks that must happen today. Most days have none.
 2. **Tasks in priority order, under headers.** The order is the priority. The Top 3 are simply the first three live tasks after the critical block. Headers group them, and the vocabulary changes from day to day. Seen so far: Morning / Afternoon / Evening (when in the day), Foundation / Growth / Recharge (work, growth and fun), Important / Foundation / Growth in the August month note, and Work / Home / Chores in Week 31. Caius doesn't require any set; it reads whatever headers a day has.
-3. **Suggested**, the last section. Things the daily brief (or anything else) thinks might be tasks. They aren't tasks until Shawn accepts them.
+3. **On deck**, just above Suggested. Tasks he would like to do that day but hasn't committed to: "I'd like to do this Thursday". They are tracked like any task, but they don't count toward the day's capacity until Plan my day puts them on the list. Caius creates the section when it first needs it.
+4. **Suggested**, the last section. Things the daily brief (or anything else) thinks might be tasks. They aren't tasks until Shawn accepts them.
 
 ## How Caius reads it
 
 - **Section.** Each task carries the nearest heading above it as its `section`. Known names get a kind: Morning / Afternoon / Evening are a `slot`; Foundation / Growth / Recharge are an `area` (this is the area axis decision D3 deferred). Any other heading is just a group label. This is a new axis next to horizon and project.
 - **Critical.** A task inside an Important block counts as critical: importance tier 3, as if it carried `!!!`. Only the derived markdown Caius parses gets the token; nothing is written to the note.
 - **Order.** Within a day: critical first, then document order. That gives "Top 3" without a field for it.
+- **On deck is tracked, not committed.** Items under the On deck heading are live tasks in every lane and duplicate check, but `caius_plan` lists them as `onDeck`, apart from the sections, the Top 3 and the capacity total (`capacity.onDeckMinutes` holds their minutes).
 - **Suggested isn't the funnel.** Items under the Suggested heading are left out of every horizon and of capacity, and listed as a separate `suggested` lane for the day.
 - **Estimates.** `~30m` tokens in the text, as in the grammar. A task without one counts as 30 minutes and is flagged, so the plan can ask for a guess.
 
@@ -45,11 +60,11 @@ Every write is saved only if the note still holds what Caius read; a note that c
 
 ## The rituals
 
-- **Daily planning** (morning). Look at today's note, the Suggested items, this week's open tasks and the overdue lane ("these slipped", including the 167 found on 2026-10-26). Accept or dismiss suggestions, pull in what fits the capacity, set the order and the critical block. Caius writes the day note.
-- **Daily shutdown** (evening, or first thing the next morning). Every open task in today's note gets one fate: forward to a day, back up to the week or month, or drop with a reason. Nothing stays.
+- **Plan my day** (morning) decides what is actually on the list. On deck first, then the week and what's overdue, against capacity. Every On deck item gets a fate: onto the list at a place, back up to the week, parked or dropped, so nothing sits on deck past planning. Accept or dismiss suggestions, set the order and the critical block. It remembers how yesterday went: what got done, moved and dropped, and whether the day was wound down.
+- **Wind down** (evening, or first thing the next morning) closes today and sets up tomorrow. Every open task in today's note gets one fate, the day's unplanned On deck items included: forward to a day, back up to the week or month, or drop with a reason. "I'd like to do this Thursday" goes on Thursday's On deck; "I need to do this Thursday" goes on Thursday's list proper, or its Important block when it is critical. A leftover he doesn't name goes on the next workday's On deck; an Important one keeps to the Important block, and an evening one to the evening. When what he asks for would push tomorrow past capacity, Caius says so and suggests splitting it or sending it to the week; if he insists, it is done. Wind down covers the evening as well as the work.
 - **Weekly and monthly** close the same way at their grain.
 
-These happen in conversation (Claude or Duet through Trilium's MCP server and the `caius` skill sheet) or in Trilium: the Plan tab's Close card and the Task menu. **Automatic** is a switch, off by default: when on, a scheduled run applies the obvious fates by itself, for example forwarding leftovers to tomorrow. That runs against "drops are explicit", which is why it is off.
+These happen in conversation (Claude or Duet through Trilium's MCP server and the `caius` skill sheet) or in Trilium: the Plan tab's Close card and the Task menu. In conversation Caius is a guide, not a script: the steps are the default path, and anything else he asks for in the middle (add a task to Thursday, read tomorrow's meetings, move a task) is done in the same conversation. **Automatic** is a switch, off by default: when on, a scheduled run applies the obvious fates by itself, for example forwarding leftovers to tomorrow. That runs against "drops are explicit", which is why it is off.
 
 ## The daily brief's part
 
@@ -77,7 +92,7 @@ These settled the questions this note first left open.
 
 - A task with live sub-items counts toward capacity through its sub-items, not twice. Unestimated live tasks count 30 minutes each.
 - The `[…]` placeholder is replaced by the first real task added to a day, whichever section it lands in. Filling only Suggested leaves the placeholder alone, since the day is still untouched for planning.
-- New headers are created above Suggested, one level under the template's lone `Tasks` title, else at the level already in use. Suggested is created last if missing; Caius never reorders a Suggested section that someone has put elsewhere.
+- New headers are created above On deck, else above Suggested, one level under the template's lone `Tasks` title, else at the level already in use. Suggested is created last if missing; Caius never reorders a Suggested section that someone has put elsewhere.
 - Duplicate checks compare against live tasks across the Journal, plus open Suggested items on the same note. Suggested items on other notes don't count, so a stale suggestion cannot block a source forever.
 - Bare Jira keys in task text are recognised only for the projects ZAP, ZIS, SUR and CM (`JIRA_PROJECTS` in `packages/caius/src/trilium/keys.ts`), so `UTF-8` is not a key. A `source` key of any project is accepted, and any `/browse/KEY` link counts.
 - `drop` cancels the task's still-live sub-items with it; `done` touches only the item.
