@@ -1,0 +1,28 @@
+.quick-add-text {
+    min-height: 72px;
+    padding: var(--s3);
+    resize: none;
+    font-size: 18px;
+    line-height: 24px;
+}
+
+.quick-add-result {
+    margin: 0 0 var(--s3);
+    padding: var(--s2) var(--s3);
+    border-radius: var(--r-chip);
+    background: var(--ochre-wash);
+    font-size: 14px;
+}
+
+.quick-add-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    margin-top: var(--s2);
+
+    & span {
+        flex: 1;
+        font-size: 14px;
+        line-height: 20px;
+    }
+}

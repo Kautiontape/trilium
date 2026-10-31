@@ -1,0 +1,207 @@
+.btn {
+    min-height: 48px;
+    padding: 0 var(--s5);
+    border-radius: var(--r-pill);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms var(--ease), transform 150ms var(--ease);
+
+    &:active { transform: scale(0.98); }
+    &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.btn-primary {
+    background: var(--clay);
+    border-color: var(--clay);
+    color: var(--on-clay);
+}
+
+.btn-quiet {
+    border-color: transparent;
+    background: transparent;
+    color: var(--clay);
+    padding: 0 var(--s3);
+}
+
+.btn-danger {
+    color: var(--berry);
+}
+
+.chip {
+    min-height: 36px;
+    padding: 0 var(--s3);
+    border-radius: var(--r-chip);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 150ms var(--ease), border-color 150ms var(--ease);
+
+    &.selected {
+        background: var(--clay-wash);
+        border-color: var(--clay);
+        color: var(--ink);
+        font-weight: 600;
+    }
+}
+
+.card {
+    background: var(--surface);
+    border-radius: var(--r-card);
+    padding: var(--s4);
+    box-shadow: var(--shadow);
+}
+
+.card-clay { background: var(--clay-wash); box-shadow: none; }
+.card-dusk { background: var(--dusk-wash); box-shadow: none; }
+.card-ochre { background: var(--ochre-wash); box-shadow: none; }
+.card-moss { background: var(--moss-wash); box-shadow: none; }
+
+.glyph {
+    display: inline-flex;
+    width: 24px;
+    justify-content: center;
+    font-size: 18px;
+    color: var(--ink-2);
+    transition: color 150ms var(--ease);
+}
+
+.glyph-in_progress { color: var(--clay); }
+.glyph-done { color: var(--moss); }
+.glyph-rescheduled { color: var(--dusk); }
+.glyph-cancelled { color: var(--berry); }
+
+.est {
+    color: var(--ink-2);
+    white-space: nowrap;
+}
+
+.est-missing {
+    color: var(--ochre);
+    font-weight: 600;
+}
+
+.snackbar {
+    position: fixed;
+    left: var(--s4);
+    right: var(--s4);
+    bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--s4));
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    padding: var(--s3) var(--s4);
+    border-radius: var(--r-chip);
+    background: var(--ink);
+    color: var(--ground);
+    font-size: 14px;
+    line-height: 20px;
+    box-shadow: var(--shadow);
+    animation: rise 250ms var(--ease);
+
+    & span { flex: 1; }
+
+    & button {
+        border: 0;
+        background: transparent;
+        color: var(--clay-fill);
+        font-weight: 700;
+        min-height: 40px;
+        padding: 0 var(--s2);
+        cursor: pointer;
+    }
+}
+
+.snackbar-error {
+    background: var(--berry);
+    color: #fff;
+}
+
+.sheet-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: var(--scrim);
+    display: flex;
+    align-items: flex-end;
+    animation: fade 150ms var(--ease);
+}
+
+.sheet {
+    width: 100%;
+    max-height: 88vh;
+    overflow-y: auto;
+    background: var(--surface);
+    border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+    padding: var(--s2) var(--s5) calc(var(--s5) + var(--safe-bottom));
+    animation: rise 250ms var(--ease);
+}
+
+.sheet-handle {
+    width: 32px;
+    height: 4px;
+    margin: 0 auto var(--s4);
+    border-radius: 2px;
+    background: var(--line);
+}
+
+.sheet-title {
+    margin-bottom: var(--s3);
+
+    & h2 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 24px;
+        font-weight: 600;
+    }
+
+    & p {
+        margin: var(--s1) 0 0;
+        font-size: 14px;
+        line-height: 20px;
+    }
+}
+
+.sheet-action {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    width: 100%;
+    min-height: 56px;
+    padding: 0 var(--s1);
+    border: 0;
+    border-top: 1px solid var(--line);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+
+    &:first-of-type { border-top: 0; }
+}
+
+.sheet-action-glyph {
+    width: 24px;
+    text-align: center;
+    font-size: 18px;
+    color: var(--ink-2);
+}
+
+.sheet-action-label { flex: 1; }
+.sheet-action-detail { color: var(--ink-2); }
+.tone-moss .sheet-action-glyph { color: var(--moss); }
+.tone-clay .sheet-action-glyph { color: var(--clay); }
+.tone-dusk .sheet-action-glyph { color: var(--dusk); }
+.tone-berry { color: var(--berry); }
+.tone-berry .sheet-action-glyph { color: var(--berry); }
+
+@keyframes rise {
+    from { transform: translateY(24px); opacity: 0; }
+    to { transform: none; opacity: 1; }
+}
+
+@keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

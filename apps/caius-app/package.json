@@ -1,0 +1,33 @@
+{
+  "name": "@triliumnext/caius-app",
+  "version": "0.1.0",
+  "description": "Caius for Android: a Capacitor phone front-end to Caius, the Journal planner in Trilium.",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "sync": "vite build && cap sync android",
+    "android:debug": "vite build && cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/local-notifications": "8.3.1",
+    "@capacitor-community/keep-awake": "8.0.1",
+    "@fontsource/atkinson-hyperlegible-mono": "5.3.0",
+    "@fontsource/atkinson-hyperlegible-next": "5.3.0",
+    "@fontsource/bricolage-grotesque": "5.3.0",
+    "@preact/signals": "2.11.2",
+    "@triliumnext/caius": "workspace:*",
+    "capacitor-secure-storage-plugin": "0.13.0",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  }
+}

@@ -1,0 +1,49 @@
+.plan-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s2);
+}
+
+.segmented {
+    display: flex;
+    padding: 2px;
+    border-radius: var(--r-pill);
+    background: var(--surface-2);
+
+    & button {
+        min-height: 40px;
+        padding: 0 var(--s4);
+        border: 0;
+        border-radius: var(--r-pill);
+        background: transparent;
+        color: var(--ink-2);
+        font-weight: 600;
+        cursor: pointer;
+
+        &.active {
+            background: var(--surface);
+            color: var(--ink);
+            box-shadow: var(--shadow);
+        }
+    }
+}
+
+.stepper {
+    display: flex;
+    align-items: center;
+}
+
+.plan-cap {
+    margin: var(--s2) 0 0;
+}
+
+.plan-empty {
+    margin: 0;
+}
+
+.lane-more {
+    color: var(--ink-3);
+    font-size: 20px;
+    padding: 0 var(--s1);
+}
