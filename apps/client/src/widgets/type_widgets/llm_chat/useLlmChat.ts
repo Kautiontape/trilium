@@ -692,6 +692,14 @@ export function useLlmChat(
                     smoothAppend(text);
                     setTargetBlocks([...contentBlocks]);
                 },
+                onTextRetract: () => {
+                    // Caius narration the message dropped when it called a tool.
+                    if (contentBlocks[contentBlocks.length - 1]?.type === "text") {
+                        contentBlocks.pop();
+                        smoothReset();
+                        setTargetBlocks([...contentBlocks]);
+                    }
+                },
                 onThinking: (text) => {
                     thinkingContent += text;
                     setStreamingThinking(thinkingContent);

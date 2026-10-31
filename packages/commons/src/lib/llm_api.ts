@@ -214,6 +214,12 @@ export type LlmStreamStatus = "starting_agent";
 export type LlmStreamChunk =
     | { type: "status"; status: LlmStreamStatus }
     | { type: "text"; content: string }
+    /**
+     * Takes back the text streamed since the last tool call: in a Caius conversation a message's
+     * text streams as it is written, and when the message goes on to call a tool that text was
+     * narration ("Let me check…"), so the client removes it.
+     */
+    | { type: "text_retract" }
     | { type: "thinking"; content: string }
     | { type: "tool_input_start"; toolCallId: string; toolName: string }
     | { type: "tool_input_delta"; toolCallId: string; delta: string }

@@ -506,7 +506,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect((createMcpServerMock.mock.calls[1] as unknown as [ { omit: string[] } ])[0].omit).toEqual([]);
     });
 
-    it("shows a Plan my day or Wind down conversation only its replies: no narration before a tool call, no thinking, no failed call", async () => {
+    it("streams a Plan my day or Wind down conversation's text live, takes back narration before a tool call, and shows no thinking and no failed call", async () => {
         const event = (body: object) => ({ type: "stream_event", parent_tool_use_id: null, session_id: "sess-1", event: body });
         const toolCall = (id: string, input: object) => [
             event({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id, name: "mcp__trilium__caius_plan_apply" } }),
@@ -535,13 +535,17 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         ]);
         const chunks = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Plan my day 2026-11-03" }], { enableNoteTools: true }));
         expect(chunks.filter((chunk) => chunk.type !== "usage")).toEqual([
+            { type: "text", content: "No question is posed by the step, so I'll just note the meeting change. " },
+            { type: "text_retract" },
+            { type: "text", content: "I need to supply exactly 3 acts." },
+            { type: "text_retract" },
             { type: "tool_use", toolCallId: "toolu_2", toolName: "caius_plan_apply", toolInput: { date: "2026-11-03", said: "" } },
             { type: "tool_result", toolCallId: "toolu_2", toolName: "caius_plan_apply", result: "{\"say\":\"The brief is written.\"}", isError: false },
             { type: "text", content: "The brief is written." },
             { type: "done" }
         ]);
 
-        // A turn whose only text came before a tool call still shows that text, rather than nothing.
+        // A turn whose only text came before a tool call shows that text again at the end, rather than nothing.
         scriptAgent([
             event({ type: "message_start" }),
             textDelta("Monday is closed out."),
@@ -552,7 +556,11 @@ describe("ClaudeAgentProvider.chatChunks", () => {
             successResult()
         ]);
         const quiet = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-02" }], { enableNoteTools: true }));
-        expect(quiet.filter((chunk) => chunk.type === "text")).toEqual([ { type: "text", content: "Monday is closed out." } ]);
+        expect(quiet.filter((chunk) => chunk.type === "text" || chunk.type === "text_retract")).toEqual([
+            { type: "text", content: "Monday is closed out." },
+            { type: "text_retract" },
+            { type: "text", content: "Monday is closed out." }
+        ]);
 
         // Any other chat streams as it did.
         scriptAgent([ event({ type: "message_start" }), textDelta("Let me look. "), ...toolCall("toolu_3", {}), result("toolu_3", "x", true), successResult() ]);

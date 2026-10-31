@@ -61,3 +61,23 @@ describe("historyForServer", () => {
         expect(applyChunk(turn, { type: "done" }).done).toBe(true);
     });
 });
+
+describe("applyChunk", () => {
+    it("takes back narration streamed before a tool call and keeps it to fade out", () => {
+        let turn: AssistantTurn = { id: "t", blocks: [], done: false };
+        for (const chunk of [
+            { type: "text", content: "Let me " },
+            { type: "text", content: "check." },
+            { type: "text_retract" },
+            { type: "tool_use", toolCallId: "a", toolName: "caius_planday", toolInput: {} },
+            { type: "tool_result", toolCallId: "a", toolName: "caius_planday", result: "{}" },
+            { type: "text", content: "Here's your day." },
+            { type: "done" }
+        ] as ChatChunk[]) {
+            turn = applyChunk(turn, chunk);
+        }
+        expect(turnText(turn.blocks)).toBe("Here's your day.");
+        expect(turn.fading).toEqual({ key: 1, text: "Let me check." });
+        expect(turn.blocks.map((b) => b.type)).toEqual([ "tool_call", "text" ]);
+    });
+});

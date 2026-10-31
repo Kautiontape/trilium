@@ -452,9 +452,10 @@ export class ClaudeAgentProvider implements LlmProvider {
             const active = session;
             held = active;
             await pushUserTurn(active.input, prompt);
-            // In a Caius conversation only the replies show: a message's text waits for
-            // the message's end and is dropped when it called a tool, thinking is never shown, and a tool
-            // call shows once its result is in, and not at all when it failed.
+            // In a Caius conversation only the replies show: a message's text streams as it is
+            // written and is taken back (`text_retract`) when the message goes on to call a tool,
+            // thinking is never shown, and a tool call shows once its result is in, and not at all
+            // when it failed.
             let pendingText = "";
             let calledTool = false;
             // A turn that would show no text at all shows the last text it dropped instead.
@@ -488,7 +489,6 @@ export class ClaudeAgentProvider implements LlmProvider {
                             if (caius && !calledTool && pendingText) {
                                 assistantText += pendingText;
                                 shownText = true;
-                                yield { type: "text", content: pendingText };
                             }
                             pendingText = "";
                         } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
@@ -497,6 +497,7 @@ export class ClaudeAgentProvider implements LlmProvider {
                             if (caius) {
                                 calledTool = true;
                                 if (pendingText.trim()) lastDropped = pendingText;
+                                if (pendingText) yield { type: "text_retract" };
                                 pendingText = "";
                             } else {
                                 yield {
@@ -508,7 +509,10 @@ export class ClaudeAgentProvider implements LlmProvider {
                         } else if (event.type === "content_block_delta") {
                             if (event.delta.type === "text_delta") {
                                 if (caius) {
-                                    if (!calledTool) pendingText += event.delta.text;
+                                    if (!calledTool) {
+                                        pendingText += event.delta.text;
+                                        yield { type: "text", content: event.delta.text };
+                                    }
                                 } else {
                                     assistantText += event.delta.text;
                                     yield { type: "text", content: event.delta.text };
@@ -589,11 +593,10 @@ export class ClaudeAgentProvider implements LlmProvider {
                     }
 
                     case "result": {
-                        // A last message whose end never came still shows, unless it called a tool.
+                        // A last message whose end never came keeps its streamed text, unless it called a tool.
                         if (caius && !calledTool && pendingText) {
                             assistantText += pendingText;
                             shownText = true;
-                            yield { type: "text", content: pendingText };
                             pendingText = "";
                         }
                         if (caius && !shownText && lastDropped) {

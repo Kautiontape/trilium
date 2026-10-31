@@ -51,6 +51,8 @@ function serverErrorMessage(error: unknown): string {
 
 export interface StreamCallbacks {
     onChunk: (text: string) => void;
+    /** Removes the text streamed since the last tool call (see the `text_retract` chunk). */
+    onTextRetract?: () => void;
     onThinking?: (text: string) => void;
     onToolInputStart?: (toolCallId: string, toolName: string) => void;
     onToolInputDelta?: (toolCallId: string, delta: string) => void;
@@ -257,6 +259,9 @@ async function handleChunk(chunk: LlmStreamChunk, callbacks: StreamCallbacks): P
             break;
         case "text":
             callbacks.onChunk(chunk.content);
+            break;
+        case "text_retract":
+            callbacks.onTextRetract?.();
             break;
         case "thinking":
             callbacks.onThinking?.(chunk.content);
