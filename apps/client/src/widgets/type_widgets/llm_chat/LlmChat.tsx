@@ -1,5 +1,6 @@
 import "./LlmChat.css";
 
+import type { LlmChatContent } from "@triliumnext/commons";
 import { useCallback, useEffect, useRef } from "preact/hooks";
 
 import { t } from "../../../services/i18n.js";
@@ -12,7 +13,6 @@ import { useChatToc } from "./chat_toc.js";
 import ChatInputBar from "./ChatInputBar.js";
 import ChatMessageList from "./ChatMessageList.js";
 import ChatReadOnlyNotice from "./ChatReadOnlyNotice.js";
-import type { LlmChatContent } from "./llm_chat_types.js";
 import { useLlmChat } from "./useLlmChat.js";
 
 export default function LlmChat({ note, noteContext }: TypeWidgetProps) {

@@ -1,10 +1,12 @@
 import type { CKTextEditor, ModelElement, ModelNode } from "@triliumnext/ckeditor5";
-import { DEFAULT_TASK_STATES, type TaskStateDef } from "@triliumnext/commons";
+import {
+    type CaiusConversation, caiusOpener, DEFAULT_TASK_STATES, type TaskStateDef
+} from "@triliumnext/commons";
 
 import appContext, { type CommandNames } from "../components/app_context.js";
 import type FNote from "../entities/fnote.js";
 import {
-    caiusApi, type CaiusConversation, caiusNow, caiusOpener, type CaiusTaskState, caiusWrite, describeSkip,
+    caiusApi, caiusNow, type CaiusTaskState, caiusWrite, describeSkip,
     type EditableElement, findOpenEditors, flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds,
     startCaiusConversation, wasCaiusEnabled
 } from "../services/caius.js";

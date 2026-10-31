@@ -28,7 +28,6 @@ vi.mock("../components/app_context.js", () => ({ default: { tabManager: h.tabMan
 vi.mock("../services/froca.js", () => ({ default: { notes: h.notes } }));
 vi.mock("../services/caius.js", () => ({
     caiusNow: () => new Date(),
-    caiusOpener: (kind: string, date: string) => `${kind} ${date}`,
     startCaiusConversation: h.startCaiusConversation,
     caiusApi: h.api,
     caiusWrite: h.caiusWrite,
@@ -425,9 +424,9 @@ describe("runDayCommand", () => {
 
     it("starts the conversation for today by the Caius clock, or toasts while Caius is off", async () => {
         await runDayCommand("plan");
-        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("plan 2026-11-04");
+        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("Plan my day 2026-11-04");
         await runDayCommand("winddown");
-        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("winddown 2026-11-04");
+        expect(h.startCaiusConversation).toHaveBeenLastCalledWith("Wind down 2026-11-04");
 
         h.isCaiusEnabled.mockResolvedValueOnce(false);
         await runDayCommand("plan");

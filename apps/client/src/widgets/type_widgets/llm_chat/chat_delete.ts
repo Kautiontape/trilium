@@ -1,4 +1,4 @@
-import type { StoredMessage } from "./llm_chat_types.js";
+import type { StoredMessage } from "@triliumnext/commons";
 
 /**
  * Whether the "Delete message" command should be offered for a right-clicked message: only with no

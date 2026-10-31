@@ -1,4 +1,9 @@
-import { LLM_REASONING_EFFORTS, type LlmCitation, type LlmMessage, type LlmMessagePart, type LlmModelInfo, type LlmReasoningEffort, type LlmStreamStatus, type LlmUsage } from "@triliumnext/commons";
+import {
+    type ContentBlock, type FileBlock, type ImageBlock, LLM_REASONING_EFFORTS, type LlmChatContent,
+    type LlmCitation, type LlmMessage, type LlmMessagePart, type LlmModelInfo,
+    type LlmReasoningEffort, type LlmStreamStatus, type LlmUsage, type StoredMessage,
+    type TextFileBlock, trimToFirstUserMessage
+} from "@triliumnext/commons";
 import { RefObject } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 
@@ -9,7 +14,6 @@ import { useTriliumEvent } from "../../react/hooks.js";
 import { estimateTokens, quantizeDraftTokens } from "./chat_context_usage.js";
 import { stripQuoteSources } from "./chat_quote.js";
 import { conversationForRegenerate } from "./chat_regenerate.js";
-import { type ContentBlock, type FileBlock, type ImageBlock, type LlmChatContent, type StoredMessage, type TextFileBlock, trimToFirstUserMessage } from "./llm_chat_types.js";
 import { useSmoothStreaming } from "./useSmoothStreaming.js";
 
 /** A user-supplied attachment waiting to be sent with the next message. */

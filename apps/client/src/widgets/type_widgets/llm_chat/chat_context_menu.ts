@@ -1,3 +1,4 @@
+import { getMessageText } from "@triliumnext/commons";
 import { useCallback, useEffect, useRef } from "preact/hooks";
 
 import type NoteContext from "../../../components/note_context.js";
@@ -10,7 +11,6 @@ import { canDeleteMessage, removeMessage } from "./chat_delete.js";
 import { buildQuoteMarkdown } from "./chat_quote.js";
 import { canRegenerate } from "./chat_regenerate.js";
 import { canSaveAsNote, canSaveToSubNote, saveMessageAsInboxNote, saveMessageToSubNote } from "./chat_save.js";
-import { getMessageText } from "./llm_chat_types.js";
 import type { UseLlmChatReturn } from "./useLlmChat.js";
 
 /** The right-clicked message and its surrounding state, passed to command contributors. */

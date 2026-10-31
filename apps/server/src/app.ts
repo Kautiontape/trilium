@@ -16,6 +16,7 @@ import custom from "./routes/custom.js";
 import error_handlers from "./routes/error_handlers.js";
 import mcpRoutes from "./routes/mcp.js";
 import routes from "./routes/routes.js";
+import { isTokenRoute, parseOrigins, tokenCors } from "./routes/token_cors.js";
 import config from "./services/config.js";
 import { getLog } from "@triliumnext/core";
 import { desktopNetworkAccessGate } from "./services/desktop_network_gate.js";
@@ -39,7 +40,16 @@ export default async function buildApp() {
     app.engine("ejs", (filePath, options, callback) => ejs.renderFile(filePath, options, callback));
     app.set("view engine", "ejs");
 
+    // The token routes have their own CORS, ahead of the global one, which leaves them alone.
+    const tokenCorsOrigins = parseOrigins(config.Network.tokenCorsOrigins);
+    app.use(tokenCors(() => tokenCorsOrigins));
+
     app.use((req, res, next) => {
+        res.locals.t = t;
+        if (isTokenRoute(req.path)) {
+            return next();
+        }
+
         // set CORS headers
         if (config["Network"]["corsAllowOrigin"]) {
             res.header("Access-Control-Allow-Origin", config["Network"]["corsAllowOrigin"]);
@@ -58,7 +68,6 @@ export default async function buildApp() {
             return;
         }
 
-        res.locals.t = t;
         return next();
     });
 
@@ -67,7 +76,7 @@ export default async function buildApp() {
             // Skip compression for SSE endpoints to enable real-time streaming
             filter: (req, res) => {
                 // Skip compression for SSE-capable endpoints
-                if (req.path === "/api/llm-chat/stream" || req.path === "/mcp") {
+                if (SSE_PATHS.has(req.path)) {
                     return false;
                 }
                 return compression.filter(req, res);
@@ -158,3 +167,6 @@ export default async function buildApp() {
 
     return app;
 }
+
+/** The routes that answer with a Server-Sent Events stream, which compression would buffer. */
+const SSE_PATHS = new Set([ "/api/llm-chat/stream", "/etapi/llm-chat/stream", "/mcp" ]);

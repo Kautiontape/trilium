@@ -1,7 +1,7 @@
+import type { StoredMessage } from "@triliumnext/commons";
 import { describe, expect, it } from "vitest";
 
 import { canRegenerate, conversationForRegenerate } from "./chat_regenerate.js";
-import type { StoredMessage } from "./llm_chat_types.js";
 
 function msg(id: string, role: StoredMessage["role"]): StoredMessage {
     return { id, role, content: "x", createdAt: "2026-01-01T00:00:00.000Z" };

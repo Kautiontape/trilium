@@ -1,3 +1,4 @@
+import type { StoredMessage } from "@triliumnext/commons";
 import { render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +15,6 @@ vi.mock("../text/ReadOnlyText.js", () => ({
 }));
 
 import ChatMessage from "./ChatMessage.js";
-import type { StoredMessage } from "./llm_chat_types.js";
 
 let host: HTMLElement | undefined;
 

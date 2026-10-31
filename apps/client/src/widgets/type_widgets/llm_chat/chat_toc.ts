@@ -1,10 +1,10 @@
+import { type ContentBlock, getMessageText, type StoredMessage } from "@triliumnext/commons";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import type NoteContext from "../../../components/note_context.js";
 import { t } from "../../../services/i18n.js";
 import { escapeHtml } from "../../../services/utils.js";
 import type { HeadingContext } from "../../sidebar/TableOfContents.js";
-import { type ContentBlock, getMessageText, type StoredMessage } from "./llm_chat_types.js";
 import type { UseLlmChatReturn } from "./useLlmChat.js";
 
 /** A single entry in the shared table-of-contents widget. */

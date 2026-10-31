@@ -105,6 +105,8 @@ export interface TriliumConfig {
         corsAllowHeaders: string;
         /** CORS Resource Policy ('same-origin', 'same-site', 'cross-origin') */
         corsResourcePolicy: string;
+        /** Origins allowed to call the token routes (`/mcp`, `/etapi/caius/*`, …) cross-origin, comma-separated */
+        tokenCorsOrigins: string;
     };
     /** Session management configuration */
     Session: {
@@ -416,6 +418,13 @@ const configMapping = {
             aliasEnvVars: ['TRILIUM_NETWORK_CORS_RESOURCE_POLICY'],
             iniGetter: () => getIniSection("Network")?.corsResourcePolicy,
             defaultValue: 'same-origin' as 'same-origin' | 'same-site' | 'cross-origin'
+        },
+        tokenCorsOrigins: {
+            standardEnvVar: 'TRILIUM_NETWORK_TOKENCORSORIGINS',
+            aliasEnvVars: ['TRILIUM_NETWORK_TOKEN_CORS_ORIGINS'],
+            iniGetter: () => getIniSection("Network")?.tokenCorsOrigins,
+            // The Caius phone app's WebView origins: Capacitor's `https` scheme, and `http` in a debug build.
+            defaultValue: 'https://localhost,http://localhost'
         }
     },
     Session: {
@@ -602,7 +611,8 @@ const config: TriliumConfig = {
         corsAllowOrigin: getConfigValue(configMapping.Network.corsAllowOrigin),
         corsAllowMethods: getConfigValue(configMapping.Network.corsAllowMethods),
         corsAllowHeaders: getConfigValue(configMapping.Network.corsAllowHeaders),
-        corsResourcePolicy: getConfigValue(configMapping.Network.corsResourcePolicy)
+        corsResourcePolicy: getConfigValue(configMapping.Network.corsResourcePolicy),
+        tokenCorsOrigins: getConfigValue(configMapping.Network.tokenCorsOrigins)
     },
     Session: {
         cookieMaxAge: getConfigValue(configMapping.Session.cookieMaxAge)

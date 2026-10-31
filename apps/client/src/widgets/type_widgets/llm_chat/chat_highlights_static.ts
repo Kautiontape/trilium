@@ -1,7 +1,8 @@
 import "./chat_highlights.css";
 
+import type { StoredMessage } from "@triliumnext/commons";
+
 import { findMessageContentRoot, resolveAnchorRange } from "./chat_highlights_anchor.js";
-import type { StoredMessage } from "./llm_chat_types.js";
 
 /**
  * Paints a chat's stored highlights as real markup, for the read-only preview surfaces.
