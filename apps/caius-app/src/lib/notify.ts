@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { type ActionPerformed, LocalNotifications, type LocalNotificationSchema } from "@capacitor/local-notifications";
 
-import { clockMinutes, duration, hhmm } from "./day.js";
+import { clockMinutes, duration, hhmm, keyOf, nextWorkdayKey } from "./day.js";
 import type { Reminder, Settings } from "./local.js";
 import type { TodayData } from "./store.js";
 
@@ -20,7 +20,10 @@ export const CHANNELS = [
 ] as const;
 
 /** Notification ids: the nudges have fixed ids, so scheduling one again replaces it. */
-export const NUDGE_IDS = { plan: 11, winddown: 12, overcap: 13 } as const;
+export const NUDGE_IDS = { plan: 11, winddown: 12, overcap: 13, nextPlan: 14 } as const;
+
+/** In 30 min / In 1 h bring a nudge back once, under a fixed id of its own, so a later read of Today can cancel it. */
+export const SNOOZE_IDS = { plan: 111, winddown: 112 } as const;
 
 export async function setUpNotifications(onAction: (action: ActionPerformed) => void) {
     if (!Capacitor.isNativePlatform()) {
@@ -56,55 +59,88 @@ export async function askForNotifications(): Promise<boolean> {
     return (await LocalNotifications.requestPermissions()).display === "granted";
 }
 
-/** The nudges Today calls for, as notifications to schedule. Pure, for the spec. */
+/**
+ * The nudges Today calls for, as notifications to schedule. Pure, for the spec. Besides today's,
+ * the next workday's morning nudge is scheduled ahead, so it exists even if the app isn't opened
+ * after a wind-down; opening the app on that day reads the state again and replaces it.
+ */
 export function plannedNudges(data: TodayData, settings: Settings, now: Date): LocalNotificationSchema[] {
-    if (data.offline || !isWorkday(data.key) || localKey(now) !== data.key) {
+    if (data.offline) {
         return [];
     }
     const standup = clockMinutes(settings.standupOverride || data.rhythm.start) ?? 10 * 60;
     const workEnd = clockMinutes(settings.workEndOverride || data.rhythm.workEnd) ?? 18 * 60;
-    const at = (minutes: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.floor(minutes / 60), minutes % 60);
+    const on = (day: string, minutes: number) => new Date(`${day}T${hhmm(minutes)}:00`);
     const nudges: LocalNotificationSchema[] = [];
     const state = data.nudge?.state;
     const catchupTasks = data.catchup && !data.catchup.data.skipped ? data.catchup.data.tasks : [];
 
-    if (settings.nudgePlan && state !== "planned" && state !== "wound_down") {
-        const when = at(Math.max(0, standup - 20));
-        if (catchupTasks.length && data.catchup?.question) {
-            nudges.push(nudge(NUDGE_IDS.plan, "rituals", "catchup", "Caius", data.catchup.question, when));
-        } else if (state === "unplanned") {
-            nudges.push(nudge(NUDGE_IDS.plan, "rituals", "plan", "No plan yet.", `Standup is at ${hhmm(standup)}.`, when));
+    if (isWorkday(data.key) && keyOf(now) === data.key) {
+        if (settings.nudgePlan && state !== "planned" && state !== "wound_down") {
+            const when = on(data.key, Math.max(0, standup - 20));
+            if (catchupTasks.length && data.catchup?.question) {
+                nudges.push(nudge(NUDGE_IDS.plan, "rituals", "catchup", "Caius", data.catchup.question, when));
+            } else if (state === "unplanned") {
+                nudges.push(nudge(NUDGE_IDS.plan, "rituals", "plan", "No plan yet.", `Standup is at ${hhmm(standup)}.`, when));
+            }
+        }
+
+        if (settings.nudgeWinddown && state !== "wound_down") {
+            const open = data.plan.sections.flatMap((s) => s.tasks).filter((t) => t.state === "open" || t.state === "in_progress").length
+                + data.plan.critical.filter((t) => t.state === "open" || t.state === "in_progress").length;
+            const onDeck = data.plan.onDeck.filter((t) => t.state === "open").length;
+            nudges.push(nudge(NUDGE_IDS.winddown, "rituals", "winddown", "Wind down when you're ready.",
+                `${open} open, ${onDeck} on deck.`, on(data.key, workEnd)));
+        }
+
+        const target = data.plan.capacity.target;
+        if (settings.nudgeOvercap && target && data.plan.capacity.totalMinutes > target.max) {
+            const over = data.plan.capacity.totalMinutes - target.max;
+            nudges.push(nudge(NUDGE_IDS.overcap, "warnings", "overcap", "Over capacity",
+                `Today is ${duration(over)} over ${duration(target.min).replace(/ h$/, "")}–${duration(target.max)}.`, on(data.key, standup)));
         }
     }
 
-    if (settings.nudgeWinddown && state !== "wound_down") {
-        const open = data.plan.sections.flatMap((s) => s.tasks).filter((t) => t.state === "open" || t.state === "in_progress").length
-            + data.plan.critical.filter((t) => t.state === "open" || t.state === "in_progress").length;
-        const onDeck = data.plan.onDeck.filter((t) => t.state === "open").length;
-        nudges.push(nudge(NUDGE_IDS.winddown, "rituals", "winddown", "Wind down when you're ready.",
-            `${open} open, ${onDeck} on deck.`, at(workEnd)));
-    }
-
-    const target = data.plan.capacity.target;
-    if (settings.nudgeOvercap && target && data.plan.capacity.totalMinutes > target.max) {
-        const over = data.plan.capacity.totalMinutes - target.max;
-        nudges.push(nudge(NUDGE_IDS.overcap, "warnings", "overcap", "Over capacity",
-            `Today is ${duration(over)} over ${duration(target.min)}–${duration(target.max)}.`.replace(/ h–/, "–"), at(standup)));
+    if (settings.nudgePlan) {
+        const next = nextWorkdayKey(data.key);
+        nudges.push(nudge(NUDGE_IDS.nextPlan, "rituals", "plan", "Plan my day", `Standup is at ${hhmm(standup)}.`, on(next, Math.max(0, standup - 20))));
     }
 
     return nudges.filter((n) => n.schedule?.at && n.schedule.at > now);
 }
 
-/** Replaces the scheduled nudges with the ones Today calls for now. */
+/** The snoozed nudges that are no longer true: the morning one once the day is planned, both once it is wound down. */
+export function staleSnoozes(state: string | undefined): number[] {
+    if (state === "wound_down") {
+        return [ SNOOZE_IDS.plan, SNOOZE_IDS.winddown ];
+    }
+    return state === "planned" ? [ SNOOZE_IDS.plan ] : [];
+}
+
+/**
+ * Replaces the scheduled nudges with the ones Today calls for now. Offline, Today is the snapshot,
+ * so the schedule is left as it was.
+ */
 export async function scheduleNudges(data: TodayData, settings: Settings, now: Date) {
-    if (!Capacitor.isNativePlatform() || !(await notificationsAllowed())) {
+    if (data.offline || !Capacitor.isNativePlatform() || !(await notificationsAllowed())) {
         return;
     }
-    await LocalNotifications.cancel({ notifications: Object.values(NUDGE_IDS).map((id) => ({ id })) });
+    const cancel = [ ...Object.values(NUDGE_IDS), ...staleSnoozes(data.nudge?.state) ];
+    await LocalNotifications.cancel({ notifications: cancel.map((id) => ({ id })) });
     const nudges = plannedNudges(data, settings, now);
     if (nudges.length) {
         await LocalNotifications.schedule({ notifications: nudges });
     }
+}
+
+/** In 30 min / In 1 h: the nudge comes back once, then stops. */
+export async function snoozeNudge(kind: "plan" | "winddown", title: string, body: string, minutes: number) {
+    if (!Capacitor.isNativePlatform()) {
+        return;
+    }
+    await LocalNotifications.schedule({
+        notifications: [ nudge(SNOOZE_IDS[kind], "rituals", kind, title, body, new Date(Date.now() + minutes * 60_000)) ]
+    });
 }
 
 /** Schedules (or replaces) one reminder he set. Reminders ring at the exact time, quiet hours or not, once he chose to. */
@@ -160,6 +196,3 @@ function isWorkday(key: string) {
     return day !== 0 && day !== 6;
 }
 
-function localKey(date: Date) {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}

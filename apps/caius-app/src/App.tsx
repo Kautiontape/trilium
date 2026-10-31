@@ -5,12 +5,13 @@ import { Capacitor } from "@capacitor/core";
 import type { ActionPerformed } from "@capacitor/local-notifications";
 import { useEffect } from "preact/hooks";
 
-import { onboarding, openRitual, quickAddRequested, ritual, settingsOpen, tab, type Tab } from "./app-state.js";
+import { onboarding, openRitual, quickAddRequested, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
 import { loadConnection } from "./lib/connection.js";
+import type { Reminder } from "./lib/local.js";
 import { nextWorkdayKey } from "./lib/day.js";
-import { scheduleNudges, scheduleReminder, setUpNotifications } from "./lib/notify.js";
+import { scheduleNudges, scheduleReminder, setUpNotifications, snoozeNudge } from "./lib/notify.js";
 import { api, appNow, connection, flushHeld, refreshToday, reminders, runWrite, saveReminders, settings, today } from "./lib/store.js";
 import { Ask, Ritual } from "./screens/Chat.js";
 import { Connect } from "./screens/Connect.js";
@@ -55,6 +56,12 @@ export function App() {
             void scheduleNudges(data, settings.value, appNow());
         }
     }, [ today.value, settings.value ]);
+
+    useEffect(() => {
+        if (today.value) {
+            runWaiting(today.value.key);
+        }
+    }, [ today.value?.key ]);
 
     if (connection.value === undefined) {
         return null;
@@ -143,10 +150,10 @@ function applyLaunchUrl(url: string) {
             quickAddRequested.value++;
             break;
         case "plan":
-            if (day) openRitual("plan", day);
+            withDay((d) => openRitual("plan", d), day);
             break;
         case "winddown":
-            if (day) openRitual("winddown", day);
+            withDay((d) => openRitual("winddown", d), day);
             break;
         case "ask":
             tab.value = "ask";
@@ -168,29 +175,36 @@ function onNotificationAction({ actionId, notification }: ActionPerformed) {
             void runWrite(() => api().setState([ { noteId, listItemId, state: "done" } ]));
         }
         if (actionId === "snooze" || actionId === "tomorrow") {
-            const now = appNow();
-            const standup = (settings.value.standupOverride || today.value?.rhythm.start || "09:30").split(":").map(Number);
-            const tomorrow = day ? nextWorkdayKey(day) : null;
-            const at = actionId === "snooze"
-                ? new Date(now.getTime() + 15 * 60_000)
-                : tomorrow
-                    ? new Date(Number(tomorrow.slice(0, 4)), Number(tomorrow.slice(5, 7)) - 1, Number(tomorrow.slice(8, 10)), standup[0], standup[1])
-                    : new Date(now.getTime() + 86_400_000);
-            const moved = { ...reminder, at: at.toISOString() };
-            saveReminders(reminders.value.map((r) => r.id === moved.id ? moved : r));
-            void scheduleReminder(moved);
+            withDay((d) => moveReminder(reminder, actionId, d), day);
             return;
         }
         saveReminders(reminders.value.filter((r) => r.id !== reminder.id));
         return;
     }
 
+    withDay((d) => runNudgeAction(actionId, notification, d), day);
+}
+
+/** Snooze 15 min, or Tomorrow at standup on the next workday. */
+function moveReminder(reminder: Reminder, actionId: string, day: string) {
+    const [ hour, minute ] = (settings.value.standupOverride || today.value?.rhythm.start || "09:30").split(":").map(Number);
+    const at = actionId === "snooze"
+        ? new Date(appNow().getTime() + 15 * 60_000)
+        : new Date(`${nextWorkdayKey(day)}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`);
+    const moved = { ...reminder, at: at.toISOString() };
+    saveReminders(reminders.value.map((r) => r.id === moved.id ? moved : r));
+    void scheduleReminder(moved);
+}
+
+/** A nudge's button, or a tap on the nudge itself: the same as the button in the app. */
+function runNudgeAction(actionId: string, notification: ActionPerformed["notification"], day: string) {
+    const extra = (notification.extra ?? {}) as { nudge?: string };
     switch (actionId) {
         case "plan":
-            if (day) openRitual("plan", day);
+            openRitual("plan", day);
             break;
         case "winddown":
-            if (day) openRitual("winddown", day);
+            openRitual("winddown", day);
             break;
         case "moveall": {
             const catchup = today.value?.catchup;
@@ -200,32 +214,15 @@ function onNotificationAction({ actionId, notification }: ActionPerformed) {
             break;
         }
         case "skip":
-            if (day) void runWrite(() => api().skipCatchup(day));
+            void runWrite(() => api().skipCatchup(day));
             break;
         case "later30":
         case "later60":
-            void snoozeNudge(notification.id, notification.title, notification.body, actionId === "later30" ? 30 : 60, extra.nudge);
+            void snoozeNudge(extra.nudge === "winddown" ? "winddown" : "plan", notification.title, notification.body, actionId === "later30" ? 30 : 60);
             break;
         default:
             tab.value = "today";
-            if (extra.nudge === "plan" && day) openRitual("plan", day);
-            if (extra.nudge === "winddown" && day) openRitual("winddown", day);
+            if (extra.nudge === "plan" || extra.nudge === "catchup") openRitual("plan", day);
+            if (extra.nudge === "winddown") openRitual("winddown", day);
     }
-}
-
-/** In 30 min / In 1 h: the nudge comes back once, then stops. */
-async function snoozeNudge(id: number, title: string, body: string, minutes: number, kind?: string) {
-    const { LocalNotifications } = await import("@capacitor/local-notifications");
-    await LocalNotifications.schedule({
-        notifications: [ {
-            id: id + 100,
-            title,
-            body,
-            channelId: "rituals",
-            actionTypeId: kind === "winddown" ? "winddown" : "plan",
-            schedule: { at: new Date(Date.now() + minutes * 60_000), allowWhileIdle: true },
-            extra: { nudge: kind },
-            smallIcon: "ic_stat_caius"
-        } ]
-    });
 }

@@ -143,3 +143,17 @@ describe("addTarget", () => {
         expect(addTarget({ kind: "list", date: "2026-11-04" })).toEqual({ date: "2026-11-04", section: "☑️ Tasks" });
     });
 });
+
+describe("withDay", () => {
+    it("runs at once with a day, and holds an action from a cold start until Today has been read", async () => {
+        const { runWaiting, withDay } = await import("../app-state.js");
+        const ran: string[] = [];
+        withDay((day) => ran.push(`now ${day}`), "2026-11-04");
+        withDay((day) => ran.push(`plan ${day}`), undefined);
+        withDay((day) => ran.push(`skip ${day}`), undefined);
+        expect(ran).toEqual([ "now 2026-11-04" ]);
+        runWaiting("2026-11-05");
+        runWaiting("2026-11-05");
+        expect(ran).toEqual([ "now 2026-11-04", "plan 2026-11-05", "skip 2026-11-05" ]);
+    });
+});
