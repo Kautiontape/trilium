@@ -4,6 +4,9 @@ const config: CapacitorConfig = {
     appId: "com.kautiontape.caius",
     appName: "Caius",
     webDir: "dist",
+    // The native bridge logs every plugin result in a debug build, the keystore's connection and
+    // every /mcp reply included; none of it may reach logcat.
+    loggingBehavior: "none",
     server: {
         androidScheme: "https",
         hostname: "localhost"
