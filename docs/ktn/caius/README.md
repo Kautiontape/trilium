@@ -255,15 +255,16 @@ The Caius phone app holds an ETAPI token, not a Trilium session. It reaches the 
 | `POST /etapi/caius/apply` | `/api/caius/apply`: the Plan tab's Close, in one request. |
 | `POST /etapi/special-notes/llm-chat` | Creates a chat note where the sidebar puts its own, and answers `201 { noteId, title }`. |
 | `POST /etapi/llm-chat/stream` | One chat turn, streamed as Server-Sent Events, the same stream as the sidebar's. |
+| `PUT /etapi/llm-chat/<noteId>/content` | Saves the transcript to a chat note, as `LlmChatContent` from `@triliumnext/commons` (`{ version: 1, messages }`); answers 204. |
 
 The chat route runs only a Caius conversation, and only as the sidebar would run it:
 
 - The first user message must be an opener (`Plan my day`, `Wind down` or `Ask` and a date), and every message a user or assistant turn. Anything else answers `400`.
-- `config.chatNoteId` must name an existing, unprotected chat note: the first turn renames it after the opener. Otherwise `400 chat_note_invalid`.
+- `config.chatNoteId` must name an unprotected chat note under the hidden chat tree (`_llmChat`), where the sidebar and the route above create them: the first turn renames it after the opener. Otherwise `400 chat_note_invalid`. The same holds for the content route. A chat saved from the sidebar has moved out of that tree, so the phone can't continue it.
 - The turn runs on the first `claude-agent` provider in Options → AI / LLM, with note tools on and web search off, whatever the request says. Without one it answers `503`; with AI off, `403`. `config.model` is optional and must be one of that provider's selected models (`400 model_not_allowed`). Every other config field is ignored.
 - At most 60 turns per 15 minutes per address.
 
-The app sends the whole history every turn, as the sidebar does, and saves the transcript to the chat note itself (`PUT /etapi/notes/<id>/content`, in the `LlmChatContent` format from `@triliumnext/commons`). A turn stops when the connection drops.
+The app sends the whole history every turn, as the sidebar does, and saves the transcript itself through the content route, so the sidebar can open the conversation. A turn stops when the connection drops.
 
 **Cross-origin.** The app's WebView calls these routes, and `/mcp`, from its own origin. `[Network] tokenCorsOrigins` (env `TRILIUM_NETWORK_TOKENCORSORIGINS`) lists the origins allowed to; it defaults to `https://localhost,http://localhost`, the app's release and debug origins, and an empty value turns it off. Those routes answer a preflight from a listed origin and refuse one from any other (`403`), and never send `Access-Control-Allow-Credentials`. The global `corsAllowOrigin` setting is separate and unchanged.
 

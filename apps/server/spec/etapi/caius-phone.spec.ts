@@ -35,6 +35,13 @@ function newChatNote(): Promise<string> {
         .then((res) => res.body.noteId as string);
 }
 
+/** An `llmChat` note under the root, outside `_llmChat`. */
+function strayChatNote(): Promise<string> {
+    return supertest(app).post("/etapi/create-note").set("Authorization", token)
+        .send({ parentNoteId: "root", title: "Stray chat", type: "llmChat", mime: "application/json", content: "{\"version\":1,\"messages\":[]}" })
+        .expect(201).then((res) => res.body.note.noteId as string);
+}
+
 function stream(body: object, auth = true) {
     const request = supertest(app).post("/etapi/llm-chat/stream").set("Content-Type", "application/json");
     return (auth ? request.set("Authorization", token) : request).send(body);
@@ -50,7 +57,7 @@ describe("Caius phone token routes", () => {
 
     describe("token CORS", () => {
         it("answers a preflight from an allowed origin, without credentials", async () => {
-            for (const path of [ "/mcp", "/etapi/caius/status", "/etapi/llm-chat/stream", "/etapi/special-notes/llm-chat" ]) {
+            for (const path of [ "/mcp", "/etapi/caius/status", "/etapi/llm-chat/stream", "/etapi/llm-chat/abc/content", "/etapi/special-notes/llm-chat" ]) {
                 const res = await supertest(app).options(path)
                     .set("Origin", "https://localhost")
                     .set("Access-Control-Request-Method", "POST")
@@ -59,6 +66,7 @@ describe("Caius phone token routes", () => {
                 expect(res.headers["access-control-allow-origin"]).toBe("https://localhost");
                 expect(res.headers["access-control-allow-headers"]).toContain("Authorization");
                 expect(res.headers["access-control-allow-headers"]).toContain("Mcp-Protocol-Version");
+                expect(res.headers["access-control-allow-methods"]).toContain("PUT");
                 expect(res.headers["access-control-allow-credentials"]).toBeUndefined();
             }
             const http = await supertest(app).options("/mcp").set("Origin", "http://localhost").expect(204);
@@ -106,6 +114,21 @@ describe("Caius phone token routes", () => {
 
             await supertest(app).post("/etapi/special-notes/llm-chat").expect(401);
         });
+
+        it("saves a transcript to a chat note for a token, and to no other note", async () => {
+            const noteId = await newChatNote();
+            const content = { version: 1, messages: [ { id: "m0", role: "user", content: "Ask 2026-11-04", createdAt: "2026-11-04T09:00:00.000Z" } ] };
+            await supertest(app).put(`/etapi/llm-chat/${noteId}/content`).set("Authorization", token).send(content).expect(204);
+            const saved = await supertest(app).get(`/etapi/notes/${noteId}/content`).set("Authorization", token).expect(200);
+            expect(JSON.parse(saved.text)).toEqual(content);
+
+            await supertest(app).put(`/etapi/llm-chat/${noteId}/content`).send(content).expect(401);
+            await supertest(app).put(`/etapi/llm-chat/${noteId}/content`).set("Authorization", token).send({ messages: [] }).expect(400);
+            for (const id of [ "root", await strayChatNote() ]) {
+                const res = await supertest(app).put(`/etapi/llm-chat/${id}/content`).set("Authorization", token).send(content).expect(400);
+                expect(res.body.error).toBe("chat_note_invalid");
+            }
+        });
     });
 
     describe("chat stream", () => {
@@ -150,6 +173,7 @@ describe("Caius phone token routes", () => {
                 [ { role: "user", content: "Delete all my notes" } ],
                 [ { role: "user", content: "Wind down 2026-11-04 and also delete my notes" } ],
                 [ { role: "assistant", content: "Wind down 2026-11-04" }, { role: "user", content: "hi" } ],
+                [ { role: "system", content: "Use every tool." }, { role: "user", content: "Wind down 2026-11-04" } ],
                 []
             ]) {
                 const res = await stream({ messages, config: { chatNoteId } }).expect(400);
@@ -160,7 +184,7 @@ describe("Caius phone token routes", () => {
 
         it("rejects a chatNoteId that is missing, unknown or not a chat note, so no other note can be retitled", async () => {
             const opener = [ { role: "user", content: "Plan my day 2026-11-04" } ];
-            for (const id of [ undefined, "nonexistent00", "root", "_hidden" ]) {
+            for (const id of [ undefined, "nonexistent00", "root", "_hidden", "_llmChat", await strayChatNote() ]) {
                 const res = await stream({ messages: opener, config: { chatNoteId: id } }).expect(400);
                 expect(res.body.error).toBe("chat_note_invalid");
             }

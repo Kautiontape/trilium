@@ -33,7 +33,7 @@ export function tokenCors(allowedOrigins: () => string[]) {
             res.sendStatus(403);
             return;
         }
-        res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
         res.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
         res.setHeader("Access-Control-Max-Age", "600");
         res.sendStatus(204);

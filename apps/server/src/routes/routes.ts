@@ -43,6 +43,7 @@ import setupRoute from "./setup.js";
 
 const GET = "get",
     PST = "post",
+    PUT = "put",
     PATCH = "patch",
     DEL = "delete";
 
@@ -215,6 +216,7 @@ function register(app: express.Application) {
     asyncRoute(GET, "/etapi/caius/nudge", [auth.checkEtapiToken], caiusRoute.nudge, apiResultHandler);
     asyncRoute(PST, "/etapi/caius/apply", [auth.checkEtapiToken], caiusRoute.apply, apiResultHandler);
     route(PST, "/etapi/special-notes/llm-chat", [auth.checkEtapiToken], caiusChatRoute.createChatNote, apiResultHandler);
+    route(PUT, "/etapi/llm-chat/:noteId/content", [auth.checkEtapiToken], caiusChatRoute.saveChatContent, apiResultHandler);
     asyncRoute(PST, "/etapi/llm-chat/stream", [auth.checkEtapiToken, createCaiusChatRateLimiter()], caiusChatRoute.streamCaiusChat, null);
 
     // OCR API
