@@ -1,12 +1,12 @@
 import "./ToolCallCard.css";
 
+import type { ToolCall } from "@triliumnext/commons";
 import { Trans } from "react-i18next";
 
 import { t } from "../../../services/i18n.js";
 import { NewNoteLink } from "../../react/NoteLink.js";
 import { EditNoteContentDiff, isSmallEdit, parseNoteContentEdits } from "./EditNoteContentDiff.js";
 import { ExpandableCard, ExpandableSection } from "./ExpandableCard.js";
-import type { ToolCall } from "./llm_chat_types.js";
 
 interface ToolCallContext {
     /** The primary note the tool operates on or created. */

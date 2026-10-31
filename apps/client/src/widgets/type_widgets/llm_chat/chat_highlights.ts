@@ -1,5 +1,6 @@
 import "./chat_highlights.css";
 
+import type { HighlightAnchor } from "@triliumnext/commons";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import type NoteContext from "../../../components/note_context.js";
@@ -7,7 +8,6 @@ import { t } from "../../../services/i18n.js";
 import { randomString } from "../../../services/utils.js";
 import type { ChatContextMenuItemsProvider } from "./chat_context_menu.js";
 import { createAnchorFromSelection, findMessageContentRoot, resolveAnchorRange } from "./chat_highlights_anchor.js";
-import type { HighlightAnchor } from "./llm_chat_types.js";
 import type { UseLlmChatReturn } from "./useLlmChat.js";
 
 /** A highlight surfaced in the sidebar list. */

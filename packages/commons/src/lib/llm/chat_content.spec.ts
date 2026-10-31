@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { trimToFirstUserMessage } from "./llm_chat_types.js";
+import { trimToFirstUserMessage } from "./chat_content.js";
 
 describe("trimToFirstUserMessage", () => {
     const u = { role: "user", id: "u" };

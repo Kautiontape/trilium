@@ -1,4 +1,9 @@
-import type { LlmCitation, LlmErrorDetails, LlmReasoningEffort, LlmUsage } from "@triliumnext/commons";
+/**
+ * The transcript an `llmChat` note stores as its JSON content ({@link LlmChatContent}), shared by
+ * the client's chat views and any other client that writes a chat note.
+ */
+
+import type { LlmCitation, LlmErrorDetails, LlmReasoningEffort, LlmUsage } from "../llm_api.js";
 
 export type MessageType = "message" | "error" | "thinking";
 

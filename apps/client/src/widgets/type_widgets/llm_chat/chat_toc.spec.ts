@@ -1,7 +1,7 @@
+import type { ContentBlock, StoredMessage } from "@triliumnext/commons";
 import { describe, expect, it, vi } from "vitest";
 
 import { extractChatHeadings, pickActiveHeadingId, truncateForToc } from "./chat_toc.js";
-import type { ContentBlock, StoredMessage } from "./llm_chat_types.js";
 
 // i18next isn't initialized in unit tests, so stub `t` with a minimal interpolating
 // implementation to make the localized "File: " prefix deterministic.

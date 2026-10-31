@@ -1,4 +1,4 @@
-import type { HighlightAnchor } from "./llm_chat_types.js";
+import type { HighlightAnchor } from "@triliumnext/commons";
 
 /**
  * Anchoring for chat highlights: turning a live text selection into a durable {@link HighlightAnchor},
