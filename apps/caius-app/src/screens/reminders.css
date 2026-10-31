@@ -1,0 +1,84 @@
+.reminder-row,
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    min-height: 56px;
+    padding: var(--s2) var(--s4);
+    border-top: 1px solid var(--line);
+
+    &:first-child { border-top: 0; }
+}
+
+.toggle-row {
+    cursor: pointer;
+}
+
+.reminder-glyph {
+    width: 24px;
+    text-align: center;
+}
+
+.reminder-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.reminder-sub {
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.empty-row {
+    margin: 0;
+    padding: var(--s4);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.banner-text {
+    margin: 0 0 var(--s3);
+}
+
+.switch {
+    appearance: none;
+    position: relative;
+    width: 52px;
+    height: 32px;
+    margin: 0;
+    border-radius: var(--r-pill);
+    background: var(--surface-2);
+    border: 2px solid var(--line);
+    cursor: pointer;
+    transition: background 150ms var(--ease);
+
+    &::after {
+        content: "";
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--ink-3);
+        transition: transform 150ms var(--ease), background 150ms var(--ease);
+    }
+
+    &:checked {
+        background: var(--clay);
+        border-color: var(--clay);
+
+        &::after {
+            transform: translateX(20px);
+            background: var(--on-clay);
+        }
+    }
+}
+
+.time-field {
+    min-height: 40px;
+    padding: 0 var(--s2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-chip);
+    background: var(--ground);
+}

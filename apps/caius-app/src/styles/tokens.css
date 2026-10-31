@@ -1,0 +1,114 @@
+/* Terrain: stone ground, ink type, one clay accent for the focus, moss for done, dusk for the
+   evening, ochre for "over", berry for drop and errors. Text-weight clay passes 4.5:1 on both
+   grounds; --clay-fill is the terrain's own clay and only sits under dark text. */
+:root {
+    --ground: #eef0eb;
+    --surface: #f9faf7;
+    --surface-2: #e4e8e0;
+    --line: #cdd2c7;
+    --ink: #22251f;
+    --ink-2: #5a5f54;
+    --ink-3: #868b80;
+    --clay: #b5532e;
+    --clay-fill: #d8764f;
+    --clay-wash: #f6e4da;
+    --moss: #4a7445;
+    --moss-wash: #dfeadb;
+    --dusk: #46598a;
+    --dusk-wash: #e1e5f0;
+    --dusk-ground: #dfe3ec;
+    --ochre: #a8781f;
+    --ochre-wash: #f3e8cf;
+    --berry: #9c3a4f;
+    --berry-wash: #f3dde2;
+    --on-clay: #ffffff;
+    --shadow: 0 1px 2px rgb(30 35 25 / 0.08), 0 4px 16px rgb(30 35 25 / 0.06);
+    --scrim: rgb(20 22 18 / 0.36);
+
+    --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+    --font-body: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+    --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+    --r-chip: 8px; --r-card: 16px; --r-sheet: 28px; --r-pill: 999px;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+
+    --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+    --nav-height: 64px;
+
+    color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --ground: #141613; --surface: #1c1f1a; --surface-2: #262a23; --line: #363c32;
+        --ink: #e6e8e1; --ink-2: #a5aa9d; --ink-3: #7b8074;
+        --clay: #e58a62; --clay-fill: #d8764f; --clay-wash: #3a2a21;
+        --moss: #8fbd86; --moss-wash: #233024;
+        --dusk: #9fb2de; --dusk-wash: #232a3b; --dusk-ground: #171b26;
+        --ochre: #e0b45c; --ochre-wash: #3a311d; --berry: #e48399; --berry-wash: #3a2229; --on-clay: #1a120d;
+        --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.3);
+        --scrim: rgb(0 0 0 / 0.5);
+        color-scheme: dark;
+    }
+}
+
+:root[data-theme="dark"] {
+    --ground: #141613; --surface: #1c1f1a; --surface-2: #262a23; --line: #363c32;
+    --ink: #e6e8e1; --ink-2: #a5aa9d; --ink-3: #7b8074;
+    --clay: #e58a62; --clay-fill: #d8764f; --clay-wash: #3a2a21;
+    --moss: #8fbd86; --moss-wash: #233024;
+    --dusk: #9fb2de; --dusk-wash: #232a3b; --dusk-ground: #171b26;
+    --ochre: #e0b45c; --ochre-wash: #3a311d; --berry: #e48399; --berry-wash: #3a2229; --on-clay: #1a120d;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.3);
+    --scrim: rgb(0 0 0 / 0.5);
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--ground);
+    color: var(--ink);
+    font: 16px/24px var(--font-body);
+    overscroll-behavior: none;
+}
+
+#app {
+    height: 100%;
+}
+
+button, input, textarea, select {
+    font: inherit;
+    color: inherit;
+}
+
+.mono {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.label-caps {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+}
+
+.ink-2 { color: var(--ink-2); }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="add" android:enabled="true" android:icon="@drawable/ic_shortcut_add"
+        android:shortcutShortLabel="@string/shortcut_add">
+        <intent android:action="android.intent.action.VIEW" android:data="caius://add"
+            android:targetPackage="com.kautiontape.caius" android:targetClass="com.kautiontape.caius.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="plan" android:enabled="true" android:icon="@drawable/ic_shortcut_plan"
+        android:shortcutShortLabel="@string/shortcut_plan">
+        <intent android:action="android.intent.action.VIEW" android:data="caius://plan"
+            android:targetPackage="com.kautiontape.caius" android:targetClass="com.kautiontape.caius.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="winddown" android:enabled="true" android:icon="@drawable/ic_shortcut_winddown"
+        android:shortcutShortLabel="@string/shortcut_winddown">
+        <intent android:action="android.intent.action.VIEW" android:data="caius://winddown"
+            android:targetPackage="com.kautiontape.caius" android:targetClass="com.kautiontape.caius.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="ask" android:enabled="true" android:icon="@drawable/ic_shortcut_ask"
+        android:shortcutShortLabel="@string/shortcut_ask">
+        <intent android:action="android.intent.action.VIEW" android:data="caius://ask"
+            android:targetPackage="com.kautiontape.caius" android:targetClass="com.kautiontape.caius.MainActivity" />
+    </shortcut>
+</shortcuts>
