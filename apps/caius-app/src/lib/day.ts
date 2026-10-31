@@ -81,15 +81,34 @@ export function monthLabel(month: string) {
     return `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 }
 
-/** Any period key's label: a day, a week or a month. */
+/** Any period key's label: a day, a week (`Week of Mon 2 Nov`, since a bare week number says little) or a month. */
 export function periodLabel(key: string) {
     if (/^\d{4}-W\d{2}$/.test(key)) {
-        return weekLabel(key).split(" · ")[0];
+        return `Week of ${dayLabel(mondayOf(key))}`;
     }
     if (/^\d{4}-\d{2}$/.test(key)) {
         return monthLabel(key);
     }
     return dayLabel(key);
+}
+
+/**
+ * A period key named from `base` (today's key) where it can be: `Today`/`Tomorrow` with the day,
+ * `This week`/`Next week` with its dates, `This month`/`Next month` with its name. Any other key
+ * gets its plain label and no detail.
+ */
+export function relativePeriod(key: string, base: string): { name: string; detail: string | null } {
+    if (/^\d{4}-W\d{2}$/.test(key)) {
+        const range = weekLabel(key).split(" · ")[1];
+        const week = weekOf(base);
+        return key === week ? { name: "This week", detail: range } : key === addWeeks(week, 1) ? { name: "Next week", detail: range } : { name: periodLabel(key), detail: null };
+    }
+    if (/^\d{4}-\d{2}$/.test(key)) {
+        const month = base.slice(0, 7);
+        const name = MONTHS[Number(key.slice(5, 7)) - 1];
+        return key === month ? { name: "This month", detail: name } : key === addMonths(month, 1) ? { name: "Next month", detail: name } : { name: monthLabel(key), detail: null };
+    }
+    return key === base ? { name: "Today", detail: dayLabel(key) } : key === addDays(base, 1) ? { name: "Tomorrow", detail: dayLabel(key) } : { name: dayLabel(key), detail: null };
 }
 
 /** `HH:MM` to minutes after midnight, or null. */

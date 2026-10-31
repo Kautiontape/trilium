@@ -22,7 +22,7 @@ import type { ComponentChildren, JSX } from "preact";
 import { useEffect } from "preact/hooks";
 
 import type { PlanTask } from "../lib/caius.js";
-import { type HeldState, settings, snack } from "../lib/store.js";
+import { flushHeld, type HeldState, settings, snack } from "../lib/store.js";
 
 export function Button({ kind = "secondary", children, class: className, ...rest }: {
     kind?: "primary" | "secondary" | "quiet" | "danger";
@@ -56,6 +56,7 @@ export function Est({ minutes }: { minutes: number | null }) {
 
 export function Snackbar() {
     const current = snack.value;
+    const overSheet = !!sheet.value;
     useEffect(() => {
         if (!current || current.action?.label === "Undo") {
             return;
@@ -71,7 +72,7 @@ export function Snackbar() {
         return null;
     }
     return (
-        <div class={`snackbar${current.tone === "error" ? " snackbar-error" : ""}`} role="status">
+        <div class={`snackbar${current.tone === "error" ? " snackbar-error" : ""}${overSheet ? " snackbar-top" : ""}`} role="status">
             <span>{current.text}</span>
             {current.action && <button type="button" onClick={current.action.run}>{current.action.label}</button>}
         </div>
@@ -114,7 +115,15 @@ const ICONS = {
 /** The bottom sheet on screen, if any. Opening one replaces the last: sheets don't stack. */
 export const sheet = signal<ComponentChildren | null>(null);
 
+/**
+ * Opens a sheet. A write held behind Undo is sent now, as a second held write would send it, and
+ * the notice goes, so it can't sit over the sheet's last actions; an error stays, shown at the top.
+ */
 export function openSheet(content: ComponentChildren) {
+    void flushHeld();
+    if (snack.value?.tone !== "error") {
+        snack.value = null;
+    }
     sheet.value = content;
 }
 

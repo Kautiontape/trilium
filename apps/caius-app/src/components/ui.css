@@ -115,6 +115,13 @@
     }
 }
 
+/* Over an open sheet the notice moves to the top, clear of the sheet's actions. */
+.snackbar-top {
+    top: calc(var(--safe-top) + var(--s4));
+    bottom: auto;
+    z-index: 50;
+}
+
 .snackbar-error {
     background: var(--berry);
     color: #fff;
