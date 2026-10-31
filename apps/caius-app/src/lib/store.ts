@@ -257,6 +257,7 @@ async function sendCapture(item: Capture): Promise<{ status: "added" | "duplicat
         const first = result.results?.[0];
         removeCapture(item.id);
         revision.value++;
+        void refreshToday();
         if (first?.status === "skipped" && first.reason === "duplicate") {
             return { status: "duplicate", detail: first.detail };
         }
