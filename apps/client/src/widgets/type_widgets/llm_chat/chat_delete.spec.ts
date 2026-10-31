@@ -1,7 +1,7 @@
+import type { StoredMessage } from "@triliumnext/commons";
 import { describe, expect, it } from "vitest";
 
 import { canDeleteMessage, removeMessage } from "./chat_delete.js";
-import type { StoredMessage } from "./llm_chat_types.js";
 
 function message(id: string): StoredMessage {
     return { id, role: "assistant", content: "text", createdAt: "2026-01-01T00:00:00.000Z" };

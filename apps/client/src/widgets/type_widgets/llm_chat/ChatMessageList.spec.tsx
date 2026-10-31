@@ -1,3 +1,4 @@
+import type { ContentBlock } from "@triliumnext/commons";
 import { createRef, render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +11,6 @@ vi.mock("../text/ReadOnlyText.js", () => ({
 }));
 
 import ChatMessageList from "./ChatMessageList.js";
-import type { ContentBlock } from "./llm_chat_types.js";
 import type { UseLlmChatReturn } from "./useLlmChat.js";
 
 let host: HTMLElement | undefined;

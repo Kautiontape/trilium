@@ -1,5 +1,6 @@
 import "./ChatMessageList.css";
 
+import type { StoredMessage } from "@triliumnext/commons";
 import { useMemo } from "preact/hooks";
 
 import { t } from "../../../services/i18n.js";
@@ -7,7 +8,6 @@ import ActionButton from "../../react/ActionButton.js";
 import LoadingSpinner from "../../react/LoadingSpinner.js";
 import NoItems from "../../react/NoItems.js";
 import ChatMessage from "./ChatMessage.js";
-import type { StoredMessage } from "./llm_chat_types.js";
 import type { UseLlmChatReturn } from "./useLlmChat.js";
 
 interface ChatMessageListProps {

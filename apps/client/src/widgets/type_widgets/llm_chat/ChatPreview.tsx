@@ -1,10 +1,10 @@
 import "./ChatPreview.css";
 
+import type { StoredMessage } from "@triliumnext/commons";
 import { useLayoutEffect, useRef } from "preact/hooks";
 
 import ChatMessage from "./ChatMessage.js";
 import { materializeChatHighlights } from "./chat_highlights_static.js";
-import type { StoredMessage } from "./llm_chat_types.js";
 
 /**
  * Read-only render of a stored conversation, used by the note preview renderer (collection

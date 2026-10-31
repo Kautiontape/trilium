@@ -1,7 +1,7 @@
+import type { HighlightAnchor, StoredMessage } from "@triliumnext/commons";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { materializeChatHighlights } from "./chat_highlights_static.js";
-import type { HighlightAnchor, StoredMessage } from "./llm_chat_types.js";
 
 /** A rendered preview whose single message carries the given markdown-rendered HTML. */
 function buildPreview(html: string) {

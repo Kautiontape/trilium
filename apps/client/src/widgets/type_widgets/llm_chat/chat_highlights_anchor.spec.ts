@@ -1,7 +1,7 @@
+import type { HighlightAnchor } from "@triliumnext/commons";
 import { describe, expect, it } from "vitest";
 
 import { buildProseProjection, resolveAnchorIndices, resolveAnchorRange } from "./chat_highlights_anchor.js";
-import type { HighlightAnchor } from "./llm_chat_types.js";
 
 function anchor(partial: Partial<HighlightAnchor>): HighlightAnchor {
     return { id: "a", start: 0, end: 0, quotedText: "", ...partial };

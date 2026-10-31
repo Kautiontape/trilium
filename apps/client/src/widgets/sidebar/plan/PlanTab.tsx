@@ -2,13 +2,14 @@ import "./PlanTab.css";
 
 import type { CKTextEditor } from "@triliumnext/ckeditor5";
 
+import { caiusOpener } from "@triliumnext/commons";
 import { useCallback, useContext, useEffect, useRef, useState } from "preact/hooks";
 
 import appContext from "../../../components/app_context";
 import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
-    caiusApi, caiusClockMinutes, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, caiusOpener, type CaiusPeriodKind, type CaiusPlan,
+    caiusApi, caiusClockMinutes, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
     isCaiusEnabled, RELOAD_TIMEOUT_MS, startCaiusConversation, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";

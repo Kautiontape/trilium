@@ -1,6 +1,6 @@
 import "./SidebarChat.css";
 
-import type { SaveLlmChatResponse } from "@triliumnext/commons";
+import type { LlmChatContent, SaveLlmChatResponse } from "@triliumnext/commons";
 import type { Dropdown as BootstrapDropdown } from "bootstrap";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
@@ -23,7 +23,6 @@ import { useChatHighlights } from "../type_widgets/llm_chat/chat_highlights.js";
 import ChatInputBar from "../type_widgets/llm_chat/ChatInputBar.js";
 import ChatMessageList from "../type_widgets/llm_chat/ChatMessageList.js";
 import ChatReadOnlyNotice from "../type_widgets/llm_chat/ChatReadOnlyNotice.js";
-import type { LlmChatContent } from "../type_widgets/llm_chat/llm_chat_types.js";
 import { useLlmChat } from "../type_widgets/llm_chat/useLlmChat.js";
 import RightPanelWidget from "./RightPanelWidget.js";
 
