@@ -5,6 +5,7 @@ import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import { addReminder } from "../components/sheets.js";
+import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, haptic, Icon } from "../components/ui.js";
 import { ritual } from "../app-state.js";
 import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
@@ -274,10 +275,14 @@ function Transcript({ chat }: { chat: Chat }) {
     );
 }
 
+/**
+ * The last turn with step cards: its cards stay live through follow-up turns that ask again
+ * without new steps, and go quiet once a later turn has written the ritual (an `…_apply` call).
+ */
 function findLastStep(messages: StoredMessage[]) {
     for (let i = messages.length - 1; i >= 0; i--) {
         const m = messages[i];
-        if (m.role === "user") {
+        if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && /_apply$/.test(b.toolCall.toolName))) {
             return -1;
         }
         if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && stepOf(b.toolCall))) {
@@ -405,7 +410,7 @@ function StepBody({ step, reply, disabled }: { step: RitualStep; reply: (text: s
         }
         return (
             <>
-                <ul class="step-list">{tasks.map((t, i) => <li key={i}>{t.text}{t.periodLabel && <span class="ink-2"> · {t.periodLabel}</span>}</li>)}</ul>
+                <ul class="step-list">{tasks.map((t, i) => <li key={i}>{displayText(t.text).text}{t.periodLabel && <span class="ink-2"> · {t.periodLabel}</span>}</li>)}</ul>
                 <Replies replies={[ "Move all to today", "Let's review them", "Skip the catch-up" ]} reply={reply} disabled={disabled} />
             </>
         );
@@ -413,7 +418,7 @@ function StepBody({ step, reply, disabled }: { step: RitualStep; reply: (text: s
 
     if (step.ritual === "winddown" && step.step === "open") {
         const items: FateItem[] = (Array.isArray(d.items) ? d.items : []).map((it: any) => ({
-            text: String(it.text ?? ""),
+            text: displayText(String(it.text ?? "")).text,
             proposal: fateLabel(it.fate),
             options: [ "Done", it.fate?.forwardLabel ? `${shortDay(it.fate.forwardLabel)} · On deck` : "Next workday · On deck", it.fate?.forwardLabel ? `${shortDay(it.fate.forwardLabel)} · list` : "Next workday · list", "Next week", "Drop" ]
         }));
@@ -422,7 +427,7 @@ function StepBody({ step, reply, disabled }: { step: RitualStep; reply: (text: s
 
     if (step.ritual === "plan" && step.step === "inputs") {
         const onDeck: FateItem[] = (Array.isArray(d.onDeck) ? d.onDeck : []).map((it: any) => ({
-            text: String(it.text ?? ""),
+            text: displayText(String(it.text ?? "")).text,
             proposal: it.fate?.list ? "On the list" : it.fate?.week ? "Up to the week" : fateLabel(it.fate),
             options: [ "On the list", "Stay on deck", "Up to the week", "Drop" ]
         }));
@@ -457,7 +462,7 @@ function StepBody({ step, reply, disabled }: { step: RitualStep; reply: (text: s
                     <ul class="step-list">
                         {lines.map((l, i) => (
                             <li key={i} class="context-line">
-                                <span>{l.text}{l.untilLabel && <span class="mono ink-2"> until {l.untilLabel}</span>}</span>
+                                <span>{displayText(l.text).text}{l.untilLabel && <span class="mono ink-2"> until {l.untilLabel}</span>}</span>
                                 <span class="chip-row">
                                     <Chip disabled={disabled} onClick={() => reply(`Keep "${l.text}".`)}>Keep</Chip>
                                     <Chip disabled={disabled} onClick={() => reply(`Let "${l.text}" end.`)}>Let it end</Chip>
@@ -533,7 +538,7 @@ function Candidates({ items, reply, disabled }: { items: { text: string; because
             <div class="label-caps">New since yesterday</div>
             {items.map((c, i) => (
                 <div key={i} class="candidate">
-                    <p>{c.text}{c.minutes ? <span class="mono ink-2"> ~{formatEstimate(c.minutes)}</span> : null}</p>
+                    <p>{displayText(c.text).text}{c.minutes ? <span class="mono ink-2"> ~{formatEstimate(c.minutes)}</span> : null}</p>
                     {c.because && <p class="ink-2 candidate-why">because {c.because}</p>}
                     <div class="chip-row">
                         <Chip disabled={disabled} onClick={() => reply(`Take "${c.text}".`)}>Take</Chip>
