@@ -27,13 +27,15 @@ export async function request(req: HttpRequest): Promise<HttpResponse> {
                 data: req.json !== undefined ? req.json : body,
                 responseType: "text",
                 connectTimeout: 15_000,
-                readTimeout: req.readTimeout ?? 60_000
+                readTimeout: req.readTimeout ?? 60_000,
+                // A redirect must never carry the Authorization header to another host.
+                disableRedirects: true
             });
             const text = typeof res.data === "string" ? res.data : JSON.stringify(res.data ?? "");
             return { status: res.status, text };
         }
 
-        const res = await fetch(req.url, { method: req.method, headers, body });
+        const res = await fetch(req.url, { method: req.method, headers, body, redirect: "error" });
         return { status: res.status, text: await res.text() };
     } catch (e) {
         throw new UnreachableError(req.url, e);

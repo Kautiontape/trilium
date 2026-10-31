@@ -62,6 +62,7 @@ export function chatApi(conn: Connection) {
                         Accept: "text/event-stream"
                     },
                     body: JSON.stringify({ messages, config: { chatNoteId } }),
+                    redirect: "error",
                     signal
                 });
             } catch (e) {
