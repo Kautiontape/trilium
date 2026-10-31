@@ -1,0 +1,109 @@
+import { caiusConversationOf, type LlmMessage } from "@triliumnext/commons";
+import { becca, options as optionService, special_notes as specialNotesService } from "@triliumnext/core";
+import type { LlmProviderSetup } from "@triliumnext/core/src/services/llm/index.js";
+import type { LlmProviderConfig } from "@triliumnext/core/src/services/llm/types.js";
+import type { Request, Response } from "express";
+
+import llmChatRoute from "./llm_chat.js";
+
+/**
+ * The AI chat for a client holding an ETAPI token, the Caius phone app. It runs only a Caius
+ * conversation (a first user message such as `Wind down 2026-11-04`, see `caiusOpener`) and only
+ * on the `claude-agent` provider, which is the one that gives such a conversation Caius's prompt
+ * and leaves the generic note tools that write out of it. `streamChat` then runs it as it runs
+ * the sidebar's.
+ */
+export default {
+    /** `POST /etapi/llm-chat/stream`: a turn, as `checkCaiusChat` leaves it. */
+    streamCaiusChat: async (req: Request, res: Response) => {
+        const checked = checkCaiusChat(req.body);
+        if ("error" in checked) {
+            res.status(checked.status).json({ error: checked.error });
+            return;
+        }
+        req.body = checked;
+        await llmChatRoute.streamChat(req, res);
+    },
+
+    /** `POST /etapi/special-notes/llm-chat`: a new chat note, where the sidebar puts its own. */
+    createChatNote: () => {
+        const note = specialNotesService.createLlmChat();
+        return [ 201, { noteId: note.noteId, title: note.title } ];
+    }
+};
+
+export type CaiusChatCheck =
+    | { status: number; error: string }
+    | { messages: LlmMessage[]; config: LlmProviderConfig };
+
+/**
+ * Checks a token client's chat request and builds the config it runs with. Only `chatNoteId`
+ * and `model` are read from the client's config: the provider, the note tools on and web search
+ * off are set here. `chatNoteId` must name a chat note, since the first turn renames it.
+ */
+export function checkCaiusChat(body: unknown): CaiusChatCheck {
+    const { messages, config } = (body ?? {}) as { messages?: unknown; config?: Partial<LlmProviderConfig> };
+
+    if (optionService.getOptionOrNull("aiEnabled") !== "true") {
+        return { status: 403, error: "ai_disabled" };
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return { status: 400, error: "messages_required" };
+    }
+    if (!messages.every(isChatMessage)) {
+        return { status: 400, error: "message_not_allowed" };
+    }
+    const first = messages.find((message) => message.role === "user");
+    if (!first || !caiusConversationOf(textOf(first.content))) {
+        return { status: 400, error: "not_a_caius_opener" };
+    }
+
+    const chatNoteId = config?.chatNoteId;
+    const chatNote = typeof chatNoteId === "string" ? becca.getNote(chatNoteId) : null;
+    if (!chatNote || chatNote.type !== "llmChat" || chatNote.isProtected) {
+        return { status: 400, error: "chat_note_invalid" };
+    }
+
+    const setup = configuredProviders().find((provider) => provider.provider === "claude-agent");
+    if (!setup) {
+        return { status: 503, error: "no_claude_agent_provider" };
+    }
+    const model = config?.model;
+    if (model !== undefined && !setup.selectedModels?.some((selected) => selected.id === model)) {
+        return { status: 400, error: "model_not_allowed" };
+    }
+
+    return {
+        messages,
+        config: {
+            providerId: setup.id,
+            chatNoteId: chatNote.noteId,
+            enableNoteTools: true,
+            enableWebSearch: false,
+            ...(model !== undefined ? { model } : {})
+        }
+    };
+}
+
+/** A user or assistant turn; a `system` message from the client would sit beside Caius's prompt. */
+function isChatMessage(message: unknown): message is LlmMessage {
+    if (typeof message !== "object" || message === null) {
+        return false;
+    }
+    const { role, content } = message as Partial<LlmMessage>;
+    return (role === "user" || role === "assistant") && (typeof content === "string" || Array.isArray(content));
+}
+
+function textOf(content: LlmMessage["content"]): string {
+    return typeof content === "string"
+        ? content
+        : content.map((part) => (part.type === "text" ? part.text : "")).join("");
+}
+
+function configuredProviders(): LlmProviderSetup[] {
+    try {
+        return JSON.parse(optionService.getOptionOrNull("llmProviders") ?? "[]") as LlmProviderSetup[];
+    } catch {
+        return [];
+    }
+}

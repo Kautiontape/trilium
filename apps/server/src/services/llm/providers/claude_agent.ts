@@ -23,7 +23,7 @@
 import type { Options as AgentOptions, query as queryFn, SDKAssistantMessage, SDKMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { clockOverride } from "@triliumnext/caius/src/clock.js";
-import type { LlmMessage, LlmMessagePart, LlmStreamChunk } from "@triliumnext/commons";
+import { type CaiusConversation, caiusConversationOf, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
 import { getLog } from "@triliumnext/core";
 import { resolveAttachmentPart } from "@triliumnext/core/src/services/llm/attachment_content.js";
 import { buildNoteHint } from "@triliumnext/core/src/services/llm/note_hint.js";
@@ -396,7 +396,7 @@ export class ClaudeAgentProvider implements LlmProvider {
             // Options the SDK fixes at query() construction: a change to any of
             // them can't be applied to a live session, so it forces a new one.
             // `model` is deliberately absent — setModel() handles it in place.
-            const caius = isCaiusConversation(messages);
+            const caius = caiusConversation(messages) !== null;
             const fingerprint = JSON.stringify({
                 systemPrompt,
                 caius,
@@ -452,7 +452,7 @@ export class ClaudeAgentProvider implements LlmProvider {
             const active = session;
             held = active;
             await pushUserTurn(active.input, prompt);
-            // In a Plan my day or Wind down conversation only the replies show: a message's text waits for
+            // In a Caius conversation only the replies show: a message's text waits for
             // the message's end and is dropped when it called a tool, thinking is never shown, and a tool
             // call shows once its result is in, and not at all when it failed.
             let pendingText = "";
@@ -725,11 +725,12 @@ export class ClaudeAgentProvider implements LlmProvider {
         // no-parts case (the markdown hints are always appended).
         /* v8 ignore next */
         const prompt = buildSystemPrompt(messages, promptConfig) ?? "";
-        if (!isCaiusConversation(messages)) return prompt;
-        // A Plan my day or Wind down conversation is Caius's: the skill sheet says who he is and how the rituals go.
-        const caius = `${prompt}\n\n${CAIUS_PROMPT}`;
+        const kind = caiusConversation(messages);
+        if (!kind) return prompt;
+        // A Caius conversation is Caius's: the skill sheet says who he is, how the rituals go and how he answers questions.
+        const caius = `${prompt}\n\n${CAIUS_PROMPTS[kind]}`;
         // The CLI tells the agent the real date; in dev the Caius clock can be elsewhere, so a
-        // Plan my day or Wind down conversation is told the clock's date too.
+        // Caius conversation is told the clock's date too.
         const clock = clockOverride();
         return clock ? `${caius}\n\nToday's date is ${dayOf(clock)}, by the planning clock.` : caius;
     }
@@ -781,7 +782,7 @@ export class ClaudeAgentProvider implements LlmProvider {
             // over its stdio control channel — no localhost HTTP endpoint, no
             // open port, and no dependency on the user-facing `mcpEnabled`
             // toggle (which exists to expose notes to *external* clients).
-            // In Plan my day and Wind down every Journal write goes through the Caius tools: the agent
+            // In a Caius conversation every Journal write goes through the Caius tools: the agent
             // has all of them, to follow whatever he asks in the middle of the ritual, but none of the
             // generic note tools that write, so a task never changes behind Caius's markup and guards.
             // The server leaves those tools out, so the agent never calls one and meets a denial.
@@ -799,21 +800,24 @@ export class ClaudeAgentProvider implements LlmProvider {
     }
 }
 
-/** The opener the Plan tab, the nudge bar and the commands send: `Plan my day 2026-11-04`, `Wind down 2026-11-04`. */
-const CAIUS_OPENER = /^(?:Plan my day|Wind down) \d{4}-\d{2}-\d{2}$/;
+const RITUAL_PROMPT = "This is a Caius conversation. You are Caius, the planner for his Journal: call load_skill with name \"caius\" before anything else, and follow its \"Who you are\" and \"Wind down and Plan my day\" sections.";
 
-/** What a Plan my day or Wind down conversation's system prompt adds: who the agent is, and where the method lives. */
-const CAIUS_PROMPT = "This is a Caius conversation. You are Caius, the planner for his Journal: call load_skill with name \"caius\" before anything else, and follow its \"Who you are\" and \"Wind down and Plan my day\" sections.";
+/** What a Caius conversation's system prompt adds, by its opener (`caiusOpener`): who the agent is, and where the method lives. */
+const CAIUS_PROMPTS: Record<CaiusConversation, string> = {
+    plan: RITUAL_PROMPT,
+    winddown: RITUAL_PROMPT,
+    ask: "This is a Caius conversation. You are Caius, the planner for his Journal: call load_skill with name \"caius\" before anything else, and follow its \"Who you are\" and \"Ask\" sections."
+};
 
 /** A local date as `YYYY-MM-DD`. */
 function dayOf(at: Date): string {
     return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 }
 
-/** Whether the conversation was started by a Caius opener, its first user message. */
-function isCaiusConversation(messages: LlmMessage[]): boolean {
+/** The Caius conversation the first user message opens (`Plan my day 2026-11-04`), or `null` for any other chat. */
+function caiusConversation(messages: LlmMessage[]): CaiusConversation | null {
     const first = messages.find((message) => message.role === "user");
-    return !!first && CAIUS_OPENER.test(flattenContent(first.content).trim());
+    return first ? caiusConversationOf(flattenContent(first.content)) : null;
 }
 
 /**

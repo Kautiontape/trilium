@@ -1,5 +1,6 @@
 import { routes } from "@triliumnext/core";
 import express from "express";
+import rateLimit from "express-rate-limit";
 
 import etapiAppInfoRoutes from "../etapi/app_info.js";
 import etapiAttachmentRoutes from "../etapi/attachments.js";
@@ -17,6 +18,7 @@ import openID from '../services/open_id.js';
 import { isElectron } from "../services/utils.js";
 import shareRoutes from "../share/routes.js";
 import caiusRoute from "./api/caius.js";
+import caiusChatRoute from "./api/caius_chat.js";
 import clipperRoute from "./api/clipper.js";
 import databaseRoute from "./api/database.js";
 import etapiTokensApiRoutes from "./api/etapi_tokens.js";
@@ -207,6 +209,14 @@ function register(app: express.Application) {
     asyncApiRoute(GET, "/api/caius/context", caiusRoute.context);
     asyncApiRoute(PST, "/api/caius/skip-catchup", caiusRoute.skipCatchup);
 
+    // Caius for a client holding an ETAPI token (the phone app); the rest of Caius it reaches over /mcp.
+    // No outer transaction: Caius takes its own lock and transactions.
+    asyncRoute(GET, "/etapi/caius/status", [auth.checkEtapiToken], caiusRoute.status, apiResultHandler);
+    asyncRoute(GET, "/etapi/caius/nudge", [auth.checkEtapiToken], caiusRoute.nudge, apiResultHandler);
+    asyncRoute(PST, "/etapi/caius/apply", [auth.checkEtapiToken], caiusRoute.apply, apiResultHandler);
+    route(PST, "/etapi/special-notes/llm-chat", [auth.checkEtapiToken], caiusChatRoute.createChatNote, apiResultHandler);
+    asyncRoute(PST, "/etapi/llm-chat/stream", [auth.checkEtapiToken, createCaiusChatRateLimiter()], caiusChatRoute.streamCaiusChat, null);
+
     // OCR API
     asyncApiRoute(PST, "/api/ocr/process-note/:noteId", ocrRoute.processNoteOCR);
     asyncApiRoute(PST, "/api/ocr/process-attachment/:attachmentId", ocrRoute.processAttachmentOCR);
@@ -219,3 +229,11 @@ function register(app: express.Application) {
 export default {
     register
 };
+
+/** Each chat turn runs an agent on the host's Claude subscription, so a token client gets a budget of them. */
+function createCaiusChatRateLimiter() {
+    return rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 60
+    });
+}
