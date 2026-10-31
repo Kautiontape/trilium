@@ -1,7 +1,7 @@
 import "./reminders.css";
 
 import { settingsOpen } from "../app-state.js";
-import { Button, Card, Chip } from "../components/ui.js";
+import { Button, Card, Chip, Icon } from "../components/ui.js";
 import { forgetConnection } from "../lib/connection.js";
 import { hostOf } from "../lib/http.js";
 import type { Settings as SettingsShape } from "../lib/local.js";
@@ -19,7 +19,7 @@ export function Settings() {
                 <div>
                     <h1>Settings</h1>
                 </div>
-                <button type="button" class="icon-btn" aria-label="Close" onClick={() => { settingsOpen.value = false; }}>✕</button>
+                <button type="button" class="icon-btn" aria-label="Close" onClick={() => { settingsOpen.value = false; }}><Icon name="close" /></button>
             </header>
 
             <Card>

@@ -7,7 +7,7 @@ import { useEffect } from "preact/hooks";
 
 import { onboarding, openRitual, quickAddRequested, ritual, settingsOpen, tab, type Tab } from "./app-state.js";
 import { QuickAdd } from "./components/QuickAdd.js";
-import { closeSheet, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
+import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
 import { loadConnection } from "./lib/connection.js";
 import { nextWorkdayKey } from "./lib/day.js";
 import { scheduleNudges, scheduleReminder, setUpNotifications } from "./lib/notify.js";
@@ -19,11 +19,11 @@ import { Reminders } from "./screens/Reminders.js";
 import { Settings } from "./screens/Settings.js";
 import { Today } from "./screens/Today.js";
 
-const TABS: { id: Tab; label: string; glyph: string }[] = [
-    { id: "today", label: "Today", glyph: "◉" },
-    { id: "plan", label: "Plan", glyph: "▦" },
-    { id: "ask", label: "Ask", glyph: "❝" },
-    { id: "reminders", label: "Reminders", glyph: "⏰" }
+const TABS: { id: Tab; label: string; icon: IconName }[] = [
+    { id: "today", label: "Today", icon: "today" },
+    { id: "plan", label: "Plan", icon: "calendar_view_week" },
+    { id: "ask", label: "Ask", icon: "forum" },
+    { id: "reminders", label: "Reminders", icon: "notifications" }
 ];
 
 let booted: Promise<void> | null = null;
@@ -78,13 +78,13 @@ export function App() {
                 {tab.value === "reminders" && <Reminders />}
             </main>
             {(tab.value === "today" || tab.value === "plan") && (
-                <button type="button" class="fab" aria-label="Add a task" onClick={() => openSheet(<QuickAdd />)}>+</button>
+                <button type="button" class="fab" aria-label="Add a task" onClick={() => openSheet(<QuickAdd />)}><Icon name="add" size={28} /></button>
             )}
             <nav class="nav">
                 {TABS.map((t) => (
                     <button key={t.id} type="button" class={`nav-item${tab.value === t.id ? " active" : ""}`}
                         aria-current={tab.value === t.id ? "page" : undefined} onClick={() => { tab.value = t.id; }}>
-                        <span class="nav-glyph" aria-hidden="true">{t.glyph}</span>
+                        <span class="nav-glyph"><Icon name={t.icon} /></span>
                         <span class="nav-label">{t.label}</span>
                     </button>
                 ))}

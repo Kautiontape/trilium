@@ -4,7 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 
 import { openSettings } from "../app-state.js";
 import { removeReminder } from "../components/sheets.js";
-import { Button, Card } from "../components/ui.js";
+import { Button, Card, Icon } from "../components/ui.js";
 import { clockMinutes, hhmm } from "../lib/day.js";
 import type { Settings } from "../lib/local.js";
 import { askForNotifications, notificationsAllowed } from "../lib/notify.js";
@@ -36,7 +36,7 @@ export function Reminders() {
                     <h1>Reminders</h1>
                     <p class="ink-2">on this phone</p>
                 </div>
-                <button type="button" class="icon-btn" aria-label="Settings" onClick={openSettings}>⚙</button>
+                <button type="button" class="icon-btn" aria-label="Settings" onClick={openSettings}><Icon name="settings" /></button>
             </header>
 
             {allowed === false && (
@@ -52,12 +52,12 @@ export function Reminders() {
                     {upcoming.length === 0 && <p class="empty-row ink-2">Nothing set. Set one from a task's sheet, Quick add, or by asking: "remind me at 3 to…".</p>}
                     {upcoming.map((r) => (
                         <div key={r.id} class="reminder-row">
-                            <span class="reminder-glyph" aria-hidden="true">⏰</span>
+                            <span class="reminder-glyph"><Icon name="alarm" /></span>
                             <div class="reminder-body">
                                 <div>{r.text}</div>
                                 <div class="ink-2 reminder-sub">{whenLabel(new Date(r.at), now)} · {r.task ? r.task.where : r.source === "ask" ? "from Ask" : "reminder"}</div>
                             </div>
-                            <button type="button" class="icon-btn" aria-label={`Remove ${r.text}`} onClick={() => removeReminder(r.id)}>✕</button>
+                            <button type="button" class="icon-btn" aria-label={`Remove ${r.text}`} onClick={() => removeReminder(r.id)}><Icon name="close" /></button>
                         </div>
                     ))}
                 </div>

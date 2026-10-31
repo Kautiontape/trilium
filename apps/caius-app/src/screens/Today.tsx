@@ -2,12 +2,12 @@ import "./today.css";
 
 import { layoutWork } from "@triliumnext/caius/src/daily/blocks.js";
 import { renderDayTerrain } from "@triliumnext/caius/src/draw/terrain.js";
-import { useMemo } from "preact/hooks";
+import { useLayoutEffect, useMemo, useRef } from "preact/hooks";
 
 import { openRitual, openSettings } from "../app-state.js";
 import { acceptFromSwipe, dismissSuggestion, ForwardSheet, markDone, startDoing, TaskSheet } from "../components/sheets.js";
 import { TaskRow } from "../components/TaskRow.js";
-import { Button, Card, Est, openSheet } from "../components/ui.js";
+import { Button, Card, Est, Icon, openSheet } from "../components/ui.js";
 import type { PlanTask } from "../lib/caius.js";
 import { clockMinutes, dayLabel, duration, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
 import { api, appNow, held, outbox, refreshing, refreshToday, runWrite, serverStatus, taskKey, today, type TodayData, todayError } from "../lib/store.js";
@@ -56,8 +56,8 @@ function TodayHeader({ title, sub }: { title: string; sub: string }) {
                 <h1>{title}</h1>
                 <p class="ink-2">{sub}</p>
             </div>
-            <button type="button" class="icon-btn" aria-label="Refresh" disabled={refreshing.value} onClick={() => void refreshToday()}>↻</button>
-            <button type="button" class="icon-btn" aria-label="Settings" onClick={openSettings}>⚙</button>
+            <button type="button" class="icon-btn" aria-label="Refresh" disabled={refreshing.value} onClick={() => void refreshToday()}><Icon name="refresh" /></button>
+            <button type="button" class="icon-btn" aria-label="Settings" onClick={openSettings}><Icon name="settings" /></button>
         </header>
     );
 }
@@ -98,11 +98,29 @@ function TerrainView({ data, now }: { data: TodayData; now: Date }) {
             return null;
         }
     }, [ data, held.value, now.getHours() ]);
+    const terrain = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => cropToContent(terrain.current?.querySelector("svg")), [ svg ]);
     if (!svg) {
         return null;
     }
     // renderDayTerrain builds the SVG from escaped task and meeting text; nothing else goes in.
-    return <div class="terrain" dangerouslySetInnerHTML={{ __html: svg }} />;
+    return <div class="terrain" ref={terrain} dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
+/**
+ * The drawing leaves room above the line for meeting labels that stack; on a light day that room
+ * is empty. Starting the viewBox just above what is drawn keeps the terrain close to the date.
+ */
+function cropToContent(svg: SVGSVGElement | null | undefined) {
+    if (!svg) {
+        return;
+    }
+    const [ x, y, w, h ] = (svg.getAttribute("viewBox") ?? "").split(/\s+/).map(Number);
+    const top = svg.getBBox().y - 8;
+    if (Number.isFinite(top) && top > y) {
+        svg.setAttribute("viewBox", `${x} ${top} ${w} ${y + h - top}`);
+        svg.removeAttribute("height");
+    }
 }
 
 // ---- The one nudge -----------------------------------------------------------------------------

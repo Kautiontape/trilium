@@ -1,6 +1,7 @@
 import "./sheets.css";
 
 import { Capacitor } from "@capacitor/core";
+import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import { useEffect, useState } from "preact/hooks";
 
 import type { Explanation, PlanTask, TaskRef } from "../lib/caius.js";
@@ -95,26 +96,26 @@ export function TaskSheet({ task, periodKey, suggested }: { task: PlanTask; peri
     const conn = connection.value;
     return (
         <>
-            <SheetTitle title={task.text} sub={[ whereOf(task, periodKey), task.estMinutes ? `~${task.estMinutes}m` : null, task.state === "in_progress" ? "Doing" : null ].filter(Boolean).join(" · ")} />
+            <SheetTitle title={task.text} sub={[ whereOf(task, periodKey), task.estMinutes ? `~${formatEstimate(task.estMinutes)}` : null, task.state === "in_progress" ? "Doing" : null ].filter(Boolean).join(" · ")} />
             {offline && <p class="sheet-note">Offline: actions wait until the server is back.</p>}
             {!offline && suggested && live && (
                 <>
-                    <SheetAction glyph="+" tone="clay" label="Accept" onClick={() => acceptFromSwipe(task)} />
+                    <SheetAction glyph="add" tone="clay" label="Accept" onClick={() => acceptFromSwipe(task)} />
                     <SheetAction glyph="!" tone="clay" label="Accept as Important" onClick={() => acceptSuggestion(task, { critical: true })} />
-                    <SheetAction glyph="✕" label="Dismiss" onClick={() => dismissSuggestion(task)} />
+                    <SheetAction glyph="close" label="Dismiss" onClick={() => dismissSuggestion(task)} />
                 </>
             )}
             {!offline && !suggested && live && (
                 <>
-                    <SheetAction glyph="✓" tone="moss" label="Done" onClick={() => markDone(task)} />
+                    <SheetAction glyph="check" tone="moss" label="Done" onClick={() => markDone(task)} />
                     {task.state !== "in_progress" && <SheetAction glyph="◐" tone="clay" label="Doing" onClick={() => startDoing(task)} />}
-                    {next && <SheetAction glyph="→" tone="dusk" label="Forward" detail={`${dayLabel(next)} ▸`} onClick={() => openSheet(<ForwardSheet task={task} />)} />}
-                    <SheetAction glyph="⏰" label="Remind me" detail="▸" onClick={() => openSheet(<RemindSheet task={task} periodKey={periodKey} />)} />
+                    {next && <SheetAction glyph="arrow_forward" tone="dusk" label="Forward" detail={`${dayLabel(next)} ▸`} onClick={() => openSheet(<ForwardSheet task={task} />)} />}
+                    <SheetAction glyph="alarm" label="Remind me" detail="▸" onClick={() => openSheet(<RemindSheet task={task} periodKey={periodKey} />)} />
                 </>
             )}
-            <SheetAction glyph="?" label="Why is this here?" onClick={() => openSheet(<ExplainSheet task={task} />)} />
-            {conn && <SheetAction glyph="↗" label="Open in Trilium" onClick={() => openInTrilium(conn.url, task.noteId)} />}
-            {!offline && !suggested && live && <SheetAction glyph="✕" tone="berry" label="Drop…" onClick={() => openSheet(<DropSheet task={task} />)} />}
+            <SheetAction glyph="help" label="Why is this here?" onClick={() => openSheet(<ExplainSheet task={task} />)} />
+            {conn && <SheetAction glyph="open_in_new" label="Open in Trilium" onClick={() => openInTrilium(conn.url, task.noteId)} />}
+            {!offline && !suggested && live && <SheetAction glyph="close" tone="berry" label="Drop…" onClick={() => openSheet(<DropSheet task={task} />)} />}
         </>
     );
 }
@@ -167,10 +168,10 @@ export function ForwardSheet({ task, from }: { task: PlanTask; from?: string }) 
                 <Chip selected={placement === true} onClick={() => setPlacement(placement === true ? undefined : true)}>Would like</Chip>
                 <Chip selected={placement === false} onClick={() => setPlacement(placement === false ? undefined : false)}>Need to</Chip>
             </div>
-            <SheetAction glyph="→" tone="dusk" label={dayLabel(next)} detail="next workday" onClick={() => go(next)} />
-            {tomorrow !== next && <SheetAction glyph="→" label={`Tomorrow · ${dayLabel(tomorrow)}`} onClick={() => go(tomorrow)} />}
-            <SheetAction glyph="→" label="Next week" detail={weekLabel(nextWeek).split(" · ")[1]} onClick={() => go(nextWeek)} />
-            <SheetAction glyph="→" label="Next month" detail={monthLabel(nextMonth)} onClick={() => go(nextMonth)} />
+            <SheetAction glyph="arrow_forward" tone="dusk" label={dayLabel(next)} detail="next workday" onClick={() => go(next)} />
+            {tomorrow !== next && <SheetAction glyph="arrow_forward" label={`Tomorrow · ${dayLabel(tomorrow)}`} onClick={() => go(tomorrow)} />}
+            <SheetAction glyph="arrow_forward" label="Next week" detail={weekLabel(nextWeek).split(" · ")[1]} onClick={() => go(nextWeek)} />
+            <SheetAction glyph="arrow_forward" label="Next month" detail={monthLabel(nextMonth)} onClick={() => go(nextMonth)} />
             <SheetAction glyph="…" label="Pick a date…" onClick={() => setPicking(picking ? null : "day")} />
             {picking && (
                 <div class="picker">
@@ -296,7 +297,7 @@ export function RemindSheet({ task, periodKey }: { task: PlanTask; periodKey?: s
                 </div>
             ) : (
                 <>
-                    {choices.map((c) => <SheetAction key={c.label} glyph="⏰" label={c.label} detail={whenLabel(c.at, now)} onClick={() => set(c.at)} />)}
+                    {choices.map((c) => <SheetAction key={c.label} glyph="alarm" label={c.label} detail={whenLabel(c.at, now)} onClick={() => set(c.at)} />)}
                     <div class="picker">
                         <input class="field" type="datetime-local" value={picked} onInput={(e) => setPicked((e.target as HTMLInputElement).value)} aria-label="Pick a time" />
                         <Button kind="primary" disabled={!picked || new Date(picked) <= now} onClick={() => set(new Date(picked))}>Set</Button>

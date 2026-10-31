@@ -1,7 +1,23 @@
 import "./ui.css";
 
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
+import addSvg from "@material-symbols/svg-300/rounded/add.svg?raw";
+import alarmSvg from "@material-symbols/svg-300/rounded/alarm.svg?raw";
+import arrowforwardSvg from "@material-symbols/svg-300/rounded/arrow_forward.svg?raw";
+import arrowupwardSvg from "@material-symbols/svg-300/rounded/arrow_upward.svg?raw";
+import calendarviewweekSvg from "@material-symbols/svg-300/rounded/calendar_view_week.svg?raw";
+import checkSvg from "@material-symbols/svg-300/rounded/check.svg?raw";
+import closeSvg from "@material-symbols/svg-300/rounded/close.svg?raw";
+import editsquareSvg from "@material-symbols/svg-300/rounded/edit_square.svg?raw";
+import forumSvg from "@material-symbols/svg-300/rounded/forum.svg?raw";
+import helpSvg from "@material-symbols/svg-300/rounded/help.svg?raw";
+import notificationsSvg from "@material-symbols/svg-300/rounded/notifications.svg?raw";
+import openinnewSvg from "@material-symbols/svg-300/rounded/open_in_new.svg?raw";
+import refreshSvg from "@material-symbols/svg-300/rounded/refresh.svg?raw";
+import settingsSvg from "@material-symbols/svg-300/rounded/settings.svg?raw";
+import todaySvg from "@material-symbols/svg-300/rounded/today.svg?raw";
 import { signal } from "@preact/signals";
+import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect } from "preact/hooks";
 
@@ -35,9 +51,7 @@ export function Est({ minutes }: { minutes: number | null }) {
     if (minutes === null) {
         return <span class="mono est est-missing" title="No estimate: counted at 30 m">~?</span>;
     }
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return <span class="mono est">~{h ? `${h}h` : ""}{m || !h ? `${m}m` : ""}</span>;
+    return <span class="mono est">~{formatEstimate(minutes)}</span>;
 }
 
 export function Snackbar() {
@@ -63,6 +77,37 @@ export function Snackbar() {
         </div>
     );
 }
+
+// ---- Icons -------------------------------------------------------------------------------------
+
+/** Material Symbols Rounded, weight 300, drawn in the text colour. Task states keep their own glyphs. */
+export function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
+    return <span class="icon" aria-hidden="true" style={{ width: size, height: size }} dangerouslySetInnerHTML={{ __html: ICONS[name] }} />;
+}
+
+export type IconName = keyof typeof ICONS;
+
+export function isIconName(name: string): name is IconName {
+    return name in ICONS;
+}
+
+const ICONS = {
+    add: addSvg,
+    alarm: alarmSvg,
+    arrow_forward: arrowforwardSvg,
+    arrow_upward: arrowupwardSvg,
+    calendar_view_week: calendarviewweekSvg,
+    check: checkSvg,
+    close: closeSvg,
+    edit_square: editsquareSvg,
+    forum: forumSvg,
+    help: helpSvg,
+    notifications: notificationsSvg,
+    open_in_new: openinnewSvg,
+    refresh: refreshSvg,
+    settings: settingsSvg,
+    today: todaySvg,
+};
 
 // ---- Sheets ------------------------------------------------------------------------------------
 
@@ -103,6 +148,7 @@ export function SheetTitle({ title, sub }: { title: string; sub?: string }) {
 
 /** One row of a sheet's action list: a glyph, a label and an optional detail on the right. */
 export function SheetAction({ glyph, label, detail, tone, onClick }: {
+    /** An icon's name, or a state glyph such as ◐. */
     glyph: string;
     label: string;
     detail?: string;
@@ -111,7 +157,7 @@ export function SheetAction({ glyph, label, detail, tone, onClick }: {
 }) {
     return (
         <button type="button" class={`sheet-action${tone ? ` tone-${tone}` : ""}`} onClick={onClick}>
-            <span class="sheet-action-glyph" aria-hidden="true">{glyph}</span>
+            <span class="sheet-action-glyph" aria-hidden="true">{isIconName(glyph) ? <Icon name={glyph} /> : glyph}</span>
             <span class="sheet-action-label">{label}</span>
             {detail && <span class="sheet-action-detail mono">{detail}</span>}
         </button>

@@ -1,10 +1,11 @@
 import "./chat.css";
 
 import { KeepAwake } from "@capacitor-community/keep-awake";
+import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import { addReminder } from "../components/sheets.js";
-import { Button, Chip, haptic } from "../components/ui.js";
+import { Button, Chip, haptic, Icon } from "../components/ui.js";
 import { ritual } from "../app-state.js";
 import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
@@ -36,7 +37,7 @@ export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string
                 <button type="button" class="icon-btn" aria-label="Close" onClick={() => {
                     ritual.value = null;
                     void refreshToday();
-                }}>✕</button>
+                }}><Icon name="close" /></button>
             </header>
             <Transcript chat={chat} />
             <Composer chat={chat} placeholder="Say something else…" />
@@ -71,12 +72,12 @@ export function Ask() {
                     <h1>Ask</h1>
                     <p class="ink-2">Caius · reads your Journal</p>
                 </div>
-                {chat.messages.length > 0 && <button type="button" class="icon-btn" aria-label="New conversation" onClick={chat.reset}>✎</button>}
+                {chat.messages.length > 0 && <button type="button" class="icon-btn" aria-label="New conversation" onClick={chat.reset}><Icon name="edit_square" /></button>}
             </header>
             <Transcript chat={chat} />
             {reminders.map((r) => (
                 <div key={r.id} class="reminder-chip">
-                    <span>⏰ <span class="mono">{whenLabel(r.at, appNow())}</span> · {r.text}</span>
+                    <span class="reminder-chip-text"><Icon name="alarm" size={20} /> <span class="mono">{whenLabel(r.at, appNow())}</span> · {r.text}</span>
                     {r.set ? <span class="ink-2">Set.</span> : (
                         <Button kind="primary" onClick={() => {
                             addReminder({ at: r.at.toISOString(), text: r.text, source: "ask" });
@@ -351,7 +352,7 @@ function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: stri
                             send();
                         }
                     }} />
-                <Button kind="primary" aria-label="Send" disabled={busy || !text.trim()} onClick={send}>↑</Button>
+                <Button kind="primary" aria-label="Send" disabled={busy || !text.trim()} onClick={send}><Icon name="arrow_upward" /></Button>
             </div>
         </footer>
     );
@@ -523,7 +524,7 @@ function Candidates({ items, reply, disabled }: { items: { text: string; because
             <div class="label-caps">New since yesterday</div>
             {items.map((c, i) => (
                 <div key={i} class="candidate">
-                    <p>{c.text}{c.minutes ? <span class="mono ink-2"> ~{c.minutes}m</span> : null}</p>
+                    <p>{c.text}{c.minutes ? <span class="mono ink-2"> ~{formatEstimate(c.minutes)}</span> : null}</p>
                     {c.because && <p class="ink-2 candidate-why">because {c.because}</p>}
                     <div class="chip-row">
                         <Chip disabled={disabled} onClick={() => reply(`Take "${c.text}".`)}>Take</Chip>

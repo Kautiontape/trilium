@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks";
 import { openSettings } from "../app-state.js";
 import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, markDone, TaskSheet } from "../components/sheets.js";
 import { TaskRow } from "../components/TaskRow.js";
-import { Button, Card, closeSheet, haptic, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
+import { Button, Card, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import type { Lane, OpenResult, OpenTask, PeriodKind, PlanTask, PlanView } from "../lib/caius.js";
 import { addDays, addMonths, addWeeks, dayLabel, duration, monthLabel, periodLabel, weekLabel, weekOf } from "../lib/day.js";
 import { api, holdWrite, messageOf, refOf, revision, taskKey, today } from "../lib/store.js";
@@ -57,7 +57,7 @@ export function Plan() {
                     <h1>Plan</h1>
                     <p class="ink-2">{title}</p>
                 </div>
-                <button type="button" class="icon-btn" aria-label="Settings" onClick={openSettings}>⚙</button>
+                <button type="button" class="icon-btn" aria-label="Settings" onClick={openSettings}><Icon name="settings" /></button>
             </header>
             <div class="plan-controls">
                 <div class="segmented" role="tablist">
@@ -181,9 +181,9 @@ function LaneSheet({ task, into }: { task: OpenTask; into: string }) {
                     holdWrite(ref, "forwarded", `Pulled in to ${periodLabel(into)}`, () => api().forward([ { ...ref, to: into } ]));
                 }} />
             )}
-            {ref && <SheetAction glyph="✓" tone="moss" label="Done" onClick={() => markDone(task)} />}
-            {ref && <SheetAction glyph="✕" tone="berry" label="Drop…" onClick={() => openSheet(<DropSheet task={task} />)} />}
-            <SheetAction glyph="?" label="Why is this here?" onClick={() => openSheet(<ExplainSheet task={task} />)} />
+            {ref && <SheetAction glyph="check" tone="moss" label="Done" onClick={() => markDone(task)} />}
+            {ref && <SheetAction glyph="close" tone="berry" label="Drop…" onClick={() => openSheet(<DropSheet task={task} />)} />}
+            <SheetAction glyph="help" label="Why is this here?" onClick={() => openSheet(<ExplainSheet task={task} />)} />
         </>
     );
 }
