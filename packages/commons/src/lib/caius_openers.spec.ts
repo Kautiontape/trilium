@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { caiusConversationOf, caiusOpener } from "./caius_openers.js";
+import { caiusConversationOf, caiusConversationOfMessages, caiusOpener } from "./caius_openers.js";
 
 describe("Caius openers", () => {
     it("writes each kind's opener and reads it back", () => {
@@ -20,5 +20,20 @@ describe("Caius openers", () => {
         expect(caiusConversationOf("Plan my day")).toBeNull();
         expect(caiusConversationOf("Wind down 2026-11-4")).toBeNull();
         expect(caiusConversationOf("")).toBeNull();
+    });
+
+    it("reads a chat's first user message, and only an opener on its own", () => {
+        const ask = { role: "user" as const, content: "Ask 2026-11-04" };
+        expect(caiusConversationOfMessages([ ask ])).toBe("ask");
+        expect(caiusConversationOfMessages([ { role: "user", content: [ { type: "text", text: "Wind down 2026-11-04" } ] } ])).toBe("winddown");
+        expect(caiusConversationOfMessages([ { role: "assistant", content: "Hi" }, ask, { role: "user", content: "and tomorrow?" } ])).toBe("ask");
+
+        expect(caiusConversationOfMessages([ { role: "user", content: [ { type: "text", text: "Ask " }, { type: "text", text: "2026-11-04" } ] } ])).toBeNull();
+        expect(caiusConversationOfMessages([ { role: "user", content: [
+            { type: "text", text: "Ask 2026-11-04" }, { type: "image", attachmentId: "a1", mime: "image/png" }
+        ] } ])).toBeNull();
+        expect(caiusConversationOfMessages([ { role: "user", content: [] } ])).toBeNull();
+        expect(caiusConversationOfMessages([ { role: "assistant", content: "Ask 2026-11-04" } ])).toBeNull();
+        expect(caiusConversationOfMessages([])).toBeNull();
     });
 });

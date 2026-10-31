@@ -1,4 +1,4 @@
-import { caiusConversationOf, type LlmChatContent, type LlmMessage } from "@triliumnext/commons";
+import { caiusConversationOfMessages, type LlmChatContent, type LlmMessage } from "@triliumnext/commons";
 import { becca, options as optionService, special_notes as specialNotesService } from "@triliumnext/core";
 import type { LlmProviderSetup } from "@triliumnext/core/src/services/llm/index.js";
 import type { LlmProviderConfig } from "@triliumnext/core/src/services/llm/types.js";
@@ -40,11 +40,14 @@ export default {
         if (!note) {
             return [ 400, { error: "chat_note_invalid" } ];
         }
-        const content = req.body as Partial<LlmChatContent> | undefined;
-        if (content?.version !== 1 || !Array.isArray(content.messages)) {
+        if (!isChatContent(req.body)) {
             return [ 400, { error: "content_invalid" } ];
         }
-        note.setContent(JSON.stringify(content));
+        const json = JSON.stringify(req.body);
+        if (json.length > MAX_CHAT_CONTENT_LENGTH) {
+            return [ 413, { error: "content_too_large" } ];
+        }
+        note.setContent(json);
         return undefined;
     }
 };
@@ -70,8 +73,8 @@ export function checkCaiusChat(body: unknown): CaiusChatCheck {
     if (!messages.every(isChatMessage)) {
         return { status: 400, error: "message_not_allowed" };
     }
-    const first = messages.find((message) => message.role === "user");
-    if (!first || !caiusConversationOf(textOf(first.content))) {
+    // The provider decides with the same function, so a chat this lets through is Caius's there too.
+    if (!caiusConversationOfMessages(messages)) {
         return { status: 400, error: "not_a_caius_opener" };
     }
 
@@ -110,6 +113,30 @@ function chatNoteOf(noteId: unknown) {
     return note && note.type === "llmChat" && !note.isProtected && note.hasAncestor("_llmChat") ? note : null;
 }
 
+/** The largest transcript `saveChatContent` writes, in characters of JSON: 2 MB of text. */
+const MAX_CHAT_CONTENT_LENGTH = 2 * 1024 * 1024;
+
+/**
+ * Whether `value` has the shape the chat views read (`LlmChatContent`): version 1, and messages
+ * that each carry a string `id` and `createdAt`, a role, and string or block content.
+ */
+function isChatContent(value: unknown): value is LlmChatContent {
+    const content = value as Partial<LlmChatContent> | undefined;
+    return content?.version === 1 && Array.isArray(content.messages) && content.messages.every((message: unknown) => {
+        if (typeof message !== "object" || message === null) {
+            return false;
+        }
+        const { id, role, content: body, createdAt } = message as Record<string, unknown>;
+        return typeof id === "string" && typeof createdAt === "string"
+            && (role === "user" || role === "assistant" || role === "system")
+            && (typeof body === "string" || (Array.isArray(body) && body.every(isBlock)));
+    });
+}
+
+function isBlock(block: unknown): boolean {
+    return typeof block === "object" && block !== null && typeof (block as { type?: unknown }).type === "string";
+}
+
 /** A user or assistant turn; a `system` message from the client would sit beside Caius's prompt. */
 function isChatMessage(message: unknown): message is LlmMessage {
     if (typeof message !== "object" || message === null) {
@@ -117,12 +144,6 @@ function isChatMessage(message: unknown): message is LlmMessage {
     }
     const { role, content } = message as Partial<LlmMessage>;
     return (role === "user" || role === "assistant") && (typeof content === "string" || Array.isArray(content));
-}
-
-function textOf(content: LlmMessage["content"]): string {
-    return typeof content === "string"
-        ? content
-        : content.map((part) => (part.type === "text" ? part.text : "")).join("");
 }
 
 function configuredProviders(): LlmProviderSetup[] {

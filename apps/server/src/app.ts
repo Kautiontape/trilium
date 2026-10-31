@@ -16,7 +16,7 @@ import custom from "./routes/custom.js";
 import error_handlers from "./routes/error_handlers.js";
 import mcpRoutes from "./routes/mcp.js";
 import routes from "./routes/routes.js";
-import { parseOrigins, tokenCors } from "./routes/token_cors.js";
+import { isTokenRoute, parseOrigins, tokenCors } from "./routes/token_cors.js";
 import config from "./services/config.js";
 import { getLog } from "@triliumnext/core";
 import { desktopNetworkAccessGate } from "./services/desktop_network_gate.js";
@@ -40,7 +40,16 @@ export default async function buildApp() {
     app.engine("ejs", (filePath, options, callback) => ejs.renderFile(filePath, options, callback));
     app.set("view engine", "ejs");
 
+    // The token routes have their own CORS, ahead of the global one, which leaves them alone.
+    const tokenCorsOrigins = parseOrigins(config.Network.tokenCorsOrigins);
+    app.use(tokenCors(() => tokenCorsOrigins));
+
     app.use((req, res, next) => {
+        res.locals.t = t;
+        if (isTokenRoute(req.path)) {
+            return next();
+        }
+
         // set CORS headers
         if (config["Network"]["corsAllowOrigin"]) {
             res.header("Access-Control-Allow-Origin", config["Network"]["corsAllowOrigin"]);
@@ -59,7 +68,6 @@ export default async function buildApp() {
             return;
         }
 
-        res.locals.t = t;
         return next();
     });
 
@@ -106,10 +114,6 @@ export default async function buildApp() {
     // ran. The localhost integrations it exempts stay reachable on loopback while the
     // web app does not, unless the user enables network access. No-op on the server build.
     app.use(desktopNetworkAccessGate);
-
-    // Mounted before `/mcp`, so it answers the token routes' preflights.
-    const tokenCorsOrigins = parseOrigins(config.Network.tokenCorsOrigins);
-    app.use(tokenCors(() => tokenCorsOrigins));
 
     // MCP is registered before session/auth middleware — it authenticates with its own
     // guard (an ETAPI token, always required) and never uses the Trilium session, which

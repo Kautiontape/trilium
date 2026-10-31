@@ -23,7 +23,7 @@
 import type { Options as AgentOptions, query as queryFn, SDKAssistantMessage, SDKMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { clockOverride } from "@triliumnext/caius/src/clock.js";
-import { type CaiusConversation, caiusConversationOf, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
+import { type CaiusConversation, caiusConversationOfMessages, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
 import { getLog } from "@triliumnext/core";
 import { resolveAttachmentPart } from "@triliumnext/core/src/services/llm/attachment_content.js";
 import { buildNoteHint } from "@triliumnext/core/src/services/llm/note_hint.js";
@@ -396,7 +396,7 @@ export class ClaudeAgentProvider implements LlmProvider {
             // Options the SDK fixes at query() construction: a change to any of
             // them can't be applied to a live session, so it forces a new one.
             // `model` is deliberately absent — setModel() handles it in place.
-            const caius = caiusConversation(messages) !== null;
+            const caius = caiusConversationOfMessages(messages) !== null;
             const fingerprint = JSON.stringify({
                 systemPrompt,
                 caius,
@@ -725,7 +725,7 @@ export class ClaudeAgentProvider implements LlmProvider {
         // no-parts case (the markdown hints are always appended).
         /* v8 ignore next */
         const prompt = buildSystemPrompt(messages, promptConfig) ?? "";
-        const kind = caiusConversation(messages);
+        const kind = caiusConversationOfMessages(messages);
         if (!kind) return prompt;
         // A Caius conversation is Caius's: the skill sheet says who he is, how the rituals go and how he answers questions.
         const caius = `${prompt}\n\n${CAIUS_PROMPTS[kind]}`;
@@ -812,12 +812,6 @@ const CAIUS_PROMPTS: Record<CaiusConversation, string> = {
 /** A local date as `YYYY-MM-DD`. */
 function dayOf(at: Date): string {
     return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
-}
-
-/** The Caius conversation the first user message opens (`Plan my day 2026-11-04`), or `null` for any other chat. */
-function caiusConversation(messages: LlmMessage[]): CaiusConversation | null {
-    const first = messages.find((message) => message.role === "user");
-    return first ? caiusConversationOf(flattenContent(first.content)) : null;
 }
 
 /**

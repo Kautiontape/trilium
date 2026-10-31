@@ -3,6 +3,8 @@
  * date. The server reads the kind from it to give the agent Caius's prompt and tools.
  */
 
+import type { LlmMessage } from "./llm_api.js";
+
 /** A Caius conversation: the Plan my day and Wind down rituals, or questions about the Journal. */
 export type CaiusConversation = "plan" | "winddown" | "ask";
 
@@ -15,6 +17,23 @@ export function caiusOpener(kind: CaiusConversation, date: string): string {
 export function caiusConversationOf(text: string): CaiusConversation | null {
     const match = OPENER.exec(text.trim());
     return match ? KINDS[match[1]] : null;
+}
+
+/**
+ * The Caius conversation a chat is, read from its first user message, or `null` for any other
+ * chat. The message must be the opener alone: a string, or one text part. The Claude agent
+ * provider and the phone's chat route both decide with this, so they never disagree.
+ */
+export function caiusConversationOfMessages(messages: readonly LlmMessage[]): CaiusConversation | null {
+    const first = messages.find((message) => message.role === "user");
+    if (!first) {
+        return null;
+    }
+    const { content } = first;
+    if (typeof content === "string") {
+        return caiusConversationOf(content);
+    }
+    return content.length === 1 && content[0].type === "text" ? caiusConversationOf(content[0].text) : null;
 }
 
 const OPENER_WORDS: Record<CaiusConversation, string> = {

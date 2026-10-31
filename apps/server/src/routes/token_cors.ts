@@ -8,7 +8,8 @@ import type { NextFunction, Request, Response } from "express";
  *
  * The answer never carries `Access-Control-Allow-Credentials`, so the browser sends no cookie and a
  * page at an allowed origin gets nothing without the token. A preflight from any other origin
- * answers 403. Other paths pass through untouched, to the global `corsAllowOrigin` block.
+ * answers 403. Other paths pass through untouched, to the global `corsAllowOrigin` block, which
+ * skips the token routes.
  */
 export function tokenCors(allowedOrigins: () => string[]) {
     return (req: Request, res: Response, next: NextFunction) => {
@@ -50,7 +51,8 @@ const ALLOWED_HEADERS = "Authorization, Content-Type, Accept, Mcp-Protocol-Versi
 /** `Content-Type` is readable anyway; the MCP headers are what a streamable HTTP client reads. */
 const EXPOSED_HEADERS = "Mcp-Session-Id, Mcp-Protocol-Version";
 
-function isTokenRoute(path: string): boolean {
+/** The routes that authenticate with an ETAPI token only, which `tokenCors` serves. */
+export function isTokenRoute(path: string): boolean {
     return path === "/mcp"
         || path.startsWith("/etapi/caius/")
         || path.startsWith("/etapi/llm-chat/")
