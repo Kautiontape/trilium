@@ -278,14 +278,18 @@ function removeCapture(id: string) {
     writeLocal("outbox", outbox.value);
 }
 
-function addTarget(target: CaptureTarget) {
+/** The heading Caius's own template gives a new period note's list; `caius_add` makes it when the note has none. */
+const LIST_HEADING = "☑️ Tasks";
+
+/** A capture's place as `caius_add` takes it: every item needs a heading, the Important block or On deck. A picked day is a gathering point, so its On deck. */
+export function addTarget(target: CaptureTarget) {
     switch (target.kind) {
         case "onDeck": return { date: target.date, onDeck: true };
-        case "list": return { date: target.date, ...(target.section ? { section: target.section } : {}) };
+        case "list": return { date: target.date, section: target.section ?? LIST_HEADING };
         case "critical": return { date: target.date, critical: true };
-        case "week": return { week: target.week };
-        case "month": return { month: target.month };
-        case "day": return { date: target.date };
+        case "week": return { week: target.week, section: LIST_HEADING };
+        case "month": return { month: target.month, section: LIST_HEADING };
+        case "day": return { date: target.date, onDeck: true };
     }
 }
 

@@ -94,7 +94,7 @@ export function QuickAdd() {
                 <Chip selected={target.kind === "onDeck" && target.date === onDeckDay} onClick={() => setTarget({ kind: "onDeck", date: onDeckDay })}>
                     On deck · {onDeckDay === data.key ? "today" : dayLabel(onDeckDay)}
                 </Chip>
-                <Chip selected={target.kind === "list"} onClick={() => setTarget({ kind: "list", date: data.key })}>Today's list</Chip>
+                <Chip selected={target.kind === "list"} onClick={() => setTarget({ kind: "list", date: data.key, section: sections(data)[0] })}>Today's list</Chip>
                 <Chip selected={target.kind === "critical"} onClick={() => setTarget({ kind: "critical", date: data.key })}>Critical</Chip>
                 {hint && (
                     <Chip selected={sameTarget(target, hint.target)} onClick={() => setTarget(hint.target)}>{hint.label}?</Chip>
@@ -173,7 +173,7 @@ function targetLabel(target: CaptureTarget, todayKey: string) {
         case "critical": return "today's Important";
         case "week": return weekLabel(target.week).split(" · ")[0];
         case "month": return monthLabel(target.month);
-        case "day": return dayLabel(target.date);
+        case "day": return `${dayLabel(target.date)}'s On deck`;
     }
 }
 

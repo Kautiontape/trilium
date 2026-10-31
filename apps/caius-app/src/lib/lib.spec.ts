@@ -123,3 +123,23 @@ describe("normalizeServerUrl", () => {
         expect(normalizeServerUrl("  ")).toBeNull();
     });
 });
+
+describe("addTarget", () => {
+    it("gives every capture exactly one placement, as caius_add requires", async () => {
+        const { addTarget } = await import("./store.js");
+        const targets = [
+            { kind: "onDeck", date: "2026-11-04" },
+            { kind: "list", date: "2026-11-04" },
+            { kind: "list", date: "2026-11-04", section: "Work" },
+            { kind: "critical", date: "2026-11-04" },
+            { kind: "week", week: "2026-W46" },
+            { kind: "month", month: "2026-12" },
+            { kind: "day", date: "2026-11-09" }
+        ] as const;
+        for (const target of targets) {
+            const item = addTarget(target) as Record<string, unknown>;
+            expect([ "section", "critical", "onDeck" ].filter((k) => item[k] !== undefined)).toHaveLength(1);
+        }
+        expect(addTarget({ kind: "list", date: "2026-11-04" })).toEqual({ date: "2026-11-04", section: "☑️ Tasks" });
+    });
+});
