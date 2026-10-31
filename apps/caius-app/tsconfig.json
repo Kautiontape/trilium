@@ -7,6 +7,9 @@
       "path": "../../packages/caius"
     },
     {
+      "path": "../../packages/commons"
+    },
+    {
       "path": "./tsconfig.app.json"
     },
     {

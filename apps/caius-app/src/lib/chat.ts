@@ -1,3 +1,6 @@
+import { type CaiusConversation, caiusOpener } from "@triliumnext/commons/src/lib/caius_openers.js";
+import type { ContentBlock, LlmChatContent, StoredMessage, ToolCall } from "@triliumnext/commons/src/lib/llm/chat_content.js";
+
 import type { Connection } from "./connection.js";
 import { HttpError, request, UnreachableError } from "./http.js";
 
@@ -96,13 +99,11 @@ export function chatApi(conn: Connection) {
 
 export type ChatApi = ReturnType<typeof chatApi>;
 
-export type ChatKind = "plan" | "winddown" | "ask";
+export type ChatKind = CaiusConversation;
+export type { ContentBlock, LlmChatContent, StoredMessage, ToolCall };
 
 /** The first message of a Caius conversation, in the words the server's opener check reads. */
-export function opener(kind: ChatKind, date: string) {
-    const words = kind === "plan" ? "Plan my day" : kind === "winddown" ? "Wind down" : "Ask";
-    return `${words} ${date}`;
-}
+export const opener = caiusOpener;
 
 /** The chunks of `/etapi/llm-chat/stream`, as the server's `LlmStreamChunk` defines them. */
 export type ChatChunk =
@@ -137,33 +138,6 @@ export function sseParser(onData: (data: string) => void) {
             }
         }
     };
-}
-
-/** One tool call in an assistant turn, as the sidebar stores it. */
-export interface ToolCall {
-    id: string;
-    toolName: string;
-    input: Record<string, unknown>;
-    result?: string;
-    isError?: boolean;
-}
-
-export type ContentBlock = { type: "text"; content: string } | { type: "tool_call"; toolCall: ToolCall };
-
-export interface StoredMessage {
-    id: string;
-    role: "user" | "assistant";
-    content: string | ContentBlock[];
-    createdAt: string;
-    type?: "message" | "error";
-}
-
-/** The sidebar chat's transcript format (`LlmChatContent` in the client), version 1. */
-export interface LlmChatContent {
-    version: 1;
-    messages: StoredMessage[];
-    enableNoteTools?: boolean;
-    enableWebSearch?: boolean;
 }
 
 /** An assistant turn being assembled from chunks. */
@@ -210,7 +184,7 @@ export function applyChunk(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn
 }
 
 export function turnText(blocks: ContentBlock[]) {
-    return blocks.filter((b): b is { type: "text"; content: string } => b.type === "text").map((b) => b.content).join("");
+    return blocks.map((b) => b.type === "text" ? b.content : "").join("");
 }
 
 /**

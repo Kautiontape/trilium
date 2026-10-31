@@ -43,6 +43,8 @@ export function QuickAdd() {
     const words = text.replace(/(?:^|\s)~\d+(?:h\d+m|h|m)\b/i, "").trim();
     const hint = dayHint(words, data.key);
     const estimate = est ?? typedEst;
+    /** With the hint's chip taken, the day word leaves the task's text. */
+    const taskText = hint && sameTarget(target, hint.target) ? words.replace(hint.word, "").replace(/\s{2,}/g, " ").trim() : words;
     const onDeckDay = fallback?.kind === "onDeck" ? fallback.date : data.key;
 
     const submit = async () => {
@@ -50,7 +52,7 @@ export function QuickAdd() {
             return;
         }
         setSending(true);
-        const outcome = await capture(words, target, estimate);
+        const outcome = await capture(taskText, target, estimate);
         setSending(false);
         if (outcome.status === "duplicate") {
             setResult(outcome.detail ? `Already open: ${outcome.detail.replace(/^already open in /, "")}` : "Already open.");
@@ -137,19 +139,19 @@ function sameTarget(a: CaptureTarget, b: CaptureTarget) {
 }
 
 /** A day the text names, offered as a chip: `thu`, `tomorrow`, `next week`, `next month`. */
-export function dayHint(text: string, todayKey: string): { label: string; target: CaptureTarget } | null {
+export function dayHint(text: string, todayKey: string): { label: string; target: CaptureTarget; word: RegExp } | null {
     const lower = ` ${text.toLowerCase()} `;
     if (/\snext week\s/.test(lower)) {
         const week = addWeeks(weekOf(todayKey), 1);
-        return { label: weekLabel(week).split(" · ")[0], target: { kind: "week", week } };
+        return { label: weekLabel(week).split(" · ")[0], target: { kind: "week", week }, word: /\bnext week\b/i };
     }
     if (/\snext month\s/.test(lower)) {
         const month = addMonths(todayKey.slice(0, 7), 1);
-        return { label: monthLabel(month), target: { kind: "month", month } };
+        return { label: monthLabel(month), target: { kind: "month", month }, word: /\bnext month\b/i };
     }
     if (/\stomorrow\s/.test(lower)) {
         const date = addDays(todayKey, 1);
-        return { label: dayLabel(date), target: { kind: "onDeck", date } };
+        return { label: dayLabel(date), target: { kind: "onDeck", date }, word: /\btomorrow\b/i };
     }
     const days = [ "sun", "mon", "tue", "wed", "thu", "fri", "sat" ];
     const match = /\s(sun|mon|tue|wed|thu|fri|sat)(?:day|sday|nesday|rsday|urday)?\s/.exec(lower);
@@ -161,7 +163,7 @@ export function dayHint(text: string, todayKey: string): { label: string; target
     for (let i = 0; i < 7 && new Date(`${date}T12:00:00`).getDay() !== want; i++) {
         date = addDays(date, 1);
     }
-    return { label: dayLabel(date), target: { kind: "onDeck", date } };
+    return { label: dayLabel(date), target: { kind: "onDeck", date }, word: new RegExp(`\\b${match[0].trim()}\\b`, "i") };
 }
 
 function targetLabel(target: CaptureTarget, todayKey: string) {

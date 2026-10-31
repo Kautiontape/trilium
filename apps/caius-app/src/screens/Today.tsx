@@ -7,7 +7,7 @@ import { useMemo } from "preact/hooks";
 import { openRitual, openSettings } from "../app-state.js";
 import { acceptFromSwipe, dismissSuggestion, ForwardSheet, markDone, startDoing, TaskSheet } from "../components/sheets.js";
 import { TaskRow } from "../components/TaskRow.js";
-import { Button, Card, openSheet } from "../components/ui.js";
+import { Button, Card, Est, openSheet } from "../components/ui.js";
 import type { PlanTask } from "../lib/caius.js";
 import { clockMinutes, dayLabel, duration, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
 import { api, appNow, held, outbox, refreshing, refreshToday, runWrite, serverStatus, taskKey, today, type TodayData, todayError } from "../lib/store.js";
@@ -187,7 +187,7 @@ function NowCard({ data, now }: { data: TodayData; now: Date }) {
             <div class="label-caps">{head}</div>
             <button type="button" class="now-task" onClick={() => openSheet(<TaskSheet task={task} />)}>
                 {task.state === "in_progress" ? "◐ " : ""}{task.text}
-                <span class="mono ink-2">{task.estMinutes ? ` ~${task.estMinutes}m` : " ~?"}</span>
+                {" "}<Est minutes={task.estMinutes} />
             </button>
             {!data.offline && (
                 <div class="nudge-actions">

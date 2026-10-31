@@ -146,7 +146,7 @@ function LaneView({ lane, title, into }: { lane: Lane; title: string; into: stri
         };
     }, [ lane, limit, revision.value ]);
 
-    const tasks = (result?.tasks ?? []).filter((t) => !t.parent);
+    const tasks = (result?.tasks ?? []).filter((t) => !t.parent && t.period !== into);
     if (!result || !tasks.length) {
         return null;
     }

@@ -21,6 +21,9 @@
   "references": [
     {
       "path": "../../packages/caius/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/commons/tsconfig.lib.json"
     }
   ]
 }

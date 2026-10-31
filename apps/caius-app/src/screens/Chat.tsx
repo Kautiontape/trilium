@@ -105,7 +105,10 @@ interface Chat {
     messages: StoredMessage[];
     streaming: AssistantTurn | null;
     error: string | null;
-    start: () => Promise<void>;
+    /** His next message as taps on step cards build it; the composer edits and sends it. */
+    draft: string;
+    setDraft: (text: string) => void;
+    start: (first?: string) => Promise<void>;
     send: (text: string) => Promise<void>;
     reset: () => void;
 }
@@ -119,6 +122,7 @@ function useChat(kind: ChatKind, date: string): Chat {
     const [ messages, setMessages ] = useState<StoredMessage[]>([]);
     const [ streaming, setStreaming ] = useState<AssistantTurn | null>(null);
     const [ error, setError ] = useState<string | null>(null);
+    const [ draft, setDraft ] = useState("");
     const noteId = useRef<string | null>(null);
     const history = useRef<StoredMessage[]>([]);
 
@@ -133,12 +137,13 @@ function useChat(kind: ChatKind, date: string): Chat {
         setMessages(history.current);
         setState("streaming");
         setError(null);
+        setDraft("");
 
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
         try {
             await chats.stream(
-                history.current.map((m) => ({ role: m.role, content: typeof m.content === "string" ? m.content : turnText(m.content) })),
+                history.current.filter((m) => m.role !== "system").map((m) => ({ role: m.role as "user" | "assistant", content: typeof m.content === "string" ? m.content : turnText(m.content) })),
                 noteId.current,
                 (chunk) => {
                     assembled = applyChunk(assembled, chunk);
@@ -168,7 +173,11 @@ function useChat(kind: ChatKind, date: string): Chat {
         });
     };
 
-    const start = async () => {
+    /**
+     * Makes the chat note and opens the conversation. A ritual's opener is a turn of its own; Ask
+     * sends its opener with the first question, as two user messages in one turn.
+     */
+    const start = async (first?: string) => {
         const conn = connection.value;
         if (!conn || !date) {
             return;
@@ -189,7 +198,12 @@ function useChat(kind: ChatKind, date: string): Chat {
             }
             return;
         }
-        await turn(opener(kind, date));
+        if (first) {
+            history.current = [ { id: newId(), role: "user", content: opener(kind, date), createdAt: new Date().toISOString() } ];
+            await turn(first);
+        } else {
+            await turn(opener(kind, date));
+        }
     };
 
     const send = async (text: string) => {
@@ -197,9 +211,8 @@ function useChat(kind: ChatKind, date: string): Chat {
             return;
         }
         if (!noteId.current) {
-            await start();
-        }
-        if (noteId.current) {
+            await start(text.trim());
+        } else {
             await turn(text.trim());
         }
     };
@@ -210,10 +223,11 @@ function useChat(kind: ChatKind, date: string): Chat {
         setMessages([]);
         setStreaming(null);
         setError(null);
+        setDraft("");
         setState(serverStatus.value === null ? "needs-update" : "idle");
     };
 
-    return { state, messages, streaming, error, start, send, reset };
+    return { state, messages, streaming, error, draft, setDraft, start, send, reset };
 }
 
 function newId() {
@@ -274,28 +288,35 @@ function Message({ message, chat, live }: { message: StoredMessage; chat: Chat; 
     return <AssistantBlocks blocks={message.content} chat={chat} live={live} />;
 }
 
+/**
+ * One assistant turn. Caius asks every step's question in one message after the steps ran, so its
+ * text comes first and the step cards follow with the data to answer from; the bullet lists in the
+ * text repeat what the cards show, and are left out when there are cards.
+ */
 function AssistantBlocks({ blocks, chat, live, pending }: { blocks: ContentBlock[]; chat: Chat; live: boolean; pending?: boolean }) {
+    const steps = blocks.flatMap((b) => {
+        const step = b.type === "tool_call" ? stepOf(b.toolCall) : null;
+        return step && b.type === "tool_call" ? [ { id: b.toolCall.id, step } ] : [];
+    });
+    const text = turnText(blocks);
     return (
         <div class={`caius-turn${pending ? " pending" : ""}`}>
-            {blocks.map((b, i) => {
-                if (b.type === "text") {
-                    return <CaiusText key={i} text={b.content} />;
-                }
-                const step = stepOf(b.toolCall);
-                return step ? <StepCard key={b.toolCall.id} step={step} chat={chat} live={live} /> : null;
-            })}
+            {text && <CaiusText text={text} withoutLists={steps.length > 0} />}
+            {steps.map(({ id, step }) => (
+                <StepCard key={id} step={step} chat={chat} live={live && !pending} askedInText={!!step.question && text.includes(step.question)} />
+            ))}
         </div>
     );
 }
 
 /** Caius's prose: paragraphs and bullets, no markup beyond that. */
-function CaiusText({ text }: { text: string }) {
+function CaiusText({ text, withoutLists }: { text: string; withoutLists?: boolean }) {
     return (
         <div class="caius-text">
             {text.split(/\n{2,}/).map((para, i) => {
                 const lines = para.split("\n");
                 if (lines.every((l) => /^\s*[-*•]\s/.test(l))) {
-                    return <ul key={i}>{lines.map((l, j) => <li key={j}>{strip(l.replace(/^\s*[-*•]\s/, ""))}</li>)}</ul>;
+                    return withoutLists ? null : <ul key={i}>{lines.map((l, j) => <li key={j}>{strip(l.replace(/^\s*[-*•]\s/, ""))}</li>)}</ul>;
                 }
                 return <p key={i}>{strip(para)}</p>;
             })}
@@ -308,7 +329,8 @@ function strip(text: string) {
 }
 
 function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: string; onSend?: (text: string) => void }) {
-    const [ text, setText ] = useState("");
+    const text = chat.draft;
+    const setText = chat.setDraft;
     const busy = chat.state === "streaming" || chat.state === "starting";
     const send = () => {
         if (!text.trim() || busy) {
@@ -321,7 +343,7 @@ function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: stri
         <footer class="composer">
             {chat.error && chat.state === "ready" && <p class="chat-error">{chat.error}</p>}
             <div class="composer-row">
-                <textarea class="field" rows={1} placeholder={placeholder} value={text} disabled={chat.state === "needs-update"}
+                <textarea class="field" rows={text.length > 60 ? 3 : 1} placeholder={placeholder} value={text} disabled={chat.state === "needs-update"}
                     onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -338,18 +360,20 @@ function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: stri
 // ---- Step cards --------------------------------------------------------------------------------
 
 /**
- * A ritual step as a card: Caius's question word for word over its data, with quick replies. A
- * reply is a plain sentence sent as his next message; the agent does the judgment and the write.
+ * A ritual step as a card: Caius's question word for word (unless his text already asked it) over
+ * its data, with quick replies. A tap adds a plain sentence to his next message, so one message
+ * answers every step of the turn; the agent does the judgment and the write.
  */
-function StepCard({ step, chat, live }: { step: RitualStep; chat: Chat; live: boolean }) {
+function StepCard({ step, chat, live, askedInText }: { step: RitualStep; chat: Chat; live: boolean; askedInText: boolean }) {
     const reply = (text: string) => {
         haptic("tick");
-        void chat.send(text);
+        const current = chat.draft.trim();
+        chat.setDraft(current ? `${current.replace(/[.]?$/, ".")} ${text}` : text);
     };
     const disabled = !live;
     return (
         <section class={`step-card step-${step.ritual}`}>
-            {step.question && <p class="step-question">{step.question}</p>}
+            {step.question && !askedInText && <p class="step-question">{step.question}</p>}
             <StepBody step={step} reply={reply} disabled={disabled} />
         </section>
     );
@@ -440,7 +464,7 @@ function StepBody({ step, reply, disabled }: { step: RitualStep; reply: (text: s
     return <Replies replies={[ "Looks right" ]} reply={reply} disabled={disabled} />;
 }
 
-/** Leftovers with their proposed fate as a chip; a tap cycles the fate, and Looks right sends the exceptions as one sentence. */
+/** Leftovers with their proposed fate as a chip; a tap cycles the fate, and Looks right adds the exceptions to the reply as one sentence. */
 function FateList({ items, reply, disabled, withoutFoot }: { items: FateItem[]; reply: (text: string) => void; disabled: boolean; withoutFoot?: boolean }) {
     const [ changed, setChanged ] = useState<Record<number, string>>({});
     const [ reason, setReason ] = useState<Record<number, string>>({});
@@ -486,7 +510,7 @@ function FateList({ items, reply, disabled, withoutFoot }: { items: FateItem[]; 
             )}
             {withoutFoot && Object.values(changed).some(Boolean) && (
                 <div class="step-foot">
-                    <Button kind="primary" disabled={disabled} onClick={() => reply(sentence())}>Send the changes</Button>
+                    <Button kind="primary" disabled={disabled} onClick={() => reply(sentence())}>Add the changes</Button>
                 </div>
             )}
         </>

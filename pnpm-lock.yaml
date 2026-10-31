@@ -236,6 +236,9 @@ importers:
       '@triliumnext/caius':
         specifier: workspace:*
         version: link:../../packages/caius
+      '@triliumnext/commons':
+        specifier: workspace:*
+        version: link:../../packages/commons
       capacitor-secure-storage-plugin:
         specifier: 0.13.0
         version: 0.13.0(@capacitor/core@8.5.2)

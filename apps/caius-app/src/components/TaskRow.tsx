@@ -28,10 +28,13 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
     const [ dx, setDx ] = useState(0);
     const drag = useRef<{ x: number; y: number; id: number; horizontal: boolean | null; ticked: boolean } | null>(null);
     const rowRef = useRef<HTMLDivElement>(null);
+    /** Set by a horizontal drag, so the click that ends it doesn't open the sheet. */
+    const dragged = useRef(false);
 
     const threshold = () => (rowRef.current?.offsetWidth ?? 360) * 0.32;
 
     const onPointerDown = (e: PointerEvent) => {
+        dragged.current = false;
         if (!live || (!right && !left)) {
             return;
         }
@@ -47,6 +50,7 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
         if (d.horizontal === null && Math.hypot(x, y) > 8) {
             d.horizontal = Math.abs(x) > Math.abs(y);
             if (d.horizontal) {
+                dragged.current = true;
                 (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
             }
         }
@@ -86,7 +90,13 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
-                onClick={() => !dx && onOpen?.()}
+                onClick={() => {
+                    if (dragged.current) {
+                        dragged.current = false;
+                        return;
+                    }
+                    onOpen?.();
+                }}
                 role="button"
                 tabIndex={0}
             >
@@ -98,7 +108,7 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
                     </div>
                     {detail && <div class="task-row-detail">{detail}</div>}
                 </div>
-                {trailing ?? (live || task.state === "open" ? <Est minutes={task.estMinutes} /> : null)}
+                {trailing ?? (live ? <Est minutes={task.estMinutes} /> : null)}
             </div>
         </div>
     );
