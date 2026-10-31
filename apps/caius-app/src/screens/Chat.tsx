@@ -2,7 +2,7 @@ import "./chat.css";
 
 import { KeepAwake } from "@capacitor-community/keep-awake";
 import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
@@ -436,7 +436,8 @@ function StepCard({ id, step, chat, live, askedInText }: { id: string; step: Rit
     const [ answers, setAnswers ] = useState<StepAnswers>({});
     const sentences = stepReply(step, answers);
     const joined = sentences.join(" ");
-    useEffect(() => {
+    // A layout effect, so the box holds the new sentence before the next paint and a quick Send never sends the old one.
+    useLayoutEffect(() => {
         if (live) {
             chat.report(id, sentences);
         }
