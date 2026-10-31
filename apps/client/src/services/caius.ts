@@ -268,13 +268,6 @@ export const caiusApi = {
     skipCatchup: (date: string) => server.post<object>("caius/skip-catchup", { date })
 };
 
-/** The first message of a planning conversation, in the words the `caius` skill sheet reads. */
-export function caiusOpener(kind: CaiusConversation, date: string) {
-    return `${kind === "plan" ? "Plan my day" : "Wind down"} ${date}`;
-}
-
-export type CaiusConversation = "plan" | "winddown";
-
 /**
  * Shows the sidebar chat and starts a new conversation in it, with note tools on, whose first
  * message is `opener`. With AI off, in the old layout or on an AI chat note there is no chat tab to

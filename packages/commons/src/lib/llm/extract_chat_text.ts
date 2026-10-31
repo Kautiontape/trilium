@@ -1,7 +1,7 @@
 /**
  * Extracts the plain conversation text from an LLM chat note's JSON content for
  * full-text search indexing. An `llmChat` note stores its whole conversation as a
- * single `application/json` blob (see `LlmChatContent` in the client's `llm_chat_types`);
+ * single `application/json` blob (see `LlmChatContent` in `chat_content.ts`);
  * search must surface the readable prose, not the surrounding JSON metadata (roles,
  * timestamps, tool-call bookkeeping, attachment references).
  *

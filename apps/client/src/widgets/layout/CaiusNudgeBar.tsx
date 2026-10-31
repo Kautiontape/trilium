@@ -1,11 +1,12 @@
 import "./CaiusNudgeBar.css";
 
+import { caiusOpener } from "@triliumnext/commons";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import type FNote from "../../entities/fnote";
 import { dayKey } from "../../menus/task_actions";
 import {
-    caiusApi, type CaiusNudge, caiusNow, caiusOpener, caiusWrite, openPeriodNoteIds, startCaiusConversation
+    caiusApi, type CaiusNudge, caiusNow, caiusWrite, openPeriodNoteIds, startCaiusConversation
 } from "../../services/caius";
 import froca from "../../services/froca";
 import { t } from "../../services/i18n";

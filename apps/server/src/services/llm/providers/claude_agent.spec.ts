@@ -471,6 +471,27 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect(queryMock.mock.calls[1][0].options.systemPrompt).not.toContain("You are Caius");
     });
 
+    it("gives an Ask conversation the rituals' tools and lockout with the Ask prompt, and leaves the rituals' prompt alone", async () => {
+        const optionsOf = async (content: string, call: number) => {
+            scriptAgent([successResult()]);
+            await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content }], { enableNoteTools: true }));
+            return queryMock.mock.calls[call][0].options;
+        };
+        const ask = await optionsOf("Ask 2026-11-06", 0);
+        const ritual = await optionsOf("Wind down 2026-11-06", 1);
+        expect(ask.disallowedTools).toEqual(ritual.disallowedTools);
+        expect(ask.disallowedTools).toEqual(expect.arrayContaining([ "mcp__trilium__set_note_content", "mcp__trilium__create_note" ]));
+        expect(ask.allowedTools).not.toContain("WebSearch");
+        expect(ask.systemPrompt).toContain("follow its \"Who you are\" and \"Ask\" sections.");
+        expect(ask.systemPrompt).not.toContain("Wind down and Plan my day");
+        expect(ritual.systemPrompt).toContain("follow its \"Who you are\" and \"Wind down and Plan my day\" sections.");
+        expect((await optionsOf("Plan my day 2026-11-06", 2)).systemPrompt).toBe(ritual.systemPrompt);
+
+        const question = await optionsOf("Ask 2026-11-06 what's next?", 3);
+        expect(question.disallowedTools).toBeUndefined();
+        expect(question.systemPrompt).not.toContain("You are Caius");
+    });
+
     it("builds a Plan my day or Wind down conversation's MCP server without the tools it denies, so the agent never sees them", async () => {
         scriptAgent([successResult()]);
         await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-02" }], { enableNoteTools: true }));

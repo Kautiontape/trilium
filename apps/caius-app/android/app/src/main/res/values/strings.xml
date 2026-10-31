@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Caius</string>
+    <string name="title_activity_main">Caius</string>
+    <string name="package_name">com.kautiontape.caius</string>
+    <string name="custom_url_scheme">com.kautiontape.caius</string>
+    <string name="shortcut_add">Add task</string>
+    <string name="shortcut_plan">Plan my day</string>
+    <string name="shortcut_winddown">Wind down</string>
+    <string name="shortcut_ask">Ask</string>
+</resources>

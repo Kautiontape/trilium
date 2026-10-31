@@ -240,6 +240,34 @@ Each conversation ends in one apply call. The agent maps your reply to the ids i
   - **Dry run:** creates nothing and returns the HTML it would write.
 - **`caius_skip_catchup`** `{ date }` labels the day note `#caiusSkipCatchup=<date>`.
 
+## Ask
+
+A third conversation, for questions instead of a ritual: its opener is `Ask 2026-11-04`. It has the same tools as the two rituals and the same lockout of the generic note writes; the skill sheet's Ask section has the assistant answer from the Journal ("what's on Thursday?", "why is this overdue?"), suggest what to work on next from your own list in its order, and make a change only when you ask for one. No button in Trilium starts it yet; the phone app does.
+
+## The phone routes
+
+The Caius phone app ([phone.md](phone.md)) holds an ETAPI token, not a Trilium session. It reaches the Caius tools over `/mcp`, and these routes cover the rest. Each takes `Authorization: Bearer <token>` and answers 401 without it.
+
+| Route | Does |
+|---|---|
+| `GET /etapi/caius/status` | `/api/caius/status`: `{ enabled, rollover, now? }`, so the app reads "today" as the Plan tab does. |
+| `GET /etapi/caius/nudge?date=` | `/api/caius/nudge`: the nudge bar's state for a day, which the app's reminders read. |
+| `POST /etapi/caius/apply` | `/api/caius/apply`: the Plan tab's Close, in one request. |
+| `POST /etapi/special-notes/llm-chat` | Creates a chat note where the sidebar puts its own, and answers `201 { noteId, title }`. |
+| `POST /etapi/llm-chat/stream` | One chat turn, streamed as Server-Sent Events, the same stream as the sidebar's. |
+| `PUT /etapi/llm-chat/<noteId>/content` | Saves the transcript to a chat note, as `LlmChatContent` from `@triliumnext/commons` (`{ version: 1, messages }`, each message with a string `id` and `createdAt`, a role and string or block content); answers 204, `400 content_invalid`, or `413` over 2 MB. |
+
+The chat route runs only a Caius conversation, and only as the sidebar would run it:
+
+- The first user message must be an opener (`Plan my day`, `Wind down` or `Ask` and a date) on its own: a string, or one text part with no attachment. Every message must be a user or assistant turn. Anything else answers `400 not_a_caius_opener`.
+- `config.chatNoteId` must name an unprotected chat note under the hidden chat tree (`_llmChat`), where the sidebar and the route above create them: the first turn renames it after the opener. Otherwise `400 chat_note_invalid`. The same holds for the content route. A chat saved from the sidebar has moved out of that tree, so the phone can't continue it.
+- The turn runs on the first `claude-agent` provider in Options → AI / LLM, with note tools on and web search off, whatever the request says. Without one it answers `503`; with AI off, `403`. `config.model` is optional and must be one of that provider's selected models (`400 model_not_allowed`). Every other config field is ignored.
+- At most 60 turns per 15 minutes per address.
+
+The app sends the whole history every turn, as the sidebar does, and saves the transcript itself through the content route, so the sidebar can open the conversation. A turn stops when the connection drops.
+
+**Cross-origin.** The app's WebView calls these routes, and `/mcp`, from its own origin. `[Network] tokenCorsOrigins` (env `TRILIUM_NETWORK_TOKENCORSORIGINS`) lists the origins allowed to; it defaults to `https://localhost,http://localhost`, the app's release and debug origins, and an empty value turns it off. Those routes answer a preflight from a listed origin and refuse one from any other (`403`), and never send `Access-Control-Allow-Credentials`. The global `corsAllowOrigin` setting is separate and leaves the token routes alone, so they never get its `Access-Control-Allow-Credentials`.
+
 ## The one-off id backfill
 
 Actions find a task by its list item id. Newer items have one; about 87 older Journal items and plain bullets do not. Without an id, an item cannot be targeted, and the menu answers "Caius could not find this task".

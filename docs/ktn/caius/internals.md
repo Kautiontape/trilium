@@ -12,6 +12,8 @@ For the method see [method.md](method.md); for using it see [README.md](README.m
 | `apps/server/src/services/caius/apply.ts`, `writes.ts` | `caius_plan_apply` and `caius_winddown_apply`, and the lock-free writes they share with the single-purpose tools. |
 | `apps/server/src/services/caius/weather.ts` | `fetchDayWeather()`: today's WMO code from Open-Meteo, `undefined` on any failure or after 3 s. |
 | `apps/server/src/routes/api/caius.ts` | The `/api/caius/*` routes. |
+| `apps/server/src/routes/api/caius_chat.ts`, `apps/server/src/routes/token_cors.ts` | The phone app's chat route and its guards, and CORS for the token routes. |
+| `packages/commons/src/lib/caius_openers.ts` | The openers, `caiusOpener()` and `caiusConversationOf()`, shared by the client, the server and the phone app. |
 | `apps/server/src/assets/llm/caius/skill.md` | The `caius` skill sheet. |
 | `apps/client/src/services/caius.ts` | The route client and the write protocol. |
 | `apps/client/src/menus/task_actions.ts` | The task action list, shared by the right-click menu, the commands and the mobile sheet. |
@@ -106,6 +108,16 @@ The service loads on the first request, off the startup path. If it fails to loa
 **`stale`.** Before any write, inside the lock, `unlessStale` compares each item's `expectedBlobId` with `becca.notes[id].blobId` (a hash of the content). A mismatch skips that item as `reason: "stale"` with the note's current `blobId`, and the library never sees it. All `blobId`s of a batch are read before its first write, so several items on one note share one token. The tools take no token, since an agent is not holding an editor open.
 
 Without the token, an editor save already in flight would silently overwrite the Caius write: the client's save path, `PUT /api/notes/:id/data`, has no version check.
+
+## The phone routes
+
+`routes.ts` registers the token routes beside the session ones, each with `auth.checkEtapiToken`:
+
+- `/etapi/caius/status`, `nudge` and `apply` reuse the `/api/caius/*` handlers (`routes/api/caius.ts`) through `asyncRoute`, which sets up CLS and opens no transaction, as Caius needs. The ETAPI helper `eu.route` would wrap them in a synchronous `sql.transactional`.
+- `/etapi/special-notes/llm-chat` calls `specialNotesService.createLlmChat()`, as `/api/special-notes/llm-chat` does, and `PUT /etapi/llm-chat/:noteId/content` writes a `{ version: 1, messages }` body to a chat note (`chatNoteOf`), each message checked for the fields the chat views read (`isChatContent`) and the whole capped at 2 MB of JSON (413). The client's own save path, `PUT /api/notes/:id/data`, is session-only, and `/etapi/notes/*` is outside the token CORS, so the phone saves through this route.
+- `/etapi/llm-chat/stream` is `streamCaiusChat` in `routes/api/caius_chat.ts`. `checkCaiusChat` gates on `caiusConversationOfMessages`, as the provider does, reads only `messages`, `config.chatNoteId` and `config.model` from the request, and builds the config: the first `claude-agent` entry of `llmProviders` as `providerId`, `enableNoteTools: true`, `enableWebSearch: false`. It then hands the request to `streamChat`, so the stream, the heartbeat, the abort on disconnect and the first turn's renaming of `chatNoteId` are the sidebar's. The provider is pinned because only `ClaudeAgentProvider` gives an opener Caius's prompt and the write lockout: another provider would run the same opener with every note tool. A `chatNoteId` must be an unprotected `llmChat` note under `_llmChat` (`chatNoteOf`), so neither the renaming nor the content route can reach any other note. A chat saved from the sidebar moves out of `_llmChat` (`saveLlmChat`), so the phone can't continue it. The route has its own `express-rate-limit` budget (60 per 15 minutes), and `/etapi/llm-chat/stream` is in `SSE_PATHS` (`app.ts`), so compression never buffers it.
+
+`tokenCors` (`routes/token_cors.ts`) is the first middleware in `app.ts`, ahead of the global CORS block, which skips the paths `isTokenRoute` names. For `/mcp`, `/etapi/caius/*`, `/etapi/llm-chat/*` and `/etapi/special-notes/llm-chat` only, it sets `Access-Control-Allow-Origin` to a request's `Origin` when that is in `[Network] tokenCorsOrigins`, answers the preflight (methods `GET, POST, PUT, DELETE`; headers `Authorization, Content-Type, Accept, Mcp-Protocol-Version`), and answers a preflight from any other origin `403`. It never sets `Access-Control-Allow-Credentials`, so a browser sends no cookie and the token is the only credential. With `corsAllowOrigin` set, the global block still serves every other path, with its `Allow-Credentials: true`, and answers their preflights.
 
 ## Server-assigned list ids
 
@@ -210,7 +222,7 @@ Each runs in its own transaction. Content goes through the store's compare-and-s
 
 ## Tool gating
 
-`claude_agent.ts` treats a conversation whose first user message is an opener as Caius's (`isCaiusConversation`): its system prompt gains `CAIUS_PROMPT`, which names the agent Caius and has it load the skill, and its MCP server and `disallowedTools` leave out only the generic note tools that write (`genericNoteWrites`). Every Caius tool stays.
+`claude_agent.ts` treats a conversation whose first user message is an opener, on its own, as Caius's: `caiusConversationOfMessages` from `@triliumnext/commons`, which takes a string or a single text part and nothing else. The phone's chat route decides with the same function, so a message it lets through is always a Caius conversation in the provider. The openers are `caiusOpener()`'s, also in commons, so the client, the server and the phone app share them: `Plan my day <date>`, `Wind down <date>` and `Ask <date>`. Its system prompt gains the kind's line from `CAIUS_PROMPTS`, which names the agent Caius and has it load the skill: the two rituals follow its "Wind down and Plan my day" section, Ask its "Ask" section. For all three, its MCP server and `disallowedTools` leave out only the generic note tools that write (`genericNoteWrites`). Every Caius tool stays.
 
 ## Not done
 

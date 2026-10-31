@@ -1,7 +1,10 @@
 import "./ChatMessage.css";
 import "../markdown/MarkdownCommons.css";
 
-import { type LlmCitation } from "@triliumnext/commons";
+import {
+    type ContentBlock, type FileBlock, getMessageText, type ImageBlock, type LlmCitation,
+    type StoredMessage, type TextBlock, type TextFileBlock, type ToolCallBlock
+} from "@triliumnext/commons";
 import { memo } from "preact/compat";
 import { useMemo } from "preact/hooks";
 
@@ -14,7 +17,6 @@ import { formatErrorDetails } from "./chat_error.js";
 import { renderMarkdown } from "./chat_markdown.js";
 import { renderQuoteSourceLinks } from "./chat_quote.js";
 import { ExpandableCard, ExpandableSection } from "./ExpandableCard.js";
-import { type ContentBlock, type FileBlock, getMessageText, type ImageBlock, type StoredMessage, type TextBlock, type TextFileBlock, type ToolCallBlock } from "./llm_chat_types.js";
 import { shortModelName } from "./model_name.js";
 import { SafeImage } from "./retry_image.js";
 import ToolCallCard from "./ToolCallCard.js";

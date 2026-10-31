@@ -1,0 +1,51 @@
+.connect {
+    padding-bottom: calc(var(--safe-bottom) + var(--s6));
+}
+
+.connect-head {
+    margin-top: var(--s6);
+
+    & h1 {
+        margin: 0;
+        font: 700 32px/38px var(--font-display);
+    }
+
+    & p {
+        margin: var(--s1) 0 0;
+    }
+}
+
+.connect-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+
+    & .field { margin: 0; }
+}
+
+.connect-hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.connect-result p {
+    margin: 0 0 var(--s2);
+}
+
+.sample-notification {
+    padding: var(--s3) var(--s4);
+    border-radius: var(--r-card);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+
+    & p { margin: var(--s1) 0 var(--s2); }
+}
+
+.sample-actions {
+    display: flex;
+    gap: var(--s4);
+    color: var(--clay);
+    font-weight: 600;
+    font-size: 14px;
+}

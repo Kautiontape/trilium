@@ -1,3 +1,4 @@
+import type { ToolCall } from "@triliumnext/commons";
 import { render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +11,6 @@ vi.mock("../../react/NoteLink.js", () => ({
 }));
 
 import ToolCallCard from "./ToolCallCard.js";
-import type { ToolCall } from "./llm_chat_types.js";
 
 let host: HTMLElement | undefined;
 

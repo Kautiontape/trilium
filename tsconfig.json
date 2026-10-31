@@ -22,6 +22,9 @@
       "path": "./apps/client"
     },
     {
+      "path": "./apps/caius-app"
+    },
+    {
       "path": "./apps/build-docs"
     },
     {

@@ -1,6 +1,9 @@
 import "./content_renderer.css";
 
-import { isImageAttachmentRole, isOfficeMimeType, normalizeMimeTypeForCKEditor, type TextRepresentationResponse } from "@triliumnext/commons";
+import {
+    isImageAttachmentRole, isOfficeMimeType, type LlmChatContent, normalizeMimeTypeForCKEditor,
+    type StoredMessage, type TextRepresentationResponse
+} from "@triliumnext/commons";
 import DOMPurify from "dompurify";
 import { h, type JSX, render } from "preact";
 
@@ -9,7 +12,6 @@ import FNote from "../entities/fnote.js";
 import imageContextMenuService from "../menus/image_context_menu.js";
 import { t } from "../services/i18n.js";
 import { type MediaEnvironment, showsFileActions } from "../widgets/type_widgets/file/media_environment.js";
-import type { LlmChatContent, StoredMessage } from "../widgets/type_widgets/llm_chat/llm_chat_types.js";
 import renderText, { postProcessRichContent, renderChildrenList } from "./content_renderer_text.js";
 import renderDoc from "./doc_renderer.js";
 import { getMermaidConfig, postprocessMermaidSvg } from "./mermaid.js";

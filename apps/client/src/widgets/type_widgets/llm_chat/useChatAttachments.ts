@@ -1,10 +1,10 @@
+import type { FileBlock, ImageBlock, TextFileBlock } from "@triliumnext/commons";
 import { RefObject } from "preact";
 import { useCallback, useRef } from "preact/hooks";
 
 import { t } from "../../../services/i18n.js";
 import server from "../../../services/server.js";
 import toast from "../../../services/toast.js";
-import type { FileBlock, ImageBlock, TextFileBlock } from "./llm_chat_types.js";
 import type { AttachmentBlock, UseLlmChatReturn } from "./useLlmChat.js";
 
 /**
