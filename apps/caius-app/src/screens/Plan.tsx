@@ -4,7 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 
 import { openSettings } from "../app-state.js";
 import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, markDone, TaskSheet } from "../components/sheets.js";
-import { TaskRow } from "../components/TaskRow.js";
+import { displayText, TaskRow } from "../components/TaskRow.js";
 import { Button, Card, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import type { Lane, OpenResult, OpenTask, PeriodKind, PlanTask, PlanView } from "../lib/caius.js";
 import { addDays, addMonths, addWeeks, dayLabel, duration, monthLabel, periodLabel, weekLabel, weekOf } from "../lib/day.js";
@@ -150,9 +150,11 @@ function LaneView({ lane, title, into }: { lane: Lane; title: string; into: stri
     if (!result || !tasks.length) {
         return null;
     }
+    // Rows already on the period being viewed (and sub-items) are left out of the count too.
+    const total = result.total - ((result.tasks.length) - tasks.length);
     return (
         <section class="list-group">
-            <h2 class="label-caps">{title} <span class="mono">{tasks.length < result.total ? `${tasks.length} of ${result.total}` : result.total}</span></h2>
+            <h2 class="label-caps">{title} <span class="mono">{tasks.length < total ? `${tasks.length} of ${total}` : total}</span></h2>
             <div class="rows">
                 {tasks.map((t) => (
                     <TaskRow key={taskKey(t)} task={t} variant={t.critical ? "critical" : "list"}
@@ -161,8 +163,8 @@ function LaneView({ lane, title, into }: { lane: Lane; title: string; into: stri
                         trailing={<span class="lane-more" aria-hidden="true">⋯</span>} />
                 ))}
             </div>
-            {tasks.length < result.total && (
-                <Button kind="quiet" onClick={() => setLimit(limit + PAGE)}>Show {Math.min(PAGE, result.total - tasks.length)} more</Button>
+            {tasks.length < total && (
+                <Button kind="quiet" onClick={() => setLimit(limit + PAGE)}>Show {Math.min(PAGE, total - tasks.length)} more</Button>
             )}
         </section>
     );
@@ -173,7 +175,7 @@ function LaneSheet({ task, into }: { task: OpenTask; into: string }) {
     const ref = refOf(task);
     return (
         <>
-            <SheetTitle title={task.text} sub={`${periodLabel(task.period)} · ${task.section ?? ""}`} />
+            <SheetTitle title={displayText(task.text).text} sub={`${periodLabel(task.period)} · ${task.section ?? ""}`} />
             {ref && into !== task.period && (
                 <SheetAction glyph="↓" tone="clay" label={`Pull in to ${periodLabel(into)}`} onClick={() => {
                     haptic("tick");

@@ -91,7 +91,7 @@ export function QuickAdd() {
             />
             <div class="label-caps">Goes to</div>
             <div class="chip-row">
-                <Chip selected={target.kind === "onDeck"} onClick={() => setTarget({ kind: "onDeck", date: onDeckDay })}>
+                <Chip selected={target.kind === "onDeck" && target.date === onDeckDay} onClick={() => setTarget({ kind: "onDeck", date: onDeckDay })}>
                     On deck · {onDeckDay === data.key ? "today" : dayLabel(onDeckDay)}
                 </Chip>
                 <Chip selected={target.kind === "list"} onClick={() => setTarget({ kind: "list", date: data.key })}>Today's list</Chip>

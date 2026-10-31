@@ -78,6 +78,7 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
     };
 
     const shownState = heldState === "dismissed" ? "cancelled" : task.state;
+    const { text, forwardedTo } = displayText(task.text);
     return (
         <div class={`task-row-wrap${dx ? " dragging" : ""}`}>
             {dx > 0 && right && <div class={`swipe-under swipe-right tone-${right.tone}`} aria-hidden="true">{right.label}</div>}
@@ -104,14 +105,25 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
                 <div class="task-row-body">
                     <div class="task-row-text">
                         {top !== undefined && <span class="top-mark mono">{top}</span>}
-                        {task.text}
+                        {text}
                     </div>
-                    {detail && <div class="task-row-detail">{detail}</div>}
+                    {forwardedTo ? <div class="task-row-detail">Forwarded → {forwardedTo}</div> : detail && <div class="task-row-detail">{detail}</div>}
                 </div>
                 {trailing ?? (live ? <Est minutes={task.estMinutes} /> : null)}
             </div>
         </div>
     );
+}
+
+/**
+ * A task's words as the row shows them. A forwarded task (state `tombstone`) keeps Caius's marker
+ * in its text, `_scheduled [Thu 5 Nov](#root/…)_`; the row shows the day it went to instead, and
+ * links as their labels.
+ */
+export function displayText(raw: string): { text: string; forwardedTo: string | null } {
+    const marker = /\s*_?(?:re)?scheduled\s+\[([^\]]+)\]\([^)]*\)_?/i.exec(raw);
+    const rest = marker ? raw.replace(marker[0], "").replace(/\s~\d+(?:h\d+m|h|m)\b/g, "") : raw;
+    return { text: rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim(), forwardedTo: marker ? marker[1] : null };
 }
 
 export interface SwipeAction {

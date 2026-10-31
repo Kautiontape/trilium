@@ -237,9 +237,17 @@ function newId() {
 
 function Transcript({ chat }: { chat: Chat }) {
     const end = useRef<HTMLDivElement>(null);
+    const box = useRef<HTMLDivElement>(null);
+    // While a turn streams, follow its end; once it lands, show it from its first line, where Caius asks.
     useEffect(() => {
-        end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-    }, [ chat.messages.length, chat.streaming ]);
+        const last = chat.messages[chat.messages.length - 1];
+        const turns = box.current?.querySelectorAll(".caius-turn, .chat-error");
+        if (!chat.streaming && last?.role === "assistant" && turns?.length) {
+            turns[turns.length - 1].scrollIntoView({ block: "start", behavior: "smooth" });
+        } else {
+            end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+        }
+    }, [ chat.messages.length, !!chat.streaming ]);
 
     if (chat.state === "needs-update") {
         return (
@@ -254,7 +262,7 @@ function Transcript({ chat }: { chat: Chat }) {
 
     const lastStepIndex = findLastStep(chat.messages);
     return (
-        <div class="transcript" aria-live="polite">
+        <div class="transcript" ref={box} aria-live="polite">
             {chat.messages.map((m, i) => (
                 i === 0 && m.role === "user" ? null : <Message key={m.id} message={m} chat={chat} live={i === lastStepIndex && chat.state === "ready"} />
             ))}
@@ -369,7 +377,8 @@ function StepCard({ step, chat, live, askedInText }: { step: RitualStep; chat: C
     const reply = (text: string) => {
         haptic("tick");
         const current = chat.draft.trim();
-        chat.setDraft(current ? `${current.replace(/[.]?$/, ".")} ${text}` : text);
+        const sentence = /[.?!]$/.test(text) ? text : `${text}.`;
+        chat.setDraft(current ? `${current.replace(/[.]?$/, ".")} ${sentence}` : sentence);
     };
     const disabled = !live;
     return (
@@ -432,7 +441,7 @@ function StepBody({ step, reply, disabled }: { step: RitualStep; reply: (text: s
         const candidates: { text: string; because?: string; minutes?: number }[] = Array.isArray(d.candidates) ? d.candidates : [];
         return (
             <>
-                {d.capacity?.sentence && <p class="step-note mono">{d.capacity.sentence}</p>}
+                {d.capacity?.sentence && <p class="step-note">{d.capacity.sentence}</p>}
                 {d.summary && <p class="step-note ink-2">{d.summary}</p>}
                 {candidates.length > 0 && <Candidates items={candidates} reply={reply} disabled={disabled} />}
                 <Replies replies={[ "Nothing tonight", "Looks right" ]} reply={reply} disabled={disabled} />
@@ -482,7 +491,7 @@ function FateList({ items, reply, disabled, withoutFoot }: { items: FateItem[]; 
             if (v === "Drop") {
                 return `drop "${item.text}"${reason[Number(k)] ? `: ${reason[Number(k)]}` : ""}`;
             }
-            return v === "Done" ? `"${item.text}" is done` : `"${item.text}" to ${v}`;
+            return v === "Done" ? `"${item.text}" is done` : `"${item.text}" ${fatePhrase(v)}`;
         });
         return parts.length ? `${capitalize(parts.join("; "))}. The rest as you said.` : "Looks right.";
     };
@@ -558,6 +567,17 @@ function fateLabel(fate: any): string {
     if (fate.month) return "Month";
     if (fate.list) return "On the list";
     return "Leave it";
+}
+
+/** A fate chip as words in his reply: `Thu · On deck` → `to Thu's On deck`, `Thu · list` → `on Thu's list`. */
+function fatePhrase(fate: string) {
+    const [ day, place ] = fate.split(" · ");
+    if (place === "On deck") return `to ${day}'s On deck`;
+    if (place === "list") return `on ${day}'s list`;
+    if (fate === "On the list") return "on today's list";
+    if (fate === "Stay on deck") return "stays on deck";
+    if (fate === "Up to the week" || fate === "Next week") return fate === "Next week" ? "to next week" : "up to the week";
+    return `to ${fate}`;
 }
 
 function shortDay(label: string) {

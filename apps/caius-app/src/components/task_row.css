@@ -76,6 +76,7 @@
 }
 
 .task-row.state-done .task-row-text,
+.task-row.state-tombstone .task-row-text,
 .task-row.state-rescheduled .task-row-text,
 .task-row.state-forwarded .task-row-text {
     color: var(--ink-2);

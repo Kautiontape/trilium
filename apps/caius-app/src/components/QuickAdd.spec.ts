@@ -12,3 +12,12 @@ describe("dayHint", () => {
         expect(dayHint("thumbtacks", "2026-11-04")).toBeNull();
     });
 });
+
+describe("displayText", () => {
+    it("shows a forwarded task's day instead of Caius's marker, and links as their labels", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect(displayText("Pair on the seed data ~30m _scheduled [Thu 5 Nov](#root/xZTuVVFJcsxn)_"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "Thu 5 Nov" });
+        expect(displayText("Get [ZAP-2041](https://jira.example/ZAP-2041) reviewed")).toEqual({ text: "Get ZAP-2041 reviewed", forwardedTo: null });
+    });
+});

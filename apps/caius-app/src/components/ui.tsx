@@ -41,7 +41,7 @@ export function Card({ children, class: className, tone }: { children: Component
 
 /** A task's state as its glyph: ○ open, ◐ Doing, ● Done, → forwarded, ✕ dropped. Never colour alone. */
 export function StateGlyph({ state, held }: { state: PlanTask["state"]; held?: HeldState }) {
-    const shown = held === "done" ? "done" : held === "forwarded" ? "rescheduled" : state;
+    const shown = held === "done" ? "done" : held === "forwarded" || state === "tombstone" ? "rescheduled" : state;
     const glyph = shown === "done" ? "●" : shown === "in_progress" ? "◐" : shown === "rescheduled" ? "→" : shown === "cancelled" ? "✕" : "○";
     return <span class={`glyph glyph-${shown}`} aria-hidden="true">{glyph}</span>;
 }

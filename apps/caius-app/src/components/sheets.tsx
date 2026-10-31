@@ -10,6 +10,7 @@ import type { Reminder } from "../lib/local.js";
 import { cancelReminder, inQuietHours, scheduleReminder } from "../lib/notify.js";
 import { reminderChoices, whenLabel } from "../lib/remind.js";
 import { api, appNow, connection, holdWrite, messageOf, refOf, reminders, runWrite, saveReminders, settings, snack, today } from "../lib/store.js";
+import { displayText } from "./TaskRow.js";
 import { Button, Chip, closeSheet, haptic, openSheet, SheetAction, SheetTitle } from "./ui.js";
 
 /** Where a task sits, for the sheet's subtitle and a reminder's second line: `Today · Work`. */
@@ -96,7 +97,7 @@ export function TaskSheet({ task, periodKey, suggested }: { task: PlanTask; peri
     const conn = connection.value;
     return (
         <>
-            <SheetTitle title={task.text} sub={[ whereOf(task, periodKey), task.estMinutes ? `~${formatEstimate(task.estMinutes)}` : null, task.state === "in_progress" ? "Doing" : null ].filter(Boolean).join(" · ")} />
+            <SheetTitle title={displayText(task.text).text} sub={[ whereOf(task, periodKey), task.estMinutes ? `~${formatEstimate(task.estMinutes)}` : null, task.state === "in_progress" ? "Doing" : null ].filter(Boolean).join(" · ")} />
             {offline && <p class="sheet-note">Offline: actions wait until the server is back.</p>}
             {!offline && suggested && live && (
                 <>

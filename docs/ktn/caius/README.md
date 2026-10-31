@@ -246,7 +246,7 @@ A third conversation, for questions instead of a ritual: its opener is `Ask 2026
 
 ## The phone routes
 
-The Caius phone app holds an ETAPI token, not a Trilium session. It reaches the Caius tools over `/mcp`, and these routes cover the rest. Each takes `Authorization: Bearer <token>` and answers 401 without it.
+The Caius phone app ([phone.md](phone.md)) holds an ETAPI token, not a Trilium session. It reaches the Caius tools over `/mcp`, and these routes cover the rest. Each takes `Authorization: Bearer <token>` and answers 401 without it.
 
 | Route | Does |
 |---|---|
