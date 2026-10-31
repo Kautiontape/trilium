@@ -11,6 +11,7 @@ import { ritual } from "../app-state.js";
 import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
+import { type CandidateAnswer, type CandidateData, candidateDefault, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepReply } from "../lib/replies.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, snack, today } from "../lib/store.js";
 
 /** A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while it runs. */
@@ -111,6 +112,8 @@ interface Chat {
     /** His next message as taps on step cards build it; the composer edits and sends it. */
     draft: string;
     setDraft: (text: string) => void;
+    /** A live step card's sentences, under its own key; the draft is all of them, in card order. */
+    report: (key: string, sentences: string[]) => void;
     start: (first?: string) => Promise<void>;
     send: (text: string) => Promise<void>;
     reset: () => void;
@@ -125,7 +128,23 @@ function useChat(kind: ChatKind, date: string): Chat {
     const [ messages, setMessages ] = useState<StoredMessage[]>([]);
     const [ streaming, setStreaming ] = useState<AssistantTurn | null>(null);
     const [ error, setError ] = useState<string | null>(null);
-    const [ draft, setDraft ] = useState("");
+    const [ draft, setDraftState ] = useState("");
+    const draftNow = useRef("");
+    const setDraft = (text: string) => {
+        draftNow.current = text;
+        setDraftState(text);
+    };
+    const answers = useRef(new Map<string, string[]>());
+    /** The draft as the cards last wrote it; once he edits the box, the cards stop overwriting it. */
+    const generated = useRef("");
+    const report = (key: string, sentences: string[]) => {
+        answers.current.set(key, sentences);
+        const next = [ ...answers.current.values() ].flat().join(" ");
+        if (draftNow.current === generated.current || !draftNow.current.trim()) {
+            setDraft(next);
+        }
+        generated.current = next;
+    };
     const noteId = useRef<string | null>(null);
     const history = useRef<StoredMessage[]>([]);
     /** Bumped by New conversation and on close; a turn from an older conversation drops its reply. */
@@ -152,6 +171,8 @@ function useChat(kind: ChatKind, date: string): Chat {
         setMessages(history.current);
         setState("streaming");
         setError(null);
+        answers.current.clear();
+        generated.current = "";
         setDraft("");
 
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
@@ -256,11 +277,13 @@ function useChat(kind: ChatKind, date: string): Chat {
         setMessages([]);
         setStreaming(null);
         setError(null);
+        answers.current.clear();
+        generated.current = "";
         setDraft("");
         setState(serverStatus.value === null ? "needs-update" : "idle");
     };
 
-    return { state, messages, streaming, error, draft, setDraft, start, send, reset };
+    return { state, messages, streaming, error, draft, setDraft, report, start, send, reset };
 }
 
 function newId() {
@@ -348,7 +371,7 @@ function AssistantBlocks({ blocks, chat, live, pending }: { blocks: ContentBlock
         <div class={`caius-turn${pending ? " pending" : ""}`}>
             {text && <CaiusText text={text} withoutLists={steps.length > 0} />}
             {steps.map(({ id, step }) => (
-                <StepCard key={id} step={step} chat={chat} live={live && !pending} askedInText={!!step.question && text.includes(step.question)} />
+                <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} askedInText={!!step.question && text.includes(step.question)} />
             ))}
         </div>
     );
@@ -405,164 +428,182 @@ function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: stri
 
 /**
  * A ritual step as a card: Caius's question word for word (unless his text already asked it) over
- * its data, with quick replies. A tap adds a plain sentence to his next message, so one message
- * answers every step of the turn; the agent does the judgment and the write.
+ * its data. Every item shows its fate as a chip, set to the step's own default until he taps it,
+ * and the card writes its whole answer into the text box (`stepReply`), so the message he sends
+ * names every item explicitly and he can still edit it. The agent does the judgment and the write.
  */
-function StepCard({ step, chat, live, askedInText }: { step: RitualStep; chat: Chat; live: boolean; askedInText: boolean }) {
-    const reply = (text: string) => {
+function StepCard({ id, step, chat, live, askedInText }: { id: string; step: RitualStep; chat: Chat; live: boolean; askedInText: boolean }) {
+    const [ answers, setAnswers ] = useState<StepAnswers>({});
+    const sentences = stepReply(step, answers);
+    const joined = sentences.join(" ");
+    useEffect(() => {
+        if (live) {
+            chat.report(id, sentences);
+        }
+    }, [ live, joined ]);
+    const update = (patch: Partial<StepAnswers>) => {
         haptic("tick");
-        const current = chat.draft.trim();
-        const sentence = /[.?!]$/.test(text) ? text : `${text}.`;
-        chat.setDraft(current ? `${current.replace(/[.]?$/, ".")} ${sentence}` : sentence);
+        setAnswers({ ...answers, ...patch });
     };
-    const disabled = !live;
     return (
         <section class={`step-card step-${step.ritual}`}>
             {step.question && !askedInText && <p class="step-question">{step.question}</p>}
-            <StepBody step={step} reply={reply} disabled={disabled} />
+            <StepBody step={step} answers={answers} update={update} disabled={!live} />
         </section>
     );
 }
 
-interface FateItem {
+interface StepItem {
     text: string;
-    proposal: string;
-    options: string[];
+    fate?: StepFate;
 }
 
-function StepBody({ step, reply, disabled }: { step: RitualStep; reply: (text: string) => void; disabled: boolean }) {
+function StepBody({ step, answers, update, disabled }: { step: RitualStep; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
     const d = step.data as Record<string, any>;
+    const kind = `${step.ritual}:${step.step}`;
 
-    if (step.step === "catchup") {
+    if (kind === "plan:catchup") {
         const tasks: { text: string; periodLabel?: string }[] = Array.isArray(d.tasks) ? d.tasks : [];
-        if (!tasks.length) {
-            return <Replies replies={[ "Carry on" ]} reply={reply} disabled={disabled} />;
-        }
+        const choices = [ "move all to today", "let's review them", "skip the catch-up" ];
         return (
             <>
                 <ul class="step-list">{tasks.map((t, i) => <li key={i}>{displayText(t.text).text}{t.periodLabel && <span class="ink-2"> · {t.periodLabel}</span>}</li>)}</ul>
-                <Replies replies={[ "Move all to today", "Let's review them", "Skip the catch-up" ]} reply={reply} disabled={disabled} />
+                <div class="chip-row replies">
+                    {choices.map((c) => <Chip key={c} disabled={disabled} selected={answers.catchup === c} onClick={() => update({ catchup: c })}>{capitalize(c)}</Chip>)}
+                </div>
             </>
         );
     }
 
-    if (step.ritual === "winddown" && step.step === "open") {
-        const items: FateItem[] = (Array.isArray(d.items) ? d.items : []).map((it: any) => ({
-            text: displayText(String(it.text ?? "")).text,
-            proposal: fateLabel(it.fate),
-            options: [ "Done", it.fate?.forwardLabel ? `${shortDay(it.fate.forwardLabel)} · On deck` : "Next workday · On deck", it.fate?.forwardLabel ? `${shortDay(it.fate.forwardLabel)} · list` : "Next workday · list", "Next week", "Drop" ]
-        }));
-        return <FateList items={items} reply={reply} disabled={disabled} />;
+    if (kind === "winddown:open") {
+        const items: StepItem[] = Array.isArray(d.items) ? d.items : [];
+        const day = items.map((it) => it.fate && "forward" in it.fate && /^\d{4}-\d{2}-\d{2}$/.test(it.fate.forward) ? it.fate.forwardLabel : null).find(Boolean)
+            ?? d.days?.[0]?.dateLabel ?? "the next workday";
+        const week = d.weeks?.[0]?.weekLabel as string | undefined;
+        const options: Choice[] = [
+            { kind: "proposed" }, { kind: "done" },
+            { kind: "day", label: day, onDeck: true }, { kind: "day", label: day, onDeck: false },
+            ...(week ? [ { kind: "period" as const, label: week } ] : []),
+            { kind: "drop", reason: "" }
+        ];
+        return (
+            <>
+                <FateList items={items} options={options} answers={answers} update={update} disabled={disabled} />
+                <div class="step-foot">
+                    <Button kind="quiet" disabled={disabled} onClick={() => update({ fates: Object.fromEntries(items.map((_, i) => [ i, { kind: "done" } ])) })}>All done</Button>
+                </div>
+            </>
+        );
     }
 
-    if (step.ritual === "plan" && step.step === "inputs") {
-        const onDeck: FateItem[] = (Array.isArray(d.onDeck) ? d.onDeck : []).map((it: any) => ({
-            text: displayText(String(it.text ?? "")).text,
-            proposal: it.fate?.list ? "On the list" : it.fate?.week ? "Up to the week" : fateLabel(it.fate),
-            options: [ "On the list", "Stay on deck", "Up to the week", "Drop" ]
-        }));
-        const candidates: { text: string; because?: string; minutes?: number }[] = Array.isArray(d.candidates) ? d.candidates : [];
+    if (kind === "plan:inputs") {
+        const onDeck: StepItem[] = Array.isArray(d.onDeck) ? d.onDeck : [];
+        const options: Choice[] = [
+            { kind: "proposed" }, { kind: "list" }, { kind: "stay-deck" },
+            ...(d.targetWeekLabel ? [ { kind: "period" as const, label: d.targetWeekLabel as string } ] : []),
+            { kind: "drop", reason: "" }
+        ];
         return (
             <>
                 {d.yesterday?.sentence && <p class="step-note ink-2">{d.yesterday.sentence}</p>}
-                {onDeck.length > 0 && <FateList items={onDeck} reply={reply} disabled={disabled} withoutFoot />}
-                {candidates.length > 0 && <Candidates items={candidates} reply={reply} disabled={disabled} />}
-                <Replies replies={[ "Looks right", "Nothing tonight" ]} reply={reply} disabled={disabled} />
+                {onDeck.length > 0 && <FateList items={onDeck} options={options} answers={answers} update={update} disabled={disabled} />}
+                <Candidates items={Array.isArray(d.candidates) ? d.candidates : []} answers={answers} update={update} disabled={disabled} />
+                <Evening tasks={d.evening?.tasks ?? []} answers={answers} update={update} disabled={disabled} />
             </>
         );
     }
 
-    if (step.step === "next") {
-        const candidates: { text: string; because?: string; minutes?: number }[] = Array.isArray(d.candidates) ? d.candidates : [];
+    if (kind === "winddown:next") {
         return (
             <>
                 {d.capacity?.sentence && <p class="step-note">{d.capacity.sentence}</p>}
                 {d.summary && <p class="step-note ink-2">{d.summary}</p>}
-                {candidates.length > 0 && <Candidates items={candidates} reply={reply} disabled={disabled} />}
-                <Replies replies={[ "Nothing tonight", "Looks right" ]} reply={reply} disabled={disabled} />
+                <Candidates items={Array.isArray(d.candidates) ? d.candidates : []} answers={answers} update={update} disabled={disabled} />
+                <Evening tasks={d.evening?.tasks ?? []} answers={answers} update={update} disabled={disabled} />
             </>
         );
     }
 
-    if (step.step === "context") {
+    if (kind === "winddown:context") {
         const lines: { text: string; untilLabel?: string }[] = Array.isArray(d.context) ? d.context : [];
+        const set = (i: number, value: ContextAnswer) => update({ context: { ...answers.context, [i]: answers.context?.[i] === value ? null : value } });
         return (
-            <>
-                {lines.length > 0 && (
-                    <ul class="step-list">
-                        {lines.map((l, i) => (
-                            <li key={i} class="context-line">
-                                <span>{displayText(l.text).text}{l.untilLabel && <span class="mono ink-2"> until {l.untilLabel}</span>}</span>
-                                <span class="chip-row">
-                                    <Chip disabled={disabled} onClick={() => reply(`Keep "${l.text}".`)}>Keep</Chip>
-                                    <Chip disabled={disabled} onClick={() => reply(`Let "${l.text}" end.`)}>Let it end</Chip>
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-                <Replies replies={[ "Nothing to add", "Write it" ]} reply={reply} disabled={disabled} />
-            </>
+            <ul class="step-list">
+                {lines.map((l, i) => (
+                    <li key={i} class="context-line">
+                        <span>{displayText(l.text).text}{l.untilLabel && <span class="mono ink-2"> until {l.untilLabel}</span>}</span>
+                        <span class="chip-row">
+                            <Chip disabled={disabled} selected={answers.context?.[i] === "keep"} onClick={() => set(i, "keep")}>Keep</Chip>
+                            <Chip disabled={disabled} selected={answers.context?.[i] === "end"} onClick={() => set(i, "end")}>Let it end</Chip>
+                        </span>
+                    </li>
+                ))}
+            </ul>
         );
     }
 
-    return <Replies replies={[ "Looks right" ]} reply={reply} disabled={disabled} />;
+    return null;
 }
 
-/** Leftovers with their proposed fate as a chip; a tap cycles the fate, and Looks right adds the exceptions to the reply as one sentence. */
-function FateList({ items, reply, disabled, withoutFoot }: { items: FateItem[]; reply: (text: string) => void; disabled: boolean; withoutFoot?: boolean }) {
-    const [ changed, setChanged ] = useState<Record<number, string>>({});
-    const [ reason, setReason ] = useState<Record<number, string>>({});
+/** Items with their fate as a chip, the step's proposal until he taps it; a tap moves to the next fate. Drop asks why. */
+function FateList({ items, options, answers, update, disabled }: { items: StepItem[]; options: Choice[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
+    const choiceOf = (i: number): Choice => answers.fates?.[i] ?? { kind: "proposed" };
     const cycle = (i: number) => {
-        const item = items[i];
-        const current = changed[i] ?? item.proposal;
-        const at = item.options.indexOf(current);
-        const next = item.options[(at + 1) % item.options.length];
-        setChanged({ ...changed, [i]: next === item.proposal ? (undefined as unknown as string) : next });
-    };
-    const sentence = () => {
-        const parts = Object.entries(changed).filter(([ , v ]) => v).map(([ k, v ]) => {
-            const item = items[Number(k)];
-            if (v === "Drop") {
-                return `drop "${item.text}"${reason[Number(k)] ? `: ${reason[Number(k)]}` : ""}`;
-            }
-            return v === "Done" ? `"${item.text}" is done` : `"${item.text}" ${fatePhrase(v)}`;
-        });
-        return parts.length ? `${capitalize(parts.join("; "))}. The rest as you said.` : "Looks right.";
+        const labels = options.map((o) => chipLabel(o, items[i].fate));
+        const at = labels.indexOf(chipLabel(choiceOf(i), items[i].fate));
+        let next = (at + 1) % options.length;
+        // Skip a fate that reads the same as the proposal.
+        while (next !== 0 && labels[next] === labels[0]) {
+            next = (next + 1) % options.length;
+        }
+        update({ fates: { ...answers.fates, [i]: options[next] } });
     };
     return (
-        <>
-            <ul class="fate-list">
-                {items.map((item, i) => {
-                    const fate = changed[i] ?? item.proposal;
-                    return (
-                        <li key={i}>
-                            <span class="fate-text">{item.text}</span>
-                            <Chip selected={!!changed[i]} disabled={disabled} onClick={() => cycle(i)}>{fate}</Chip>
-                            {fate === "Drop" && (
-                                <input class="field fate-reason" placeholder="Why?" value={reason[i] ?? ""} disabled={disabled}
-                                    onInput={(e) => setReason({ ...reason, [i]: (e.target as HTMLInputElement).value })} />
-                            )}
-                        </li>
-                    );
-                })}
-            </ul>
-            {!withoutFoot && (
-                <div class="step-foot">
-                    <Button kind="primary" disabled={disabled} onClick={() => reply(sentence())}>Looks right</Button>
-                    <Button kind="quiet" disabled={disabled} onClick={() => reply("All of them are done.")}>All done</Button>
-                </div>
-            )}
-            {withoutFoot && Object.values(changed).some(Boolean) && (
-                <div class="step-foot">
-                    <Button kind="primary" disabled={disabled} onClick={() => reply(sentence())}>Add the changes</Button>
-                </div>
-            )}
-        </>
+        <ul class="fate-list">
+            {items.map((item, i) => {
+                const choice = choiceOf(i);
+                return (
+                    <li key={i}>
+                        <span class="fate-text">{displayText(item.text).text}</span>
+                        <Chip selected={choice.kind !== "proposed"} disabled={disabled} onClick={() => cycle(i)}>{chipLabel(choice, item.fate)}</Chip>
+                        {choice.kind === "drop" && (
+                            <input class="field fate-reason" placeholder="Why?" value={choice.reason} disabled={disabled}
+                                onInput={(e) => update({ fates: { ...answers.fates, [i]: { kind: "drop", reason: (e.target as HTMLInputElement).value } } })} />
+                        )}
+                    </li>
+                );
+            })}
+        </ul>
     );
 }
 
-function Candidates({ items, reply, disabled }: { items: { text: string; because?: string; minutes?: number }[]; reply: (text: string) => void; disabled: boolean }) {
+/** A chip's short words for a fate: `Thu · On deck`, `Thu · list`, `Done`, `Week`. */
+function chipLabel(choice: Choice, proposed: StepFate | undefined): string {
+    const short = (label: string) => label.startsWith("the week") ? "Week" : label.split(" ")[0];
+    switch (choice.kind) {
+        case "proposed":
+            if (!proposed || "held" in proposed) return "Stays";
+            if ("done" in proposed) return "Done";
+            if ("list" in proposed) return "On the list";
+            if ("stay" in proposed) return "Stays";
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(proposed.forward)) return short(proposed.forwardLabel ?? proposed.forward);
+            return `${short(proposed.forwardLabel ?? proposed.forward)} · ${proposed.onDeck ? "On deck" : "list"}`;
+        case "done": return "Done";
+        case "day": return `${short(choice.label)} · ${choice.onDeck ? "On deck" : "list"}`;
+        case "period": return short(choice.label);
+        case "list": return "On the list";
+        case "stay-deck": return "Stays on deck";
+        case "drop": return "Drop";
+    }
+}
+
+/** Candidates with Take / Not today / Dismiss / Finished, and what happens to each if he leaves it alone. */
+function Candidates({ items, answers, update, disabled }: { items: (CandidateData & { minutes?: number; because?: string })[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
+    if (!items.length) {
+        return null;
+    }
+    const set = (i: number, value: CandidateAnswer) => update({ candidates: { ...answers.candidates, [i]: answers.candidates?.[i] === value ? null : value } });
+    const labels: [CandidateAnswer, string][] = [ [ "take", "Take" ], [ "notToday", "Not today" ], [ "dismiss", "Dismiss" ], [ "finished", "Finished" ] ];
     return (
         <div class="candidates">
             <div class="label-caps">New since yesterday</div>
@@ -571,52 +612,26 @@ function Candidates({ items, reply, disabled }: { items: { text: string; because
                     <p>{displayText(c.text).text}{c.minutes ? <span class="mono ink-2"> ~{formatEstimate(c.minutes)}</span> : null}</p>
                     {c.because && <p class="ink-2 candidate-why">because {c.because}</p>}
                     <div class="chip-row">
-                        <Chip disabled={disabled} onClick={() => reply(`Take "${c.text}".`)}>Take</Chip>
-                        <Chip disabled={disabled} onClick={() => reply(`Not today for "${c.text}".`)}>Not today</Chip>
-                        <Chip disabled={disabled} onClick={() => reply(`Dismiss "${c.text}".`)}>Dismiss</Chip>
-                        <Chip disabled={disabled} onClick={() => reply(`"${c.text}" is finished.`)}>Finished</Chip>
+                        {labels.map(([ value, label ]) => (
+                            <Chip key={label} disabled={disabled} selected={answers.candidates?.[i] === value} onClick={() => set(i, value)}>{label}</Chip>
+                        ))}
                     </div>
+                    {!answers.candidates?.[i] && <p class="ink-2 candidate-why">Left alone, it {candidateDefault(c)}.</p>}
                 </div>
             ))}
-            <p class="ink-2 candidate-why">Left alone, they go to Suggested.</p>
         </div>
     );
 }
 
-function Replies({ replies, reply, disabled }: { replies: string[]; reply: (text: string) => void; disabled: boolean }) {
+/** The evening: Nothing tonight, or the tasks already there. */
+function Evening({ tasks, answers, update, disabled }: { tasks: string[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
     return (
         <div class="chip-row replies">
-            {replies.map((r) => <Chip key={r} disabled={disabled} onClick={() => reply(r)}>{r}</Chip>)}
+            <span class="ink-2 evening-label">Evening{tasks.length ? `: ${tasks.join(", ")}` : ""}</span>
+            <Chip disabled={disabled} selected={answers.evening === "nothing tonight"}
+                onClick={() => update({ evening: answers.evening === "nothing tonight" ? null : "nothing tonight" })}>Nothing tonight</Chip>
         </div>
     );
-}
-
-function fateLabel(fate: any): string {
-    if (!fate || typeof fate !== "object") {
-        return "Leave it";
-    }
-    if (fate.done) return "Done";
-    if (fate.drop || fate.cancel) return "Drop";
-    if (fate.forward) return `${shortDay(fate.forwardLabel ?? fate.forward)} · ${fate.onDeck ? "On deck" : "list"}`;
-    if (fate.week) return "Up to the week";
-    if (fate.month) return "Month";
-    if (fate.list) return "On the list";
-    return "Leave it";
-}
-
-/** A fate chip as words in his reply: `Thu · On deck` → `to Thu's On deck`, `Thu · list` → `on Thu's list`. */
-function fatePhrase(fate: string) {
-    const [ day, place ] = fate.split(" · ");
-    if (place === "On deck") return `to ${day}'s On deck`;
-    if (place === "list") return `on ${day}'s list`;
-    if (fate === "On the list") return "on today's list";
-    if (fate === "Stay on deck") return "stays on deck";
-    if (fate === "Up to the week" || fate === "Next week") return fate === "Next week" ? "to next week" : "up to the week";
-    return `to ${fate}`;
-}
-
-function shortDay(label: string) {
-    return String(label).split(" ")[0];
 }
 
 function capitalize(text: string) {
