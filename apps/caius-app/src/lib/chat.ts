@@ -87,11 +87,20 @@ export function chatApi(conn: Connection) {
                 }
             });
             for (;;) {
-                const { value, done } = await reader.read();
-                if (done) {
+                let read: ReadableStreamReadResult<string>;
+                try {
+                    read = await reader.read();
+                } catch (e) {
+                    if (signal?.aborted) {
+                        throw e;
+                    }
+                    // The body broke off: the phone lost its network, or the server restarted (a deploy).
+                    throw new Error("Lost the connection to the server partway through the reply. Your message is back in the box: send it again.");
+                }
+                if (read.done) {
                     break;
                 }
-                feed(value);
+                feed(read.value);
             }
             feed("\n\n");
         }
@@ -110,6 +119,7 @@ export const opener = caiusOpener;
 export type ChatChunk =
     | { type: "status"; status: string }
     | { type: "text"; content: string }
+    | { type: "text_retract" }
     | { type: "thinking"; content: string }
     | { type: "tool_input_start"; toolCallId: string; toolName: string }
     | { type: "tool_input_delta"; toolCallId: string; delta: string }
@@ -145,6 +155,8 @@ export function sseParser(onData: (data: string) => void) {
 export interface AssistantTurn {
     id: string;
     blocks: ContentBlock[];
+    /** Text the server took back (narration before a tool call), shown fading out; `key` restarts the fade. */
+    fading?: { key: number; text: string };
     error?: string;
     done: boolean;
 }
@@ -158,6 +170,13 @@ export function applyChunk(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn
                 return { ...turn, blocks: [ ...turn.blocks.slice(0, -1), { type: "text", content: last.content + chunk.content } ] };
             }
             return { ...turn, blocks: [ ...turn.blocks, { type: "text", content: chunk.content } ] };
+        }
+        case "text_retract": {
+            const last = turn.blocks[turn.blocks.length - 1];
+            if (last?.type !== "text") {
+                return turn;
+            }
+            return { ...turn, blocks: turn.blocks.slice(0, -1), fading: { key: (turn.fading?.key ?? 0) + 1, text: last.content } };
         }
         case "tool_use": {
             if (turn.blocks.some((b) => b.type === "tool_call" && b.toolCall.id === chunk.toolCallId)) {

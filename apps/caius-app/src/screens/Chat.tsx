@@ -316,18 +316,18 @@ function Transcript({ chat }: { chat: Chat }) {
     }
 
     const lastStepIndex = findLastStep(chat.messages);
-    // In a Caius chat the server sends a message's text only once the message is finished, after
-    // the tool results that carry the step cards; the turn shows once its text is here, so it reads
-    // from Caius's question down, and the working line stays up until then.
-    const streamingText = !!chat.streaming && turnText(chat.streaming.blocks).trim() !== "";
+    // Caius's text streams as it is written; narration before a tool call is taken back and fades
+    // out. The step cards wait for the turn to finish, so the turn reads from Caius's question down.
+    const streaming = chat.streaming;
+    const streamingText = !!streaming && turnText(streaming.blocks).trim() !== "";
     return (
         <div class="transcript" ref={box} aria-live="polite">
             {chat.messages.map((m, i) => (
                 i === 0 && m.role === "user" ? null : <Message key={m.id} message={m} chat={chat} live={i === lastStepIndex && chat.state === "ready"} />
             ))}
-            {streamingText && <AssistantBlocks blocks={chat.streaming!.blocks} chat={chat} live={false} pending />}
-            {(chat.state === "starting" || (chat.streaming && !streamingText)) && (
-                <p class="caius-thinking ink-2">{chat.streaming?.blocks.some((b) => b.type === "tool_call") ? "Caius is writing…" : "Caius is reading the Journal…"}</p>
+            {streaming && (streamingText || streaming.fading) && <AssistantBlocks blocks={streaming.blocks} chat={chat} live={false} pending fading={streaming.fading} />}
+            {(chat.state === "starting" || (streaming && !streamingText)) && (
+                <p class="caius-thinking ink-2">{streaming?.blocks.some((b) => b.type === "tool_call") ? "Caius is writing…" : "Caius is reading the Journal…"}</p>
             )}
             {chat.state === "failed" && chat.error && <p class="chat-error">{chat.error}</p>}
             <div ref={end} />
@@ -367,7 +367,7 @@ function Message({ message, chat, live }: { message: StoredMessage; chat: Chat; 
  * text comes first and the step cards follow with the data to answer from; the bullet lists in the
  * text repeat what the cards show, and are left out when there are cards.
  */
-function AssistantBlocks({ blocks, chat, live, pending }: { blocks: ContentBlock[]; chat: Chat; live: boolean; pending?: boolean }) {
+function AssistantBlocks({ blocks, chat, live, pending, fading }: { blocks: ContentBlock[]; chat: Chat; live: boolean; pending?: boolean; fading?: { key: number; text: string } }) {
     const steps = blocks.flatMap((b) => {
         const step = b.type === "tool_call" ? stepOf(b.toolCall) : null;
         return step && b.type === "tool_call" ? [ { id: b.toolCall.id, step } ] : [];
@@ -375,8 +375,9 @@ function AssistantBlocks({ blocks, chat, live, pending }: { blocks: ContentBlock
     const text = turnText(blocks);
     return (
         <div class={`caius-turn${pending ? " pending" : ""}`}>
+            {fading && <div key={fading.key} class="caius-retracted" aria-hidden="true"><CaiusText text={fading.text} /></div>}
             {text && <CaiusText text={text} withoutLists={steps.length > 0} />}
-            {steps.map(({ id, step }) => (
+            {!pending && steps.map(({ id, step }) => (
                 <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} askedInText={!!step.question && text.includes(step.question)} />
             ))}
         </div>
