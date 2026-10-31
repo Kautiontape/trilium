@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { applyChunk, type AssistantTurn, type ChatChunk, sseParser, stepOf, turnText } from "./chat.js";
+import { applyChunk, type AssistantTurn, type ChatChunk, historyForServer, sseParser, stepOf, turnText } from "./chat.js";
 
 /** A real Wind down, two turns, as `POST /etapi/llm-chat/stream` sent it from a seeded test Journal. */
 const FIXTURE = readFileSync(new URL("./fixtures/chat-winddown.sse", import.meta.url), "utf-8");
@@ -34,5 +34,30 @@ describe("a recorded Wind down", () => {
         const calls = second.blocks.flatMap((b) => b.type === "tool_call" ? [ b.toolCall.toolName ] : []);
         expect(calls).toContain("caius_winddown_apply");
         expect(turnText(second.blocks)).toMatch(/are done/);
+    });
+});
+
+describe("historyForServer", () => {
+    it("leaves out a failed attempt, so the model never reads an error as its own words", () => {
+        const at = "2026-11-04T09:00:00.000Z";
+        const sent = historyForServer([
+            { id: "1", role: "user", content: "Wind down 2026-11-04", createdAt: at },
+            { id: "2", role: "assistant", content: [ { type: "text", content: "Which are done?" } ], createdAt: at },
+            { id: "3", role: "user", content: "Laundry is done.", createdAt: at },
+            { id: "4", role: "assistant", content: "The reply was cut off.", createdAt: at, type: "error" },
+            { id: "5", role: "user", content: "Laundry is done.", createdAt: at }
+        ]);
+        expect(sent).toEqual([
+            { role: "user", content: "Wind down 2026-11-04" },
+            { role: "assistant", content: "Which are done?" },
+            { role: "user", content: "Laundry is done." }
+        ]);
+    });
+
+    it("leaves a turn without its done chunk unfinished, which the chat shows as cut off", () => {
+        const feed: ChatChunk[] = [ { type: "text", content: "Here's what's" } ];
+        const turn = feed.reduce(applyChunk, { id: "t", blocks: [], done: false } as AssistantTurn);
+        expect(turn.done).toBe(false);
+        expect(applyChunk(turn, { type: "done" }).done).toBe(true);
     });
 });

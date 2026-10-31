@@ -184,6 +184,23 @@ export function applyChunk(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn
     }
 }
 
+/**
+ * The history sent with a turn: user and assistant turns as text. A failed attempt (an error
+ * message, and the user message it answered) is left out, so the model never reads an error as
+ * its own words and a message sent again isn't there twice.
+ */
+export function historyForServer(messages: StoredMessage[]): { role: "user" | "assistant"; content: string }[] {
+    const sent: { role: "user" | "assistant"; content: string }[] = [];
+    for (const [ index, message ] of messages.entries()) {
+        const next = messages[index + 1];
+        if (message.role === "system" || message.type === "error" || (message.role === "user" && next?.type === "error")) {
+            continue;
+        }
+        sent.push({ role: message.role, content: typeof message.content === "string" ? message.content : turnText(message.content) });
+    }
+    return sent;
+}
+
 export function turnText(blocks: ContentBlock[]) {
     return blocks.map((b) => b.type === "text" ? b.content : "").join("");
 }

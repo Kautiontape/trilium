@@ -8,7 +8,7 @@ import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, haptic, Icon } from "../components/ui.js";
 import { ritual } from "../app-state.js";
-import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
+import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, snack, today } from "../lib/store.js";
@@ -73,7 +73,8 @@ export function Ask() {
                     <h1>Ask</h1>
                     <p class="ink-2">Caius · reads your Journal</p>
                 </div>
-                {chat.messages.length > 0 && <button type="button" class="icon-btn" aria-label="New conversation" onClick={chat.reset}><Icon name="edit_square" /></button>}
+                {chat.messages.length > 0 && <button type="button" class="icon-btn" aria-label="New conversation"
+                    disabled={chat.state === "streaming" || chat.state === "starting"} onClick={chat.reset}><Icon name="edit_square" /></button>}
             </header>
             <Transcript chat={chat} />
             {reminders.map((r) => (
@@ -127,13 +128,25 @@ function useChat(kind: ChatKind, date: string): Chat {
     const [ draft, setDraft ] = useState("");
     const noteId = useRef<string | null>(null);
     const history = useRef<StoredMessage[]>([]);
+    /** Bumped by New conversation and on close; a turn from an older conversation drops its reply. */
+    const generation = useRef(0);
+    const controller = useRef<AbortController | null>(null);
+
+    useEffect(() => () => {
+        generation.current++;
+        controller.current?.abort();
+    }, []);
 
     const turn = async (text: string) => {
         const conn = connection.value;
-        if (!conn || !noteId.current) {
+        const chatNoteId = noteId.current;
+        if (!conn || !chatNoteId) {
             return;
         }
         const chats = chatApi(conn);
+        const mine = generation.current;
+        const abort = new AbortController();
+        controller.current = abort;
         const user: StoredMessage = { id: newId(), role: "user", content: text, createdAt: new Date().toISOString() };
         history.current = [ ...history.current, user ];
         setMessages(history.current);
@@ -144,25 +157,33 @@ function useChat(kind: ChatKind, date: string): Chat {
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
         try {
-            await chats.stream(
-                history.current.filter((m) => m.role !== "system").map((m) => ({ role: m.role as "user" | "assistant", content: typeof m.content === "string" ? m.content : turnText(m.content) })),
-                noteId.current,
-                (chunk) => {
+            await chats.stream(historyForServer(history.current), chatNoteId, (chunk) => {
+                if (generation.current === mine) {
                     assembled = applyChunk(assembled, chunk);
                     setStreaming(assembled);
                 }
-            );
+            }, abort.signal);
         } catch (e) {
             assembled = { ...assembled, error: messageOf(e), done: true };
         }
+        if (generation.current !== mine) {
+            return;
+        }
+        if (!assembled.done && !assembled.error) {
+            assembled = { ...assembled, error: "The reply was cut off. Your message is back in the box: send it again." };
+        }
 
-        const reply: StoredMessage = assembled.error && !assembled.blocks.length
+        // A failed turn is kept as an error message (the sidebar shows it as one) and its words go back in the box.
+        const reply: StoredMessage = assembled.error
             ? { id: assembled.id, role: "assistant", content: assembled.error, createdAt: new Date().toISOString(), type: "error" }
             : { id: assembled.id, role: "assistant", content: assembled.blocks, createdAt: new Date().toISOString() };
         history.current = [ ...history.current, reply ];
         setMessages(history.current);
         setStreaming(null);
         setError(assembled.error ?? null);
+        if (assembled.error) {
+            setDraft(text);
+        }
         setState("ready");
         if (assembled.blocks.some((b) => b.type === "tool_call" && /apply|set_state|forward|add|accept|dismiss|skip/.test(b.toolCall.toolName))) {
             revision.value++;
@@ -170,7 +191,7 @@ function useChat(kind: ChatKind, date: string): Chat {
         }
 
         const content: LlmChatContent = { version: 1, messages: history.current, enableNoteTools: true, enableWebSearch: false };
-        await chats.save(noteId.current, content).catch((e) => {
+        await chats.save(chatNoteId, content).catch((e) => {
             snack.value = { text: `The transcript wasn't saved: ${messageOf(e)}`, tone: "error" };
         });
     };
@@ -189,9 +210,17 @@ function useChat(kind: ChatKind, date: string): Chat {
             return;
         }
         setState("starting");
+        const mine = generation.current;
         try {
-            noteId.current = await chatApi(conn).createNote();
+            const created = await chatApi(conn).createNote();
+            if (generation.current !== mine) {
+                return;
+            }
+            noteId.current = created;
         } catch (e) {
+            if (generation.current !== mine) {
+                return;
+            }
             if (e instanceof NeedsServerUpdateError) {
                 setState("needs-update");
             } else {
@@ -220,6 +249,8 @@ function useChat(kind: ChatKind, date: string): Chat {
     };
 
     const reset = () => {
+        generation.current++;
+        controller.current?.abort();
         noteId.current = null;
         history.current = [];
         setMessages([]);
@@ -355,7 +386,6 @@ function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: stri
     };
     return (
         <footer class="composer">
-            {chat.error && chat.state === "ready" && <p class="chat-error">{chat.error}</p>}
             <div class="composer-row">
                 <textarea class="field" rows={text.length > 60 ? 3 : 1} placeholder={placeholder} value={text} disabled={chat.state === "needs-update"}
                     onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
