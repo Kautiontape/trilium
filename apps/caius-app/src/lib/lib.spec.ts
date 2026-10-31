@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { applyChunk, type AssistantTurn, type ChatChunk, opener, sseParser, stepOf, turnText } from "./chat.js";
 import { normalizeServerUrl } from "./connection.js";
-import { addMonths, addWeeks, dayLabel, mondayOf, nextWorkdayKey, parseMeeting, periodLabel, weekLabel, weekOf } from "./day.js";
+import { addMonths, addWeeks, dayLabel, mondayOf, nextWorkdayKey, parseMeeting, periodLabel, relativePeriod, weekLabel, weekOf } from "./day.js";
 import { McpError, parseToolReply } from "./mcp.js";
 import { parseRemindMe, parseWhen, whenLabel } from "./remind.js";
 
@@ -79,7 +79,15 @@ describe("day keys", () => {
         expect(weekLabel("2026-W44")).toBe("Week 44 · 26 Oct – 1 Nov");
         expect(addMonths("2026-12", 1)).toBe("2027-01");
         expect(periodLabel("2026-11")).toBe("November 2026");
-        expect(periodLabel("2026-W45")).toBe("Week 45");
+        expect(periodLabel("2026-W45")).toBe("Week of Mon 2 Nov");
+        expect(relativePeriod("2026-10-31", "2026-10-31")).toEqual({ name: "Today", detail: "Sat 31 Oct" });
+        expect(relativePeriod("2026-11-01", "2026-10-31")).toEqual({ name: "Tomorrow", detail: "Sun 1 Nov" });
+        expect(relativePeriod("2026-11-04", "2026-10-31")).toEqual({ name: "Wed 4 Nov", detail: null });
+        expect(relativePeriod("2026-W44", "2026-10-31")).toEqual({ name: "This week", detail: "26 Oct – 1 Nov" });
+        expect(relativePeriod("2026-W45", "2026-10-31")).toEqual({ name: "Next week", detail: "2 – 8 Nov" });
+        expect(relativePeriod("2026-W47", "2026-10-31")).toEqual({ name: "Week of Mon 16 Nov", detail: null });
+        expect(relativePeriod("2026-10", "2026-10-31")).toEqual({ name: "This month", detail: "October" });
+        expect(relativePeriod("2026-11", "2026-10-31")).toEqual({ name: "Next month", detail: "November" });
     });
 
     it("reads a Meetings bullet with or without an end", () => {

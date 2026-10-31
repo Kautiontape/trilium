@@ -316,13 +316,19 @@ function Transcript({ chat }: { chat: Chat }) {
     }
 
     const lastStepIndex = findLastStep(chat.messages);
+    // In a Caius chat the server sends a message's text only once the message is finished, after
+    // the tool results that carry the step cards; the turn shows once its text is here, so it reads
+    // from Caius's question down, and the working line stays up until then.
+    const streamingText = !!chat.streaming && turnText(chat.streaming.blocks).trim() !== "";
     return (
         <div class="transcript" ref={box} aria-live="polite">
             {chat.messages.map((m, i) => (
                 i === 0 && m.role === "user" ? null : <Message key={m.id} message={m} chat={chat} live={i === lastStepIndex && chat.state === "ready"} />
             ))}
-            {chat.streaming && <AssistantBlocks blocks={chat.streaming.blocks} chat={chat} live={false} pending />}
-            {(chat.state === "starting" || (chat.streaming && !chat.streaming.blocks.length)) && <p class="caius-thinking ink-2">Caius is reading the Journal…</p>}
+            {streamingText && <AssistantBlocks blocks={chat.streaming!.blocks} chat={chat} live={false} pending />}
+            {(chat.state === "starting" || (chat.streaming && !streamingText)) && (
+                <p class="caius-thinking ink-2">{chat.streaming?.blocks.some((b) => b.type === "tool_call") ? "Caius is writing…" : "Caius is reading the Journal…"}</p>
+            )}
             {chat.state === "failed" && chat.error && <p class="chat-error">{chat.error}</p>}
             <div ref={end} />
         </div>

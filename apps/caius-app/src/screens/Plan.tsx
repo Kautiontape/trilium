@@ -3,11 +3,11 @@ import "./plan.css";
 import { useEffect, useState } from "preact/hooks";
 
 import { openSettings } from "../app-state.js";
-import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, markDone, TaskSheet } from "../components/sheets.js";
+import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, ForwardSheet, markDone, TaskSheet } from "../components/sheets.js";
 import { displayText, TaskRow } from "../components/TaskRow.js";
 import { Button, Card, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import type { Lane, OpenResult, OpenTask, PeriodKind, PlanTask, PlanView } from "../lib/caius.js";
-import { addDays, addMonths, addWeeks, dayLabel, duration, monthLabel, periodLabel, weekLabel, weekOf } from "../lib/day.js";
+import { addDays, addMonths, addWeeks, dayLabel, duration, monthLabel, nextWorkdayKey, periodLabel, relativePeriod, weekLabel, weekOf } from "../lib/day.js";
 import { api, holdWrite, messageOf, refOf, revision, taskKey, today } from "../lib/store.js";
 
 const LANES: { lane: Lane; title: string }[] = [
@@ -146,6 +146,7 @@ function LaneView({ lane, title, into }: { lane: Lane; title: string; into: stri
         };
     }, [ lane, limit, revision.value ]);
 
+    const base = today.value?.key;
     const tasks = (result?.tasks ?? []).filter((t) => !t.parent && t.period !== into);
     if (!result || !tasks.length) {
         return null;
@@ -158,7 +159,7 @@ function LaneView({ lane, title, into }: { lane: Lane; title: string; into: stri
             <div class="rows">
                 {tasks.map((t) => (
                     <TaskRow key={taskKey(t)} task={t} variant={t.critical ? "critical" : "list"}
-                        detail={`${periodLabel(t.period)}${t.daysLate ? ` · ${t.daysLate} d late` : ""}${t.state === "in_progress" ? " · Doing" : ""}`}
+                        detail={`${base ? relativePeriod(t.period, base).name : periodLabel(t.period)}${t.daysLate ? ` · ${t.daysLate} d late` : ""}${t.state === "in_progress" ? " · Doing" : ""}`}
                         onOpen={() => openSheet(<LaneSheet task={t} into={into} />)}
                         trailing={<span class="lane-more" aria-hidden="true">⋯</span>} />
                 ))}
@@ -170,19 +171,32 @@ function LaneView({ lane, title, into }: { lane: Lane; title: string; into: stri
     );
 }
 
-/** ⋯ on a lane row: Pull in to the period being viewed, Done, Drop…, Why. */
+/**
+ * ⋯ on a lane row: Pull in to the period being viewed, today, tomorrow (and the next workday when
+ * tomorrow isn't one), this week or next week, each named from today; Somewhere else… opens Forward.
+ * Then Done, Drop…, Why.
+ */
 function LaneSheet({ task, into }: { task: OpenTask; into: string }) {
     const ref = refOf(task);
+    const base = today.value?.key;
+    const targets = base
+        ? [ ...new Set([ into, base, addDays(base, 1), nextWorkdayKey(base), weekOf(base), addWeeks(weekOf(base), 1) ]) ].filter((k) => k !== task.period)
+        : into !== task.period ? [ into ] : [];
+    const pull = (to: string) => {
+        const where = base ? relativePeriod(to, base) : { name: periodLabel(to), detail: null };
+        haptic("tick");
+        closeSheet();
+        holdWrite(ref!, "forwarded", `Pulled in to ${where.detail ? `${where.name.toLowerCase()}, ${where.detail}` : where.name}`, () => api().forward([ { ...ref!, to } ]));
+    };
     return (
         <>
-            <SheetTitle title={displayText(task.text).text} sub={`${periodLabel(task.period)} · ${task.section ?? ""}`} />
-            {ref && into !== task.period && (
-                <SheetAction glyph="↓" tone="clay" label={`Pull in to ${periodLabel(into)}`} onClick={() => {
-                    haptic("tick");
-                    closeSheet();
-                    holdWrite(ref, "forwarded", `Pulled in to ${periodLabel(into)}`, () => api().forward([ { ...ref, to: into } ]));
-                }} />
-            )}
+            <SheetTitle title={displayText(task.text).text} sub={`${base ? relativePeriod(task.period, base).name : periodLabel(task.period)} · ${task.section ?? ""}`} />
+            {ref && targets.map((to) => {
+                const where = base ? relativePeriod(to, base) : { name: periodLabel(to), detail: null };
+                return <SheetAction key={to} glyph="↓" tone={to === into ? "clay" : undefined} label={`Pull in to ${where.name}`}
+                    detail={[ where.detail, base && to === nextWorkdayKey(base) && to !== addDays(base, 1) ? "next workday" : null, to === into ? "viewing" : null ].filter(Boolean).join(" · ") || undefined} onClick={() => pull(to)} />;
+            })}
+            {ref && <SheetAction glyph="arrow_forward" label="Somewhere else…" detail="▸" onClick={() => openSheet(<ForwardSheet task={task} />)} />}
             {ref && <SheetAction glyph="check" tone="moss" label="Done" onClick={() => markDone(task)} />}
             {ref && <SheetAction glyph="close" tone="berry" label="Drop…" onClick={() => openSheet(<DropSheet task={task} />)} />}
             <SheetAction glyph="help" label="Why is this here?" onClick={() => openSheet(<ExplainSheet task={task} />)} />
