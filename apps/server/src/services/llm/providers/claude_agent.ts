@@ -23,7 +23,7 @@
 import type { Options as AgentOptions, query as queryFn, SDKAssistantMessage, SDKMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { clockOverride } from "@triliumnext/caius/src/clock.js";
-import { type CaiusConversation, caiusConversationOfMessages, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
+import { CAIUS_DEFAULT_EFFORT, type CaiusConversation, caiusConversationOfMessages, isCaiusEffort, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
 import { getLog } from "@triliumnext/core";
 import { resolveAttachmentPart } from "@triliumnext/core/src/services/llm/attachment_content.js";
 import { buildNoteHint } from "@triliumnext/core/src/services/llm/note_hint.js";
@@ -402,7 +402,8 @@ export class ClaudeAgentProvider implements LlmProvider {
                 caius,
                 noteTools: areNoteToolsAvailable(config),
                 webSearch: !!config.enableWebSearch,
-                thinking: !!config.enableExtendedThinking
+                thinking: caius || !!config.enableExtendedThinking,
+                effort: caius ? caiusEffort(config) : undefined
             });
 
             // Only reuse a warm session when the transcript still matches what
@@ -454,8 +455,9 @@ export class ClaudeAgentProvider implements LlmProvider {
             await pushUserTurn(active.input, prompt);
             // In a Caius conversation only the replies show: a message's text streams as it is
             // written and is taken back (`text_retract`) when the message goes on to call a tool,
-            // thinking is never shown, and a tool call shows once its result is in, and not at all
-            // when it failed.
+            // and a tool call shows once its result is in, and not at all when it failed. Caius
+            // always thinks; the thinking streams for the client to keep with the taken-back text,
+            // folded away.
             let pendingText = "";
             let calledTool = false;
             // A turn that would show no text at all shows the last text it dropped instead.
@@ -518,7 +520,7 @@ export class ClaudeAgentProvider implements LlmProvider {
                                     yield { type: "text", content: event.delta.text };
                                 }
                             } else if (event.delta.type === "thinking_delta") {
-                                if (!caius) yield { type: "thinking", content: event.delta.thinking };
+                                yield { type: "thinking", content: event.delta.thinking };
                             } else if (event.delta.type === "input_json_delta" && !caius) {
                                 const toolCallId = toolIdsByBlockIndex.get(event.index);
                                 if (toolCallId) {
@@ -739,7 +741,7 @@ export class ClaudeAgentProvider implements LlmProvider {
     }
 
     /** Options shared by every agent invocation. */
-    private async buildBaseOptions(config: Pick<LlmProviderConfig, "enableNoteTools" | "enableWebSearch" | "enableExtendedThinking">, caius = false): Promise<AgentOptions> {
+    private async buildBaseOptions(config: Pick<LlmProviderConfig, "enableNoteTools" | "enableWebSearch" | "enableExtendedThinking" | "reasoningEffort">, caius = false): Promise<AgentOptions> {
         // Built-in Claude Code tools (file access, bash, …) stay disabled — the
         // agent runs on the server host and must only ever touch notes. Web
         // search is the one opt-in exception.
@@ -759,11 +761,18 @@ export class ClaudeAgentProvider implements LlmProvider {
             // Extended thinking: `adaptive` lets these (modern) models decide how
             // much to think and stream summarized reasoning, mirroring the metered
             // Anthropic provider. Adaptive is the SDK's default for supporting
-            // models, so the toggle's meaningful effect is the disabled path.
-            thinking: config.enableExtendedThinking
+            // models, so the toggle's meaningful effect is the disabled path. A
+            // Caius conversation always thinks, so its reasoning arrives as
+            // thinking rather than as text taken back before a tool call.
+            thinking: caius || config.enableExtendedThinking
                 ? { type: "adaptive", display: "summarized" }
                 : { type: "disabled" }
         };
+        if (caius) {
+            // How long Caius thinks is the client's setting; more effort, a longer wait for the reply.
+            options.effort = caiusEffort(config);
+        }
+
 
         // On Windows the resolved binary is typically a .cmd batch file (npm
         // shim). Node's spawn() cannot execute .cmd files directly — it must
@@ -1161,6 +1170,11 @@ function describeAgentError(error: unknown): string {
 }
 
 // Dynamically imported so the agent SDK only loads when an agent chat actually runs.
+/** The effort a Caius conversation runs at: the client's, when it is one Caius offers. */
+function caiusEffort(config: Pick<LlmProviderConfig, "reasoningEffort">) {
+    return isCaiusEffort(config.reasoningEffort) ? config.reasoningEffort : CAIUS_DEFAULT_EFFORT;
+}
+
 async function loadQuery(): Promise<typeof queryFn> {
     return (await import("@anthropic-ai/claude-agent-sdk")).query;
 }

@@ -506,7 +506,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect((createMcpServerMock.mock.calls[1] as unknown as [ { omit: string[] } ])[0].omit).toEqual([]);
     });
 
-    it("streams a Plan my day or Wind down conversation's text live, takes back narration before a tool call, and shows no thinking and no failed call", async () => {
+    it("streams a Plan my day or Wind down conversation's text live, takes back narration before a tool call, streams its thinking, and shows no failed call", async () => {
         const event = (body: object) => ({ type: "stream_event", parent_tool_use_id: null, session_id: "sess-1", event: body });
         const toolCall = (id: string, input: object) => [
             event({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id, name: "mcp__trilium__caius_plan_apply" } }),
@@ -535,6 +535,7 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         ]);
         const chunks = await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Plan my day 2026-11-03" }], { enableNoteTools: true }));
         expect(chunks.filter((chunk) => chunk.type !== "usage")).toEqual([
+            { type: "thinking", content: "pondering…" },
             { type: "text", content: "No question is posed by the step, so I'll just note the meeting change. " },
             { type: "text_retract" },
             { type: "text", content: "I need to supply exactly 3 acts." },
@@ -591,6 +592,21 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         await collect(provider.chatChunks([{ role: "user", content: "hi" }], { enableExtendedThinking: true }));
 
         expect(queryMock.mock.calls[0][0].options.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    });
+
+    it("always thinks in a Caius conversation, at medium effort unless the client names another", async () => {
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Plan my day 2026-11-03" }], { enableNoteTools: true }));
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-03" }], { enableNoteTools: true, reasoningEffort: "low" }));
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "hi" }], { enableNoteTools: true, reasoningEffort: "low" }));
+
+        const [ plan, winddown, other ] = queryMock.mock.calls.map((call) => call[0].options).filter((options) => options.mcpServers);
+        expect(plan.thinking).toEqual({ type: "adaptive", display: "summarized" });
+        expect(plan.effort).toBe("medium");
+        expect(winddown.effort).toBe("low");
+        expect(other.effort).toBeUndefined();
     });
 
     it("disables extended thinking by default", async () => {

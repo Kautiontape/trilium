@@ -73,21 +73,36 @@
     padding-left: var(--s5);
 }
 
-/* Narration the server took back: it fades and slides out, then folds away. */
-.caius-retracted {
-    overflow: hidden;
-    pointer-events: none;
-    animation: retract 600ms var(--ease) forwards;
+/* Caius's thinking and taken-back narration, folded under one line that opens them. */
+.caius-notes-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s1);
+    align-self: flex-start;
+    min-height: 32px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 14px;
+    text-align: left;
+
+    & .icon { transition: transform 150ms var(--ease); }
 }
 
-@keyframes retract {
-    0% { opacity: 0.7; transform: none; max-height: 240px; }
-    55% { opacity: 0; transform: translateX(-16px); max-height: 240px; }
-    100% { opacity: 0; transform: translateX(-16px); max-height: 0; }
+.caius-notes.open .caius-notes-toggle .icon { transform: rotate(180deg); }
+
+.caius-notes-body {
+    margin-top: var(--s2);
+    padding-left: var(--s3);
+    border-left: 2px solid var(--line);
+    font-size: 14px;
+    line-height: 20px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .caius-retracted { display: none; }
+    .caius-notes-toggle .icon { transition: none; }
 }
 
 .caius-thinking {

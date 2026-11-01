@@ -1,4 +1,4 @@
-import { caiusConversationOfMessages, type LlmChatContent, type LlmMessage } from "@triliumnext/commons";
+import { caiusConversationOfMessages, isCaiusEffort, type LlmChatContent, type LlmMessage } from "@triliumnext/commons";
 import { becca, options as optionService, special_notes as specialNotesService } from "@triliumnext/core";
 import type { LlmProviderSetup } from "@triliumnext/core/src/services/llm/index.js";
 import type { LlmProviderConfig } from "@triliumnext/core/src/services/llm/types.js";
@@ -57,9 +57,10 @@ export type CaiusChatCheck =
     | { messages: LlmMessage[]; config: LlmProviderConfig };
 
 /**
- * Checks a token client's chat request and builds the config it runs with. Only `chatNoteId`
- * and `model` are read from the client's config: the provider, the note tools on and web search
- * off are set here. `chatNoteId` must name a chat note (`chatNoteOf`), since the first turn renames it.
+ * Checks a token client's chat request and builds the config it runs with. Only `chatNoteId`,
+ * `model` and `reasoningEffort` (one of `CAIUS_EFFORTS`) are read from the client's config: the
+ * provider, the note tools on and web search off are set here. `chatNoteId` must name a chat note
+ * (`chatNoteOf`), since the first turn renames it.
  */
 export function checkCaiusChat(body: unknown): CaiusChatCheck {
     const { messages, config } = (body ?? {}) as { messages?: unknown; config?: Partial<LlmProviderConfig> };
@@ -91,6 +92,10 @@ export function checkCaiusChat(body: unknown): CaiusChatCheck {
     if (model !== undefined && !setup.selectedModels?.some((selected) => selected.id === model)) {
         return { status: 400, error: "model_not_allowed" };
     }
+    const effort = config?.reasoningEffort;
+    if (effort !== undefined && !isCaiusEffort(effort)) {
+        return { status: 400, error: "effort_not_allowed" };
+    }
 
     return {
         messages,
@@ -99,7 +104,8 @@ export function checkCaiusChat(body: unknown): CaiusChatCheck {
             chatNoteId: chatNote.noteId,
             enableNoteTools: true,
             enableWebSearch: false,
-            ...(model !== undefined ? { model } : {})
+            ...(model !== undefined ? { model } : {}),
+            ...(effort !== undefined ? { reasoningEffort: effort } : {})
         }
     };
 }

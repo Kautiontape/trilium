@@ -1,6 +1,7 @@
 /**
  * The openers that start a Caius conversation in the AI chat: the first user message, a kind and a
- * date. The server reads the kind from it to give the agent Caius's prompt and tools.
+ * date. The server reads the kind from it to give the agent Caius's prompt and tools. Also the
+ * efforts a Caius conversation can run at.
  */
 
 import type { LlmMessage } from "./llm_api.js";
@@ -34,6 +35,18 @@ export function caiusConversationOfMessages(messages: readonly LlmMessage[]): Ca
         return caiusConversationOf(content);
     }
     return content.length === 1 && content[0].type === "text" ? caiusConversationOf(content[0].text) : null;
+}
+
+/** How long Caius thinks before answering, quickest first: the phone's setting. */
+export const CAIUS_EFFORTS = [ "low", "medium", "high" ] as const;
+
+export type CaiusEffort = (typeof CAIUS_EFFORTS)[number];
+
+/** The effort a Caius conversation runs at when the client names none (Anthropic's suggested start for multistep tool use). */
+export const CAIUS_DEFAULT_EFFORT: CaiusEffort = "medium";
+
+export function isCaiusEffort(value: unknown): value is CaiusEffort {
+    return (CAIUS_EFFORTS as readonly unknown[]).includes(value);
 }
 
 const OPENER_WORDS: Record<CaiusConversation, string> = {

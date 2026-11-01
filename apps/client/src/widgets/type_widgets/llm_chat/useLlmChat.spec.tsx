@@ -218,6 +218,41 @@ describe("useLlmChat", () => {
         expect(api().lastCompletionTokens).toBe(0);
     });
 
+    it("keeps Caius's taken-back narration in the thought process, and the thought process out of the next request", async () => {
+        streamChatCompletionMock.mockImplementation(async (_messages, _options, callbacks) => {
+            callbacks.onThinking("He asked for ");
+            callbacks.onThinking("today.");
+            callbacks.onChunk("Let me look.");
+            callbacks.onTextRetract();
+            callbacks.onToolResult("t1", "caius_planday", "{}", false);
+            callbacks.onThinking("Three meetings.");
+            callbacks.onChunk("Here's your day.");
+            callbacks.onDone();
+        });
+        await mountChat();
+        await act(async () => {
+            api().setInput("Plan my day 2026-11-03");
+        });
+        await act(async () => {
+            await api().handleSubmit(new Event("submit"));
+        });
+        const [ , thought, reply ] = api().messages;
+        expect(thought).toMatchObject({ role: "assistant", type: "thinking", content: "He asked for today.\n\nLet me look.\n\nThree meetings." });
+        expect(reply.content).toEqual([ { type: "text", content: "Here's your day." } ]);
+
+        await act(async () => {
+            api().setInput("Thanks");
+        });
+        await act(async () => {
+            await api().handleSubmit(new Event("submit"));
+        });
+        expect(streamChatCompletionMock.mock.calls[1][0]).toEqual([
+            { role: "user", content: "Plan my day 2026-11-03" },
+            { role: "assistant", content: "Here's your day." },
+            { role: "user", content: "Thanks" }
+        ]);
+    });
+
     it("counts no tokens for a turn whose provider reports only the model", async () => {
         const reports = [
             { promptTokens: 1200, completionTokens: 300, totalTokens: 1500 },

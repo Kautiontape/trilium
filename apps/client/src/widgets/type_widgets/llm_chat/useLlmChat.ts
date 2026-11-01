@@ -566,6 +566,13 @@ export function useLlmChat(
         smoothReset();
 
         let thinkingContent = "";
+        /** Whether the next thinking starts a new paragraph: anything else came since the last. */
+        let thinkingBreak = false;
+        /** Adds to the thinking, a new paragraph after anything else the turn did. */
+        function addThinking(text: string, paragraph: boolean) {
+            thinkingContent += (paragraph && thinkingContent ? "\n\n" : "") + text;
+            setStreamingThinking(thinkingContent);
+        }
         const contentBlocks: ContentBlock[] = [];
         const citations: LlmCitation[] = [];
         let usage: LlmUsage | undefined;
@@ -581,7 +588,9 @@ export function useLlmChat(
             return block as ContentBlock & { type: "text" };
         }
 
-        const apiMessages: LlmMessage[] = trimToFirstUserMessage(conversation).map(m => ({
+        // A saved thought process is the model's own working, not a reply: it stays out of the
+        // history, which would otherwise no longer match the agent session's transcript.
+        const apiMessages: LlmMessage[] = trimToFirstUserMessage(conversation.filter(m => m.type !== "thinking")).map(m => ({
             role: m.role,
             content: stripQuoteSourcesFromApiContent(flattenToApiContent(m.content))
         }));
@@ -679,6 +688,7 @@ export function useLlmChat(
             {
                 onStatus: setStreamingStatus,
                 onChunk: (text) => {
+                    thinkingBreak = true;
                     // A new text block begins whenever the previous tail is
                     // anything other than text (or there's nothing yet). In
                     // that case the smoother needs to start fresh so it doesn't
@@ -693,16 +703,18 @@ export function useLlmChat(
                     setTargetBlocks([...contentBlocks]);
                 },
                 onTextRetract: () => {
-                    // Caius narration the message dropped when it called a tool.
-                    if (contentBlocks[contentBlocks.length - 1]?.type === "text") {
+                    // Caius narration the message dropped when it called a tool: it joins the thought process.
+                    const last = contentBlocks[contentBlocks.length - 1];
+                    if (last?.type === "text") {
                         contentBlocks.pop();
                         smoothReset();
                         setTargetBlocks([...contentBlocks]);
+                        addThinking(last.content.trim(), true);
                     }
                 },
                 onThinking: (text) => {
-                    thinkingContent += text;
-                    setStreamingThinking(thinkingContent);
+                    addThinking(text, thinkingBreak);
+                    thinkingBreak = false;
                 },
                 onToolInputStart: (toolCallId, toolName) => {
                     // Snap any pending smoothed text to its full value before
@@ -766,6 +778,7 @@ export function useLlmChat(
                     setTargetBlocks([...contentBlocks]);
                 },
                 onToolResult: (toolCallId, _toolName, result, isError) => {
+                    thinkingBreak = true;
                     // Replace the matching block with a new object so Preact sees the change.
                     for (let i = contentBlocks.length - 1; i >= 0; i--) {
                         const block = contentBlocks[i];

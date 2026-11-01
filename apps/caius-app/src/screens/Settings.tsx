@@ -1,5 +1,7 @@
 import "./reminders.css";
 
+import { CAIUS_EFFORTS } from "@triliumnext/commons/src/lib/caius_openers.js";
+
 import { settingsOpen } from "../app-state.js";
 import { Button, Card, Chip, Icon } from "../components/ui.js";
 import { forgetConnection } from "../lib/connection.js";
@@ -8,7 +10,7 @@ import type { Settings as SettingsShape } from "../lib/local.js";
 import { sendTestNotification } from "../lib/notify.js";
 import { connection, saveSettings, serverStatus, settings, snack, today } from "../lib/store.js";
 
-/** The connection (with Sign out), the theme, haptics and a test notification. */
+/** The connection (with Sign out), the theme, Caius's thinking, haptics and a test notification. */
 export function Settings() {
     const s = settings.value;
     const conn = connection.value;
@@ -47,6 +49,16 @@ export function Settings() {
                         <Chip key={t} selected={s.theme === t} onClick={() => update({ theme: t })}>{t === "system" ? "System" : t === "light" ? "Light" : "Dark"}</Chip>
                     ))}
                 </div>
+            </Card>
+
+            <Card>
+                <div class="label-caps">Caius's thinking</div>
+                <div class="chip-row">
+                    {CAIUS_EFFORTS.map((e) => (
+                        <Chip key={e} selected={s.caiusEffort === e} onClick={() => update({ caiusEffort: e })}>{e === "low" ? "Low" : e === "medium" ? "Medium" : "High"}</Chip>
+                    ))}
+                </div>
+                <p class="ink-2">How long Caius thinks before answering in a chat. Low answers soonest; High takes about twice as long. Tap the line above a reply to read the thinking.</p>
             </Card>
 
             <Card>

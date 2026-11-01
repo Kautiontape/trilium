@@ -12,7 +12,7 @@ import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlo
 import { dayLabel } from "../lib/day.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepReply } from "../lib/replies.js";
-import { appNow, connection, messageOf, refreshToday, revision, serverStatus, snack, today } from "../lib/store.js";
+import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack, today } from "../lib/store.js";
 
 /** A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while it runs. */
 export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string }) {
@@ -178,7 +178,7 @@ function useChat(kind: ChatKind, date: string): Chat {
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
         try {
-            await chats.stream(historyForServer(history.current), chatNoteId, (chunk) => {
+            await chats.stream(historyForServer(history.current), chatNoteId, settings.value.caiusEffort, (chunk) => {
                 if (generation.current === mine) {
                     assembled = applyChunk(assembled, chunk);
                     setStreaming(assembled);
@@ -198,7 +198,11 @@ function useChat(kind: ChatKind, date: string): Chat {
         const reply: StoredMessage = assembled.error
             ? { id: assembled.id, role: "assistant", content: assembled.error, createdAt: new Date().toISOString(), type: "error" }
             : { id: assembled.id, role: "assistant", content: assembled.blocks, createdAt: new Date().toISOString() };
-        history.current = [ ...history.current, reply ];
+        // A reply's notes go just before it as a thinking message, which the sidebar shows as its thought process.
+        const notes: StoredMessage[] = !assembled.error && assembled.notes?.length
+            ? [ { id: `${assembled.id}-notes`, role: "assistant", content: assembled.notes.join("\n\n"), createdAt: reply.createdAt, type: "thinking" } ]
+            : [];
+        history.current = [ ...history.current, ...notes, reply ];
         setMessages(history.current);
         setStreaming(null);
         setError(assembled.error ?? null);
@@ -293,6 +297,20 @@ function newId() {
 function Transcript({ chat }: { chat: Chat }) {
     const end = useRef<HTMLDivElement>(null);
     const box = useRef<HTMLDivElement>(null);
+    // Open notes, by turn: the streaming turn and the reply it becomes share an id, so notes opened
+    // while Caius works stay open when the reply lands.
+    const [ openNotes, setOpenNotes ] = useState<ReadonlySet<string>>(new Set());
+    const notesFor = (id: string, text: string | undefined): TurnNotes | undefined => text ? {
+        text,
+        open: openNotes.has(id),
+        toggle: () => setOpenNotes((open) => {
+            const next = new Set(open);
+            if (!next.delete(id)) {
+                next.add(id);
+            }
+            return next;
+        })
+    } : undefined;
     // While a turn streams, follow its end; once it lands, show it from its first line, where Caius asks.
     useEffect(() => {
         const last = chat.messages[chat.messages.length - 1];
@@ -316,19 +334,26 @@ function Transcript({ chat }: { chat: Chat }) {
     }
 
     const lastStepIndex = findLastStep(chat.messages);
-    // Caius's text streams as it is written; narration before a tool call is taken back and fades
-    // out. The step cards wait for the turn to finish, so the turn reads from Caius's question down.
+    // Caius's text streams as it is written; the thinking, and narration before a tool call (taken
+    // back), go to Caius's notes, folded under the working line. The step cards wait for the turn to
+    // finish, so the turn reads from Caius's question down.
     const streaming = chat.streaming;
     const streamingText = !!streaming && turnText(streaming.blocks).trim() !== "";
+    const working = streaming?.blocks.some((b) => b.type === "tool_call") ? "Caius is writing…" : "Caius is reading the Journal…";
+    const notesOf = (i: number) => {
+        const before = chat.messages[i - 1];
+        return notesFor(chat.messages[i].id, before?.type === "thinking" && typeof before.content === "string" ? before.content : undefined);
+    };
     return (
         <div class="transcript" ref={box} aria-live="polite">
             {chat.messages.map((m, i) => (
-                i === 0 && m.role === "user" ? null : <Message key={m.id} message={m} chat={chat} live={i === lastStepIndex && chat.state === "ready"} />
+                (i === 0 && m.role === "user") || m.type === "thinking" ? null
+                    : <Message key={m.id} message={m} chat={chat} live={i === lastStepIndex && chat.state === "ready"} notes={notesOf(i)} />
             ))}
-            {streaming && (streamingText || streaming.fading) && <AssistantBlocks blocks={streaming.blocks} chat={chat} live={false} pending fading={streaming.fading} />}
-            {(chat.state === "starting" || (streaming && !streamingText)) && (
-                <p class="caius-thinking ink-2">{streaming?.blocks.some((b) => b.type === "tool_call") ? "Caius is writing…" : "Caius is reading the Journal…"}</p>
-            )}
+            {streaming && (streamingText || streaming.notes?.length)
+                ? <AssistantBlocks blocks={streaming.blocks} chat={chat} live={false} pending
+                    notes={notesFor(streaming.id, streaming.notes?.join("\n\n"))} working={streamingText ? undefined : working} />
+                : (chat.state === "starting" || streaming) && <p class="caius-thinking ink-2">{working}</p>}
             {chat.state === "failed" && chat.error && <p class="chat-error">{chat.error}</p>}
             <div ref={end} />
         </div>
@@ -352,14 +377,14 @@ function findLastStep(messages: StoredMessage[]) {
     return -1;
 }
 
-function Message({ message, chat, live }: { message: StoredMessage; chat: Chat; live: boolean }) {
+function Message({ message, chat, live, notes }: { message: StoredMessage; chat: Chat; live: boolean; notes?: TurnNotes }) {
     if (message.role === "user") {
         return <p class="bubble-user">{typeof message.content === "string" ? message.content : turnText(message.content)}</p>;
     }
     if (message.type === "error" || typeof message.content === "string") {
         return <p class="chat-error">{typeof message.content === "string" ? message.content : ""}</p>;
     }
-    return <AssistantBlocks blocks={message.content} chat={chat} live={live} />;
+    return <AssistantBlocks blocks={message.content} chat={chat} live={live} notes={notes} />;
 }
 
 /**
@@ -367,7 +392,16 @@ function Message({ message, chat, live }: { message: StoredMessage; chat: Chat; 
  * text comes first and the step cards follow with the data to answer from; the bullet lists in the
  * text repeat what the cards show, and are left out when there are cards.
  */
-function AssistantBlocks({ blocks, chat, live, pending, fading }: { blocks: ContentBlock[]; chat: Chat; live: boolean; pending?: boolean; fading?: { key: number; text: string } }) {
+function AssistantBlocks({ blocks, chat, live, pending, notes, working }: {
+    blocks: ContentBlock[];
+    chat: Chat;
+    live: boolean;
+    pending?: boolean;
+    /** What Caius worked through on the way here; folded away under `working` or "Caius's notes". */
+    notes?: TurnNotes;
+    /** The working line, as the notes' label while the turn has no text yet. */
+    working?: string;
+}) {
     const steps = blocks.flatMap((b) => {
         const step = b.type === "tool_call" ? stepOf(b.toolCall) : null;
         return step && b.type === "tool_call" ? [ { id: b.toolCall.id, step } ] : [];
@@ -375,11 +409,31 @@ function AssistantBlocks({ blocks, chat, live, pending, fading }: { blocks: Cont
     const text = turnText(blocks);
     return (
         <div class={`caius-turn${pending ? " pending" : ""}`}>
-            {fading && <div key={fading.key} class="caius-retracted" aria-hidden="true"><CaiusText text={fading.text} /></div>}
+            {notes && <Notes notes={notes} label={working ?? "Caius's notes"} working={!!working} />}
             {text && <CaiusText text={text} withoutLists={steps.length > 0} />}
             {!pending && steps.map(({ id, step }) => (
                 <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} askedInText={!!step.question && text.includes(step.question)} />
             ))}
+        </div>
+    );
+}
+
+/** A turn's notes: Caius's thinking and taken-back narration, and whether they are open. */
+interface TurnNotes {
+    text: string;
+    open: boolean;
+    toggle: () => void;
+}
+
+/** Caius's notes, folded under one line; a tap opens them. */
+function Notes({ notes, label, working }: { notes: TurnNotes; label: string; working: boolean }) {
+    return (
+        <div class={`caius-notes${notes.open ? " open" : ""}`}>
+            <button type="button" class={`caius-notes-toggle ink-2${working ? " caius-thinking" : ""}`} aria-expanded={notes.open} onClick={notes.toggle}>
+                <span>{label}</span>
+                <Icon name="keyboard_arrow_down" size={20} />
+            </button>
+            {notes.open && <div class="caius-notes-body ink-2"><CaiusText text={notes.text} /></div>}
         </div>
     );
 }
