@@ -35,7 +35,7 @@ export function createCaiusTools(
         },
 
         caius_explain: {
-            description: "Explain why a task is in its lane: the rule and the source that placed it. Use it when asked why a task is overdue, due today or suggested.",
+            description: "Explain why a task is in its lane: the rule and the source that placed it, and its origin: the note it was copied from (or its own note), the headings above it, the item it sits under, the items beside it and the paragraph before its list. Use it when asked why a task is overdue, due today or suggested, or when a task's words don't say what it is for.",
             inputSchema: toolInputs.explain,
             async: true,
             execute: parsed(toolInputs.explain, service.explain)

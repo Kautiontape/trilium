@@ -116,6 +116,30 @@ describe("caius tools", () => {
         expect(await call("caius_explain", { noteId: noteIds.today, listItemId: "nope" })).toMatchObject({ error: "not_found" });
     });
 
+    it("caius_explain gives a copied task's origin, and null when its source note is gone", async () => {
+        const source = await cls.init(async () => {
+            const day = await store.calendarDay("2031-04-28");
+            await store.putContent(day.noteId, "<h3>Follow-ups</h3><p>Before the next call.</p><ul class=\"todo-list\">"
+                + "<li data-list-item-id=\"f1\"><label class=\"todo-list__label\"><input type=\"checkbox\" checked=\"checked\" disabled=\"disabled\">"
+                + `<span class="todo-list__label__description">Count the seats <em>scheduled <a href="#root/${noteIds.week}">week 19</a></em></span></label></li>`
+                + `${li("f2", "Book the follow-up").replace("<li", "<li data-trilium-task-state=\"cancelled\"")}</ul>`);
+            await store.putContent(noteIds.week, `${await store.content(noteIds.week)}${ul(
+                li("w2", `Count the seats <a href="#root/${day.noteId}">from Tue 28 Apr</a>`),
+                li("w3", "Ask about the gone note <a href=\"#root/gone0000note\">from Mon 1 Jan</a>")
+            )}`);
+            return day;
+        });
+
+        const copied = await call("caius_explain", { noteId: noteIds.week, listItemId: "w2" });
+        expect(copied.origin).toEqual({
+            noteId: source.noteId, title: expect.any(String), date: "Mon 28 Apr",
+            headings: [ "Follow-ups" ], parent: null, neighbours: [ "Book the follow-up" ], lead: "Before the next call.", matched: true
+        });
+        expect((await call("caius_explain", { noteId: noteIds.week, listItemId: "w3" })).origin).toBeNull();
+        expect((await call("caius_explain", { noteId: noteIds.past, listItemId: "o1" })).origin)
+            .toMatchObject({ noteId: noteIds.past, headings: [ "Work" ], matched: true });
+    });
+
     it("caius_add adds a task, with a dry run that writes nothing", async () => {
         const item = { date: TODAY, section: "Work", text: "Added by the model" };
         const dry = await call("caius_add", { items: [item], dryRun: true });

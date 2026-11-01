@@ -3,7 +3,7 @@ import "./plan.css";
 import { useEffect, useState } from "preact/hooks";
 
 import { openSettings } from "../app-state.js";
-import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, ForwardSheet, markDone, TaskSheet } from "../components/sheets.js";
+import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, ForwardSheet, markDone, OriginBlock, TaskSheet } from "../components/sheets.js";
 import { displayText, TaskRow } from "../components/TaskRow.js";
 import { Button, Card, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import type { Lane, OpenResult, OpenTask, PeriodKind, PlanTask, PlanView } from "../lib/caius.js";
@@ -191,6 +191,7 @@ function LaneSheet({ task, into }: { task: OpenTask; into: string }) {
     return (
         <>
             <SheetTitle title={displayText(task.text).text} sub={`${base ? relativePeriod(task.period, base).name : periodLabel(task.period)} · ${task.section ?? ""}`} />
+            <OriginBlock task={task} />
             {ref && targets.map((to) => {
                 const where = base ? relativePeriod(to, base) : { name: periodLabel(to), detail: null };
                 return <SheetAction key={to} glyph="↓" tone={to === into ? "clay" : undefined} label={`Pull in to ${where.name}`}

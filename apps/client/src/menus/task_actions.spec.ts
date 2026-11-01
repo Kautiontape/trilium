@@ -51,7 +51,7 @@ import { setEditorNoteId } from "../widgets/react/NoteStore.js";
 import type { MenuCommandItem, MenuItem } from "./context_menu.js";
 import {
     buildTaskActionItems, buildTaskActionsMenuItem, findTaskAtElement, findTaskAtSelection,
-    isForwardKey, isJournalNote, isOverJournalTask, nextMonthKey, nextWeekKey, runDayCommand, runTaskCommand,
+    isForwardKey, isJournalNote, isOverJournalTask, nextMonthKey, nextWeekKey, originSentence, runDayCommand, runTaskCommand,
     type TaskTarget, tomorrowKey
 } from "./task_actions.js";
 
@@ -194,6 +194,13 @@ describe("buildTaskActionItems", () => {
                 "Overdue by 7 days: it's in the day note for Tuesday 20 October, which is past.",
                 10_000, "bx bx-help-circle"
             );
+
+            h.api.explain.mockResolvedValueOnce({
+                lane: "today", rule: "r1", source: "current day 2026-10-27 vs now", summary: "Today.",
+                origin: { noteId: "meet", title: "Pilot call", date: "2026-08-11", headings: [ "Follow-ups" ], parent: null, neighbours: [], lead: null, matched: true }
+            });
+            await click(findItem(buildTaskActionItems(target()), "caius.explain"));
+            expect(h.showMessage).toHaveBeenLastCalledWith("caius.explain_from_under Today.", 10_000, "bx bx-help-circle");
 
             h.api.explain.mockResolvedValueOnce({ error: "not_found" });
             await click(findItem(buildTaskActionItems(target()), "caius.explain"));
@@ -432,5 +439,22 @@ describe("runDayCommand", () => {
         await runDayCommand("plan");
         expect(h.showMessage).toHaveBeenCalledWith("caius.disabled", 3000, "bx bx-info-circle");
         expect(h.startCaiusConversation).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe("originSentence", () => {
+    const origin = { noteId: "meet", title: "Pilot call", date: "2026-08-11", headings: [ "Notes", "Follow-ups" ], parent: null, neighbours: [], lead: null, matched: true };
+
+    it("says where a copy came from, and the parent of a nested task", () => {
+        expect(originSentence(origin, "day")).toBe("caius.explain_from_under");
+        expect(originSentence({ ...origin, matched: false }, "day")).toBe("caius.explain_from");
+        expect(originSentence({ ...origin, parent: "Prepare the release" }, "day")).toBe("caius.explain_from_part_of");
+        expect(originSentence({ ...origin, noteId: "day", parent: "Prepare the release" }, "day")).toBe("caius.explain_part_of");
+    });
+
+    it("says nothing without an origin, or for a task written where it is under no other item", () => {
+        expect(originSentence(undefined, "day")).toBeNull();
+        expect(originSentence(null, "day")).toBeNull();
+        expect(originSentence({ ...origin, noteId: "day" }, "day")).toBeNull();
     });
 });

@@ -4,6 +4,7 @@ import { applyChunk, type AssistantTurn, type ChatChunk, opener, sseParser, step
 import { normalizeServerUrl } from "./connection.js";
 import { addMonths, addWeeks, dayLabel, mondayOf, nextWorkdayKey, parseMeeting, periodLabel, relativePeriod, weekLabel, weekOf } from "./day.js";
 import { McpError, parseToolReply } from "./mcp.js";
+import { originView, type TaskOrigin } from "./origin.js";
 import { parseRemindMe, parseWhen, whenLabel } from "./remind.js";
 
 describe("parseToolReply", () => {
@@ -163,5 +164,34 @@ describe("withDay", () => {
         runWaiting("2026-11-05");
         runWaiting("2026-11-05");
         expect(ran).toEqual([ "now 2026-11-04", "plan 2026-11-05", "skip 2026-11-05" ]);
+    });
+});
+
+describe("originView", () => {
+    const origin = (o: Partial<TaskOrigin> = {}): TaskOrigin => ({
+        noteId: "meet", title: "2026-08-11 Pilot call", date: "2026-08-11", headings: [ "Follow-ups" ], parent: null,
+        neighbours: [ "Confirm the price per seat" ], lead: "Before the next call.", matched: true, ...o
+    });
+
+    it("shows a copy's source: its title, its heading, the items beside it and the lead", () => {
+        expect(originView(origin(), "day")).toEqual({
+            noteId: "meet", heading: "2026-08-11 Pilot call", place: "under Follow-ups", neighbours: [ "Confirm the price per seat" ], lead: "Before the next call."
+        });
+        expect(originView(origin({ title: "Pilot call" }), "day")?.heading).toBe("Pilot call · 2026-08-11");
+        expect(originView(origin({ date: "Tue 28 Apr", title: "28 - Tuesday" }), "day")?.heading).toBe("Tue 28 Apr");
+    });
+
+    it("names the parent of a nested task, and only the title of a reworded copy", () => {
+        expect(originView(origin({ noteId: "day", parent: "Prepare the release" }), "day"))
+            .toEqual({ noteId: "day", heading: null, place: "part of: Prepare the release", neighbours: [], lead: null });
+        expect(originView(origin({ date: "2026-10-31" }), "day")?.heading).toBe("2026-08-11 Pilot call");
+        expect(originView(origin({ matched: false, headings: [], neighbours: [], lead: null }), "day"))
+            .toMatchObject({ place: null, neighbours: [], lead: null });
+    });
+
+    it("shows nothing without an origin, or for a task written where it is under no other item", () => {
+        expect(originView(undefined, "day")).toBeNull();
+        expect(originView(null, "day")).toBeNull();
+        expect(originView(origin({ noteId: "day" }), "day")).toBeNull();
     });
 });
