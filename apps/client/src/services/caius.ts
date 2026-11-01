@@ -64,8 +64,21 @@ export interface CaiusItemResult {
 }
 
 export type CaiusExplanation =
-    | { lane: string; rule: string; source: string; daysLate?: number; summary: string }
+    | { lane: string; rule: string; source: string; daysLate?: number; summary: string; origin?: CaiusTaskOrigin | null }
     | { error: "not_found" };
+
+/** Where a task came from, as `caius_explain` answers it; a server from before origins leaves it out. */
+export interface CaiusTaskOrigin {
+    noteId: string;
+    title: string;
+    /** A Journal note's period label ("Fri 30 Oct"), else the day the note was made, YYYY-MM-DD. */
+    date: string | null;
+    headings: string[];
+    parent: string | null;
+    neighbours: string[];
+    lead: string | null;
+    matched: boolean;
+}
 
 export type CaiusPeriodKind = "day" | "week" | "month";
 

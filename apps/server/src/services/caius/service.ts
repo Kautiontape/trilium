@@ -38,7 +38,9 @@ import {
     type NoteStore,
     openTasks,
     type OpenTask,
+    originIn,
     parseSource,
+    periodLabel,
     type PeriodKind,
     presentResult,
     readDuplicatePlans,
@@ -47,8 +49,11 @@ import {
     setMeetings,
     setStates,
     type StateAction,
+    type StoreNote,
     suggestedTasks,
     taskKeys,
+    type TaskOrigin,
+    taskRef,
     TRILIUM_CONFIG,
     withListItemIds,
     workdayNow
@@ -292,7 +297,8 @@ export function createCaiusService(
                     noteId, listItemId, lane: "suggested", period,
                     rule: "Suggested section",
                     source: "The task is under the note's Suggested heading, so it is not part of any lane until accepted",
-                    summary: t("caius.explain.suggested")
+                    summary: t("caius.explain.suggested"),
+                    origin: await originOf(store, noteId, listItemId)
                 };
             }
 
@@ -306,7 +312,8 @@ export function createCaiusService(
                 noteId, listItemId, text: task.text, state: task.state, period,
                 lane: horizon.value, rule: horizon.rule, source: horizon.source,
                 ...(lateBy === null ? {} : { daysLate: lateBy }),
-                summary: explainSummary(horizon.value, horizon.rule, horizon.source, lateBy)
+                summary: explainSummary(horizon.value, horizon.rule, horizon.source, lateBy),
+                origin: await originOf(store, noteId, listItemId)
             };
         }),
 
@@ -623,6 +630,38 @@ function currentKey(period: "day" | "week" | "month", now: Date): string {
     thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
     const week = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
     return `${thursday.getUTCFullYear()}-W${pad(week)}`;
+}
+
+/**
+ * Where a task came from: the note its "from …" link points at, with the original line found by
+ * its words, or, without a link, its own note. Read when asked and never stored, since notes change
+ * under it. Anything that goes wrong (the source note gone, protected or not text) gives null, so
+ * `explain` answers as before.
+ */
+export async function originOf(store: NoteStore, noteId: string, listItemId: string): Promise<TaskOrigin | null> {
+    try {
+        const ownHtml = await store.content(noteId);
+        const ref = taskRef(ownHtml, listItemId);
+        if (!ref) {
+            return null;
+        }
+        const sourceId = ref.from ?? noteId;
+        const note = await store.note(sourceId);
+        if (note.isProtected || note.type !== "text") {
+            return null;
+        }
+        const html = ref.from ? await store.content(sourceId) : ownHtml;
+        const fields = originIn(html, ref.from ? { text: ref.text } : { id: listItemId }, await loadStateSymbols(store));
+        return { noteId: sourceId, title: note.title, date: noteDate(note), ...fields };
+    } catch {
+        return null;
+    }
+}
+
+/** A Journal note's period label ("Fri 30 Oct", "week 44"), else the day the note was made. */
+function noteDate(note: StoreNote): string | null {
+    const key = [ "dateNote", "weekNote", "monthNote" ].map((name) => label(note, name)).find(Boolean);
+    return key ? periodLabel(key) : note.utcDateCreated?.slice(0, 10) ?? null;
 }
 
 /**

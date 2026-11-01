@@ -8,6 +8,7 @@ import type { Explanation, PlanTask, TaskRef } from "../lib/caius.js";
 import { addMonths, addWeeks, dayLabel, monthLabel, nextWorkdayKey, periodLabel, addDays, weekLabel, weekOf } from "../lib/day.js";
 import type { Reminder } from "../lib/local.js";
 import { cancelReminder, inQuietHours, scheduleReminder } from "../lib/notify.js";
+import { originView, type OriginView } from "../lib/origin.js";
 import { reminderChoices, whenLabel } from "../lib/remind.js";
 import { api, appNow, connection, holdWrite, messageOf, refOf, reminders, runWrite, saveReminders, settings, snack, today } from "../lib/store.js";
 import { displayText } from "./TaskRow.js";
@@ -98,6 +99,7 @@ export function TaskSheet({ task, periodKey, suggested }: { task: PlanTask; peri
     return (
         <>
             <SheetTitle title={displayText(task.text).text} sub={[ whereOf(task, periodKey), task.estMinutes ? `~${formatEstimate(task.estMinutes)}` : null, task.state === "in_progress" ? "Doing" : null ].filter(Boolean).join(" · ")} />
+            <OriginBlock task={task} />
             {offline && <p class="sheet-note">Offline: actions wait until the server is back.</p>}
             {!offline && suggested && live && (
                 <>
@@ -118,6 +120,44 @@ export function TaskSheet({ task, periodKey, suggested }: { task: PlanTask; peri
             {conn && <SheetAction glyph="open_in_new" label="Open in Trilium" onClick={() => openInTrilium(conn.url, task.noteId)} />}
             {!offline && !suggested && live && <SheetAction glyph="close" tone="berry" label="Drop…" onClick={() => openSheet(<DropSheet task={task} />)} />}
         </>
+    );
+}
+
+// ---- Where it came from ------------------------------------------------------------------------
+
+/**
+ * The task tray's From block: where the task came from, asked of `caius_explain` when the tray
+ * opens. Nothing shows until the answer is in, and nothing on a failure or an older server. The
+ * tray is anchored to the bottom, so the block grows it upward and the actions stay put.
+ */
+export function OriginBlock({ task }: { task: PlanTask }) {
+    const [ view, setView ] = useState<OriginView | null>(null);
+    useEffect(() => {
+        const ref = refOf(task);
+        if (!ref || today.value?.offline) {
+            return;
+        }
+        let live = true;
+        api().explain(ref).then((answer) => live && setView(originView(answer.origin, task.noteId)), () => undefined);
+        return () => {
+            live = false;
+        };
+    }, [ task ]);
+    if (!view) {
+        return null;
+    }
+    const conn = connection.value;
+    return (
+        <button type="button" class="origin" disabled={!conn} onClick={() => conn && openInTrilium(conn.url, view.noteId)}>
+            {view.heading && <span class="origin-from">From <strong>{view.heading}</strong></span>}
+            {view.place && <span class="origin-place">{view.place}</span>}
+            {view.neighbours.length > 0 && (
+                <span class="origin-neighbours">
+                    {view.neighbours.map((n) => <span key={n}>{n}</span>)}
+                </span>
+            )}
+            {view.lead && <span class="origin-lead">{view.lead}</span>}
+        </button>
     );
 }
 

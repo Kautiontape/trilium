@@ -20,4 +20,11 @@ describe("displayText", () => {
             .toEqual({ text: "Pair on the seed data", forwardedTo: "Thu 5 Nov" });
         expect(displayText("Get [ZAP-2041](https://jira.example/ZAP-2041) reviewed")).toEqual({ text: "Get ZAP-2041 reviewed", forwardedTo: null });
     });
+
+    it("leaves out a copy's \"from …\" link and keeps its other links", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect(displayText("Count the seats [ZAP-7](https://jira.example/ZAP-7) [from 2026-08-11 Pilot call](#root/abcDEF123456)"))
+            .toEqual({ text: "Count the seats ZAP-7", forwardedTo: null });
+        expect(displayText("Read [from the top](https://example.com/guide)")).toEqual({ text: "Read from the top", forwardedTo: null });
+    });
 });

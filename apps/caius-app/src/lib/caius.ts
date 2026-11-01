@@ -3,6 +3,7 @@ import type { PlanTask, PlanView, PeriodKind } from "@triliumnext/caius/src/tril
 import type { Connection } from "./connection.js";
 import { HttpError, request } from "./http.js";
 import { callTool } from "./mcp.js";
+import type { TaskOrigin } from "./origin.js";
 
 export type { PeriodKind, PlanTask, PlanView };
 
@@ -90,6 +91,8 @@ export interface Explanation {
     rule?: string;
     source?: string;
     error?: string;
+    /** Where the task came from; left out by a server from before origins. */
+    origin?: TaskOrigin | null;
 }
 
 export interface AddItem {

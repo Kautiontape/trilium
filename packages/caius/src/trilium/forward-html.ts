@@ -283,7 +283,7 @@ function hasBackLink(span: HTMLElement): boolean {
 }
 
 /** A task's "from …" link to the note it was forwarded from. */
-function backLinkOf(span: HTMLElement): HTMLElement | undefined {
+export function backLinkOf(span: HTMLElement): HTMLElement | undefined {
   return span.querySelectorAll('a').find((a) => /^#root\/[^/?#]+$/.test(a.getAttribute('href') ?? '') && /^from\s/.test(a.text.trim()));
 }
 
@@ -295,4 +295,4 @@ export function backLinkTarget(html: string, id: string): string | null {
 }
 
 /** `inner` without its "from …" back link, as written or as CKEditor saved it. */
-const withoutBackLink = (inner: string) => inner.replace(/(?:\s|&nbsp;)*<a [^>]*href="#root\/[^"]*"[^>]*>from [^<]*<\/a>/, '').replace(/&nbsp;/g, ' ');
+export const withoutBackLink = (inner: string) => inner.replace(/(?:\s|&nbsp;)*<a [^>]*href="#root\/[^"]*"[^>]*>from [^<]*<\/a>/, '').replace(/&nbsp;/g, ' ');

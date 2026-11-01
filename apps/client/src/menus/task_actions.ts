@@ -6,7 +6,7 @@ import {
 import appContext, { type CommandNames } from "../components/app_context.js";
 import type FNote from "../entities/fnote.js";
 import {
-    caiusApi, caiusNow, type CaiusTaskState, caiusWrite, describeSkip,
+    caiusApi, caiusNow, type CaiusTaskOrigin, type CaiusTaskState, caiusWrite, describeSkip,
     type EditableElement, findOpenEditors, flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds,
     startCaiusConversation, wasCaiusEnabled
 } from "../services/caius.js";
@@ -507,9 +507,32 @@ async function explainTask(target: TaskTarget) {
             return;
         }
 
-        toast.showMessage(explanation.summary, 10_000, "bx bx-help-circle");
+        const from = originSentence(explanation.origin, target.noteId);
+        toast.showMessage(from ? `${from} ${explanation.summary}` : explanation.summary, 10_000, "bx bx-help-circle");
     } catch (error) {
         forgetCaiusStatus();
         toast.showError(t("caius.request_failed", { message: String(error) }));
     }
+}
+
+/**
+ * One sentence on where a task came from, put before the lane's: "From 2026-08-11 Pilot call,
+ * under Follow-ups." Null without an origin, or for a task written where it is under no other
+ * item, whose heading is on screen already.
+ */
+export function originSentence(origin: CaiusTaskOrigin | null | undefined, noteId: string): string | null {
+    if (!origin || (origin.noteId === noteId && !origin.parent)) {
+        return null;
+    }
+    if (origin.noteId === noteId) {
+        return t("caius.explain_part_of", { parent: origin.parent });
+    }
+    const journal = !!origin.date && !/^\d{4}-\d{2}-\d{2}$/.test(origin.date);
+    const from = journal ? origin.date : origin.date && !/\d{4}-\d{2}-\d{2}/.test(origin.title) ? `${origin.title} · ${origin.date}` : origin.title;
+    const heading = origin.headings.at(-1);
+    return origin.parent
+        ? t("caius.explain_from_part_of", { from, parent: origin.parent })
+        : heading && origin.matched
+            ? t("caius.explain_from_under", { from, heading })
+            : t("caius.explain_from", { from });
 }

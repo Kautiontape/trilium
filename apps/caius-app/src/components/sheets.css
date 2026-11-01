@@ -53,3 +53,52 @@
 .quiet-confirm p {
     margin: 0 0 var(--s2);
 }
+
+/* The From block: where a task came from. It fades in once the answer is in. */
+.origin {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1);
+    width: 100%;
+    margin: 0 0 var(--s3);
+    padding: var(--s2) var(--s3);
+    border: 0;
+    border-left: 3px solid var(--line);
+    border-radius: 0 var(--r-chip) var(--r-chip) 0;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    line-height: 20px;
+    text-align: left;
+    animation: fade 200ms var(--ease);
+}
+
+.origin-place {
+    color: var(--ink-2);
+}
+
+.origin-neighbours {
+    display: flex;
+    flex-direction: column;
+    color: var(--ink-3);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.origin-neighbours span::before {
+    content: "· ";
+}
+
+.origin-lead {
+    color: var(--ink-3);
+    font-size: 13px;
+    line-height: 18px;
+    font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .origin {
+        animation: none;
+    }
+}

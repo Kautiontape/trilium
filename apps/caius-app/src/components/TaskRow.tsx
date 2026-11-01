@@ -118,11 +118,13 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
 /**
  * A task's words as the row shows them. A forwarded task (state `tombstone`) keeps Caius's marker
  * in its text, `_scheduled [Thu 5 Nov](#root/…)_`; the row shows the day it went to instead, and
- * links as their labels.
+ * links as their labels. A copy's "from …" link to where it came from is left out: on a narrow row
+ * it only cuts the task off, and the task tray's From block carries it.
  */
 export function displayText(raw: string): { text: string; forwardedTo: string | null } {
     const marker = /\s*_?(?:re)?scheduled\s+\[([^\]]+)\]\([^)]*\)_?/i.exec(raw);
-    const rest = marker ? raw.replace(marker[0], "").replace(/\s~\d+(?:h\d+m|h|m)\b/g, "") : raw;
+    const kept = raw.replace(/\s*\[from\s[^\]]*\]\(#root\/[^)]*\)/i, "");
+    const rest = marker ? kept.replace(marker[0], "").replace(/\s~\d+(?:h\d+m|h|m)\b/g, "") : kept;
     return { text: rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim(), forwardedTo: marker ? marker[1] : null };
 }
 
