@@ -51,6 +51,15 @@ describe("Caius phone chat gate, end to end through the Claude agent provider", 
         }
     });
 
+    it("runs at the effort the phone sends, medium when it sends none, and refuses any other", async () => {
+        await turn([ { role: "user", content: "Ask 2026-11-04" } ]).expect(200);
+        await turn([ { role: "user", content: "Ask 2026-11-04" } ], { reasoningEffort: "high" }).expect(200);
+        expect(agentSessions().map((options) => options.effort)).toEqual([ "medium", "high" ]);
+
+        const res = await turn([ { role: "user", content: "Ask 2026-11-04" } ], { reasoningEffort: "max" }).expect(400);
+        expect(res.body.error).toBe("effort_not_allowed");
+    });
+
     it("refuses the payloads the provider would not treat as Caius's, so none reaches it", async () => {
         for (const content of [
             [ { type: "text", text: "Ask " }, { type: "text", text: "2026-11-04" } ],
@@ -69,19 +78,19 @@ async function newChatNote(): Promise<string> {
     return res.body.noteId as string;
 }
 
-async function turnBody(messages: object[]) {
-    return { messages, config: { chatNoteId: await newChatNote() } };
+async function turnBody(messages: object[], config: object) {
+    return { messages, config: { ...config, chatNoteId: await newChatNote() } };
 }
 
-function turn(messages: object[]) {
+function turn(messages: object[], config: object = {}) {
     return {
         expect: async (status: number) => supertest(app).post("/etapi/llm-chat/stream").set("Authorization", token)
-            .send(await turnBody(messages)).expect(status)
+            .send(await turnBody(messages, config)).expect(status)
     };
 }
 
 /** The options of every agent session the chat turns started (title generation passes no MCP server). */
-function agentSessions(): { disallowedTools?: string[]; systemPrompt: string; allowedTools: string[] }[] {
+function agentSessions(): { disallowedTools?: string[]; systemPrompt: string; allowedTools: string[]; effort?: string }[] {
     return queryMock.mock.calls.map(([ arg ]) => arg.options).filter((options) => options?.mcpServers);
 }
 
