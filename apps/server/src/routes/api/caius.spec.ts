@@ -38,7 +38,8 @@ describe("Caius routes", () => {
     });
 
     it("reports Caius as enabled", async () => {
-        expect((await ctx.agent.get("/api/caius/status").expect(200)).body).toEqual({ enabled: true });
+        // With no Rhythm line for it, the day rolls over at the default 04:00.
+        expect((await ctx.agent.get("/api/caius/status").expect(200)).body).toEqual({ enabled: true, rollover: "04:00" });
     });
 
     it("plans the day of the request's local now by default, and answers 400 on bad input", async () => {
