@@ -506,6 +506,23 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect((createMcpServerMock.mock.calls[1] as unknown as [ { omit: string[] } ])[0].omit).toEqual([]);
     });
 
+    it("takes the day a Plan my day conversation opens on as chosen, so its tools plan it even before it starts", async () => {
+        scriptAgent([successResult()]);
+        await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Plan my day 2026-11-03" }], { enableNoteTools: true }));
+        const { withArgs } = (createMcpServerMock.mock.calls[0] as unknown as [ { withArgs: (name: string, args: object) => object } ])[0];
+        expect(withArgs("caius_planday", { date: "2026-11-03", step: "catchup" })).toEqual({ date: "2026-11-03", step: "catchup", early: true });
+        expect(withArgs("caius_plan_apply", { date: "2026-11-03" })).toEqual({ date: "2026-11-03", early: true });
+        expect(withArgs("caius_planday", { date: "2026-11-04", step: "catchup" })).toEqual({ date: "2026-11-04", step: "catchup" });
+        expect(withArgs("caius_forward", { date: "2026-11-03" })).toEqual({ date: "2026-11-03" });
+
+        for (const opener of [ "Wind down 2026-11-02", "Ask 2026-11-02" ]) {
+            createMcpServerMock.mockClear();
+            scriptAgent([successResult()]);
+            await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: opener }], { enableNoteTools: true }));
+            expect((createMcpServerMock.mock.calls[0] as unknown as [ { withArgs?: unknown } ])[0].withArgs, opener).toBeUndefined();
+        }
+    });
+
     it("streams a Plan my day or Wind down conversation's text live, takes back narration before a tool call, streams its thinking, and shows no failed call", async () => {
         const event = (body: object) => ({ type: "stream_event", parent_tool_use_id: null, session_id: "sess-1", event: body });
         const toolCall = (id: string, input: object) => [

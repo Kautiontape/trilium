@@ -23,7 +23,7 @@
 import type { Options as AgentOptions, query as queryFn, SDKAssistantMessage, SDKMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { clockOverride } from "@triliumnext/caius/src/clock.js";
-import { CAIUS_DEFAULT_EFFORT, type CaiusConversation, caiusConversationOfMessages, isCaiusEffort, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
+import { CAIUS_DEFAULT_EFFORT, type CaiusConversation, caiusConversationOfMessages, caiusOpenerOfMessages, isCaiusEffort, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
 import { getLog } from "@triliumnext/core";
 import { resolveAttachmentPart } from "@triliumnext/core/src/services/llm/attachment_content.js";
 import { buildNoteHint } from "@triliumnext/core/src/services/llm/note_hint.js";
@@ -431,7 +431,7 @@ export class ClaudeAgentProvider implements LlmProvider {
                     query: query({
                         prompt: input,
                         options: {
-                            ...await this.buildBaseOptions(config, caius),
+                            ...await this.buildBaseOptions(config, caius, plannedDay(messages)),
                             systemPrompt,
                             model,
                             resume,
@@ -741,7 +741,7 @@ export class ClaudeAgentProvider implements LlmProvider {
     }
 
     /** Options shared by every agent invocation. */
-    private async buildBaseOptions(config: Pick<LlmProviderConfig, "enableNoteTools" | "enableWebSearch" | "enableExtendedThinking" | "reasoningEffort">, caius = false): Promise<AgentOptions> {
+    private async buildBaseOptions(config: Pick<LlmProviderConfig, "enableNoteTools" | "enableWebSearch" | "enableExtendedThinking" | "reasoningEffort">, caius = false, planned?: string): Promise<AgentOptions> {
         // Built-in Claude Code tools (file access, bash, …) stay disabled — the
         // agent runs on the server host and must only ever touch notes. Web
         // search is the one opt-in exception.
@@ -800,7 +800,7 @@ export class ClaudeAgentProvider implements LlmProvider {
             // The server leaves those tools out, so the agent never calls one and meets a denial.
             const denied = caius ? await genericNoteWrites() : [];
             options.mcpServers = {
-                trilium: { type: "sdk", name: "trilium", instance: await createMcpServer({ omit: denied }) }
+                trilium: { type: "sdk", name: "trilium", instance: await createMcpServer({ omit: denied, ...(planned ? { withArgs: openedDay(planned) } : {}) }) }
             };
             // Bare server prefix auto-allows every tool from that server.
             allowedTools.push("mcp__trilium");
@@ -820,6 +820,24 @@ const CAIUS_PROMPTS: Record<CaiusConversation, string> = {
     winddown: RITUAL_PROMPT,
     ask: "This is a Caius conversation. You are Caius, the planner for his Journal: call load_skill with name \"caius\" before anything else, and follow its \"Who you are\" and \"Ask\" sections."
 };
+
+/** The Caius tools that answer `not_today` for a day that hasn't started, unless told `early`. */
+const EARLY_TOOLS = new Set([ "caius_planday", "caius_plan_apply", "caius_brief_write", "caius_meetings" ]);
+
+/** The day a `Plan my day <date>` conversation opens on, or undefined for any other chat. */
+function plannedDay(messages: readonly LlmMessage[]): string | undefined {
+    const opener = caiusOpenerOfMessages(messages);
+    return opener?.kind === "plan" ? opener.date : undefined;
+}
+
+/**
+ * He chose the day by opening Plan my day on it, so the tools take that day early, even one that
+ * hasn't started: the agent is never asked to compare it with today. Any other later day still
+ * answers `not_today` until he says yes.
+ */
+function openedDay(day: string) {
+    return (name: string, args: Record<string, unknown>) => EARLY_TOOLS.has(name) && args.date === day ? { ...args, early: true } : args;
+}
 
 /** A local date as `YYYY-MM-DD`. */
 function dayOf(at: Date): string {

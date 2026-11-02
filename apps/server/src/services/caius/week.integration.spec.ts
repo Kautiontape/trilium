@@ -331,6 +331,18 @@ describe("never plan another day from a wind-down", () => {
         expect(await call("caius_meetings", { date: MON9, items: [ "10:00 Standup" ] })).toMatchObject({ date: MON9, error: "not_today" });
         expect(await call("caius_meetings", { date: THU, items: [ "10:00 Daily Standup" ], dryRun: true })).toMatchObject({ date: THU, source: "items" });
     });
+
+    it("Fri 17:20: once he says yes, every step, the brief and the Meetings block take Monday (early)", async () => {
+        at(`${FRI}T17:20`);
+        for (const step of [ "catchup", "inputs", "brief" ]) {
+            const answer = await call("caius_planday", { date: MON9, step, early: true });
+            expect(answer.error, step).toBeUndefined();
+            expect(answer, step).toMatchObject({ step, date: MON9 });
+        }
+        const shape = (await call("caius_planday", { date: MON9, step: "brief", early: true })).data.shape;
+        expect((await call("caius_brief_write", { ...shape, date: MON9, headline: "Monday", dryRun: true, early: true })).error).toBeUndefined();
+        expect(await call("caius_meetings", { date: MON9, items: [ "10:00 Standup" ], dryRun: true, early: true })).toMatchObject({ date: MON9, source: "items" });
+    });
 });
 
 describe("the work layout starts at now", () => {

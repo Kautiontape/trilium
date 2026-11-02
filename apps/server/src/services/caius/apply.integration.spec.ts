@@ -209,7 +209,7 @@ describe("caius_plan_apply", () => {
 
     it("refuses a later day, as the steps do", async () => {
         at(`${MON}T09:40`);
-        expect(await call("caius_plan_apply", { ...input, date: "2026-11-03" })).toMatchObject({ date: "2026-11-03", error: "not_today" });
+        expect(await call("caius_plan_apply", { ...input, date: "2026-11-03" })).toMatchObject({ date: "2026-11-03", error: "not_today", dateLabel: "Tue 3 Nov" });
     });
 });
 
@@ -308,5 +308,16 @@ describe("caius_winddown_apply", () => {
         at("2026-11-04T09:40");
         const wednesday = await call("caius_planday", { date: "2026-11-04", step: "inputs" });
         expect(wednesday.data.candidates.filter((c: any) => c.kind === "week").map((c: any) => c.candidateId)).toContain("ZAP-101");
+    });
+});
+
+describe("caius_plan_apply on a day that hasn't started", () => {
+    it("Wed 4 Nov: writes Friday once he said so (early)", async () => {
+        at("2026-11-04T09:40");
+        const said = { said: "plan Friday", checked: true, asOffered: true, accept: [], move: [], notToday: [], keep: [], evening: [], context: [ "The office is closed on Friday" ] };
+        expect(await call("caius_plan_apply", { ...said, date: "2026-11-06" })).toMatchObject({ error: "not_today", dateLabel: "Fri 6 Nov" });
+        const result = await call("caius_plan_apply", { ...said, date: "2026-11-06", early: true });
+        expect(result.error).toBeUndefined();
+        expect((await call("caius_plan", { period: "day", date: "2026-11-06" })).context.map((line: any) => line.text)).toContain("The office is closed on Friday");
     });
 });

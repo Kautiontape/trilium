@@ -16,8 +16,13 @@ export function caiusOpener(kind: CaiusConversation, date: string): string {
 
 /** The conversation `text` opens, or `null` when it is not exactly an opener. */
 export function caiusConversationOf(text: string): CaiusConversation | null {
+    return caiusOpenerOf(text)?.kind ?? null;
+}
+
+/** The conversation `text` opens and the day it names, or `null` when it is not exactly an opener. */
+export function caiusOpenerOf(text: string): { kind: CaiusConversation; date: string } | null {
     const match = OPENER.exec(text.trim());
-    return match ? KINDS[match[1]] : null;
+    return match ? { kind: KINDS[match[1]], date: match[2] } : null;
 }
 
 /**
@@ -26,15 +31,20 @@ export function caiusConversationOf(text: string): CaiusConversation | null {
  * provider and the phone's chat route both decide with this, so they never disagree.
  */
 export function caiusConversationOfMessages(messages: readonly LlmMessage[]): CaiusConversation | null {
+    return caiusOpenerOfMessages(messages)?.kind ?? null;
+}
+
+/** As `caiusConversationOfMessages`, with the day the opener names. */
+export function caiusOpenerOfMessages(messages: readonly LlmMessage[]): { kind: CaiusConversation; date: string } | null {
     const first = messages.find((message) => message.role === "user");
     if (!first) {
         return null;
     }
     const { content } = first;
     if (typeof content === "string") {
-        return caiusConversationOf(content);
+        return caiusOpenerOf(content);
     }
-    return content.length === 1 && content[0].type === "text" ? caiusConversationOf(content[0].text) : null;
+    return content.length === 1 && content[0].type === "text" ? caiusOpenerOf(content[0].text) : null;
 }
 
 /** How long Caius thinks before answering, quickest first: the phone's setting. */
@@ -59,4 +69,4 @@ const KINDS: Record<string, CaiusConversation> = Object.fromEntries(
     Object.entries(OPENER_WORDS).map(([ kind, words ]) => [ words, kind as CaiusConversation ])
 );
 
-const OPENER = /^(Plan my day|Wind down|Ask) \d{4}-\d{2}-\d{2}$/;
+const OPENER = /^(Plan my day|Wind down|Ask) (\d{4}-\d{2}-\d{2})$/;

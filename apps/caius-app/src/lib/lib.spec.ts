@@ -6,6 +6,7 @@ import { addMonths, addWeeks, dayLabel, mondayOf, nextWorkdayKey, parseMeeting, 
 import { McpError, parseToolReply } from "./mcp.js";
 import { originView, type TaskOrigin } from "./origin.js";
 import { parseRemindMe, parseWhen, whenLabel } from "./remind.js";
+import { stepReply } from "./replies.js";
 
 describe("parseToolReply", () => {
     const framed = (message: object) => `event: message\ndata: ${JSON.stringify(message)}\n\n`;
@@ -60,6 +61,13 @@ describe("sseParser and applyChunk", () => {
         expect(stepOf({ id: "1", toolName: "caius_planday", input: {}, result: step, isError: true })).toBeNull();
         expect(stepOf({ id: "1", toolName: "caius_plan", input: {}, result: step })).toBeNull();
         expect(stepOf({ id: "1", toolName: "caius_planday", input: {}, result: "not json" })).toBeNull();
+    });
+
+    it("reads a day that hasn't started as a not_today step, whose card sends nothing into the reply box", () => {
+        const later = JSON.stringify({ step: "catchup", date: "2026-11-02", dateLabel: "Mon 2 Nov", error: "not_today", detail: "Monday hasn't started yet" });
+        const step = stepOf({ id: "1", toolName: "mcp__trilium__caius_planday", input: {}, result: later });
+        expect(step).toEqual({ ritual: "plan", step: "not_today", question: null, data: { date: "2026-11-02" }, dateLabel: "Mon 2 Nov" });
+        expect(step && stepReply(step, {})).toEqual([]);
     });
 
     it("writes the openers the server's check reads", () => {

@@ -91,7 +91,7 @@ import {
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { DECLINED_LABEL, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, dayLabels, dayPeriods, listPicks, mainTasks, planDay, rolloverOf, type Standing, type StepDeps, weekdayName, windDown, withTaken, workBlocks } from "./daily.js";
+import { catchupOf, type DayRead, dayLabels, dayPeriods, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -396,8 +396,8 @@ export function createCaiusService(
          * clock lines. A calendar that could not be read writes nothing, so a feed that fails never
          * empties the block.
          */
-        meetings: async ({ date, items, dryRun, refresh }: MeetingsInput) => {
-            const later = laterDay(date, await today());
+        meetings: async ({ date, items, dryRun, refresh, early }: MeetingsInput) => {
+            const later = notToday(date, currentKey("day", await today()), early);
             if (later) return later;
             let lines = items;
             if (!lines) {
@@ -513,11 +513,11 @@ export function createCaiusService(
          * day's main list, in its order (`droppedPicks` names the rest), and the drawing's work
          * bars are that list laid out again. The weather is fetched before the lock.
          */
-        briefWrite: async ({ latitude, longitude, ...input }: BriefWriteInput) => {
+        briefWrite: async ({ latitude, longitude, early, ...input }: BriefWriteInput) => {
             const { markdown } = await withCaiusLock("caius_standing", readStanding);
             const rollover = rolloverOf(readRhythm(markdown));
             const now = workdayNow(caiusNow(), rollover);
-            const later = laterDay(input.date, now);
+            const later = notToday(input.date, currentKey("day", now), early);
             if (later) return later;
             const place = await placeOf({ latitude, longitude });
             const weather = input.dryRun || !place ? undefined : await weatherOf(place.latitude, place.longitude, input.date);
@@ -579,15 +579,6 @@ export function caiusNow(env: Record<string, string | undefined> = process.env):
 export function caiusDevNow(env: Record<string, string | undefined> = process.env): string | undefined {
     const at = clockOverride(env);
     return at ? localIso(at) : undefined;
-}
-
-/**
- * `error: "not_today"` for a date after today by the Caius clock, as `caius_planday` answers: a later
- * day is written on its own morning. Null for today or an earlier day.
- */
-function laterDay(date: string, now: Date) {
-    const today = currentKey("day", now);
-    return date > today ? { date, error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today }) } : null;
 }
 
 /** A moment as local `YYYY-MM-DDTHH:mm:ss`. */

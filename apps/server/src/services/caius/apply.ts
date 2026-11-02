@@ -86,7 +86,7 @@ import {
     present,
     type StepDeps,
     stillOpen,
-    weekdayName,
+    notToday,
     windDownTarget,
     withTaken,
     withDateLabels,
@@ -138,9 +138,8 @@ const MAX_PICKS = 5;
 
 export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
     const { date } = asked;
-    if (date > dayKey(deps.now)) {
-        return { date, error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today: dayKey(deps.now) }) };
-    }
+    const later = notToday(date, dayKey(deps.now), asked.early);
+    if (later) return later;
     // The sources and the forecast are read before the lock, as the steps read them.
     const read = await deps.dayRead(date);
     const place = await deps.place();

@@ -510,7 +510,7 @@ function StepCard({ id, step, chat, live, askedInText }: { id: string; step: Rit
     return (
         <section class={`step-card step-${step.ritual}`}>
             {step.question && !askedInText && <p class="step-question">{step.question}</p>}
-            <StepBody step={step} answers={answers} update={update} disabled={!live} />
+            <StepBody step={step} answers={answers} update={update} disabled={!live} chat={chat} />
         </section>
     );
 }
@@ -520,9 +520,18 @@ interface StepItem {
     fate?: StepFate;
 }
 
-function StepBody({ step, answers, update, disabled }: { step: RitualStep; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
+function StepBody({ step, answers, update, disabled, chat }: { step: RitualStep; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean; chat: Chat }) {
     const d = step.data as Record<string, any>;
     const kind = `${step.ritual}:${step.step}`;
+
+    if (kind === "plan:not_today") {
+        const day = step.dateLabel ?? "that day";
+        return (
+            <div class="step-foot">
+                <Button kind="primary" disabled={disabled} onClick={() => void chat.send(`Yes, plan ${day} now.`)}>Plan {day} now</Button>
+            </div>
+        );
+    }
 
     if (kind === "plan:catchup") {
         const tasks: { text: string; periodLabel?: string }[] = Array.isArray(d.tasks) ? d.tasks : [];

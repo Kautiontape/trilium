@@ -137,8 +137,12 @@ const header = headerDay.extend({
     ...coordinates
 }).refine(bothOrNeither, "Give latitude and longitude together, or neither");
 
+/** The soft gate on a day that hasn't started: without it, a date after today answers error not_today. */
+const early = z.boolean().optional().describe("True only once he said yes to writing a day that hasn't started yet; a date after today answers error not_today without it");
+
 const briefWrite = z.object({
     date: periodKey("day").describe("The day the brief is for, YYYY-MM-DD"),
+    early,
     headline: z.string().trim().min(1).describe("One sentence of 14 words or fewer that names the work"),
     acts: z.array(z.object({
         range: z.string().describe("The act's span, such as \"10:00 to 12:30\" or \"Evening\""),
@@ -213,6 +217,7 @@ const onDeckAnswers = z.array(z.object({
 
 const planApply = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
+    early,
     said,
     checked,
     asOffered,
@@ -321,6 +326,7 @@ const inputs = z.object({
 
 const meetings = z.object({
     date: periodKey("day").describe("The day note to write the Meetings block of, YYYY-MM-DD"),
+    early,
     items: z.array(z.string()).optional().describe("The clock lines to write, such as \"10:00 Standup (Sam, Riley)\". Without them, the lines come from the day's calendar."),
     dryRun,
     refresh: z.boolean().optional().describe("Without items: read the calendar again instead of reusing what was read for that day in the last 15 minutes")
@@ -364,6 +370,7 @@ const winddown = z.object({
 
 const planday = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD"),
+    early,
     step: z.enum([ "catchup", "inputs", "brief" ]).describe("catchup, then inputs, then brief"),
     refresh,
     answered: z.object({
