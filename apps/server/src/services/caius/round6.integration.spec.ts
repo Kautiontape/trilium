@@ -82,8 +82,8 @@ afterEach(() => {
     jira.asks.length = 0;
 });
 
-describe("the header's acts", () => {
-    it("Wed 4 Nov: a long task is cut at a word with one ellipsis, in the acts and the drawing, never 'know….'", async () => {
+describe("the header's groups", () => {
+    it("Wed 4 Nov: a long task never reaches the drawing or its row; its group's short name does", async () => {
         const WED = "2028-11-01";
         calendars[WED] = [ event("10:00", "10:15", "Daily Standup") ];
         await dayWith(WED, `<h2>☑️ Tasks</h2>${ul(
@@ -91,33 +91,33 @@ describe("the header's acts", () => {
             li("w-111", `${zap("ZAP-611", "Check the invoice export in QA")} ~30m`)
         )}`);
         at(`${WED}T09:40`);
-        const planned = await call("caius_plan_apply", { date: WED, said: "", brief: { headline: "Message Dave, then ZAP-611.", acts: [
-            { range: "", text: "x" }, { range: "", text: "y" }
+        const planned = await call("caius_plan_apply", { date: WED, said: "", brief: { headline: "Message Dave, then ZAP-611.", groups: [
+            { name: "Calls", items: [ "Message Dave" ] }, { name: "QA", items: [ "ZAP-611" ] }
         ], sections: [] } });
         expect(planned.skipped).toEqual([]);
         const header = await contentOf(planned.headerNoteId);
-        expect(header).toContain("<p>Message Dave if he…</p>");
-        expect(header).not.toContain("….");
-        expect(header).not.toMatch(/know…/);
-        const svg = becca.getNote(planned.headerNoteId)?.getAttachments().find((a) => a.role === "image")?.getContent();
-        expect(String(svg)).toContain("Message Dave if he…");
-        expect(String(svg)).not.toMatch(/know…/);
+        expect(header).toContain("<p>Calls</p>");
+        expect(header).toContain("<p>QA</p>");
+        expect(header.slice(header.indexOf("<table>"))).not.toContain("Message Dave");
+        const svg = String(becca.getNote(planned.headerNoteId)?.getAttachments().find((a) => a.role === "image")?.getContent());
+        expect(svg).toContain(">Calls</text>");
+        expect(svg).not.toContain("hang lights");
         delete calendars[WED];
     });
 });
 
-describe("an act names a ticket by its whole key", () => {
-    it("an act naming ZAP-811 doesn't name ZAP-81, so it keeps its words", async () => {
+describe("a group names a ticket by its whole key", () => {
+    it("a group naming ZAP-811 doesn't take ZAP-81", async () => {
         const DAY = "2030-06-10";
         await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("k-811", `${zap("ZAP-811", "Verify the export retry")} ~30m`), li("k-81", `${zap("ZAP-81", "Tidy the board")} ~30m`))}`);
         at(`${DAY}T09:40`);
-        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "The export retry, then the board.", acts: [
-            { range: "", text: "Verify the ZAP-811 export retry." }, { range: "", text: "Tidy the board on ZAP-81." }
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "The export retry, then the board.", groups: [
+            { name: "Export", items: [ "ZAP-811" ] }, { name: "Board", items: [ "ZAP-81" ] }
         ] } });
         expect(planned.skipped).toEqual([]);
+        expect(planned.ungrouped).toBeUndefined();
         const header = await contentOf(planned.headerNoteId);
-        expect(header).toContain("<p>Verify the ZAP-811 export retry.</p>");
-        expect(header).toContain("<p>Tidy the board on ZAP-81.</p>");
+        expect(header).toContain("<p>Export</p></td><td><p><strong>10:30 to 11:00</strong></p><p>Board</p>");
     });
 });
 
@@ -131,8 +131,8 @@ describe("a closed day's header", () => {
             li("m-111", `${zap("ZAP-611", "Check the invoice export in QA")} ~30m`)
         )}`);
         at(`${MON}T09:40`);
-        const planned = await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "ZAP-601 first, then ZAP-610 and ZAP-611.", acts: [
-            { range: "", text: "ZAP-601, then ZAP-610." }, { range: "", text: "ZAP-611." }
+        const planned = await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "ZAP-601 first, then ZAP-610 and ZAP-611.", groups: [
+            { name: "Exports", items: [ "ZAP-601", "ZAP-611" ] }, { name: "Mapper", items: [ "ZAP-610" ] }
         ], sections: [] } });
         expect(planned.skipped).toEqual([]);
         const header = await contentOf(planned.headerNoteId);
@@ -146,7 +146,7 @@ describe("a closed day's header", () => {
         expect(await contentOf(planned.headerNoteId)).toBe(header);
         expect(drawing()).toEqual(drawn);
         expect(header).toContain("ZAP-601 first, then ZAP-610 and ZAP-611.");
-        for (const key of [ "ZAP-601", "ZAP-610", "ZAP-611" ]) expect(String(drawn)).toContain(key);
+        for (const name of [ "Exports", "Mapper" ]) expect(String(drawn)).toContain(`>${name}</text>`);
         delete calendars[MON];
     });
 });

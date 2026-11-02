@@ -90,8 +90,8 @@ import {
     type WindDownInput
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
-import { DECLINED_LABEL, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, dayLabels, dayPeriods, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
+import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { catchupOf, type DayRead, dayLabels, dayPeriods, drawnTitle, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -260,9 +260,12 @@ export function createCaiusService(
             // A day's target is the focus the steps stated for it, when they did.
             const [ focus ] = period === "day" ? await dayLabels(store, key, FOCUS_LABEL) : [];
             const [ min, max ] = (focus ?? "").split("-").map(Number);
+            // A day's brief keeps the groups and meeting names its drawing uses, which the phone draws with too.
+            const drawn = period === "day" ? await drawnNamesOf(store, key) : null;
+            const shown = drawn ? { ...warned, drawn } : warned;
             return min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && focus
-                ? { ...warned, capacity: { ...plan.capacity, target: { min, max } } }
-                : warned;
+                ? { ...shown, capacity: { ...plan.capacity, target: { min, max } } }
+                : shown;
         }),
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
@@ -515,26 +518,36 @@ export function createCaiusService(
          */
         briefWrite: async ({ latitude, longitude, early, ...input }: BriefWriteInput) => {
             const { markdown } = await withCaiusLock("caius_standing", readStanding);
-            const rollover = rolloverOf(readRhythm(markdown));
+            const rhythm = readRhythm(markdown);
+            const rollover = rolloverOf(rhythm);
             const now = workdayNow(caiusNow(), rollover);
             const later = notToday(input.date, currentKey("day", now), early);
             if (later) return later;
             const place = await placeOf({ latitude, longitude });
             const weather = input.dryRun || !place ? undefined : await weatherOf(place.latitude, place.longitude, input.date);
             return withCaiusLock("caius_brief_write", async () => {
-                // The picks and the work bars follow the main list as it stands, whatever the input says.
+                // The picks and the groups follow the main list as it stands, whatever the input says.
                 const day = await findPeriodNote(store, "day", input.date);
                 const plan = day && (day.type !== "text" || day.isProtected) ? null : await readPlan(store, "day", input.date, now);
                 const { kept, dropped } = plan ? listPicks(plan, input.picks) : { kept: input.picks, dropped: [] };
-                const span = { ...input.header, workEnd: input.header.workEnd ?? DEFAULT_WORK_END };
-                const header = plan ? { ...input.header, work: workBlocks(plan, span, input.header.events, input.date, now, rollover).work } : input.header;
+                // The groups he gave, kept by the ids of his list; without them, the ones the brief keeps.
+                const prior = await drawnNamesOf(store, input.date);
+                const given = plan && input.groups ? groupsFrom(plan, input.groups) : null;
+                const names: DrawnNames | null = given?.groups.length || input.meetings?.length
+                    ? { groups: given?.groups.length ? given.groups : prior?.groups ?? [], meetings: input.meetings?.length ? input.meetings : prior?.meetings ?? [] }
+                    : prior;
+                const events = input.header.events.map((event) => ({ ...event, title: drawnTitle(event.title, names) }));
+                // Work is laid out from standup, however early the drawing starts.
+                const span = { start: rhythm.start > input.header.start ? rhythm.start : input.header.start, end: input.header.end, workEnd: input.header.workEnd ?? DEFAULT_WORK_END };
+                const groups = plan ? workBlocks(plan, span, events, input.date, now, rollover, names).groups : input.header.groups;
+                const header = { ...input.header, events, groups };
                 const result = await writeBrief({
                     store,
                     draw: (noteId) => drawHeader(noteId, header, weather).attachmentId,
                     render: (markdown, title) => markdownImportService.renderToHtml(markdown, title),
                     plannedAt: localIso(caiusNow())
-                }, { ...input, picks: kept, header });
-                return { ...result, droppedPicks: dropped.map((pick) => pick.text), work: header.work };
+                }, { ...input, picks: kept, header, acts: groupCells(header), names });
+                return { ...result, droppedPicks: dropped.map((pick) => pick.text), groups, ...(given?.unmatched.length ? { ungrouped: given.unmatched } : {}) };
             });
         },
 

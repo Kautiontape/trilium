@@ -119,7 +119,8 @@ describe("caius_plan_apply", () => {
             context: [ "Riley covers the deploy today" ],
             brief: {
                 headline: "Two hand-offs around Sprint Planning",
-                acts: [ { range: "10:00 to 12:00", text: "Standup, then ZAP-111 before planning." }, { range: "12:00 to 18:00", text: "ZAP-101 after lunch." }, { range: "Evening", text: "Something away from screens." } ],
+                groups: [ { name: "Hand-offs", items: [ "ZAP-111", "ZAP-101" ] }, { name: "Home", items: [ "Laundry" ] } ],
+                meetings: [ { title: "Sprint Planning", name: "Planning" } ],
                 sections: [ { title: "Heads-up", markdown: "Sprint Planning runs long." }, { title: "Follow up", markdown: "Jordan said something about a runbook." }, { title: "Notes", markdown: "Quiet afternoon." } ]
             }
         };
@@ -168,18 +169,20 @@ describe("caius_plan_apply", () => {
         expect(brief).toContain("Quiet afternoon.");
         const header = await cls.init(() => store.content(result.headerNoteId));
         expect(header).toContain("Two hand-offs around Sprint Planning");
-        // The Evening act names the evening's own items, not a generic line.
-        expect(header).toContain("Call Mom, then Laundry.");
-        expect(header).not.toContain("away from screens");
+        // The row under the drawing is his groups: each one's time and name.
+        expect(header).toMatch(/<td><p><strong>[\d:]+ to [\d:]+<\/strong><\/p><p>Hand-offs<\/p><\/td><td><p><strong>18:30 to 19:00<\/strong><\/p><p>Home<\/p><\/td>/);
         // Laundry sits under its own ### Evening, after his tasks and before Suggested, and is drawn after work.
         const html = await cls.init(() => store.content(plan.noteId));
         expect(html.indexOf("<h3>Evening</h3>")).toBeGreaterThan(html.indexOf("ZAP-101"));
         expect(html.indexOf("<h3>Evening</h3>")).toBeLessThan(html.indexOf("Suggested"));
-        const drawn = (await call("caius_planday", { date: MON, step: "brief" })).data.header.work.find((block: any) => block.label === "Laundry");
-        expect(drawn).toMatchObject({ start: "18:30", end: "19:00" });
+        const drawn = (await call("caius_planday", { date: MON, step: "brief" })).data.header.groups.find((group: any) => group.name === "Home");
+        expect(drawn).toMatchObject({ start: "18:30", end: "19:00", count: 1 });
         const svg = String(await cls.init(() => becca.getAttachmentOrThrow(result.attachmentId).getContent()));
         expect(svg).toContain("data-part=\"weather\"");
         expect(svg).toContain(">Call Mom</text>");
+        // A meeting is drawn by the short name he gave it.
+        expect(svg).toContain(">Planning</text>");
+        expect(svg).not.toContain(">Sprint Planning</text>");
         expect(result).toMatchObject({ date: MON, dateLabel: "Mon 2 Nov", plannedAt: `${MON}T09:40:00`, headline: "Two hand-offs around Sprint Planning" });
     });
 

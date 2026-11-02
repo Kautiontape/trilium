@@ -1,8 +1,8 @@
 /**
- * Draws the day as terrain: one line whose height is meeting load, dots on the line for
- * meetings, labelled work bars under it, one clay focus bar, hour ticks and labels, a faint
- * divider where work ends, and a weather icon in the top-right corner. A port of the daily
- * brief's `bin/brief-terrain`.
+ * Draws the day as terrain: one line that rises in a hill for each group of planned work, higher
+ * the more tasks it holds, and in a bump for each meeting, which also has a dot on the line; each
+ * hill's name over its top and each meeting's over its dot; a hill holding an Important task in
+ * clay; hour ticks and labels; and a weather icon in the top-right corner.
  *
  * Trilium shows an SVG attachment as an <img>, which cannot see the app's theme, so the colours
  * are mid-tones that read on light and dark. All text is at least 11 px when shown 700 px wide.
@@ -15,11 +15,14 @@ export interface TerrainEvent {
   overlap?: boolean;
 }
 
-export interface TerrainWork {
+export interface TerrainGroup {
   start: string;
   end: string;
-  label: string;
-  focus?: boolean;
+  name: string;
+  /** How many tasks it holds, which sets its height. */
+  count: number;
+  /** It holds a task of the Important block: drawn in clay. */
+  important?: boolean;
 }
 
 export interface TerrainInput {
@@ -28,9 +31,7 @@ export interface TerrainInput {
   /** `HH:MM`, the right edge: bedtime. */
   end: string;
   events: TerrainEvent[];
-  work: TerrainWork[];
-  /** `HH:MM`, where the divider between work and evening goes. Default `18:00`. */
-  workEnd?: string;
+  groups: TerrainGroup[];
   /** A WMO weather code as Open-Meteo returns it, and the label to show beside the icon. */
   weather?: { code: number; label: string };
 }
@@ -44,13 +45,10 @@ const W = 640;
 const PAD = 26;
 const GROUND = 150;
 const PEAK = 88;
-const BAR_Y = 178;
-const BAR_H = 30;
-/** Rows kept under the bars for labels that don't fit in their bar; more are added as needed. */
-const LANES = 2;
-/** Rows a label under the bars may drop to while it looks for a clear place. */
-const MAX_LANES = 5;
-const DEFAULT_WORK_END = '18:00';
+/** The height of a hill of one task, and the count from which hills stop growing. */
+const HILL_LOW = 26;
+const HILL_COUNT = 6;
+const HILL_HIGH = PEAK * 0.78;
 /**
  * Glyph widths in em, used to keep labels apart. DejaVu Sans, the usual sans-serif on Linux,
  * averages about 0.6 em and 0.66 em in bold, so these err wide.
@@ -63,7 +61,7 @@ interface Item {
   e: number;
 }
 type Ev = TerrainEvent & Item;
-type Wk = TerrainWork & Item;
+type Gr = TerrainGroup & Item & { h: number };
 
 export function renderDayTerrain(input: TerrainInput): string {
   const t0 = mins(input.start);
@@ -74,32 +72,48 @@ export function renderDayTerrain(input: TerrainInput): string {
     return e > t0 ? { ...item, s: Math.max(mins(item.start), t0), e } : undefined;
   };
   const events: Ev[] = input.events.map(clipped).filter((e) => e !== undefined);
-  const work: Wk[] = input.work.map(clipped).filter((w) => w !== undefined);
+  const groups: Gr[] = input.groups
+    .map(clipped)
+    .filter((g) => g !== undefined && g.e > g.s)
+    .map((g) => ({ ...g!, h: HILL_LOW + ((Math.min(Math.max(g!.count, 1), HILL_COUNT) - 1) / (HILL_COUNT - 1)) * (HILL_HIGH - HILL_LOW) }));
   // A late item stretches the end, on the hour.
-  for (const item of [...events, ...work]) t1 = Math.max(t1, Math.ceil(item.e / 60) * 60);
+  for (const item of [...events, ...groups]) t1 = Math.max(t1, Math.ceil(item.e / 60) * 60);
   const x = (minute: number) => PAD + ((W - 2 * PAD) * (minute - t0)) / (t1 - t0);
   const overlaps = (ev: Ev) => events.some((o) => o !== ev && o.s < ev.e && ev.s < o.e);
-  const height = (minute: number) => {
-    let total = 0;
-    for (const ev of events) {
-      const dur = ev.e - ev.s;
-      const half = Math.max(dur / 2 + 14, 22);
-      const d = Math.abs(minute - (ev.s + ev.e) / 2);
-      if (d < half) {
-        const weight = 0.45 + (0.55 * Math.min(dur, 90)) / 90;
-        total += (PEAK * 0.62 * weight * (1 + Math.cos((Math.PI * d) / half))) / 2;
-      }
-    }
-    return Math.min(total, PEAK);
+  // A hill rises from the ground at its start to its height in the middle and back down at its end,
+  // so two groups side by side dip to the ground where they meet.
+  const hill = (minute: number, g: Gr) => (minute <= g.s || minute >= g.e ? 0 : g.h * Math.pow(Math.sin((Math.PI * (minute - g.s)) / (g.e - g.s)), 0.8));
+  const bump = (minute: number, ev: Ev) => {
+    const dur = ev.e - ev.s;
+    const half = Math.max(dur / 2 + 14, 22);
+    const d = Math.abs(minute - (ev.s + ev.e) / 2);
+    if (d >= half) return 0;
+    const weight = 0.45 + (0.55 * Math.min(dur, 90)) / 90;
+    return (PEAK * 0.62 * weight * (1 + Math.cos((Math.PI * d) / half))) / 2;
   };
+  const height = (minute: number) =>
+    Math.min(PEAK, groups.reduce((sum, g) => sum + hill(minute, g), 0) + events.reduce((sum, ev) => sum + bump(minute, ev), 0));
 
   const step = Math.max(1, Math.floor((t1 - t0) / 400));
   const pts: [number, number][] = [];
   for (let m = t0; m <= t1; m += step) pts.push([x(m), GROUND - height(m)]);
+  const along = (from: number, to: number) => [[x(from), GROUND - height(from)], ...pts.filter(([px]) => px > x(from) && px < x(to)), [x(to), GROUND - height(to)]];
+  const line = (points: number[][]) => points.map(([px, py]) => `${px!.toFixed(1)},${py!.toFixed(1)}`).join(' L');
 
-  // Label layout. Labels rise in rows of 18 until they clear earlier labels, the dots and the
-  // line, and slide left of the weather mark. When they rise above the canvas, `top` grows the
-  // canvas upward (the viewBox starts above 0) so nothing is cut.
+  // Label layout. A hill's name goes over its top and a meeting's over its dot; a label rises in rows
+  // of 18 until it clears earlier labels, the dots and the line, and slides left of the weather mark.
+  // Hills are named first, so they stay close to their hills. When labels rise above the canvas,
+  // `top` grows the canvas upward (the viewBox starts above 0) so nothing is cut.
+  const anchors = [
+    ...groups.map((g) => {
+      const mid = (g.s + g.e) / 2;
+      return { text: g.name, bold: true, colour: g.important ? CLAY : INK, cx: x(mid), base: GROUND - height(mid) - 8 };
+    }),
+    ...events.map((ev) => {
+      const mid = (ev.s + ev.e) / 2;
+      return { text: ev.title, bold: false, colour: INK, cx: x(mid), base: GROUND - height(mid) - 16 };
+    }),
+  ].filter((a) => a.text !== '');
   const layout = (top: number) => {
     const weatherBox = input.weather ? weatherArea(input.weather.label, top) : undefined;
     const placed: Box[] = events.map((ev) => {
@@ -107,15 +121,13 @@ export function renderDayTerrain(input: TerrainInput): string {
       return { x0: x(mid) - 9, x1: x(mid) + 9, y0: GROUND - height(mid) - 9, y1: GROUND - height(mid) + 9 };
     });
     const onCurve = (box: Box) => pts.some(([px, py]) => px > box.x0 && px < box.x1 && py > box.y0 - 2 && py < box.y1 + 2);
-    return events.map((ev) => {
-      const mid = (ev.s + ev.e) / 2;
-      const cx = x(mid);
-      const cy = GROUND - height(mid);
-      const half = textWidth(ev.title, 14, true) / 2 + 4;
-      // The dot stays on the line; the label shifts inward so it is never cut by the edge.
-      const edge = textWidth(ev.title, 14, true) / 2 + 2;
-      let tx = Math.min(Math.max(cx, edge), W - edge);
-      const boxAt = (at: number, rise: number): Box => ({ x0: at - half, x1: at + half, y0: cy - 16 - rise - 14, y1: cy - 16 - rise + 4 });
+    return anchors.map((a) => {
+      const width = textWidth(a.text, 14, a.bold);
+      const half = width / 2 + 4;
+      // The label shifts inward so it is never cut by the edge.
+      const edge = width / 2 + 2;
+      let tx = Math.min(Math.max(a.cx, edge), W - edge);
+      const boxAt = (at: number, rise: number): Box => ({ x0: at - half, x1: at + half, y0: a.base - rise - 14, y1: a.base - rise + 4 });
       let lift = 0;
       let box = boxAt(tx, lift);
       for (; lift < 400; lift += 18) {
@@ -127,7 +139,7 @@ export function renderDayTerrain(input: TerrainInput): string {
         if (!(placed.some((p) => hits(p, box)) || onCurve(box))) break;
       }
       placed.push(box);
-      return { title: ev.title, overlap: !!ev.overlap || overlaps(ev), cx, cy, tx, baseline: cy - 16 - lift, box };
+      return { ...a, tx, baseline: a.base - lift, box };
     });
   };
   let top = 0;
@@ -139,137 +151,55 @@ export function renderDayTerrain(input: TerrainInput): string {
     labels = layout(top);
   }
 
-  const below = belowLabels(work.map((w) => ({ x0: x(w.s), x1: x(w.e), label: w.label ?? '' })));
-  const lanes = Math.max(LANES, ...below.map((l) => (l ? l.row + 1 : 0)));
-  const canvasHeight = BAR_Y + BAR_H + 22 * lanes + 28;
-
+  const canvasHeight = GROUND + 40;
   const out: string[] = [];
   out.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-top} ${W} ${canvasHeight + top}" width="${W}" height="${canvasHeight + top}" role="img" aria-label="${esc(describe(events, work))}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-top} ${W} ${canvasHeight + top}" width="${W}" height="${canvasHeight + top}" role="img" aria-label="${esc(describe(events, groups))}">`,
   );
 
-  const workEnd = mins(input.workEnd ?? DEFAULT_WORK_END);
-  if (workEnd > t0 && workEnd < t1) {
-    const wx = x(workEnd).toFixed(1);
+  // Each hill is shaded, a hill holding an Important task in clay.
+  for (const g of groups) {
+    const colour = g.important ? CLAY : INK;
     out.push(
-      `<path data-part="work-end" d="M${wx},${GROUND + 8} L${wx},${BAR_Y + BAR_H}" stroke="${SOFT}" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="3 5"/>`,
+      `<path data-part="hill" d="M${x(g.s).toFixed(1)},${GROUND} L${line(along(g.s, g.e))} L${x(g.e).toFixed(1)},${GROUND} Z" fill="${colour}" fill-opacity="${g.important ? '0.32' : '0.14'}"/>`,
     );
   }
 
   out.push(
-    `<path d="M${pts.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' L')}" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`,
+    `<path d="M${line(pts)}" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`,
   );
+  for (const g of groups.filter((g) => g.important)) {
+    out.push(`<path d="M${line(along(g.s, g.e))}" fill="none" stroke="${CLAY}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`);
+  }
 
+  for (const ev of events) {
+    const mid = (ev.s + ev.e) / 2;
+    const cx = x(mid).toFixed(1);
+    const cy = (GROUND - height(mid)).toFixed(1);
+    out.push(
+      ev.overlap || overlaps(ev)
+        ? `<circle cx="${cx}" cy="${cy}" r="7.5" fill="none" stroke="${INK}" stroke-width="2.6"/>`
+        : `<circle cx="${cx}" cy="${cy}" r="8" fill="${INK}"/>`,
+    );
+  }
   for (const l of labels) {
     out.push(
-      l.overlap
-        ? `<circle cx="${l.cx.toFixed(1)}" cy="${l.cy.toFixed(1)}" r="7.5" fill="none" stroke="${INK}" stroke-width="2.6"/>`
-        : `<circle cx="${l.cx.toFixed(1)}" cy="${l.cy.toFixed(1)}" r="8" fill="${INK}"/>`,
-    );
-    out.push(
-      `<text x="${l.tx.toFixed(1)}" y="${l.baseline.toFixed(1)}" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="${INK}">${esc(l.title)}</text>`,
+      `<text x="${l.tx.toFixed(1)}" y="${l.baseline.toFixed(1)}" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="${l.bold ? '600' : '400'}" fill="${l.colour}">${esc(l.text)}</text>`,
     );
   }
 
   for (let m = Math.ceil(t0 / 60) * 60; m <= t1; m += 60) {
     const hx = x(m).toFixed(1);
-    out.push(`<path d="M${hx},${BAR_Y - 12} L${hx},${BAR_Y - 6}" stroke="${SOFT}" stroke-width="1.5"/>`);
+    out.push(`<path d="M${hx},${GROUND + 8} L${hx},${GROUND + 14}" stroke="${SOFT}" stroke-width="1.5"/>`);
     out.push(
       `<text x="${hx}" y="${canvasHeight - 6}" text-anchor="middle" font-family="sans-serif" font-size="13" fill="${SOFT}">${fmt12(m)}</text>`,
     );
-  }
-
-  for (const [i, w] of work.entries()) {
-    const x0 = x(w.s);
-    const x1 = x(w.e);
-    const colour = w.focus ? CLAY : INK;
-    out.push(
-      `<rect x="${x0.toFixed(1)}" y="${BAR_Y}" width="${(x1 - x0).toFixed(1)}" height="${BAR_H}" rx="7" fill="${colour}" fill-opacity="${w.focus ? '0.9' : '0.28'}" stroke="${colour}" stroke-width="1.5"/>`,
-    );
-    const label = w.label ?? '';
-    const under = below[i];
-    if (under) {
-      // Too narrow for its label: a leader drops to a row under the bars.
-      out.push(`<path d="M${under.cx.toFixed(1)},${BAR_Y + BAR_H + 2} L${under.cx.toFixed(1)},${leaderEnd(under.row)}" stroke="${INK}" stroke-width="1.2"/>`);
-      out.push(
-        `<text x="${under.tx.toFixed(1)}" y="${baseline(under.row)}" text-anchor="${under.anchor}" font-family="sans-serif" font-size="14" fill="${INK}">${esc(label)}</text>`,
-      );
-    } else if (label) {
-      out.push(
-        `<text x="${((x0 + x1) / 2).toFixed(1)}" y="${BAR_Y + 20}" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="${w.focus ? '#ffffff' : INK}">${esc(label)}</text>`,
-      );
-    }
   }
 
   if (input.weather) out.push(weatherMark(input.weather.code, input.weather.label, top));
   out.push('</svg>');
   return out.join('\n') + '\n';
 }
-
-interface BelowLabel {
-  /** The bar's middle, where the leader drops. */
-  cx: number;
-  tx: number;
-  anchor: 'middle' | 'start' | 'end';
-  row: number;
-  box: Box;
-}
-
-/**
- * Where each work label too wide for its bar goes: a row under the bars, centred under the bar or
- * set to one side of its leader, so that no two labels overlap and no leader crosses a label.
- * Adjacent short bars need their rows staggered, so the rows are searched with backtracking,
- * shallowest first, and a search that runs too long falls back to the first clear place for each
- * label in turn. Labels that fit in their bar answer null.
- */
-function belowLabels(bars: { x0: number; x1: number; label: string }[]): (BelowLabel | null)[] {
-  const options = bars.map(({ x0, x1, label }) => {
-    if (!label || x1 - x0 > textWidth(label, 13, true) + 6) return null;
-    const cx = (x0 + x1) / 2;
-    const width = textWidth(label, 14);
-    const at = (row: number, anchor: BelowLabel['anchor']): BelowLabel => {
-      const tx = anchor === 'middle' ? Math.min(Math.max(cx, width / 2 + 2), W - width / 2 - 2) : anchor === 'start' ? cx + 3 : cx - 3;
-      const left = anchor === 'middle' ? tx - width / 2 : anchor === 'start' ? tx : tx - width;
-      const y = baseline(row);
-      return { cx, tx, anchor, row, box: { x0: left - 3, x1: left + width + 3, y0: y - 0.8 * 14 - 2, y1: y + 0.25 * 14 + 2 } };
-    };
-    const all = Array.from({ length: MAX_LANES }, (_, row) => (['middle', 'start', 'end'] as const).map((anchor) => at(row, anchor))).flat();
-    return { all, onCanvas: all.filter((c) => c.box.x0 >= 0 && c.box.x1 <= W) };
-  });
-  const apart = (p: BelowLabel, c: BelowLabel) =>
-    !hits(p.box, c.box) &&
-    !(p.cx > c.box.x0 && p.cx < c.box.x1 && c.box.y0 < leaderEnd(p.row)) &&
-    !(c.cx > p.box.x0 && c.cx < p.box.x1 && p.box.y0 < leaderEnd(c.row));
-
-  const chosen: (BelowLabel | null)[] = bars.map(() => null);
-  let budget = 20_000;
-  const place = (i: number): boolean => {
-    if (i === options.length) return true;
-    const option = options[i];
-    if (!option) return place(i + 1);
-    for (const c of option.onCanvas) {
-      if (--budget < 0) return false;
-      if (!chosen.every((p) => !p || apart(p, c))) continue;
-      chosen[i] = c;
-      if (place(i + 1)) return true;
-      chosen[i] = null;
-    }
-    return false;
-  };
-  if (place(0)) return chosen;
-
-  const placed: BelowLabel[] = [];
-  return options.map((option) => {
-    if (!option) return null;
-    const c = option.onCanvas.find((o) => placed.every((p) => apart(p, o))) ?? option.all.at(-3) ?? option.all[0];
-    if (c) placed.push(c);
-    return c ?? null;
-  });
-}
-
-/** The baseline of a row of labels under the bars, and where a leader to it ends. */
-const baseline = (row: number) => BAR_Y + BAR_H + 18 + 22 * row;
-const leaderEnd = (row: number) => baseline(row) - 13;
 
 /** The estimated width of `text` at `size` px. */
 function textWidth(text: string, size: number, bold = false): number {
@@ -352,9 +282,9 @@ function fmt12(m: number): string {
   return mm === 0 ? `${h12}${suffix}` : `${h12}:${String(mm).padStart(2, '0')}${suffix}`;
 }
 
-function describe(events: Ev[], work: Wk[]): string {
+function describe(events: Ev[], groups: Gr[]): string {
   const meetings = events.map((e) => `${e.title || 'meeting'} ${fmt12(e.s)} to ${fmt12(e.e)}`);
-  const planned = work.map((w) => `${w.label || 'work'} ${fmt12(w.s)} to ${fmt12(w.e)}`);
+  const planned = groups.map((g) => `${g.name || 'work'} ${fmt12(g.s)} to ${fmt12(g.e)}, ${g.count} ${g.count === 1 ? 'task' : 'tasks'}${g.important ? ', important' : ''}`);
   return `Meetings: ${meetings.join('; ') || 'none'}. Planned work: ${planned.join('; ') || 'none'}.`;
 }
 

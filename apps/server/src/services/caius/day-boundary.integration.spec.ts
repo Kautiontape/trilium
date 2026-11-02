@@ -154,7 +154,7 @@ describe("Plan my day in the small hours", () => {
         expect(await call("caius_planday", { date: SAT, step: "inputs" })).toMatchObject({ error: "not_today" });
         expect((await call("caius_planday", { date: FRI, step: "inputs" })).data).toMatchObject({ planFrom: "25:30" });
         const brief = await call("caius_planday", { date: FRI, step: "brief" });
-        expect(brief.data.header).toMatchObject({ end: "26:30", work: [ { start: "25:30", end: "26:00", label: "Friday thing" } ] });
+        expect(brief.data.header).toMatchObject({ end: "26:30", groups: [ { start: "25:30", end: "26:00", count: 1 } ] });
     });
 
     it("Sat 01:30: a bedtime of 1:00 AM has passed, so nothing is placed and the day ends at 25:00", async () => {
@@ -162,7 +162,7 @@ describe("Plan my day in the small hours", () => {
         at(`${SAT}T01:30`);
         const brief = await call("caius_planday", { date: FRI, step: "brief" });
         expect(brief.data.header.end).toBe("25:00");
-        expect(brief.data.header.work).toEqual([]);
+        expect(brief.data.header.groups).toEqual([]);
         await setRhythm("Bedtime: 2:30 AM.", "The day rolls over at 04:00.");
     });
 });
@@ -171,7 +171,7 @@ describe("the drawing", () => {
     it("takes a bedtime past 24:00", async () => {
         at(`${TUE}T01:30`);
         const note = await cls.init(() => store.calendarDay(MON));
-        const drawn = await call("caius_header", { noteId: note.noteId, start: "10:00", end: "25:00", workEnd: "18:00", events: [], work: [ { start: "22:00", end: "24:30", label: "Late" } ] });
+        const drawn = await call("caius_header", { noteId: note.noteId, start: "10:00", end: "25:00", workEnd: "18:00", events: [], groups: [ { start: "22:00", end: "24:30", name: "Late", count: 1 } ] });
         expect(drawn.attachmentId).toBeTruthy();
     });
 });

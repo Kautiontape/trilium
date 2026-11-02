@@ -122,15 +122,21 @@ afterEach(() => {
 });
 
 describe("reorder after the plan", () => {
-    it("Mon 09:40 'take 110, 111 and 101', then 'put 101 first': the move-only call reorders his list, and the picks, acts and drawing follow it", async () => {
+    it("Mon 09:40 'take 110, 111 and 101', then 'put 101 first': the move-only call reorders his list, and the picks, groups and drawing follow it", async () => {
         mondayJira();
         at(`${MON}T09:40`);
-        const planned = await call("caius_plan_apply", { date: MON, accept: [ { candidateId: "110" }, { candidateId: "111" }, { candidateId: "101" } ], brief: prose });
+        // His groups name the candidates he takes in the same call, by their refs and keys.
+        const inputs = await call("caius_planday", { date: MON, step: "inputs", refresh: true });
+        const ref = (key: string) => inputs.data.candidates.find((c: any) => c.candidateId === `ZAP-${key}`)?.ref;
+        const planned = await call("caius_plan_apply", { date: MON, accept: [ { candidateId: "110" }, { candidateId: "111" }, { candidateId: "101" } ], brief: { ...prose, groups: [ { name: "Importer", items: [ ref("110") ] }, { name: "Exports", items: [ ref("111"), "ZAP-101" ] } ] } });
         expect(planned.skipped).toEqual([]);
+        expect(planned.ungrouped).toBeUndefined();
         const brief = await cls.init(() => store.content(planned.briefNoteId));
         const asked = await labelsOf(MON, "caiusAsked");
         const drawing = () => String(cls.init(() => becca.getNoteOrThrow(planned.headerNoteId).getAttachments().find((a) => a.title === "terrain.svg")?.getContent()));
-        expect(drawing().indexOf("ZAP-110")).toBeLessThan(drawing().indexOf("ZAP-101"));
+        const row = async () => [ ...(await cls.init(() => store.content(planned.headerNoteId))).matchAll(/<td><p><strong>[^<]*<\/strong><\/p><p>([^<]*)<\/p><\/td>/g) ].map((m) => m[1]);
+        expect(await row()).toEqual([ "Importer", "Exports" ]);
+        expect(drawing().indexOf(">Importer<")).toBeLessThan(drawing().indexOf(">Exports<"));
 
         at(`${MON}T09:41`);
         const moved = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
@@ -151,22 +157,17 @@ describe("reorder after the plan", () => {
         expect(await labelsOf(MON, "caiusAsked")).toEqual(asked);
         const plan = await call("caius_plan", { period: "day", date: MON });
         expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-105") ]);
-        // The picks changed, so the drawing leads with ZAP-101, and with no acts given the tool writes plain ones.
-        expect(drawing().indexOf("ZAP-101")).toBeLessThan(drawing().indexOf("ZAP-110"));
-        const header = await cls.init(() => store.content(planned.headerNoteId));
-        expect(header).toContain("<td><p><strong>10:00 to 11:00</strong></p><p>ZAP-101, then ZAP-110.</p></td>");
-        expect(header).toContain("<td><p><strong>11:00 to 11:30</strong></p><p>ZAP-111.</p></td>");
+        // The groups are kept: ZAP-101 leads the list, so its group comes first in the drawing and the row.
+        expect(await row()).toEqual([ "Exports", "Importer" ]);
+        expect(drawing().indexOf(">Exports<")).toBeLessThan(drawing().indexOf(">Importer<"));
 
-        // Acts he sent with the move replace the first two.
-        const acts = [ { range: "10:00 to 11:00", text: "Verify the retry, then the importer." }, { range: "11:00 to 12:00", text: "The export check." }, { range: "Evening", text: "z" } ];
-        await call("caius_plan_apply", { date: MON, move: [ { listItemId: "110", first: true } ], acts });
-        expect(await cls.init(() => store.content(planned.headerNoteId))).toContain("<p>Verify the retry, then the importer.</p>");
-        // Three plain strings take the ranges the drawing gives.
-        await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ], acts: [ "Verify the retry, then the importer.", "The export check.", "z" ] });
-        expect(await cls.init(() => store.content(planned.headerNoteId)))
-            .toContain("<td><p><strong>10:00 to 11:00</strong></p><p>Verify the retry, then the importer.</p></td><td><p><strong>11:00 to 11:30</strong></p><p>The export check.</p></td>");
+        // Groups he sends with a move replace the kept ones; acts are no longer drawn and change nothing.
+        const regrouped = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "110", first: true } ], groups: [ { name: "Review", items: [ "ZAP-110", "ZAP-101", "ZAP-111" ] } ], acts: [ "a", "b", "c" ] });
+        expect(regrouped.skipped).toEqual([]);
+        expect(await row()).toEqual([ "Review" ]);
+        expect(drawing()).toContain(">Review</text>");
 
-        const again = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "101", first: true } ] });
+        const again = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "110", first: true } ] });
         expect(again.written).toEqual([ expect.objectContaining({ kind: "move", status: "unchanged" }) ]);
 
         // Monday's tickets are closed, so the later tests' days don't find them open.
@@ -471,7 +472,7 @@ describe("an emptied Suggested goes", () => {
 });
 
 describe("a refresh plans from now", () => {
-    it("Tue 11:05: the refresh's acts and drawing start at 11:15, not at standup", async () => {
+    it("Tue 11:05: the refresh's groups and drawing start at 11:15, not at standup", async () => {
         const DAY = "2027-04-06";
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
@@ -483,13 +484,13 @@ describe("a refresh plans from now", () => {
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(inputs.data.planFrom).toBe("11:15");
         const refreshed = await call("caius_plan_apply", { date: DAY, brief: {
-            ...prose, acts: [ { range: "10:00 to 12:15", text: "Verify ZAP-101" }, { range: "10:30 to 11:00", text: "Message Dave" }, { range: "Evening", text: "z" } ]
+            ...prose, groups: [ { name: "Export", items: [ "ZAP-101" ] }, { name: "Calls", items: [ "Message Dave" ] } ]
         } });
         const header = await cls.init(() => store.content(refreshed.headerNoteId));
-        expect(header).toContain("<td><p><strong>11:15 to 11:45</strong></p><p>Verify ZAP-101</p></td><td><p><strong>11:45 to 12:00</strong></p><p>Message Dave</p></td>");
+        expect(header).toContain("<td><p><strong>11:15 to 11:45</strong></p><p>Export</p></td><td><p><strong>11:45 to 12:00</strong></p><p>Calls</p></td>");
         expect(header).not.toContain("10:00 to");
         const brief = await call("caius_planday", { date: DAY, step: "brief" });
-        expect(brief.data.header.work.map((block: any) => block.start)).toEqual([ "11:15", "11:45" ]);
+        expect(brief.data.header.groups.map((group: any) => group.start)).toEqual([ "11:15", "11:45" ]);
     });
 });
 
@@ -977,21 +978,21 @@ describe("fix round 2: rewritten picks survive a sub-bullet", () => {
     });
 });
 
-describe("fix round 2: acts outside a move are said, not dropped", () => {
-    it("N7: a context-only call that carries acts writes the line and reports the acts as skipped", async () => {
+describe("fix round 2: groups outside a move are said, not dropped", () => {
+    it("N7: a context-only call that carries groups writes the line and reports the groups as skipped", async () => {
         const DAY = "2027-10-11";
         at(`${DAY}T09:40`);
-        const applied = await call("caius_plan_apply", { date: DAY, context: [ "Taking the vendor call at 15:00" ], acts: [ "a", "b", "c" ] });
+        const applied = await call("caius_plan_apply", { date: DAY, context: [ "Taking the vendor call at 15:00" ], groups: [ { name: "Calls", items: [ "vendor" ] } ] });
         expect(applied.written).toEqual([ expect.objectContaining({ kind: "context", status: "written" }) ]);
-        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "acts", reason: "not_a_move" }) ]);
-        expect(applied.say).toMatch(/[Tt]he acts go with a move/);
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "groups", reason: "not_a_move" }) ]);
+        expect(applied.say).toMatch(/[Gg]roups at the top go with a move/);
     });
 
-    it("N7: a full plan call that carries acts writes the brief from its own acts and reports the stray ones", async () => {
+    it("N7: a full plan call that carries groups at the top writes the brief and reports the stray ones", async () => {
         const DAY = "2027-10-12";
         at(`${DAY}T09:40`);
-        const applied = await call("caius_plan_apply", { date: DAY, brief: prose, acts: [ "a", "b", "c" ] });
-        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "acts", reason: "not_a_move" }) ]);
+        const applied = await call("caius_plan_apply", { date: DAY, brief: prose, groups: [ { name: "Calls", items: [ "vendor" ] } ] });
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "groups", reason: "not_a_move" }) ]);
     });
 });
 

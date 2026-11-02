@@ -8,10 +8,10 @@ export const NORMAL_DAY: TerrainInput = {
     { start: '11:00', end: '12:00', title: 'Design review' },
     { start: '15:00', end: '15:30', title: 'Sync' },
   ],
-  work: [
-    { start: '10:30', end: '11:00', label: 'Inbox' },
-    { start: '13:30', end: '15:00', label: 'ZAP-2617', focus: true },
-    { start: '16:00', end: '17:00', label: 'Review' },
+  groups: [
+    { start: '10:30', end: '11:00', name: 'Inbox', count: 2 },
+    { start: '13:30', end: '15:00', name: 'ZAP-2617', count: 1, important: true },
+    { start: '16:00', end: '18:00', name: 'Reviews', count: 4 },
   ],
   weather: { code: 3, label: 'Overcast' },
 };
@@ -27,10 +27,10 @@ export const HEAVY_DAY: TerrainInput = {
     { start: '15:00', end: '16:00', title: '1:1' },
     { start: '16:30', end: '17:30', title: 'Retro' },
   ],
-  work: [
-    { start: '12:15', end: '12:45', label: 'Triage' },
-    { start: '14:30', end: '15:00', label: 'Notes' },
-    { start: '17:30', end: '18:30', label: 'ZIS-88', focus: true },
+  groups: [
+    { start: '12:15', end: '12:45', name: 'Triage', count: 3 },
+    { start: '14:30', end: '15:00', name: 'Notes', count: 1 },
+    { start: '17:30', end: '18:30', name: 'ZIS-88', count: 1, important: true },
   ],
   weather: { code: 61, label: 'Rain' },
 };
@@ -39,7 +39,7 @@ export const OPEN_DAY: TerrainInput = {
   start: '10:00',
   end: '23:00',
   events: [{ start: '10:00', end: '10:15', title: 'Standup' }],
-  work: [],
+  groups: [],
 };
 
 export const LATE_HEAVY_DAY: TerrainInput = {
@@ -52,7 +52,7 @@ export const LATE_HEAVY_DAY: TerrainInput = {
     { start: '18:00', end: '19:00', title: 'Board prep', overlap: true },
     { start: '18:30', end: '19:00', title: 'Wrap-up', overlap: true },
   ],
-  work: [{ start: '13:00', end: '14:30', label: 'ZAP-9', focus: true }],
+  groups: [{ start: '13:00', end: '14:30', name: 'ZAP-9', count: 1, important: true }],
   weather: { code: 95, label: 'Thunderstorm' },
 };
 
@@ -60,8 +60,8 @@ const rhythm = { start: '10:00', end: '23:00', workEnd: '18:00' };
 
 /**
  * The days of the T13A simulation, from `runs/build-2026-10-27/T12/ical/work.ics` and
- * `personal.ics` in `daily-brief` as `caius_inputs` reads them, with the work the simulation drew
- * laid out by `layoutWork`: Tue 3 Nov, at 09:35 and after the Customer Call moved to 15:00; Thu 5
+ * `personal.ics` in `daily-brief` as `caius_inputs` reads them, with the work the simulation drew,
+ * each task its own group, laid out by `layoutGroups`: Tue 3 Nov, at 09:35 and after the Customer Call moved to 15:00; Thu 5
  * Nov with laundry in the evening; and Mon 9 Nov, four short tickets on an empty calendar.
  */
 export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks: { label: string; minutes: number; evening?: boolean }[] }[] = [

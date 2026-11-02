@@ -1,11 +1,15 @@
-import type { PlanTask, PlanView, PeriodKind } from "@triliumnext/caius/src/trilium/plan-read.js";
+import type { SavedGroup } from "@triliumnext/caius/src/daily/groups.js";
+import type { PlanTask, PlanView as PlanRead, PeriodKind } from "@triliumnext/caius/src/trilium/plan-read.js";
+
+/** A plan as `caius_plan` answers it: a day's carries the groups and meeting names its brief's drawing uses. */
+export type PlanView = PlanRead & { drawn?: { groups: SavedGroup[]; meetings: { title: string; name: string }[] } };
 
 import type { Connection } from "./connection.js";
 import { HttpError, request } from "./http.js";
 import { callTool } from "./mcp.js";
 import type { TaskOrigin } from "./origin.js";
 
-export type { PeriodKind, PlanTask, PlanView };
+export type { PeriodKind, PlanTask };
 
 /**
  * Caius over the token: the `caius_*` tools on `/mcp` for reads and task actions, and the

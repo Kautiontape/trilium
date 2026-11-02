@@ -275,7 +275,7 @@ describe("caius tools", () => {
         const day = {
             start: "10:00", end: "23:00",
             events: [{ start: "10:00", end: "10:15", title: "Standup" }],
-            work: [{ start: "13:00", end: "14:00", label: "ZAP-1", focus: true }]
+            groups: [{ start: "13:00", end: "14:00", name: "ZAP bugs", count: 2, important: true }]
         };
 
         function headerTool(weather = vi.fn(async (_lat: number, _lon: number): Promise<{ code: number; label: string } | undefined> => ({ code: 61, label: "Rain" }))) {

@@ -4,7 +4,7 @@
  * that acts on a note of its own.
  */
 
-import { isPeriodKey, PERIODS } from "@triliumnext/caius";
+import { isPeriodKey, NAME_LENGTH, PERIODS } from "@triliumnext/caius";
 import { z } from "zod";
 
 export const LANES = ["overdue", "today", "week", "orbit", "planning_ahead", "someday", "suggested"] as const;
@@ -117,13 +117,29 @@ const headerDay = z.object({
         title: z.string(),
         overlap: z.boolean().optional().describe("Draw it as a hollow circle: it overlaps another meeting. Meetings that overlap in time are found anyway.")
     })).describe("The day's meetings"),
-    work: z.array(z.object({
+    groups: z.array(z.object({
         start: headerClock,
         end: headerClock,
-        label: z.string(),
-        focus: z.boolean().optional().describe("The one focus block, drawn in the accent colour")
-    })).describe("Planned work blocks")
+        name: z.string().describe(`The group's name, ${NAME_LENGTH} characters at most`),
+        count: z.number().int().min(1).describe("How many tasks it holds, which sets the hill's height"),
+        important: z.boolean().optional().describe("It holds a task of the Important block: drawn in clay")
+    })).default([]).describe("The groups of planned work, each drawn as a hill")
 });
+
+/** A group of the day's list an answer names: a short name and the tasks in it. */
+const groupAnswer = z.object({
+    name: z.string().trim().min(1).max(NAME_LENGTH).describe(`A name of ${NAME_LENGTH} characters at most for the run of work, such as "Board", "Sec. fixes" or "ZAP bugs"`),
+    items: z.array(z.string().trim().min(1)).min(1).describe("Its tasks, each by its ref in the step data (l… on his list, o… from the catch-up, c… a candidate taken in this answer), ticket key or words")
+});
+const groupAnswers = z.array(groupAnswer).max(6)
+    .describe("The day's list cut into 1 to 6 groups of related work, each drawn as one hill and one cell under the drawing; a task in none joins the group of the task above it. Left out or empty, the groups the brief keeps stay, else one per heading");
+const meetingNames = z.array(z.object({
+    title: z.string().min(1).describe("The meeting's title as the step data gives it"),
+    name: z.string().trim().min(1).max(NAME_LENGTH).describe(`Its name on the drawing, ${NAME_LENGTH} characters at most, such as "Standup"`)
+})).optional().describe("A short name for each meeting on the drawing; a meeting without one is drawn with its title cut to fit");
+/** The three acts the header used to take: still read, so an older call doesn't fail, and not drawn. */
+const oldActs = z.array(z.union([ z.string(), z.object({ range: z.string(), text: z.string() }) ])).optional()
+    .describe("No longer used: give groups");
 
 const coordinates = {
     latitude: z.number().min(-90).max(90).optional().describe("With longitude, adds the day's weather to the drawing"),
@@ -144,10 +160,9 @@ const briefWrite = z.object({
     date: periodKey("day").describe("The day the brief is for, YYYY-MM-DD"),
     early,
     headline: z.string().trim().min(1).describe("One sentence of 14 words or fewer that names the work"),
-    acts: z.array(z.object({
-        range: z.string().describe("The act's span, such as \"10:00 to 12:30\" or \"Evening\""),
-        text: z.string().describe("One sentence: what fits in that span")
-    })).length(3).describe("The day in three acts, the third the evening"),
+    groups: groupAnswers.optional(),
+    meetings: meetingNames,
+    acts: oldActs,
     picks: z.array(z.object({
         text: z.string().describe("\"Get X done\""),
         because: z.string().describe("Why today, such as \"sitting in Dev Verify for 6 days\""),
@@ -239,13 +254,14 @@ const planApply = z.object({
     })).optional().describe("Tasks the user moved, such as the heavy day's suggestion, each to one of the inputs step's data.days, data.weeks or data.months"),
     brief: z.object({
         headline: z.string().trim().min(1).describe("One sentence of 14 words or fewer that names the work"),
-        acts: z.array(z.object({ range: z.string(), text: z.string() })).min(2).max(3)
-            .describe("The day's first two acts, each one sentence naming the work the drawing puts in it; the tool takes each range from the drawing and writes the third, the evening"),
+        groups: groupAnswers.optional(),
+        meetings: meetingNames,
+        acts: oldActs,
         sections: z.array(z.object({ title: z.string().trim().min(1), markdown: z.string() })).default([])
             .describe("Sections after the picks, such as Heads-up; Follow up is written by the tool")
     }).optional().describe("The brief's prose; the picks, the Follow up, the drawing and the weather come from the notes. Left out only on a call that just moves items of his list or just adds Context lines"),
-    acts: z.array(z.union([ z.string(), z.object({ range: z.string(), text: z.string() }) ])).min(2).max(3).optional()
-        .describe("Only with a call that just moves: the header's first two acts in the new order, each a sentence or { range, text }; each takes the drawing's range. The tool writes the third, the evening"),
+    groups: groupAnswers.optional().describe("Only with a call that just moves: the groups for the new order, when they change"),
+    acts: oldActs,
     headline: z.string().trim().min(1).optional()
         .describe("Only with a call that just moves: the headline for the new order. Without it, a move that changes the picks writes a plain one")
 }).refine((input) => input.brief !== undefined || onlyMoves(input) || onlyContext(input), "Give brief, unless the call only moves items of his list or only adds Context lines");

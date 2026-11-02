@@ -185,11 +185,8 @@ describe("caius_brief_write", () => {
     const brief = {
         date: BRIEF_DAY,
         headline: "Ship the fix, then review",
-        acts: [
-            { range: "10:00 to 12:00", text: "Standup, then the fix." },
-            { range: "12:00 to 18:00", text: "Review around the release call." },
-            { range: "Evening", text: "A walk." }
-        ],
+        groups: [ { name: "The fix", items: [ "ZAP-101" ] }, { name: "Review", items: [ "the review" ] } ],
+        meetings: [ { title: "Standup", name: "Stand" } ],
         picks: [
             { text: "Get ZAP-101 done", because: "sitting in Dev Verify for 3 days", minutes: 30 },
             { text: "Get the review done", because: "because Sam asked on Tuesday", minutes: 90 }
@@ -201,7 +198,7 @@ describe("caius_brief_write", () => {
         header: {
             start: "10:00", end: "23:00",
             events: [ { start: "10:00", end: "10:15", title: "Standup" } ],
-            work: [ { start: "10:15", end: "11:00", label: "ZAP-101", focus: true } ]
+            groups: []
         }
     };
     const DAY_HTML = `<h3>Meetings</h3><ul><li data-list-item-id="em1">10:00 Standup</li></ul><h2>☑️ Tasks</h2>${ul(li("bt1", "Fix ZAP-101 ~30m"), li("bt2", "The review ~1h30m"))}`;
@@ -242,7 +239,15 @@ describe("caius_brief_write", () => {
         expect(attachment).toMatchObject({ role: "image", title: "terrain.svg" });
         const headerHtml = String(header?.getContent());
         expect(headerHtml).toMatch(/^<p>Thursday · November 5 2026<\/p><h2>Ship the fix, then review<\/h2><p><img class="image_resized" style="width:100%;" src="api\/attachments\/[^/]+\/image\/terrain\.svg" alt="[^"]+"><\/p><figure class="table">/);
-        expect(headerHtml.match(/<td>/g)).toHaveLength(3);
+        // The row is his groups, each laid out from the list: the fix's 30 minutes after standup, then the review's 90.
+        expect(headerHtml).toContain("<tr><td><p><strong>10:15 to 10:45</strong></p><p>The fix</p></td><td><p><strong>10:45 to 12:15</strong></p><p>Review</p></td></tr>");
+        expect(JSON.parse(briefNote?.getLabelValue("caiusGroups") ?? "")).toEqual({
+            groups: [ { name: "The fix", items: [ "bt1" ] }, { name: "Review", items: [ "bt2" ] } ],
+            meetings: [ { title: "Standup", name: "Stand" } ]
+        });
+        const svg = String(attachment?.getContent());
+        expect(svg).toContain(">Stand</text>");
+        expect(svg.match(/data-part="hill"/g)).toHaveLength(2);
 
         const body = String(briefNote?.getContent());
         expect(body.startsWith(`<section class="include-note" data-note-id="${answer.headerNoteId}" data-box-size="full">&nbsp;</section><h2>Get done today</h2><ul><li`)).toBe(true);
@@ -330,11 +335,29 @@ describe("caius_brief_write", () => {
         expect(open.tasks.map((t: any) => t.text)).toContain("Fix ZAP-101");
     });
 
-    it("takes three acts, and latitude with longitude", () => {
+    it("takes up to six groups named in ten characters or fewer, and latitude with longitude", () => {
         const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
         expect(schema?.safeParse(brief).success).toBe(true);
-        expect(schema?.safeParse({ ...brief, acts: brief.acts.slice(0, 2) }).success).toBe(false);
+        expect(schema?.safeParse({ ...brief, groups: [ { name: "Security fixes", items: [ "ZAP-101" ] } ] }).success).toBe(false);
+        expect(schema?.safeParse({ ...brief, groups: Array.from({ length: 7 }, () => ({ name: "Work", items: [ "ZAP-101" ] })) }).success).toBe(false);
+        expect(schema?.safeParse({ ...brief, meetings: [ { title: "Standup", name: "Daily standup" } ] }).success).toBe(false);
+        // An older call that still sends acts isn't refused.
+        expect(schema?.safeParse({ ...brief, acts: [ { range: "10:00 to 12:00", text: "x" } ] }).success).toBe(true);
         expect(schema?.safeParse({ ...brief, latitude: 1 }).success).toBe(false);
+    });
+
+    it("keeps his groups for the next write: a task added since joins the group of the task above it", async () => {
+        await cls.init(() => store.putContent(dayId, `${DAY_HTML.replace(li("bt2", "The review ~1h30m"), `${li("bt3", "Fix ZAP-102 ~30m")}${li("bt2", "The review ~1h30m")}`)}`));
+        const { groups: _groups, meetings: _meetings, ...withoutGroups } = brief;
+        const answer = await call("caius_brief_write", withoutGroups);
+        expect(answer.groups).toEqual([
+            { start: "10:15", end: "11:15", name: "The fix", count: 2 },
+            { start: "11:15", end: "12:45", name: "Review", count: 1 }
+        ]);
+        const headerHtml = String(becca.notes[answer.headerNoteId]?.getContent());
+        expect(headerHtml).toContain("<p>The fix</p></td><td><p><strong>11:15 to 12:45</strong></p><p>Review</p>");
+        // The meeting keeps the short name he gave it.
+        expect(String(becca.notes[answer.headerNoteId]?.getAttachments()[0]?.getContent())).toContain(">Stand</text>");
     });
 });
 

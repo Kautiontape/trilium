@@ -354,12 +354,13 @@ describe("the work layout starts at now", () => {
         ];
         at(`${TUE}T11:05`);
         const brief = await call("caius_planday", { date: TUE, step: "brief", refresh: true });
-        expect(brief.data.header.work[0]).toMatchObject({ start: "11:15", end: "11:45", focus: true });
-        expect(brief.data.header.work[0].label).toBe("ZAP-105");
+        expect(brief.data.header.groups[0]).toMatchObject({ start: "11:15" });
+        // The 09:30 standup comes before the Rhythm's 10:00, so the drawing starts at 09:00 to show it.
+        expect(brief.data.header.start).toBe("09:00");
 
         at(`${WED}T09:40`);
         const missed = await call("caius_planday", { date: TUE, step: "brief" });
-        expect(missed.data.header.work[0]).toMatchObject({ start: "10:30" });
+        expect(missed.data.header.groups[0]).toMatchObject({ start: "10:30" });
     });
 });
 
@@ -374,7 +375,7 @@ describe("weather by date", () => {
 });
 
 describe("the brief follows his list", () => {
-    it("Fri 09:30: the picks and the work bars are his accepted tasks in his order; a candidate he left isn't a pick", async () => {
+    it("Fri 09:30: the picks and the drawing's groups are his accepted tasks in his order; a candidate he left isn't a pick", async () => {
         await cls.init(() => dayNote(FRI, `<h2>☑️ Tasks</h2>${ul(
             li("x1", `${jiraLink("ZAP-140")} — Confirm the staging bucket ~30m`),
             li("x2", `${jiraLink("ZAP-141")} — Review the mapper change ~45m`)
@@ -386,7 +387,7 @@ describe("the brief follows his list", () => {
 
         const written = await call("caius_brief_write", {
             ...brief.data.shape, headline: "Clear the handoffs",
-            header: { ...brief.data.shape.header, work: [ { start: "12:00", end: "14:00", label: "Handoff queue" } ] },
+            header: { ...brief.data.shape.header, groups: [ { start: "12:00", end: "14:00", name: "Handoffs", count: 1 } ] },
             picks: [
                 { text: "Get ZAP-142 Check the export done", because: "it waits", minutes: 30 },
                 { text: "Get ZAP-141 Review the mapper change done", because: "Riley waits on it", minutes: 45 },
@@ -394,7 +395,7 @@ describe("the brief follows his list", () => {
             ]
         });
         expect(written.droppedPicks).toEqual([ "Get ZAP-142 Check the export done" ]);
-        expect(written.work.map((block: any) => [ block.start, block.end, block.label ])).toEqual([ [ "10:00", "10:30", "ZAP-140" ], [ "10:30", "11:15", "ZAP-141" ] ]);
+        expect(written.groups).toEqual([ { start: "10:00", end: "11:15", name: "Tasks", count: 2 } ]);
         const body = await cls.init(() => store.content(written.briefNoteId));
         expect([ ...body.matchAll(/<li[^>]*>([^<]*)<\/li>/g) ].map((m) => m[1])).toEqual([
             "Get ZAP-140 Confirm the staging bucket done: because the runbook needs it (~30m)",
@@ -420,7 +421,7 @@ describe("an evening thing he names", () => {
         ]);
         expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("Check it done") ]);
         const brief = await call("caius_planday", { date: day, step: "brief" });
-        expect(brief.data.header.work.find((block: any) => block.label === "Laundry")).toMatchObject({ start: "18:00", end: "18:45" });
+        expect(brief.data.header.groups.find((group: any) => group.name === "Evening")).toMatchObject({ start: "18:00", end: "18:45", count: 1 });
     });
 });
 
@@ -438,7 +439,7 @@ describe("accepting into his list", () => {
 });
 
 describe("an accepted suggestion reads like his own task", () => {
-    it("counts its estimate, keeps a clean bar label, and still matches its pick", async () => {
+    it("counts its estimate, keeps a clean label, and still matches its pick", async () => {
         const day = "2026-11-16";
         const noteId = await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("b1", "His own first thing ~30m"))}<h3>Suggested</h3>${ul(
             li("bs1", `Get ${jiraLink("ZAP-111")} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
@@ -459,7 +460,7 @@ describe("an accepted suggestion reads like his own task", () => {
             { text: "Get Book the venue done", because: "the quote expires Friday", minutes: 15 }
         ] });
         expect(written.droppedPicks).toEqual([]);
-        expect(written.work.map((block: any) => block.label)).toEqual([ "His own first thing", "ZAP-111", "Book the venue" ]);
+        expect(written.groups.map((group: any) => [ group.name, group.count ])).toEqual([ [ "Tasks", 3 ] ]);
     });
 });
 
@@ -592,7 +593,7 @@ describe("what counts as raised", () => {
     it("accepts only valid ticket keys in followUps", async () => {
         const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
         const shape = { date: "2026-11-30", headline: "x", acts: [ { range: "", text: "" }, { range: "", text: "" }, { range: "", text: "" } ], picks: [], sections: [],
-            header: { start: "10:00", end: "23:00", events: [], work: [] } };
+            header: { start: "10:00", end: "23:00", events: [], groups: [] } };
         expect(schema?.safeParse({ ...shape, followUps: [ { key: "ZAP-1", commentId: "1" } ] }).success).toBe(true);
         expect(schema?.safeParse({ ...shape, followUps: [ { key: "ZAP.*", commentId: "1" } ] }).success).toBe(false);
     });
@@ -621,7 +622,7 @@ describe("accepting past an Evening list", () => {
         expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.listItemId) ])).toEqual([ [ "☑️ Tasks", [ "z9" ] ], [ "Evening", [ "l1" ] ] ]);
         const brief = await call("caius_planday", { date: day, step: "brief" });
         expect(brief.data.list.map((task: any) => [ task.label, task.evening ])).toEqual([ [ "ZAP-9", false ], [ "Laundry", true ] ]);
-        expect(brief.data.header.work.find((block: any) => block.label === "ZAP-9")).toMatchObject({ start: "10:00", end: "10:45" });
+        expect(brief.data.header.groups.find((group: any) => group.name === "Tasks")).toMatchObject({ start: "10:00", end: "10:45" });
     });
 });
 

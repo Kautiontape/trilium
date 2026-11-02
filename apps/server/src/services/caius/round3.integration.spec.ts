@@ -259,7 +259,7 @@ describe("several firsts keep his order", () => {
 });
 
 describe("the header is drawn from the note as it ends", () => {
-    it("Wed 09:40 'laundry can go to tomorrow': the forward of his own evening item is made, and neither the drawing nor the Evening act has Laundry", async () => {
+    it("Wed 09:40 'laundry can go to tomorrow': the forward of his own evening item is made, and neither the drawing nor its row has Laundry", async () => {
         const DAY = "2026-11-11";
         calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("19:00", "20:30", "Climbing gym") ];
         await cls.init(async () => {
@@ -270,37 +270,41 @@ describe("the header is drawn from the note as it ends", () => {
         at(`${DAY}T09:40`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(inputs.data.list.map((item: any) => item.listItemId)).toEqual([ "h130", "hlau" ]);
-        const applied = await call("caius_plan_apply", { date: DAY, forward: [ { listItemId: "hlau", to: "2026-11-12" } ], brief: { ...prose, acts: [ prose.acts[0], prose.acts[1], { range: "Evening", text: "Laundry, then Climbing gym." } ] } });
+        const applied = await call("caius_plan_apply", { date: DAY, forward: [ { listItemId: "hlau", to: "2026-11-12" } ], brief: { ...prose, groups: [ { name: "Export", items: [ "ZAP-130" ] }, { name: "Home", items: [ "Laundry" ] } ] } });
         expect(applied.skipped).toEqual([]);
+        // Laundry left his list in the same call, so its group is gone and the item that named it comes back.
+        expect(applied.ungrouped).toEqual([ "Laundry" ]);
         const { acts, svg } = await headerOf(applied);
-        expect(acts[2]).toEqual({ range: "Evening", text: "Climbing gym." });
+        expect(acts).toEqual([ { range: "10:15 to 10:45", text: "Export" } ]);
         expect(svg).not.toContain("Laundry");
-        expect(svg).toContain("ZAP-130");
+        expect(svg).not.toContain(">Home<");
+        expect(svg).toContain(">Export</text>");
+        expect(svg).toContain(">Climbing</text>");
     });
 
-    it("Wed 11 'fine': a forward stamp is not in a bar's label, and an evening chore is never the focus block", async () => {
+    it("Wed 11 'fine': without groups each heading is a hill, the evening's after work, and none is clay without an Important task", async () => {
         const DAY = "2026-11-13";
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2><h3>Evening</h3>${ul(li("flau", "Laundry <a href=\"#root/abc\">from Tuesday 3</a>"))}`);
         });
         at(`${DAY}T09:45`);
-        const evening = (await call("caius_planday", { date: DAY, step: "brief" })).data.header.work;
-        expect(evening).toEqual([ { start: "18:00", end: "18:30", label: "Laundry" } ]);
+        const evening = (await call("caius_planday", { date: DAY, step: "brief" })).data.header.groups;
+        expect(evening).toEqual([ { start: "18:00", end: "18:30", name: "Evening", count: 1 } ]);
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("frun", "Write the runbook <a href=\"#root/abc\">from Monday 9</a> ~30m"))}<h3>Evening</h3>${ul(li("flau", "Laundry"))}`);
         });
-        const work = (await call("caius_planday", { date: DAY, step: "brief" })).data.header.work;
-        expect(work.map((w: any) => [ w.label, w.focus ?? false ])).toEqual([ [ "Write the runbook", true ], [ "Laundry", false ] ]);
+        const groups = (await call("caius_planday", { date: DAY, step: "brief" })).data.header.groups;
+        expect(groups.map((g: any) => [ g.name, g.important ?? false ])).toEqual([ [ "Tasks", false ], [ "Evening", false ] ]);
     });
 
-    it("Mon 09:40 'evening is just mom': the Evening act is its own act and names the call once", async () => {
+    it("Mon 09:40 'evening is just mom': the drawing names the call once, as a meeting", async () => {
         const DAY = "2026-11-16";
         calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("18:00", "18:30", "Call Mom") ];
         at(`${DAY}T09:40`);
-        const applied = await call("caius_plan_apply", { date: DAY, evening: [ "Call Mom" ], brief: { ...prose, acts: [ prose.acts[0], prose.acts[1], { range: "14:00 to 18:00", text: "Call Mom." } ] } });
-        expect((await headerOf(applied)).acts.at(-1)).toEqual({ range: "Evening", text: "Call Mom." });
+        const applied = await call("caius_plan_apply", { date: DAY, evening: [ "Call Mom" ], brief: prose });
+        expect((await headerOf(applied)).svg.match(/>Call Mom<\/text>/g)).toHaveLength(1);
     });
 
     it("Wed 17:45: a wind-down that moves tonight's Laundry on leaves today's header as it was planned", async () => {
@@ -312,7 +316,7 @@ describe("the header is drawn from the note as it ends", () => {
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
         const before = await headerOf(planned);
-        expect(before.acts[2]).toEqual({ range: "Evening", text: "Laundry." });
+        expect(before.acts.at(-1)).toEqual({ range: "18:00 to 18:30", text: "Evening" });
         at(`${DAY}T17:45`);
         const wound = await call("caius_winddown_apply", { date: DAY, done: [ "g140" ] });
         expect(wound.skipped).toEqual([]);
@@ -508,14 +512,14 @@ describe("a meeting-free day has no Meetings heading", () => {
 });
 
 describe("an evening calendar event is not a task", () => {
-    it("Mon 09:40 'evening is just mom': nothing is written for the 18:00 Call Mom, and the Evening act names it", async () => {
+    it("Mon 09:40 'evening is just mom': nothing is written for the 18:00 Call Mom, and the drawing names it", async () => {
         const DAY = "2027-01-25";
         calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("18:00", "18:30", "Call Mom") ];
         at(`${DAY}T09:40`);
         const applied = await call("caius_plan_apply", { date: DAY, evening: [ "mom" ], brief: prose });
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "mom", reason: "calendar_event" }) ]);
         expect((await call("caius_plan", { period: "day", date: DAY })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
-        expect((await headerOf(applied)).acts.at(-1)).toEqual({ range: "Evening", text: "Call Mom." });
+        expect((await headerOf(applied)).svg).toContain(">Call Mom</text>");
     });
 
     it("matches only when every word he said, past the filler, is in an event's title; a longer line is a task", async () => {
