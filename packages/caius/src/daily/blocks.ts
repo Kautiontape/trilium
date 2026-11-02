@@ -1,4 +1,4 @@
-// The work bars of the day's drawing: the main list laid out in order in the gaps between meetings.
+// The day's work laid out in time: the main list, group by group, in the gaps between meetings.
 
 import { parseClock } from '../inputs/capacity.js';
 
@@ -13,20 +13,62 @@ export interface WorkBlock {
   start: string;
   end: string;
   label: string;
-  focus?: true;
+}
+
+/** A group laid out: from its first task's start to its last task's end, and how many tasks it holds. */
+export interface GroupBlock {
+  start: string;
+  end: string;
+  name: string;
+  count: number;
+  important?: true;
 }
 
 /**
  * Lays `tasks` out in order from `start`, or from `notBefore` when that is later (the time now, on
  * the day being planned), each in the earliest free time after the one before it, split across a
- * meeting when it has to be (only the first part carries the label), never past `end`. Evening tasks start no earlier than `workEnd`. The first block of the first work task is the focus block; a day of
- * evening tasks only has none. `unplaced` holds the minutes of each task that did not fit before `end`.
+ * meeting when it has to be (only the first part carries the label), never past `end`. Evening tasks
+ * start no earlier than `workEnd`. `unplaced` holds the minutes of each task that did not fit before `end`.
  */
 export function layoutWork(
   day: { start: string; end: string; workEnd: string; notBefore?: string },
   meetings: { start: string; end: string }[],
   tasks: WorkTask[],
 ): { work: WorkBlock[]; unplaced: { label: string; minutes: number }[] } {
+  const { work, unplaced } = placeTasks(day, meetings, tasks);
+  return { work: work.map(({ task: _task, ...block }) => block), unplaced };
+}
+
+/**
+ * Lays `groups` out as `layoutWork` lays out a list, group after group, and answers each group that
+ * got time with its span and its count of tasks, as well as the blocks.
+ */
+export function layoutGroups(
+  day: { start: string; end: string; workEnd: string; notBefore?: string },
+  meetings: { start: string; end: string }[],
+  groups: { name: string; important?: boolean; tasks: WorkTask[] }[],
+): { groups: GroupBlock[]; work: WorkBlock[]; unplaced: { label: string; minutes: number }[] } {
+  const tasks = groups.flatMap((group) => group.tasks);
+  const { work, unplaced } = placeTasks(day, meetings, tasks);
+  let first = 0;
+  const blocks = groups.flatMap((group) => {
+    const from = first;
+    first += group.tasks.length;
+    const own = work.filter((block) => block.task >= from && block.task < first);
+    if (!own.length) return [];
+    const start = own.map((block) => block.start).reduce((a, b) => (b < a ? b : a));
+    const end = own.map((block) => block.end).reduce((a, b) => (b > a ? b : a));
+    return [{ start, end, name: group.name, count: group.tasks.length, ...(group.important ? { important: true as const } : {}) }];
+  });
+  return { groups: blocks, work: work.map(({ task: _task, ...block }) => block), unplaced };
+}
+
+/** `layoutWork`'s blocks, each with the index of its task. */
+function placeTasks(
+  day: { start: string; end: string; workEnd: string; notBefore?: string },
+  meetings: { start: string; end: string }[],
+  tasks: WorkTask[],
+): { work: (WorkBlock & { task: number })[]; unplaced: { label: string; minutes: number }[] } {
   const start = Math.max(parseClock(day.start) ?? 0, parseClock(day.notBefore ?? '') ?? 0);
   const end = parseClock(day.end) ?? 24 * 60;
   const workEnd = parseClock(day.workEnd) ?? end;
@@ -63,13 +105,7 @@ export function layoutWork(
       eveningCursor = Math.max(eveningCursor, at);
     }
   }
-
-  const firstWork = tasks.findIndex((task) => !task.evening);
-  const focus = firstWork < 0 ? -1 : work.findIndex((block) => block.task === firstWork);
-  return {
-    work: work.map(({ task: _task, ...block }, i) => (i === focus ? { ...block, focus: true as const } : block)),
-    unplaced,
-  };
+  return { work, unplaced };
 }
 
 function hhmm(minutes: number): string {

@@ -362,14 +362,17 @@ describe("caius_planday", () => {
             start: "10:00", end: "23:00", workEnd: "18:00",
             events: [
                 { start: "10:00", end: "10:15", title: "Standup" },
-                { start: "12:00", end: "13:00", title: "Release call", overlap: true },
+                { start: "12:00", end: "13:00", title: "Release", overlap: true },
                 { start: "12:30", end: "13:00", title: "Review", overlap: true }
             ],
-            work: [ { start: "10:15", end: "11:15", label: "Monday thing", focus: true } ]
+            groups: [ { start: "10:15", end: "11:15", name: expect.any(String), count: 1 } ]
         });
         expect(answer.data.briefRules).toContain("Open time is work time.");
         expect(answer.data.briefRules).not.toContain("Rhythm");
-        expect(answer.data.shape).toMatchObject({ date: MONDAY, header: answer.data.header, acts: [ expect.any(Object), expect.any(Object), expect.any(Object) ] });
+        expect(answer.data.shape).toMatchObject({ date: MONDAY, header: answer.data.header, groups: [], meetings: [] });
+        // Each task of the list carries the ref a group names it by, and each meeting its title to name.
+        expect(answer.data.list[0]).toMatchObject({ ref: expect.stringMatching(/^l[0-9a-f]{5}$/) });
+        expect(answer.data.meetingTitles).toEqual([ "Standup", "Release call", "Review" ]);
         const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
         expect(schema?.safeParse({ ...answer.data.shape, headline: "Ship it" }).success).toBe(true);
     });
@@ -421,7 +424,7 @@ describe("caius_planday", () => {
             expect(inputs.data.meetings).toMatchObject({ lines: null, changed: false });
             const brief = await planday({ date: TUESDAY, step: "brief" });
             expect(brief.data.header.events).toEqual([ { start: "10:00", end: "12:00", title: "Workshop" } ]);
-            expect(brief.data.header.work[0]).toMatchObject({ start: "12:00", label: "Huge thing" });
+            expect(brief.data.header.groups[0]).toMatchObject({ start: "12:00", count: 1 });
         } finally {
             delete errorsByDate[TUESDAY];
         }

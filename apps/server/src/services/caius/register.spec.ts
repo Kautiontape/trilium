@@ -85,9 +85,9 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Map \"first\", \"after 105\" or \"before the report\" onto the accept's `first`, `before` or `after`",
         "Never refuse a reorder he asks for",
         "\"Put X first\" or \"X after Y\", at any point in the conversation, even after the plan is written, is one `caius_plan_apply` call with `said` and only `move`: no `brief`, no other answer.",
-        "Whenever a move changes the order of the picks, send a fresh `headline` and two `acts` with it, in the new order. Otherwise the tool writes plain ones.",
-        "naming his work in the order of his list as this call leaves it",
-        "On a day already under way the step gives `data.planFrom`: the acts start there, never in the part of the day already past.",
+        "Whenever a move changes the order of the picks, send a fresh `headline` with it, in the new order, and `groups` when the move changes which work belongs together.",
+        "his whole list as this call leaves it: his own tasks, the catch-up's tasks moved in, On deck items put on it and the candidates taken, cut into 1 to 6 runs of related work",
+        "On a day already under way the step gives `data.planFrom`: the drawing lays his work out from there, never in the part of the day already past.",
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
         "An evening calendar event is not a task",
         "`say` names the skip (\"Call Mom is already on the calendar\")",
@@ -154,7 +154,7 @@ it("opens a planning message with its first question, never a preamble of its ow
 
 it("writes the brief in the plan's first turn when there is nothing to ask, after a Review as after the bar", () => {
     const sheet = sheetOnce();
-    expect(sheet).toContain("When no step has a question and `data.candidates` is empty, there is nothing to ask: send no message. Call `caius_plan_apply` at once with `said: \"\"` and the brief's prose, then reply as step 4 says.");
+    expect(sheet).toContain("When no step has a question and `data.candidates` is empty, there is nothing to ask: send no message. Call `caius_plan_apply` at once with `said: \"\"` and the brief's prose and `groups`, then reply as step 4 says.");
     expect(sheet).toContain("With nothing to ask in `planday`, call `caius_plan_apply` at once, as Plan my day's step 2 says, and reply with the wind-down's `say`, then the plan's `say`, headline and top pick.");
     expect(sheet).toContain("Never ask whether to plan or whether to write the brief");
     expect(sheet).not.toContain("then take his reply to `caius_plan_apply` (its step 3). Never ask whether to plan");

@@ -39,7 +39,7 @@ import {
 } from "@triliumnext/caius";
 import { t } from "i18next";
 
-import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_LABEL, FOCUS_LABEL, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_LABEL, type DrawnNames, drawnNamesOf, FOCUS_LABEL, HELD_GROUP_LABEL, HELD_LABEL, findBrief, rewritePicks, SETTLED_LABEL, NOT_TODAY_LABEL, redrawHeader, sameTitle, WEATHER_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import {
     allHeld as heldItems,
     catchupOf,
@@ -60,9 +60,12 @@ import {
     EVENING_SUGGESTED_ID,
     eveningEventTitles,
     drawnEvents,
+    drawnStart,
     failedCalendar,
     focusOf,
     followUpsOf,
+    groupCells,
+    groupsFrom,
     HEAVY_ID,
     latestAsks,
     lineIdOf,
@@ -75,7 +78,6 @@ import {
     namedDays,
     nextAsked,
     plainText,
-    planFromOf,
     rolloverOf,
     localDay,
     nextOffer,
@@ -262,7 +264,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             record(written, skipped, { kind: "fate", id, text: item.text, detail: to }, result);
         } });
 
-        if (asked.acts) skipped.push({ kind: "acts", reason: "not_a_move", detail: "Acts go with a call that only moves items of his list" });
+        if (asked.groups) skipped.push({ kind: "groups", reason: "not_a_move", detail: "Groups at the top go with a call that only moves items of his list; give them in brief" });
         await guarded({ kind: "catchup" }, skipped, () => catchup(store, date, now, input.catchup, written, skipped));
 
         // On deck first: each item takes the fate he gave it, or the one the step proposed, so none stays on deck.
@@ -339,7 +341,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
         const answered = new Set(written.filter((entry) => entry.kind === "dismiss" && entry.id).map((entry) => entry.id));
-        const brief = await briefOf(deps, { date, brief: prose }, taken, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, headsUp, weather)
+        const brief = await briefOf(deps, { date, brief: prose }, taken, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, headsUp, weather, groupWords(pools))
             .catch((e: unknown) => ({ error: "failed", detail: e instanceof Error ? e.message : String(e) }));
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
@@ -353,7 +355,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
             date, written, skipped,
             headline: prose.headline, topPick: brief.picks[0]?.text ?? null,
             briefNoteId: brief.briefNoteId, headerNoteId: brief.headerNoteId, attachmentId: brief.attachmentId,
-            link: `#root/${brief.briefNoteId}`, plannedAt: brief.plannedAt
+            link: `#root/${brief.briefNoteId}`, plannedAt: brief.plannedAt,
+            ...(brief.ungrouped.length ? { ungrouped: brief.ungrouped } : {})
         });
     });
 }
@@ -653,9 +656,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 }
 
 /**
- * A Plan my day call with only `move`: his list reordered and, when the order changes the picks, the
- * brief's picks, the drawing and the acts (his `acts`, or plain ones from the drawing) written again.
- * Nothing else is written.
+ * A Plan my day call with only `move`: his list reordered and, when the order changes the picks or
+ * `groups` are given, the brief's picks, its groups and the drawing written again. Nothing else is written.
  */
 async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, weather: DayWeather | undefined) {
     const { date } = asked;
@@ -674,17 +676,19 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
         const before = picksOf(offer.day.plan);
         await acceptAll(store, date, now, input, { known, moved: new Map() }, written, skipped);
         const plan = await readPlan(store, "day", date, now);
-        if (picksOf(plan) !== before) {
-            // The tool's own words follow the new order: the brief's picks, and the acts unless he sent them.
+        const regrouped = asked.groups ? groupsFrom(plan, wordsOf(asked.groups, groupWords(pools))) : null;
+        if (regrouped?.unmatched.length) skipped.push(...regrouped.unmatched.map((said) => ({ kind: "groups", text: said, reason: "not_on_list" })));
+        if (picksOf(plan) !== before || regrouped?.groups.length) {
+            // The tool's own words follow the new order: the brief's picks, and the headline unless he sent one.
             const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
                 .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
             await guarded({ kind: "picks", id: date }, skipped, async () => {
                 const write = await rewritePicks(store, date, picksFor(plan, reasons));
                 if (write) record(written, skipped, { kind: "picks", detail: date }, write.status === "updated" ? { status: "written" } : write);
             });
-            // The acts he sent are kept where they name the drawing's work; the headline follows the new order.
-            const given = (asked.acts ?? []).map((act) => typeof act === "string" ? { text: act } : act);
-            const header = { acts: (drawn: ReturnType<typeof headerOf>) => drawnActs(drawn, given, titlesOf(plan)), headline: (drawn: ReturnType<typeof headerOf>) => asked.headline ?? orderHeadline(drawn) };
+            const prior = await drawnNamesOf(store, date);
+            const names = regrouped?.groups.length ? { groups: regrouped.groups, meetings: prior?.meetings ?? [] } : undefined;
+            const header = { headline: (drawn: ReturnType<typeof headerOf>) => asked.headline ?? orderHeadline(drawn), ...(names ? { names } : {}) };
             if (failedCalendar(read)) skipped.push({ kind: "header", id: date, reason: "calendar_unavailable" });
             else await guarded({ kind: "header", id: date }, skipped, () => redraw(store, date, read, now, weather, written, skipped, header));
         }
@@ -703,7 +707,7 @@ async function contextOnly(deps: ApplyDeps, asked: PlanApplyInput) {
         const written: Written[] = [];
         const skipped: Skipped[] = [];
         await guarded({ kind: "context" }, skipped, () => eveningAndContext(store, date, now, { evening: [], context: asked.context }, written, skipped, { tomorrow: true }));
-        if (asked.acts) skipped.push({ kind: "acts", reason: "not_a_move", detail: "Acts go with a call that only moves items of his list" });
+        if (asked.groups) skipped.push({ kind: "groups", reason: "not_a_move", detail: "Groups at the top go with a call that only moves items of his list; give them in brief" });
         return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date }) });
     });
 }
@@ -718,70 +722,6 @@ function picksFor(plan: Awaited<ReturnType<typeof readPlan>>, reasons: Map<strin
         const reason = task.keys.map((key) => reasons.get(key)).find((candidate) => candidate && candidate.kind !== "week");
         return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
     });
-}
-
-/**
- * The header's first two acts from the drawing: its tasks before the end of work, whole (a task split
- * around a meeting is one), in two groups, each with its span ("10:15 to 12:15") and plain words
- * ("ZAP-101, then ZAP-110."), or open time without tasks (one act for a day with none), each inside
- * the work window: an act that would start once work is over is left to the evening. An act in
- * `given` for a group with tasks keeps its words, with the
- * drawing's span, when it names every task of its group, none of the other's and no other ticket.
- * A task is named by its key or by a word no other task's words have (`titles`, his list by bar
- * label). The third act, the evening, `withEveningAct` writes.
- */
-function drawnActs(header: ReturnType<typeof headerOf>, given: { text: string }[] = [], titles: Map<string, string> = new Map()): Prose["acts"] {
-    const tasks: { label: string; start: string; end: string }[] = [];
-    for (const block of header.work.filter((work) => work.start < header.workEnd)) {
-        const last = tasks.at(-1);
-        if (!block.label && last) last.end = block.end;
-        else tasks.push({ label: block.label, start: block.start, end: block.end });
-    }
-    const half = Math.ceil(tasks.length / 2);
-    // With no tasks the day before the evening is one open act, not two the same.
-    const groups = tasks.length ? [ tasks.slice(0, half), tasks.slice(half) ] : [ [] ];
-    /** A span inside the work window: its end no later than the end of work. */
-    const span = (start: string, end: string) => ({ start, end: end > header.workEnd ? header.workEnd : end });
-    const acts = groups.flatMap((group, i) => {
-        const [ first ] = group;
-        const last = group.at(-1);
-        const from = i === 0 ? header.start : groups[0]?.at(-1)?.end ?? header.start;
-        const { start, end } = first && last ? span(first.start, last.end) : span(from, header.workEnd);
-        // An act that would start once work is over has no span: the evening act covers that time.
-        if (start >= end) return [];
-        const plain = first && last
-            ? { range: t("caius.brief.act_range", { start, end }), text: actText(group.map((task) => task.label).join(t("caius.brief.evening_then"))) }
-            : { range: t("caius.brief.act_range", { start, end }), text: t("caius.brief.open_time") };
-        const other = groups[1 - i] ?? [];
-        const words = given[i]?.text.trim();
-        const keys = new Set(group.map((task) => task.label));
-        const names = (task: { label: string }) => !!words && namesTask(words, task.label, tasks.map((each) => each.label), titles);
-        const fits = words && group.length > 0 && group.every(names) && !other.some(names) && keysOf(words).filter((key) => JIRA_KEY.test(key)).every((key) => keys.has(key));
-        return [ fits ? { range: plain.range, text: words } : plain ];
-    });
-    return [ ...acts, { range: "", text: "" } ];
-}
-
-/** An act's sentence from its bars' labels: a stop after them, unless the last is cut and already ends with an ellipsis. */
-function actText(items: string): string {
-    return items.endsWith("…") ? items : t("caius.brief.act_text", { items });
-}
-
-/**
- * Whether an act's words name the task of bar `label`: its Jira key, or a word of four letters or
- * more from its words (`titles`, else the label) that no other task of `labels` has.
- */
-function namesTask(text: string, label: string, labels: string[], titles: Map<string, string>): boolean {
-    if (JIRA_KEY.test(label) && new RegExp(`(?<![A-Z0-9-])${label}(?![0-9])`).test(text.toUpperCase())) return true;
-    const wordsOf = (of: string) => (titles.get(of) ?? of).replace(/\S*…$/, "").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-    const said = new Set(text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
-    const others = new Set(labels.filter((other) => other !== label).flatMap(wordsOf));
-    return wordsOf(label).some((word) => word.length >= 4 && !others.has(word) && said.has(word));
-}
-
-/** His list's words by bar label, which `drawnActs` reads an act's words against. */
-function titlesOf(plan: Awaited<ReturnType<typeof readPlan>>): Map<string, string> {
-    return new Map(listOf(plan).map((task) => [ task.label, task.text ]));
 }
 
 /** A headline for a new order of the picks, from the drawing's labels: "ZAP-101 first, then ZAP-110 and ZAP-111." */
@@ -799,17 +739,16 @@ function picksOf(plan: Awaited<ReturnType<typeof readPlan>>): string {
 }
 
 /**
- * Draws the header of `day`'s brief again from its note: the drawing, and the acts checked against
- * it (`drawnActs`, from those `opts.acts` gives, else the ones written) with the Evening act as the
- * note now has it, and `opts.headline`'s headline when it gives one. A weather icon already drawn
- * stays when no weather can be had.
+ * Draws the header of `day`'s brief again from its note: the drawing and the row of its groups, in
+ * the groups the brief keeps or `opts.names` when given (kept on the brief then), and
+ * `opts.headline`'s headline when it gives one. A weather icon already drawn stays when no weather
+ * can be had.
  */
-async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, fetched: DayWeather | undefined, written: Written[], skipped: Skipped[], opts: { acts?: (header: ReturnType<typeof headerOf>) => Prose["acts"]; headline?: (header: ReturnType<typeof headerOf>) => string | undefined } = {}) {
+async function redraw(store: NoteStore, day: string, read: DayRead, now: Date, fetched: DayWeather | undefined, written: Written[], skipped: Skipped[], opts: { names?: DrawnNames; headline?: (header: ReturnType<typeof headerOf>) => string | undefined } = {}) {
     const plan = await readPlan(store, "day", day, now);
-    const header = headerOf(plan, read, day, now);
+    const header = headerOf(plan, read, day, now, opts.names ?? await drawnNamesOf(store, day));
     const draw = (noteId: string, weather: DayWeather | undefined) => drawHeader(noteId, header, weather ?? weatherOfSvg(readAttachment(noteId, "image", TERRAIN_TITLE) ?? "") ?? undefined).attachmentId;
-    const acts = (kept: Prose["acts"]) => withEveningAct(opts.acts ? opts.acts(header) : drawnActs(header, kept, titlesOf(plan)), plan, header);
-    const write = await redrawHeader(store, day, draw, acts, fetched, opts.headline?.(header));
+    const write = await redrawHeader(store, day, draw, () => groupCells(header), fetched, opts.headline?.(header), opts.names);
     if (write) record(written, skipped, { kind: "header", detail: day }, write.status === "updated" ? { status: "written" } : write);
 }
 
@@ -1920,50 +1859,32 @@ async function noteOf(store: NoteStore, listItemId: string): Promise<string | nu
 }
 
 /**
- * The acts with the third as the evening's own act: the evening's calendar events and his evening
- * tasks in time order, each name once ("Call Mom, then Laundry."), or "Nothing planned." without any.
+ * The day's drawing: its span from the rhythm (stretched back for a meeting before standup), the
+ * calendar's events by their short names, and his list in its groups laid out between them from standup.
  */
-function withEveningAct(acts: Prose["acts"], plan: Awaited<ReturnType<typeof readPlan>>, header: { workEnd: string; events: { start: string; title: string }[]; work: { start: string; label: string }[] }) {
-    const tasks = listOf(plan).filter((task) => task.evening)
-        .map((task) => ({ at: header.work.find((block) => block.label === task.label)?.start ?? "99:99", name: task.text }));
-    const events = header.events.filter((event) => event.start >= header.workEnd).map((event) => ({ at: event.start, name: event.title }));
-    const named = new Set<string>();
-    const items = [ ...events, ...tasks ].sort((a, b) => a.at.localeCompare(b.at)).map((item) => item.name).filter((name) => {
-        const same = name.replace(/\s+/g, " ").trim().toLowerCase();
-        if (named.has(same)) return false;
-        named.add(same);
-        return true;
-    });
-    // The work acts are those before the evening's: the last act, or an empty one, is the evening's place.
-    const work = acts.slice(0, -1).filter((act) => act.range !== "" && act.range !== t("caius.brief.evening_range"));
-    if (!work.length) return acts;
-    const text = items.length ? t("caius.brief.evening_act", { items: items.join(t("caius.brief.evening_then")) }) : t("caius.brief.evening_empty");
-    return [ ...work, { range: t("caius.brief.evening_range"), text } ];
+function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date, names: DrawnNames | null) {
+    const { start, end, workEnd } = read.rhythm;
+    const events = drawnEvents(read, names);
+    const { groups, work } = workBlocks(plan, { start, end, workEnd }, events, date, now, rolloverOf(read.rhythm), names);
+    return { start: drawnStart(read), end, workEnd, events, groups, work };
 }
 
 /**
- * The acts of a day already under way as they plan from `from` on: an act that starts earlier
- * starts at `from`, and one that ends by then reads as `from`. A range that isn't two clock
- * times, such as "Evening", is left alone.
+ * How a group answer's item reads once its writes are made: a candidate's, open item's or On deck
+ * item's ref as that item's words, which name it on his list; anything else as given.
  */
-function fromNow(acts: Prose["acts"], from: string | undefined): Prose["acts"] {
-    if (!from) return acts;
-    return acts.map((act) => {
-        const m = /^(\s*)(\d{1,2}:\d{2})(\s*(?:to|–|-)\s*)(\d{1,2}:\d{2})(\s*)$/.exec(act.range);
-        if (!m?.[2] || !m[4]) return act;
-        const clock = (time: string) => time.padStart(5, "0");
-        // A time past 24:00 reads as the clock on the wall.
-        const shown = `${String(Number(from.slice(0, 2)) % 24).padStart(2, "0")}${from.slice(2)}`;
-        if (clock(m[4]) <= from) return { ...act, range: shown };
-        return clock(m[2]) < from ? { ...act, range: `${m[1]}${shown}${m[3]}${m[4]}${m[5]}` } : act;
-    });
+function groupWords(pools: Pools): (said: string) => string {
+    return (said) => {
+        if (!isRef(said) || /^l/i.test(said.trim())) return said;
+        const named = resolveIn([ pools.candidates, pools.open, pools.deck ], said);
+        const id = named && "id" in named ? named.id : null;
+        return [ ...pools.candidates, ...pools.open, ...pools.deck ].find((item) => item.id === id)?.text ?? said;
+    };
 }
 
-/** The day's drawing: its span from the rhythm, the calendar's events and his list laid out between them. */
-function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date) {
-    const { start, end, workEnd } = read.rhythm;
-    const events = drawnEvents(read);
-    return { start, end, workEnd, events, work: workBlocks(plan, { start, end, workEnd }, events, date, now, rolloverOf(read.rhythm)).work };
+/** `groups` with each item read by `words`. */
+function wordsOf(groups: { name: string; items: string[] }[], words: (said: string) => string) {
+    return groups.map((group) => ({ name: group.name, items: group.items.map(words) }));
 }
 
 /** A ticket candidate as its Suggested line: the shape `caius_add` writes, or an ask's "Answer X's question on KEY: because Y (~15m)". */
@@ -2047,7 +1968,7 @@ function record(written: Written[], skipped: Skipped[], entry: Omit<Written, "st
  * Follow up and Heads-up from the step data in place of any the agent wrote, the drawing and the
  * weather.
  */
-async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, read: DayRead, reasons: Map<string, Candidate>, jira: DayRead["inputs"]["jira"], headsUp: string[], weather: DayWeather | undefined) {
+async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, read: DayRead, reasons: Map<string, Candidate>, jira: DayRead["inputs"]["jira"], headsUp: string[], weather: DayWeather | undefined, words: (said: string) => string = (said) => said) {
     const { store, now } = deps;
     const plan = await readPlan(store, "day", input.date, now);
     const picks = picksFor(plan, reasons);
@@ -2060,7 +1981,13 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
         ...(headsUp.length ? [ { title: headsUpTitle, markdown: headsUp.map((line) => `- ${line}`).join("\n") } ] : []),
         ...input.brief.sections.filter((section) => ![ followUpTitle, headsUpTitle ].some((title) => sameTitle(section.title) === sameTitle(title)))
     ];
-    const header = headerOf(plan, read, input.date, now);
+    // The groups he gave, kept by the ids of his list as it now stands; without them, the ones the brief keeps.
+    const prior = await drawnNamesOf(store, input.date);
+    const given = input.brief.groups ? groupsFrom(plan, wordsOf(input.brief.groups, words)) : null;
+    const names: DrawnNames | null = given?.groups.length || input.brief.meetings?.length
+        ? { groups: given?.groups.length ? given.groups : prior?.groups ?? [], meetings: input.brief.meetings?.length ? input.brief.meetings : prior?.meetings ?? [] }
+        : prior;
+    const header = headerOf(plan, read, input.date, now, names);
     const result = await writeBrief({
         store,
         draw: (noteId) => drawHeader(noteId, header, weather).attachmentId,
@@ -2069,11 +1996,11 @@ async function briefOf(deps: ApplyDeps, input: { date: string; brief: Prose }, r
         ...(weather ? { weather } : {})
     }, {
         date: input.date, headline: input.brief.headline, picks, sections, header,
-        acts: withEveningAct(fromNow(drawnActs(header, input.brief.acts, titlesOf(plan)), planFromOf(input.date, now, read.rhythm).planFrom), plan, header),
+        acts: groupCells(header), names,
         followUps: followUps.map(({ key, commentId }) => ({ key, commentId }))
     });
     if (result.error !== undefined) return { error: result.error, detail: result.detail };
     if (!("writes" in result) || !result.writes) return { error: "failed", detail: "the brief was not written" };
     const { briefNoteId, headerNoteId, attachmentId, plannedAt, writes } = result;
-    return { briefNoteId, headerNoteId, attachmentId, plannedAt, writes, picks };
+    return { briefNoteId, headerNoteId, attachmentId, plannedAt, writes, picks, ungrouped: given?.unmatched ?? [] };
 }

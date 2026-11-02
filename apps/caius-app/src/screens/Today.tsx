@@ -1,6 +1,7 @@
 import "./today.css";
 
-import { layoutWork } from "@triliumnext/caius/src/daily/blocks.js";
+import { layoutGroups } from "@triliumnext/caius/src/daily/blocks.js";
+import { groupTasks, meetingName } from "@triliumnext/caius/src/daily/groups.js";
 import { renderDayTerrain } from "@triliumnext/caius/src/draw/terrain.js";
 import { useLayoutEffect, useMemo, useRef } from "preact/hooks";
 
@@ -71,28 +72,39 @@ function asOfLine(data: TodayData, now: Date) {
 
 // ---- Terrain -----------------------------------------------------------------------------------
 
-/** The day as Caius draws it: meetings as ridges, the list laid into the gaps from now on, the first block in clay. */
+/**
+ * The day as Caius draws it: meetings as bumps, the list in the brief's groups (by heading without
+ * a brief) laid into the gaps from now on as hills, a hill holding an Important task in clay.
+ */
 function TerrainView({ data, now }: { data: TodayData; now: Date }) {
     const svg = useMemo(() => {
         const meetings = data.plan.meetings.map(parseMeeting).filter((m): m is NonNullable<typeof m> => !!m);
         const live = (t: PlanTask) => (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)];
-        const tasks = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks.filter((t) => !t.parent)) ]
+        const tasks = [
+            ...data.plan.critical.map((t) => ({ ...t, critical: true })),
+            ...data.plan.sections.flatMap((s) => s.tasks.filter((t) => !t.parent))
+        ]
             .filter(live)
-            .map((t) => ({ label: t.text, minutes: t.estMinutes ?? 30, evening: /^(evening|recharge)$/i.test(t.section ?? "") }));
+            .map((t) => ({
+                id: t.listItemId ?? null, section: t.section ?? null, critical: t.critical,
+                label: t.text, minutes: t.estMinutes ?? 30, evening: /^(evening|recharge)$/i.test(t.section ?? "")
+            }));
+        const groups = groupTasks(tasks, data.plan.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
         const nowMinutes = now.getHours() * 60 + now.getMinutes();
         const start = clockMinutes(data.rhythm.start) ?? 600;
-        const { work } = layoutWork(
+        const laid = layoutGroups(
             { start: data.rhythm.start, end: data.rhythm.end, workEnd: data.rhythm.workEnd, notBefore: nowMinutes > start ? hhmm(nowMinutes) : undefined },
             meetings,
-            tasks
+            groups
         );
+        // A meeting before standup, such as one the clock change moved, stretches the drawing back to its hour.
+        const earliest = Math.min(start, ...meetings.map((m) => clockMinutes(m.start) ?? start));
         try {
             return renderDayTerrain({
-                start: data.rhythm.start,
+                start: hhmm(earliest < start ? Math.floor(earliest / 60) * 60 : start),
                 end: data.rhythm.end,
-                workEnd: data.rhythm.workEnd,
-                events: meetings.map((m) => ({ start: m.start, end: m.end, title: m.title })),
-                work
+                events: meetings.map((m) => ({ start: m.start, end: m.end, title: meetingName(m.title, data.plan.drawn?.meetings) })),
+                groups: laid.groups
             });
         } catch {
             return null;

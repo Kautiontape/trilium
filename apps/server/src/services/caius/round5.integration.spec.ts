@@ -366,7 +366,7 @@ describe("the overlap answer", () => {
         const brief = await cls.init(() => store.content(planned.briefNoteId));
         expect(brief).toContain("Taking Incident Review, not Vendor Onboarding, at 11:00");
         const drawing = String(cls.init(() => becca.getNoteOrThrow(planned.headerNoteId).getAttachments().find((a) => a.title === "terrain.svg")?.getContent()));
-        expect(drawing).toContain("Incident Review");
+        expect(drawing).toContain(">Incident</text>");
 
         // He corrects it: Vendor Onboarding after all. One line, and only Incident Review leaves the day.
         at(`${WED}T17:50`);
@@ -406,7 +406,7 @@ describe("the header follows the drawing", () => {
         { ...ticket("ZAP-301", { summary: "Verify the export retry on staging", status: "Dev Verify" }), daysInStatus: 6 }
     );
 
-    it("Mon 09:40 'put 101 first': the headline is rewritten, and the acts group whole tasks, with no dangling ', then' and the drawing's times", async () => {
+    it("Mon 09:40 'put 101 first': the headline is rewritten, and the row keeps the drawing's group and times", async () => {
         const MON = "2027-01-11";
         calendars[MON] = [ event("10:00", "10:15", "Daily Standup"), event("11:00", "12:00", "Sprint Planning") ];
         handoffs();
@@ -425,9 +425,8 @@ describe("the header follows the drawing", () => {
         const header = await headerOf(planned.headerNoteId);
         expect(header).not.toContain("Clear the review");
         expect(header).toContain("ZAP-301 first, then ZAP-310 and ZAP-311.");
-        expect(header).toContain("<td><p><strong>10:15 to 12:15</strong></p><p>ZAP-301, then ZAP-310.</p></td>");
-        expect(header).toContain("<td><p><strong>12:15 to 12:45</strong></p><p>ZAP-311.</p></td>");
-        expect(header).not.toContain("<p>, then");
+        // With no groups given, his one heading is one group, around Sprint Planning.
+        expect(header).toContain("<tr><td><p><strong>10:15 to 12:45</strong></p><p>Tasks</p></td></tr>");
 
         // A headline sent with the move is written as sent.
         await call("caius_plan_apply", { date: MON, said: "310 first", move: [ { listItemId: "310", first: true } ], headline: "Review the mapper, then the two export checks." });
@@ -436,7 +435,7 @@ describe("the header follows the drawing", () => {
         delete calendars[MON];
     });
 
-    it("Tue 09:35: an act that names other work than the drawing puts in its span is written from the drawing; one that names its work keeps its words", async () => {
+    it("Tue 09:35: a meeting before standup stretches the drawing back to its hour, and the work is still laid out from standup", async () => {
         const TUE = "2027-01-19";
         calendars[TUE] = [ event("09:30", "09:45", "Team Standup"), event("10:00", "10:30", "Weekly Planning Sync"), event("11:00", "11:30", "Customer Call") ];
         await cls.init(async () => {
@@ -444,23 +443,18 @@ describe("the header follows the drawing", () => {
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-101", `${zap("ZAP-401", "Verify the export retry on staging")} ~30m`), li("t-dave", "Message Dave ~30m"))}`);
         });
         at(`${TUE}T09:35`);
-        // The agent's round-5 acts, with only two given.
-        const planned = await call("caius_plan_apply", { date: TUE, said: "", brief: { headline: "Verify the export retry and message Dave.", acts: [
-            { range: "09:30 to 12:00", text: "Standup, Weekly Planning Sync, then the Customer Call back to back." },
-            { range: "12:00 to 18:00", text: "Verify the ZAP-401 export retry on staging and message Dave about the lights." }
-        ], sections: [] } });
+        const planned = await call("caius_plan_apply", { date: TUE, said: "", brief: {
+            headline: "Verify the export retry and message Dave.", groups: [ { name: "Export", items: [ "ZAP-401" ] }, { name: "Calls", items: [ "Dave" ] } ],
+            meetings: [ { title: "Team Standup", name: "Standup" }, { title: "Weekly Planning Sync", name: "Sync" } ], sections: []
+        } });
         expect(planned.skipped).toEqual([]);
-        const header = await headerOf(planned.headerNoteId);
-        expect(header).toContain("<td><p><strong>10:30 to 11:00</strong></p><p>ZAP-401.</p></td>");
-        expect(header).toContain("<td><p><strong>11:30 to 12:00</strong></p><p>Message Dave.</p></td>");
-        expect(header).not.toContain("12:00 to 18:00");
-
-        const kept = await call("caius_plan_apply", { date: TUE, said: "", brief: { headline: "Verify the export retry and message Dave.", acts: [
-            { range: "10:00 to 12:00", text: "Verify the ZAP-401 export retry after the sync." },
-            { range: "12:00 to 18:00", text: "Message Dave about the lights after the Customer Call." }
-        ], sections: [] } });
-        expect(await headerOf(kept.headerNoteId)).toContain("<td><p><strong>10:30 to 11:00</strong></p><p>Verify the ZAP-401 export retry after the sync.</p></td>"
-            + "<td><p><strong>11:30 to 12:00</strong></p><p>Message Dave about the lights after the Customer Call.</p></td>");
+        expect(await headerOf(planned.headerNoteId)).toContain("<td><p><strong>10:30 to 11:00</strong></p><p>Export</p></td><td><p><strong>11:30 to 12:00</strong></p><p>Calls</p></td>");
+        const svg = String(await cls.init(() => becca.getAttachmentOrThrow(planned.attachmentId).getContent()));
+        expect(svg).toContain(">9a</text>");
+        expect(svg).toContain(">Standup</text>");
+        expect(svg).toContain(">Sync</text>");
+        // A meeting he named no short name for is cut at a word.
+        expect(svg).toContain(">Customer</text>");
         delete calendars[TUE];
     });
 });
@@ -568,40 +562,35 @@ describe("fix round 1: the review's phrases", () => {
     });
 });
 
-describe("acts stay inside the work window", () => {
+describe("the row under the drawing is the day's groups", () => {
     const cells = async (noteId: string) => [ ...(await cls.init(() => store.content(noteId))).matchAll(/<td><p><strong>([^<]*)<\/strong><\/p><p>([^<]*)<\/p><\/td>/g) ].map((m) => [ m[1], m[2] ]);
     const day = async (date: string, tasks: string[]) => cls.init(async () => {
         const note = await store.calendarDay(date);
         await store.putContent(note.noteId, `<h2>☑️ Tasks</h2>${ul(...tasks.map((text, i) => li(`${date}-a${i}`, text)))}`);
     });
-    const given = { headline: "A day", acts: [ { range: "10:00 to 12:00", text: "Alpha task first." }, { range: "12:00 to 18:00", text: "Beta and Gamma." } ], sections: [] };
+    const given = { headline: "A day", groups: [ { name: "Alpha", items: [ "Alpha task" ] }, { name: "Rest", items: [ "Beta task", "Gamma task" ] } ], sections: [] };
 
-    it("17:20 with three hour-long tasks: no act runs backwards or past the end of work, and no act keeps words for work the drawing doesn't put there", async () => {
+    it("17:20 with three hour-long tasks: the groups run on into the evening, as the whole day is his, and never backwards", async () => {
         const DAY = "2027-08-02";
         await day(DAY, [ "Alpha task ~1h", "Beta task ~1h", "Gamma task ~1h" ]);
         at(`${DAY}T17:20`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: given });
-        const acts = await cells(planned.headerNoteId);
-        for (const [ range ] of acts) {
-            const m = /^(\d\d:\d\d) to (\d\d:\d\d)$/.exec(range ?? "");
-            if (m) expect(m[1] && m[2] && m[1] < m[2] && m[2] <= "18:00", range).toBe(true);
-        }
-        expect(acts.map(([ , text ]) => text)).not.toContain("Beta and Gamma.");
-        expect(acts.at(-1)?.[0]).toBe("Evening");
+        expect(await cells(planned.headerNoteId)).toEqual([ [ "17:30 to 18:30", "Alpha" ], [ "18:30 to 20:30", "Rest" ] ]);
     });
 
-    it("no tasks: one open-time act and the evening, never the agent's two texts; one task: the empty second act is open time", async () => {
+    it("no tasks: one cell of open time over the whole day; a group whose tasks are gone is left out", async () => {
         const EMPTY = "2027-08-03";
         await day(EMPTY, []);
         at(`${EMPTY}T09:40`);
         const none = await call("caius_plan_apply", { date: EMPTY, said: "", brief: given });
-        expect(await cells(none.headerNoteId)).toEqual([ [ "10:00 to 18:00", "Open time." ], [ "Evening", "Nothing planned." ] ]);
+        expect(none.ungrouped).toEqual([ "Alpha task", "Beta task", "Gamma task" ]);
+        expect(await cells(none.headerNoteId)).toEqual([ [ "10:00 to 23:00", "Open time." ] ]);
 
         const ONE = "2027-08-04";
         await day(ONE, [ "Alpha task ~1h" ]);
         at(`${ONE}T09:40`);
         const one = await call("caius_plan_apply", { date: ONE, said: "", brief: given });
-        expect(await cells(one.headerNoteId)).toEqual([ [ "10:00 to 11:00", "Alpha task first." ], [ "11:00 to 18:00", "Open time." ], [ "Evening", "Nothing planned." ] ]);
+        expect(await cells(one.headerNoteId)).toEqual([ [ "10:00 to 11:00", "Alpha" ] ]);
     });
 });
 

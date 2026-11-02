@@ -16,6 +16,7 @@ import {
     leadingInclude,
     type NoteStore,
     readHeader,
+    type SavedGroup,
     type StoreNote,
     withInclude,
     withListUnder,
@@ -58,6 +59,8 @@ export const WOUND_DOWN_LABEL = "caiusWoundDown";
 export const WEATHER_LABEL = "caiusWeather";
 /** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */
 export const SKIP_CATCHUP_LABEL = "caiusSkipCatchup";
+/** On a brief: the groups of the day's list and the meetings' short names its drawing uses, as JSON (`DrawnNames`). */
+export const GROUPS_LABEL = "caiusGroups";
 /** Children of a brief that the old push script labels; they are pages of a brief, never the brief. */
 const PAGE_LABELS = [ "morningBriefPage", "morningBriefRevision" ];
 
@@ -88,7 +91,12 @@ export interface BriefPick {
     minutes: number;
 }
 
-export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "picks"> & { picks: BriefPick[] }) {
+/**
+ * Writes the brief of `input.date`: its body, its header with `acts` as the row under the drawing,
+ * and, when `names` is given, the groups and meeting names the drawing used (`#caiusGroups`), which
+ * every redraw of the day reads.
+ */
+export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "picks" | "acts" | "groups" | "meetings"> & { picks: BriefPick[]; acts: BriefAct[]; names?: DrawnNames | null }) {
     const { store } = deps;
     const { date, dryRun } = input;
     let day = await findPeriodNote(store, "day", date);
@@ -142,6 +150,7 @@ export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "
     setLabel(brief.noteId, BRIEF_LABEL, date);
     setLabel(brief.noteId, "cssClass", CSS_CLASS);
     if (deps.weather) setLabel(brief.noteId, WEATHER_LABEL, `${deps.weather.code} ${deps.weather.label}`);
+    if (input.names) setLabel(brief.noteId, GROUPS_LABEL, JSON.stringify(input.names));
     setLabel(header.noteId, "cssClass", CSS_CLASS);
 
     // A new Header takes the place of the include-note of one that was deleted or replaced.
@@ -178,7 +187,7 @@ export async function writeBrief(deps: BriefDeps, input: Omit<BriefWriteInput, "
  * Draws the header of the brief of `date` again, when the day has one: the drawing with `draw`,
  * given the weather the brief was drawn with, or `fetched` for a brief that kept none, which is
  * kept on it then; and the header note with its date line as written, `headline` or the written
- * one, and the acts `acts` makes of the written ones. Answers the header note's write, or null when the day has no
+ * one, and the row `acts` makes from the written one; and `names`, when given, kept on the brief. Answers the header note's write, or null when the day has no
  * brief or no header to read.
  */
 export async function redrawHeader(
@@ -186,7 +195,8 @@ export async function redrawHeader(
     draw: (noteId: string, weather: { code: number; label: string } | undefined) => string,
     acts: (written: BriefAct[]) => BriefAct[],
     fetched?: { code: number; label: string },
-    headline?: string
+    headline?: string,
+    names?: DrawnNames
 ): Promise<NoteWrite | null> {
     const day = await findPeriodNote(store, "day", date);
     const brief = day && day.type === "text" && !day.isProtected ? await findBrief(store, day.noteId, date) : null;
@@ -197,6 +207,7 @@ export async function redrawHeader(
     const kept = /^(\d+) (.+)$/.exec(label(brief, WEATHER_LABEL) ?? "");
     const weather = kept?.[1] && kept[2] ? { code: Number(kept[1]), label: kept[2] } : fetched;
     if (!kept && fetched) setLabel(brief.noteId, WEATHER_LABEL, `${fetched.code} ${fetched.label}`);
+    if (names) setLabel(brief.noteId, GROUPS_LABEL, JSON.stringify(names));
     const attachmentId = draw(header.noteId, weather);
     return replace(store, header.noteId, "header", () => headerHtml({
         dateLine: written.dateLine,
@@ -204,6 +215,36 @@ export async function redrawHeader(
         image: { src: `api/attachments/${attachmentId}/image/terrain.svg`, alt: t("caius.brief.image_alt") },
         acts: acts(written.acts)
     }));
+}
+
+/** What a brief keeps for its drawing (`#caiusGroups`): the groups of the day's list by listItemId, and the meetings' short names by calendar title. */
+export interface DrawnNames {
+    groups: SavedGroup[];
+    meetings: { title: string; name: string }[];
+}
+
+/** The drawn names `#caiusGroups` holds, or null when it holds none or what it holds doesn't read. */
+export function readDrawnNames(value: string | undefined): DrawnNames | null {
+    if (!value) return null;
+    try {
+        const parsed = JSON.parse(value) as Partial<DrawnNames>;
+        const groups = Array.isArray(parsed.groups)
+            ? parsed.groups.filter((g) => typeof g?.name === "string" && Array.isArray(g.items)).map((g) => ({ name: g.name, items: g.items.filter((id) => typeof id === "string") }))
+            : [];
+        const meetings = Array.isArray(parsed.meetings)
+            ? parsed.meetings.filter((m) => typeof m?.title === "string" && typeof m.name === "string").map((m) => ({ title: m.title, name: m.name }))
+            : [];
+        return { groups, meetings };
+    } catch {
+        return null;
+    }
+}
+
+/** The drawn names the brief of `date` keeps, or null when the day has no brief or it keeps none. */
+export async function drawnNamesOf(store: NoteStore, date: string): Promise<DrawnNames | null> {
+    const day = await findPeriodNote(store, "day", date);
+    const brief = day ? await findBrief(store, day.noteId, date) : null;
+    return brief ? readDrawnNames(label(brief, GROUPS_LABEL)) : null;
 }
 
 /**

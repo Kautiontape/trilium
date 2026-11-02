@@ -50,7 +50,8 @@ export interface BriefAct {
 }
 
 /**
- * The header note: the date line, the headline, the drawing and the three acts as one table row.
+ * The header note: the date line, the headline, the drawing and its groups as one table row, each
+ * cell a group's span (`range`) and its name (`text`).
  * The drawing is an inline image resized to 100% as CKEditor stores one, since its SVG is 640 wide
  * and an `<img>` without a width shows it at that size.
  */
@@ -65,7 +66,7 @@ export function headerHtml(header: { dateLine: string; headline: string; image: 
   );
 }
 
-/** The date line, headline and acts of a header note `headerHtml` wrote, or null when it isn't one. */
+/** The date line, headline and row cells (`acts`) of a header note `headerHtml` wrote, or null when it isn't one. */
 export function readHeader(html: string): { dateLine: string; headline: string; acts: BriefAct[] } | null {
   const root = parse(html, { comment: true });
   const dateLine = root.querySelector('p');

@@ -6,6 +6,7 @@
  */
 
 import {
+    type BriefAct,
     type Candidate,
     closedKeys,
     type ContextEntry,
@@ -21,8 +22,10 @@ import {
     isoWeekKey,
     keysOf,
     label,
+    groupTasks,
     lastWorkday,
-    layoutWork,
+    layoutGroups,
+    meetingName,
     liveKeys,
     loadJournal,
     meetingLines,
@@ -43,18 +46,20 @@ import {
     sameContext,
     scanDocs,
     sectionOf,
+    shortName,
+    type SavedGroup,
     TRILIUM_CONFIG,
     workdayMinutes
 } from "@triliumnext/caius";
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, DECLINED_LABEL, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
 import { flagOverlaps } from "./inputs/calendar.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
-import { numbered, refOf, withRefs } from "./refs.js";
+import { numbered, refOf, resolveName, withRefs } from "./refs.js";
 import { heldQuestion } from "./say.js";
 
 /** The standing note as markdown, or null with the one-line reason. */
@@ -401,7 +406,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
             ...(askEvening ? [ t("caius.daily.evening") ] : [])
         ];
         return reply(read.standing, {
-            yesterday, plannedAt, onDeck, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, overlaps,
+            yesterday, plannedAt, onDeck, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, meetingTitles: meetingTitles(read), overlaps,
             capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x", (line) => line.lineId),
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, evening: offer.evening, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
@@ -409,28 +414,31 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
         }, questions.length ? questions.join(" ") : null, "brief");
     }
 
-    const { plan, raised, seen, live } = await deps.locked("caius_planday", async () => ({
+    const { plan, raised, seen, live, names } = await deps.locked("caius_planday", async () => ({
         plan: await readPlan(deps.store, "day", date, deps.now),
         raised: await raisedAsks(deps.store, deps.now, date),
         seen: await seenAsks(deps.store, date),
-        live: liveKeys((await loadJournal(deps.store)).docs, deps.now)
+        live: liveKeys((await loadJournal(deps.store)).docs, deps.now),
+        names: await drawnNamesOf(deps.store, date)
     }));
     const followUps = followUpsOf(unraised(splitAsks(read.inputs.jira, seen, live).followed, raised));
     const { start, end, workEnd, from } = read.rhythm;
-    const events = drawnEvents(read);
-    const { work, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now, rolloverOf(read.rhythm));
-    const header = { start, end, workEnd, events, work };
+    const events = drawnEvents(read, names);
+    const { groups, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now, rolloverOf(read.rhythm), names);
+    const header = { start: drawnStart(read), end, workEnd, events, groups };
     const coordinates = read.rhythm.latitude === undefined ? {} : { latitude: read.rhythm.latitude, longitude: read.rhythm.longitude };
     return reply(read.standing, {
         day: { start, end, workEnd, from },
-        list: listOf(plan).map(({ keys: _keys, ...task }) => task),
+        list: withRefs(listOf(plan).map(({ keys: _keys, ...task }) => task), "l", (task) => task.id),
+        meetingTitles: meetingTitles(read),
         header,
         unplaced,
         briefRules: sectionOf(read.standing.markdown, "Brief rules"),
         followUps,
         shape: {
             date, headline: "",
-            acts: [ { range: "", text: "" }, { range: "", text: "" }, { range: "", text: "" } ],
+            groups: [],
+            meetings: [],
             picks: [],
             sections: [
                 { title: t("caius.daily.follow_up"), markdown: followUps.map((f) => `- ${f.sentence}`).join("\n") },
@@ -700,15 +708,35 @@ export function declinedEvent(value: string): { overlapId: string; start: string
 }
 
 /**
- * The day's calendar as the drawing takes it: timed events he hasn't declined, clipped to the day's
- * span. It takes whatever the feeds returned; only the Meetings block refuses a partial calendar.
+ * The day's calendar as the drawing takes it: timed events not declined, clipped to the drawing's
+ * span (`drawnStart`), each titled by its short name in `names`. It takes whatever the feeds
+ * returned; only the Meetings block refuses a partial calendar.
  */
-export function drawnEvents(read: DayRead) {
-    const { start, end } = read.rhythm;
-    return read.inputs.calendar
-        .filter((e) => !e.allDay && !e.declined && e.end > start && e.start < end)
-        .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: e.title, ...(e.overlap ? { overlap: true } : {}) }));
+export function drawnEvents(read: DayRead, names?: DrawnNames | null) {
+    const start = drawnStart(read);
+    const { end } = read.rhythm;
+    return timedEvents(read)
+        .filter((e) => e.end > start && e.start < end)
+        .map((e) => ({ start: e.start < start ? start : e.start, end: e.end > end ? end : e.end, title: drawnTitle(e.title, names), ...(e.overlap ? { overlap: true } : {}) }));
 }
+
+/**
+ * Where the drawing starts: standup, or the hour of an earlier meeting, so a meeting before standup
+ * (one the clock change moved) is drawn. Work is still laid out from standup.
+ */
+export function drawnStart(read: DayRead): string {
+    const { start } = read.rhythm;
+    const first = timedEvents(read).map((e) => e.start).filter((at) => at < start).sort()[0];
+    return first ? `${first.slice(0, 2)}:00` : start;
+}
+
+/** The titles of the meetings the drawing shows, once each, for an answer to give each a short name. */
+export function meetingTitles(read: DayRead): string[] {
+    const { end } = read.rhythm;
+    return [ ...new Set(timedEvents(read).filter((e) => e.start < end).map((e) => e.title)) ];
+}
+
+const timedEvents = (read: DayRead) => read.inputs.calendar.filter((e) => !e.allDay && !e.declined);
 
 /** Workdays the catch-up looks back at most. */
 const CATCHUP_DAYS = 5;
@@ -1013,17 +1041,77 @@ export function carryQuestion(lines: string[], sameWeek: boolean): string {
 }
 
 /**
- * The day's work bars: the main list in his order, laid out between `events` from standup, or from
- * the time now when `date` is today.
+ * The day's work laid out between `events` from standup, or from the time now when `date` is
+ * today: the main list in the groups `saved` keeps (by heading when it keeps none), group after
+ * group, each with its span, count and whether it holds an Important task.
  */
-export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date, rollover: number) {
+export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date, rollover: number, saved?: DrawnNames | null) {
     const notBefore = date === dayKey(now) ? quarterAfter(now, rollover) : undefined;
-    return layoutWork({ ...day, notBefore }, events, listOf(plan).map(({ label: bar, minutes, evening }) => ({ label: bar, minutes, evening })));
+    const groups = groupTasks(listOf(plan), saved?.groups).map((group) => ({
+        name: group.name, important: group.important,
+        tasks: group.tasks.map(({ label: bar, minutes, evening }) => ({ label: bar, minutes, evening }))
+    }));
+    return layoutGroups({ ...day, notBefore }, events, groups);
+}
+
+/**
+ * The groups an answer gives, each item named as the steps name a task of his list (its ref, id,
+ * ticket key or words), or by the words of a task just added to it, kept as the listItemIds of the
+ * main list of `plan`; an item that names no task, or one an earlier group took, is in `unmatched`.
+ * A group none of whose items matched is left out.
+ */
+export function groupsFrom(plan: PlanView, given: { name: string; items: string[] }[]): { groups: SavedGroup[]; unmatched: string[] } {
+    const pool = listItems(plan).map((item) => ({ id: item.listItemId, ref: refOf("l", item.listItemId), text: item.text }));
+    const list = listOf(plan);
+    const taken = new Set<string>();
+    const unmatched: string[] = [];
+    const idOf = (said: string): string | null => {
+        const named = resolveName(pool, said);
+        if (named && "id" in named) return named.id;
+        // A task added in the same answer is named by its words, as a pick is: a ticket key they share, or its text.
+        const keys = keysOf(said).filter((key) => JIRA_KEY.test(key));
+        const at = list.findIndex((task) => keys.some((key) => task.keys.includes(key)) || (task.text !== "" && sameText(said).includes(sameText(task.text))));
+        return at >= 0 ? list[at]?.id ?? null : null;
+    };
+    const groups = given.flatMap(({ name, items }) => {
+        const ids = items.flatMap((said) => {
+            const id = idOf(said);
+            if (!id || taken.has(id)) {
+                unmatched.push(said);
+                return [];
+            }
+            taken.add(id);
+            return [ id ];
+        });
+        return ids.length ? [ { name: shortName(name), items: ids } ] : [];
+    });
+    return { groups, unmatched };
+}
+
+/** `event`'s name on the drawing: the short name `names` gives its title, else the title cut to fit. */
+export function drawnTitle(title: string, names: DrawnNames | null | undefined): string {
+    return meetingName(title, names?.meetings);
+}
+
+/**
+ * The cells of the row under the drawing: each group's span and name, or one cell of open time
+ * from `start` to `end` on a day with none.
+ */
+export function groupCells(header: { start: string; end: string; groups: { start: string; end: string; name: string }[] }): BriefAct[] {
+    const range = (from: string, to: string) => t("caius.brief.act_range", { start: wallClock(from), end: wallClock(to) });
+    return header.groups.length
+        ? header.groups.map((group) => ({ range: range(group.start, group.end), text: group.name }))
+        : [ { range: range(header.start, header.end), text: t("caius.brief.open_time") } ];
+}
+
+/** A workday clock as the clock on the wall: "25:00" reads "01:00". */
+function wallClock(clock: string): string {
+    return `${String(Number(clock.slice(0, 2)) % 24).padStart(2, "0")}${clock.slice(2)}`;
 }
 
 /**
  * The main list as the drawing and the picks read it: each live task's bar label, text, minutes,
- * keys, whether it is an evening task and whether it is work: a task with a ticket, whatever its
+ * keys, listItemId, heading, whether it is Important, whether it is an evening task and whether it is work: a task with a ticket, whatever its
  * heading, or one without under neither an evening, a chore nor a personal heading (Home, Personal,
  * Family, Errands).
  */
@@ -1037,7 +1125,8 @@ export function listOf(plan: PlanView) {
         const personal = /chore/.test(heading) || PERSONAL_SECTIONS.has(heading);
         return {
             label: workLabel(withoutMoveLinks(task.text)), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
-            evening, work: ticket || (!evening && !personal), keys
+            evening, work: ticket || (!evening && !personal), keys,
+            id: task.listItemId, section: task.section, critical: task.critical
         };
     });
 }
