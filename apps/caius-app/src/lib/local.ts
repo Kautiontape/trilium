@@ -1,3 +1,5 @@
+import { CAIUS_DEFAULT_EFFORT, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
+
 /**
  * Per-phone state that is not secret and needs no sync: settings, the reminders he set, the
  * capture outbox and the last Today, for showing offline. Kept in the WebView's storage; the
@@ -47,6 +49,8 @@ export interface Settings {
     /** Quiet hours, `HH:MM`; empty to follow the Rhythm (bedtime to 30 minutes before standup). */
     quietFrom: string;
     quietTo: string;
+    /** How long Caius thinks before answering in a chat. */
+    caiusEffort: CaiusEffort;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -58,7 +62,8 @@ export const DEFAULT_SETTINGS: Settings = {
     standupOverride: "",
     workEndOverride: "",
     quietFrom: "",
-    quietTo: ""
+    quietTo: "",
+    caiusEffort: CAIUS_DEFAULT_EFFORT
 };
 
 /** A reminder he set: from a task, Quick add or Ask. */

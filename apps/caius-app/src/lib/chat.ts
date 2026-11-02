@@ -1,4 +1,4 @@
-import { type CaiusConversation, caiusOpener } from "@triliumnext/commons/src/lib/caius_openers.js";
+import { type CaiusConversation, type CaiusEffort, caiusOpener } from "@triliumnext/commons/src/lib/caius_openers.js";
 import type { ContentBlock, LlmChatContent, StoredMessage, ToolCall } from "@triliumnext/commons/src/lib/llm/chat_content.js";
 
 import type { Connection } from "./connection.js";
@@ -46,11 +46,11 @@ export function chatApi(conn: Connection) {
         },
 
         /**
-         * Runs one turn: sends the whole history and calls `onChunk` for each chunk as it arrives.
+         * Runs one turn at `effort`: sends the whole history and calls `onChunk` for each chunk as it arrives.
          * This is the one call made with the WebView's own `fetch`, because the native HTTP plugin
          * hands back a body only once it is complete. The server answers it with CORS for the app.
          */
-        stream: async (messages: { role: "user" | "assistant"; content: string }[], chatNoteId: string,
+        stream: async (messages: { role: "user" | "assistant"; content: string }[], chatNoteId: string, effort: CaiusEffort,
             onChunk: (chunk: ChatChunk) => void, signal?: AbortSignal) => {
             let res: Response;
             try {
@@ -61,7 +61,7 @@ export function chatApi(conn: Connection) {
                         "Content-Type": "application/json",
                         Accept: "text/event-stream"
                     },
-                    body: JSON.stringify({ messages, config: { chatNoteId } }),
+                    body: JSON.stringify({ messages, config: { chatNoteId, reasoningEffort: effort } }),
                     redirect: "error",
                     signal
                 });
@@ -155,14 +155,28 @@ export function sseParser(onData: (data: string) => void) {
 export interface AssistantTurn {
     id: string;
     blocks: ContentBlock[];
-    /** Text the server took back (narration before a tool call), shown fading out; `key` restarts the fade. */
-    fading?: { key: number; text: string };
+    /**
+     * What Caius worked through on the way to the reply, in order: each stretch of thinking, and
+     * each text the server took back (narration before a tool call). Shown folded away.
+     */
+    notes?: string[];
+    /** Whether the last chunk was thinking, so the next thinking carries on the same note. */
+    noting?: boolean;
     error?: string;
     done: boolean;
 }
 
-/** Applies one chunk to the turn being assembled. Text joins the last text block; a tool call gets its own block. */
+/**
+ * Applies one chunk to the turn being assembled. Text joins the last text block; a tool call gets
+ * its own block; thinking and taken-back text go to the notes.
+ */
 export function applyChunk(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn {
+    const next = assemble(turn, chunk);
+    return chunk.type === "thinking" || !next.noting ? next : { ...next, noting: false };
+}
+
+function assemble(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn {
+    const notes = turn.notes ?? [];
     switch (chunk.type) {
         case "text": {
             const last = turn.blocks[turn.blocks.length - 1];
@@ -176,7 +190,14 @@ export function applyChunk(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn
             if (last?.type !== "text") {
                 return turn;
             }
-            return { ...turn, blocks: turn.blocks.slice(0, -1), fading: { key: (turn.fading?.key ?? 0) + 1, text: last.content } };
+            const taken = last.content.trim();
+            return { ...turn, blocks: turn.blocks.slice(0, -1), notes: taken ? [ ...notes, taken ] : notes };
+        }
+        case "thinking": {
+            if (turn.noting && notes.length) {
+                return { ...turn, notes: [ ...notes.slice(0, -1), notes[notes.length - 1] + chunk.content ] };
+            }
+            return { ...turn, notes: [ ...notes, chunk.content ], noting: true };
         }
         case "tool_use": {
             if (turn.blocks.some((b) => b.type === "tool_call" && b.toolCall.id === chunk.toolCallId)) {
@@ -206,9 +227,11 @@ export function applyChunk(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn
 /**
  * The history sent with a turn: user and assistant turns as text. A failed attempt (an error
  * message, and the user message it answered) is left out, so the model never reads an error as
- * its own words and a message sent again isn't there twice.
+ * its own words and a message sent again isn't there twice. Caius's notes are left out too: they
+ * are the working, not the replies, and the server's session saw only the replies.
  */
-export function historyForServer(messages: StoredMessage[]): { role: "user" | "assistant"; content: string }[] {
+export function historyForServer(all: StoredMessage[]): { role: "user" | "assistant"; content: string }[] {
+    const messages = all.filter((m) => m.type !== "thinking");
     const sent: { role: "user" | "assistant"; content: string }[] = [];
     for (const [ index, message ] of messages.entries()) {
         const next = messages[index + 1];
