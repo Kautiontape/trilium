@@ -2,12 +2,13 @@ import "./plan.css";
 
 import { useEffect, useState } from "preact/hooks";
 
-import { openSettings } from "../app-state.js";
+import { openRitual, openSettings } from "../app-state.js";
 import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, ForwardSheet, markDone, OriginBlock, TaskSheet } from "../components/sheets.js";
 import { displayText, TaskRow } from "../components/TaskRow.js";
 import { Button, Card, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import type { Lane, OpenResult, OpenTask, PeriodKind, PlanTask, PlanView } from "../lib/caius.js";
 import { addDays, addMonths, addWeeks, dayLabel, duration, monthLabel, nextWorkdayKey, periodLabel, relativePeriod, weekLabel, weekOf } from "../lib/day.js";
+import { readLocal, writeLocal } from "../lib/local.js";
 import { api, holdWrite, messageOf, refOf, revision, taskKey, today } from "../lib/store.js";
 
 const LANES: { lane: Lane; title: string }[] = [
@@ -18,14 +19,23 @@ const LANES: { lane: Lane; title: string }[] = [
 
 const PAGE = 20;
 
+const PERIODS: readonly PeriodKind[] = [ "day", "week", "month" ];
+
+/** Day, week or month: the one he last looked at, week the first time. */
+function lastPeriod(): PeriodKind {
+    const { period } = readLocal<{ period?: unknown }>("plan", {});
+    return PERIODS.includes(period as PeriodKind) ? period as PeriodKind : "week";
+}
+
 /**
  * The desktop Plan tab, reshaped for a thumb: a day, week or month with ‹ › and Today, its list,
  * and the Pull in lanes (Overdue, This week, This month), each row naming where it comes from. The
- * overdue tail is worked off here a few rows at a time, never pushed onto Today.
+ * overdue tail is worked off here a few rows at a time, never pushed onto Today. A day offers Plan
+ * my day for it; a day that hasn't started yet gets planned early, which he chose by tapping.
  */
 export function Plan() {
     const base = today.value?.key;
-    const [ period, setPeriod ] = useState<PeriodKind>("week");
+    const [ period, setPeriod ] = useState<PeriodKind>(lastPeriod);
     const [ key, setKey ] = useState<string | null>(null);
     const [ view, setView ] = useState<PlanView | null>(null);
     const [ error, setError ] = useState<string | null>(null);
@@ -61,9 +71,9 @@ export function Plan() {
             </header>
             <div class="plan-controls">
                 <div class="segmented" role="tablist">
-                    {(["day", "week", "month"] as const).map((p) => (
+                    {PERIODS.map((p) => (
                         <button key={p} type="button" role="tab" aria-selected={period === p} class={period === p ? "active" : ""}
-                            onClick={() => { setPeriod(p); setKey(null); setView(null); }}>
+                            onClick={() => { setPeriod(p); writeLocal("plan", { period: p }); setKey(null); setView(null); }}>
                             {p === "day" ? "Day" : p === "week" ? "Week" : "Month"}
                         </button>
                     ))}
@@ -74,6 +84,13 @@ export function Plan() {
                     <button type="button" class="icon-btn" aria-label="Later" onClick={() => step(1)}>›</button>
                 </div>
             </div>
+            {period === "day" && (
+                <div class="plan-ritual">
+                    <Button kind={current === base ? "primary" : "secondary"} disabled={today.value?.offline} onClick={() => openRitual("plan", current)}>
+                        {current === base ? "Plan my day" : `Plan ${dayLabel(current)}`}
+                    </Button>
+                </div>
+            )}
             {error && <p class="banner">{error}</p>}
             {view && view.key === current && <PeriodView view={view} />}
             {LANES.map((l) => <LaneView key={l.lane} lane={l.lane} title={l.title} into={current} />)}

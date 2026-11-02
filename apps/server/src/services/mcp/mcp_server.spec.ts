@@ -90,6 +90,16 @@ describe("createMcpServer", () => {
         expect(resolveToolRegistriesMock).toHaveBeenCalled();
     });
 
+    it("lets the session add to a call's arguments before the tool runs", async () => {
+        await createMcpServer({ withArgs: (name, args) => name === "read_tool" ? { ...args, early: true } : args });
+
+        registered.find((r) => r.name === "read_tool")!.callback({ foo: 1 });
+        await registered.find((r) => r.name === "async_read_tool")!.callback({ a: 1 });
+
+        expect(readExecute).toHaveBeenCalledWith({ foo: 1, early: true });
+        expect(asyncReadExecute).toHaveBeenCalledWith({ a: 1 });
+    });
+
     it("runs a read-only tool inside CLS without a transaction", async () => {
         await createMcpServer();
         const read = registered.find((r) => r.name === "read_tool")!;

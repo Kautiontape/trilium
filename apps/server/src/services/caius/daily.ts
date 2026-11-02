@@ -334,16 +334,24 @@ const HEAVY_RATIO = 0.5;
 /** Longest work-bar label before it is cut. */
 const LABEL_LENGTH = 24;
 
-export async function planDay(deps: StepDeps, { date, step, refresh, answered }: { date: string; step: PlanDayStep; refresh?: boolean; answered?: { evening?: string[]; keep?: string[] } }) {
+/**
+ * `error: "not_today"` for a day after `today` by the Caius clock, unless he said to write it now
+ * (`early`): a soft gate, so Caius asks him first instead of writing a day early on its own. Null
+ * for today, an earlier day or an early one.
+ */
+export function notToday(date: string, today: string, early?: boolean) {
+    if (early || date <= today) return null;
+    return { date, dateLabel: dateLabel(date), error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today: weekdayName(today) }) };
+}
+
+export async function planDay(deps: StepDeps, { date, step, refresh, answered, early }: { date: string; step: PlanDayStep; refresh?: boolean; answered?: { evening?: string[]; keep?: string[] }; early?: boolean }) {
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: PlanDayStep | null) => fitted({
         ...withDateLabels({ step, date, data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
-    // A later day is planned on its own morning; a missed earlier one can still be planned.
-    const today = dayKey(deps.now);
-    if (date > today) {
-        return { step, date, error: "not_today", detail: t("caius.daily.not_today", { day: weekdayName(date), today }) };
-    }
+    // A later day is planned once he says so; a missed earlier one can always be planned.
+    const later = notToday(date, dayKey(deps.now), early);
+    if (later) return { step, ...later };
 
     if (step === "catchup") {
         const { standing, catchup: { lastWorkday: last, days, skipped, tasks, held } } = await deps.locked("caius_planday", async () => ({

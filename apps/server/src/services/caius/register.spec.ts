@@ -106,7 +106,8 @@ it("offers the caius skill only while it is registered, and names every tool the
         "If a Caius tool fails, say so in one clause and stop that item.",
         "The day is whatever the step data says; never compare it with any other date you know; always call the step first.",
         "At the end of a wind-down, never offer to run Plan my day for another day.",
-        "Never run Plan my day for a future day: only the step says a day is later than today, by answering `not_today`."
+        "A day that hasn't started is planned only on his say-so: only the step says a day is later than today, by answering `not_today`.",
+        "Never pass `early` on your own."
     ]) expect(sheet, rule).toContain(rule);
     // A guide, not a script: an ask off the path is answered in the same conversation with the right tool.
     const openers = sheet.slice(sheet.indexOf("## Wind down and Plan my day"), sheet.indexOf("## Reading results"));

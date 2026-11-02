@@ -21,11 +21,12 @@ import sql from "../sql.js";
  * Every call runs in a CLS context so that Becca entity tracking works, and a
  * sync tool's writes run in one transaction.
  */
-function registerTool(server: McpServer, name: string, def: ToolDefinition) {
+function registerTool(server: McpServer, name: string, def: ToolDefinition, withArgs?: ArgsHook) {
     server.registerTool(name, {
         description: def.description,
         inputSchema: def.inputSchema
-    }, (args: any): CallToolResult | Promise<CallToolResult> => {
+    }, (given: any): CallToolResult | Promise<CallToolResult> => {
+        const args = withArgs ? withArgs(name, given) : given;
         const toContent = (result: object): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(result) }] });
 
         if (def.async) {
@@ -48,8 +49,14 @@ function registerTool(server: McpServer, name: string, def: ToolDefinition) {
     });
 }
 
-/** Trilium's MCP server with every registered tool but those named in `omit`, which it never lists. */
-export async function createMcpServer({ omit = [] }: { omit?: string[] } = {}): Promise<McpServer> {
+/** What a session adds to a tool call's arguments before the tool runs: the tool's name and the arguments the agent gave. */
+export type ArgsHook = (name: string, args: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * Trilium's MCP server with every registered tool but those named in `omit`, which it never lists.
+ * `withArgs` sees every call's arguments first, for what the session knows and the agent may not.
+ */
+export async function createMcpServer({ omit = [], withArgs }: { omit?: string[]; withArgs?: ArgsHook } = {}): Promise<McpServer> {
     // Host-registered registries (the User Guide tools) load lazily; the array
     // is complete only after this resolves.
     await resolveToolRegistries();
@@ -62,7 +69,7 @@ export async function createMcpServer({ omit = [] }: { omit?: string[] } = {}): 
     for (const registry of allToolRegistries) {
         for (const [name, def] of registry) {
             if (omit.includes(name)) continue;
-            registerTool(server, name, def);
+            registerTool(server, name, def, withArgs);
         }
     }
 

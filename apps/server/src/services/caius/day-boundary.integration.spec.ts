@@ -135,6 +135,13 @@ describe("Plan my day in the small hours", () => {
         expect(brief.data.header).toMatchObject({ start: "10:00", end: "26:30" });
     });
 
+    it("Tue 01:30: once he says yes, Tuesday is planned early, from standup and not from now", async () => {
+        at(`${TUE}T01:30`);
+        const offer = await call("caius_planday", { date: TUE, step: "inputs", early: true });
+        expect(offer.error).toBeUndefined();
+        expect(offer.data).not.toHaveProperty("planFrom");
+    });
+
     it("Tue 04:30: it is Tuesday, planned from standup", async () => {
         at(`${TUE}T04:30`);
         const offer = await call("caius_planday", { date: TUE, step: "inputs" });
