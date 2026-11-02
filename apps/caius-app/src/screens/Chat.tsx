@@ -11,7 +11,7 @@ import { ritual } from "../app-state.js";
 import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
-import { type CandidateAnswer, type CandidateData, candidateDefault, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepReply } from "../lib/replies.js";
+import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply } from "../lib/replies.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack, today } from "../lib/store.js";
 
 /** A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while it runs. */
@@ -104,18 +104,47 @@ export function Ask() {
 
 type ChatState = "idle" | "starting" | "streaming" | "ready" | "needs-update" | "failed";
 
+/** One thing he tapped, as the answers pill lists it; `undo` puts it back as the step proposed. */
+interface Pick {
+    what: string;
+    choice: string;
+    undo?: () => void;
+}
+
+/** A live step card's answer: the sentences Caius reads, what he tapped, and how many items the card offers. */
+interface CardAnswer {
+    sentences: string[];
+    picks: Pick[];
+    total: number;
+}
+
+/** The cards' answers waiting to go with his next message, in card order. */
+interface PendingAnswers {
+    sentences: string[];
+    picks: Pick[];
+    /** The items left as the step proposed. */
+    rest: number;
+}
+
+/** His message, with the card answers it carried kept apart so the bubble folds them into a pill. `content` has them written out, then his words. */
+type ChatMessage = StoredMessage & { answers?: { picks: { what: string; choice: string }[]; rest: number; comment: string } };
+
 interface Chat {
     state: ChatState;
-    messages: StoredMessage[];
+    messages: ChatMessage[];
     streaming: AssistantTurn | null;
     error: string | null;
-    /** His next message as taps on step cards build it; the composer edits and sends it. */
+    /** His own words for the next message; the cards' answers go with it from `pending`. */
     draft: string;
     setDraft: (text: string) => void;
-    /** A live step card's sentences, under its own key; the draft is all of them, in card order. */
-    report: (key: string, sentences: string[]) => void;
-    start: (first?: string) => Promise<void>;
-    send: (text: string) => Promise<void>;
+    /** A live step card's answer, under its own key. */
+    report: (key: string, answer: CardAnswer) => void;
+    /** Every live card's answer, or null when no card has one. */
+    pending: PendingAnswers | null;
+    /** Sends the next message without the cards' answers, until he taps a card again. */
+    leaveOut: () => void;
+    start: (first?: string, answers?: PendingAnswers) => Promise<void>;
+    send: (text: string, answers?: PendingAnswers) => Promise<void>;
     reset: () => void;
 }
 
@@ -125,28 +154,28 @@ interface Chat {
  */
 function useChat(kind: ChatKind, date: string): Chat {
     const [ state, setState ] = useState<ChatState>(serverStatus.value === null ? "needs-update" : "idle");
-    const [ messages, setMessages ] = useState<StoredMessage[]>([]);
+    const [ messages, setMessages ] = useState<ChatMessage[]>([]);
     const [ streaming, setStreaming ] = useState<AssistantTurn | null>(null);
     const [ error, setError ] = useState<string | null>(null);
-    const [ draft, setDraftState ] = useState("");
-    const draftNow = useRef("");
-    const setDraft = (text: string) => {
-        draftNow.current = text;
-        setDraftState(text);
+    const [ draft, setDraft ] = useState("");
+    const cards = useRef(new Map<string, CardAnswer>());
+    const [ pending, setPending ] = useState<PendingAnswers | null>(null);
+    const gather = () => {
+        const all = [ ...cards.current.values() ];
+        const sentences = all.flatMap((a) => a.sentences);
+        const picks = all.flatMap((a) => a.picks);
+        setPending(sentences.length ? { sentences, picks, rest: all.reduce((n, a) => n + a.total, 0) - picks.length } : null);
     };
-    const answers = useRef(new Map<string, string[]>());
-    /** The draft as the cards last wrote it; once he edits the box, the cards stop overwriting it. */
-    const generated = useRef("");
-    const report = (key: string, sentences: string[]) => {
-        answers.current.set(key, sentences);
-        const next = [ ...answers.current.values() ].flat().join(" ");
-        if (draftNow.current === generated.current || !draftNow.current.trim()) {
-            setDraft(next);
-        }
-        generated.current = next;
+    const report = (key: string, answer: CardAnswer) => {
+        cards.current.set(key, answer);
+        gather();
+    };
+    const leaveOut = () => {
+        cards.current.clear();
+        setPending(null);
     };
     const noteId = useRef<string | null>(null);
-    const history = useRef<StoredMessage[]>([]);
+    const history = useRef<ChatMessage[]>([]);
     /** Bumped by New conversation and on close; a turn from an older conversation drops its reply. */
     const generation = useRef(0);
     const controller = useRef<AbortController | null>(null);
@@ -156,7 +185,7 @@ function useChat(kind: ChatKind, date: string): Chat {
         controller.current?.abort();
     }, []);
 
-    const turn = async (text: string) => {
+    const turn = async (text: string, answers?: PendingAnswers) => {
         const conn = connection.value;
         const chatNoteId = noteId.current;
         if (!conn || !chatNoteId) {
@@ -166,13 +195,18 @@ function useChat(kind: ChatKind, date: string): Chat {
         const mine = generation.current;
         const abort = new AbortController();
         controller.current = abort;
-        const user: StoredMessage = { id: newId(), role: "user", content: text, createdAt: new Date().toISOString() };
+        const said = [ answers?.sentences.join(" "), text ].filter(Boolean).join("\n\n");
+        const user: ChatMessage = {
+            id: newId(), role: "user", content: said, createdAt: new Date().toISOString(),
+            ...(answers ? { answers: { picks: answers.picks.map(({ what, choice }) => ({ what, choice })), rest: answers.rest, comment: text } } : {})
+        };
         history.current = [ ...history.current, user ];
         setMessages(history.current);
         setState("streaming");
         setError(null);
-        answers.current.clear();
-        generated.current = "";
+        const sent = new Map(cards.current);
+        cards.current.clear();
+        setPending(null);
         setDraft("");
 
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
@@ -208,6 +242,10 @@ function useChat(kind: ChatKind, date: string): Chat {
         setError(assembled.error ?? null);
         if (assembled.error) {
             setDraft(text);
+            if (answers) {
+                cards.current = sent;
+                gather();
+            }
         }
         setState("ready");
         if (assembled.blocks.some((b) => b.type === "tool_call" && /apply|set_state|forward|add|accept|dismiss|skip/.test(b.toolCall.toolName))) {
@@ -225,7 +263,7 @@ function useChat(kind: ChatKind, date: string): Chat {
      * Makes the chat note and opens the conversation. A ritual's opener is a turn of its own; Ask
      * sends its opener with the first question, as two user messages in one turn.
      */
-    const start = async (first?: string) => {
+    const start = async (first?: string, answers?: PendingAnswers) => {
         const conn = connection.value;
         if (!conn || !date) {
             return;
@@ -254,22 +292,22 @@ function useChat(kind: ChatKind, date: string): Chat {
             }
             return;
         }
-        if (first) {
+        if (first !== undefined) {
             history.current = [ { id: newId(), role: "user", content: opener(kind, date), createdAt: new Date().toISOString() } ];
-            await turn(first);
+            await turn(first, answers);
         } else {
             await turn(opener(kind, date));
         }
     };
 
-    const send = async (text: string) => {
-        if (!text.trim() || state === "streaming" || state === "starting" || state === "needs-update") {
+    const send = async (text: string, answers?: PendingAnswers) => {
+        if ((!text.trim() && !answers) || state === "streaming" || state === "starting" || state === "needs-update") {
             return;
         }
         if (!noteId.current) {
-            await start(text.trim());
+            await start(text.trim(), answers);
         } else {
-            await turn(text.trim());
+            await turn(text.trim(), answers);
         }
     };
 
@@ -281,13 +319,12 @@ function useChat(kind: ChatKind, date: string): Chat {
         setMessages([]);
         setStreaming(null);
         setError(null);
-        answers.current.clear();
-        generated.current = "";
+        leaveOut();
         setDraft("");
         setState(serverStatus.value === null ? "needs-update" : "idle");
     };
 
-    return { state, messages, streaming, error, draft, setDraft, report, start, send, reset };
+    return { state, messages, streaming, error, draft, setDraft, report, pending, leaveOut, start, send, reset };
 }
 
 function newId() {
@@ -377,7 +414,10 @@ function findLastStep(messages: StoredMessage[]) {
     return -1;
 }
 
-function Message({ message, chat, live, notes }: { message: StoredMessage; chat: Chat; live: boolean; notes?: TurnNotes }) {
+function Message({ message, chat, live, notes }: { message: ChatMessage; chat: Chat; live: boolean; notes?: TurnNotes }) {
+    if (message.role === "user" && message.answers) {
+        return <SentAnswers answers={message.answers} />;
+    }
     if (message.role === "user") {
         return <p class="bubble-user">{typeof message.content === "string" ? message.content : turnText(message.content)}</p>;
     }
@@ -457,31 +497,96 @@ function strip(text: string) {
     return text.replace(/\*\*(.+?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1");
 }
 
+/**
+ * The box his next message is written in. Taps on step cards gather in the answers pill above it,
+ * so the box holds only his own words; Send sends both, the answers written out first.
+ */
 function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: string; onSend?: (text: string) => void }) {
     const text = chat.draft;
     const setText = chat.setDraft;
+    const pending = chat.pending;
+    const [ open, setOpen ] = useState(false);
     const busy = chat.state === "streaming" || chat.state === "starting";
+    const canSend = !busy && chat.state !== "needs-update" && (!!pending || !!text.trim());
     const send = () => {
-        if (!text.trim() || busy) {
+        if (!canSend) {
             return;
         }
-        (onSend ?? ((t: string) => void chat.send(t)))(text.trim());
+        if (pending) {
+            void chat.send(text.trim(), pending);
+        } else {
+            (onSend ?? ((t: string) => void chat.send(t)))(text.trim());
+        }
         setText("");
+        setOpen(false);
     };
+    const box = (cls: string) => (
+        <textarea class={cls} rows={text.length > 60 ? 3 : 1} placeholder={pending ? "Add a comment (optional)" : placeholder} value={text}
+            aria-label={pending ? "Comment" : undefined} disabled={chat.state === "needs-update"}
+            onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                }
+            }} />
+    );
     return (
         <footer class="composer">
             <div class="composer-row">
-                <textarea class="field" rows={text.length > 60 ? 3 : 1} placeholder={placeholder} value={text} disabled={chat.state === "needs-update"}
-                    onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            send();
-                        }
-                    }} />
-                <Button kind="primary" aria-label="Send" disabled={busy || !text.trim()} onClick={send}><Icon name="arrow_upward" /></Button>
+                {pending ? (
+                    <div class="composer-box">
+                        {open && <AnswerList picks={pending.picks} rest={pending.rest} leaveOut={() => {
+                            setOpen(false);
+                            chat.leaveOut();
+                        }} />}
+                        <AnswersPill count={pending.picks.length} open={open} up toggle={() => setOpen(!open)} />
+                        {box("composer-comment")}
+                    </div>
+                ) : box("field")}
+                <Button kind="primary" aria-label="Send" disabled={!canSend} onClick={send}><Icon name="arrow_upward" /></Button>
             </div>
         </footer>
+    );
+}
+
+/** The answers, folded: how many he tapped, or "All as proposed"; a tap opens the list. `up` when the list opens above it. */
+function AnswersPill({ count, open, up, toggle }: { count: number; open: boolean; up?: boolean; toggle: () => void }) {
+    const label = count === 0 ? "All as proposed" : count === 1 ? "1 answer" : `${count} answers`;
+    return (
+        <button type="button" class="answers-pill" aria-expanded={open} onClick={toggle}>
+            <Icon name="check" size={18} />
+            <span>{label}</span>
+            <span class={`pill-chevron${open === !!up ? "" : " up"}`}><Icon name="keyboard_arrow_down" size={18} /></span>
+        </button>
+    );
+}
+
+/** Each tap, with a × that puts it back as proposed while the card is live, then how many go as proposed. */
+function AnswerList({ picks, rest, leaveOut }: { picks: Pick[]; rest: number; leaveOut?: () => void }) {
+    return (
+        <ul class="answer-list">
+            {picks.map((p, i) => (
+                <li key={i}>
+                    <span class="answer-text">{p.what} <span class="ink-2">→</span> <strong>{p.choice}</strong></span>
+                    {p.undo && <button type="button" class="answer-undo" aria-label={`Put ${p.what} back as proposed`} onClick={p.undo}><Icon name="close" size={18} /></button>}
+                </li>
+            ))}
+            {rest > 0 && <li class="ink-2">{rest === 1 ? "1 other goes" : `${rest} others go`} as proposed</li>}
+            {leaveOut && <li><Button kind="quiet" onClick={leaveOut}>Send without them</Button></li>}
+        </ul>
+    );
+}
+
+/** His sent message: the answers folded into a pill he can open, and his own words under it. */
+function SentAnswers({ answers }: { answers: NonNullable<ChatMessage["answers"]> }) {
+    const [ open, setOpen ] = useState(false);
+    return (
+        <div class="bubble-user bubble-answers">
+            <AnswersPill count={answers.picks.length} open={open} toggle={() => setOpen(!open)} />
+            {open && <AnswerList picks={answers.picks} rest={answers.rest} />}
+            {answers.comment && <p>{answers.comment}</p>}
+        </div>
     );
 }
 
@@ -489,24 +594,26 @@ function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: stri
 
 /**
  * A ritual step as a card: Caius's question word for word (unless his text already asked it) over
- * its data. Every item shows its fate as a chip, set to the step's own default until he taps it,
- * and the card writes its whole answer into the text box (`stepReply`), so the message he sends
- * names every item explicitly and he can still edit it. The agent does the judgment and the write.
+ * its data. Every item shows its fate as a chip, set to the step's own default until he taps it.
+ * The card reports its whole answer to the composer: the sentences (`stepReply`), so the message
+ * names every item explicitly, and his taps (`stepPicks`) for the answers pill. The agent does the
+ * judgment and the write.
  */
 function StepCard({ id, step, chat, live, askedInText }: { id: string; step: RitualStep; chat: Chat; live: boolean; askedInText: boolean }) {
     const [ answers, setAnswers ] = useState<StepAnswers>({});
-    const sentences = stepReply(step, answers);
-    const joined = sentences.join(" ");
-    // A layout effect, so the box holds the new sentence before the next paint and a quick Send never sends the old one.
-    useLayoutEffect(() => {
-        if (live) {
-            chat.report(id, sentences);
-        }
-    }, [ live, joined ]);
     const update = (patch: Partial<StepAnswers>) => {
         haptic("tick");
         setAnswers({ ...answers, ...patch });
     };
+    const sentences = stepReply(step, answers);
+    const { picks, total } = stepPicks(step, answers);
+    const joined = JSON.stringify([ sentences, picks.map((p) => [ p.what, p.choice ]) ]);
+    // A layout effect, so the pill holds the new answer before the next paint and a quick Send never sends the old one.
+    useLayoutEffect(() => {
+        if (live) {
+            chat.report(id, { sentences, total, picks: picks.map((p) => ({ what: displayText(p.what).text, choice: p.choice, undo: () => update(p.undo) })) });
+        }
+    }, [ live, joined ]);
     return (
         <section class={`step-card step-${step.ritual}`}>
             {step.question && !askedInText && <p class="step-question">{step.question}</p>}
@@ -646,26 +753,6 @@ function FateList({ items, options, answers, update, disabled }: { items: StepIt
             })}
         </ul>
     );
-}
-
-/** A chip's short words for a fate: `Thu · On deck`, `Thu · list`, `Done`, `Week`. */
-function chipLabel(choice: Choice, proposed: StepFate | undefined): string {
-    const short = (label: string) => label.startsWith("the week") ? "Week" : label.split(" ")[0];
-    switch (choice.kind) {
-        case "proposed":
-            if (!proposed || "held" in proposed) return "Stays";
-            if ("done" in proposed) return "Done";
-            if ("list" in proposed) return "On the list";
-            if ("stay" in proposed) return "Stays";
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(proposed.forward)) return short(proposed.forwardLabel ?? proposed.forward);
-            return `${short(proposed.forwardLabel ?? proposed.forward)} · ${proposed.onDeck ? "On deck" : "list"}`;
-        case "done": return "Done";
-        case "day": return `${short(choice.label)} · ${choice.onDeck ? "On deck" : "list"}`;
-        case "period": return short(choice.label);
-        case "list": return "On the list";
-        case "stay-deck": return "Stays on deck";
-        case "drop": return "Drop";
-    }
 }
 
 /** Candidates with Take / Not today / Dismiss / Finished, and what happens to each if he leaves it alone. */

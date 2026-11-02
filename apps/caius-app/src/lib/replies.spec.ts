@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
 import { applyChunk, type AssistantTurn, type ChatChunk, sseParser, stepOf } from "./chat.js";
-import { stepReply } from "./replies.js";
+import { stepPicks, stepReply } from "./replies.js";
 
 /** The steps of turn 1 of the recorded Wind down: open, next and context, as the server sent them. */
 function recordedSteps() {
@@ -68,5 +68,45 @@ describe("stepReply", () => {
         const catchup = { ritual: "plan" as const, step: "catchup", data: { tasks: [ { text: "Book the dentist" } ] } };
         expect(stepReply(catchup, {})).toEqual([]);
         expect(stepReply(catchup, { catchup: "move all to today" })).toEqual([ "Catch-up: move all to today." ]);
+    });
+});
+
+describe("stepPicks", () => {
+    const inputs = {
+        ritual: "plan" as const, step: "inputs", data: {
+            onDeck: [ { text: "Sketch the copy", fate: { list: true } }, { text: "Write the report", fate: { forward: "2026-11-03", forwardLabel: "Tue 3 Nov", onDeck: true } } ],
+            candidates: [ { text: "Get ZAP-2041 reviewed", kind: "jira" }, { text: "Clean up the branch notes", kind: "week" } ],
+            evening: { tasks: [] }
+        }
+    };
+
+    it("lists only what he tapped, and counts every item the card offers", () => {
+        expect(stepPicks(inputs, {})).toEqual({ picks: [], total: 5 });
+        const { picks, total } = stepPicks(inputs, {
+            fates: { 0: { kind: "proposed" }, 1: { kind: "drop", reason: "Sam has it" } },
+            candidates: { 0: "take", 1: null },
+            evening: "nothing tonight"
+        });
+        expect(total).toBe(5);
+        expect(picks.map(({ what, choice }) => [ what, choice ])).toEqual([
+            [ "Write the report", "Drop: Sam has it" ],
+            [ "Get ZAP-2041 reviewed", "Take" ],
+            [ "Evening", "Nothing tonight" ]
+        ]);
+    });
+
+    it("undoes one tap and leaves the others", () => {
+        const answers = { fates: { 1: { kind: "list" as const } }, candidates: { 0: "take" as const, 1: "dismiss" as const } };
+        const [ , take ] = stepPicks(inputs, answers).picks;
+        const after = { ...answers, ...take.undo };
+        expect(stepPicks(inputs, after).picks.map((p) => p.what)).toEqual([ "Write the report", "Clean up the branch notes" ]);
+    });
+
+    it("counts the catch-up and the Context lines", () => {
+        const catchup = { ritual: "plan" as const, step: "catchup", data: { tasks: [ { text: "Book the dentist" } ] } };
+        expect(stepPicks(catchup, {})).toEqual({ picks: [], total: 0 });
+        expect(stepPicks(catchup, { catchup: "skip the catch-up" })).toMatchObject({ picks: [ { what: "Catch-up", choice: "Skip" } ], total: 1 });
+        const context = { ritual: "winddown" as const, step: "context", data: { context: [ { text: "Sam is out" }, { text: "Release on Thursday" } ] } };
+        expect(stepPicks(context, { context: { 1: "end" } })).toMatchObject({ picks: [ { what: "Release on Thursday", choice: "Let it end" } ], total: 2 });
     });
 });

@@ -166,3 +166,86 @@ export function stepReply(step: { ritual: "plan" | "winddown"; step: string; dat
             return [];
     }
 }
+
+/** A chip's short words for a fate: `Thu · On deck`, `Thu · list`, `Done`, `Week`. */
+export function chipLabel(choice: Choice, proposed: StepFate | undefined): string {
+    const short = (label: string) => label.startsWith("the week") ? "Week" : label.split(" ")[0];
+    switch (choice.kind) {
+        case "proposed":
+            if (!proposed || "held" in proposed) return "Stays";
+            if ("done" in proposed) return "Done";
+            if ("list" in proposed) return "On the list";
+            if ("stay" in proposed) return "Stays";
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(proposed.forward)) return short(proposed.forwardLabel ?? proposed.forward);
+            return `${short(proposed.forwardLabel ?? proposed.forward)} · ${proposed.onDeck ? "On deck" : "list"}`;
+        case "done": return "Done";
+        case "day": return `${short(choice.label)} · ${choice.onDeck ? "On deck" : "list"}`;
+        case "period": return short(choice.label);
+        case "list": return "On the list";
+        case "stay-deck": return "Stays on deck";
+        case "drop": return "Drop";
+    }
+}
+
+/** One thing he tapped on a step card, as the answers pill lists it, and the change that puts it back as proposed. */
+export interface StepPick {
+    what: string;
+    choice: string;
+    undo: Partial<StepAnswers>;
+}
+
+const CATCHUP_LABELS: Record<string, string> = { "move all to today": "Move all to today", "let's review them": "Review them", "skip the catch-up": "Skip" };
+
+const CANDIDATE_LABELS: Record<Exclude<CandidateAnswer, null>, string> = { take: "Take", notToday: "Not today", dismiss: "Dismiss", finished: "Finished" };
+
+/**
+ * What he tapped on one step card, and how many items the card offers in all: the pill counts the
+ * picks, and the rest go as the step proposed (`stepReply` still names every one of them).
+ */
+export function stepPicks(step: { ritual: "plan" | "winddown"; step: string; data: Record<string, unknown> }, answers: StepAnswers): { picks: StepPick[]; total: number } {
+    const d = step.data as {
+        items?: { text: string; fate?: StepFate }[];
+        onDeck?: { text: string; fate?: StepFate }[];
+        candidates?: CandidateData[];
+        context?: { text: string }[];
+    };
+    const fates = (items: { text: string; fate?: StepFate }[]): StepPick[] => items.flatMap((item, i) => {
+        const choice = answers.fates?.[i];
+        if (!choice || choice.kind === "proposed") {
+            return [];
+        }
+        const label = chipLabel(choice, item.fate);
+        return [ { what: item.text, choice: choice.kind === "drop" && choice.reason.trim() ? `${label}: ${choice.reason.trim()}` : label, undo: { fates: { ...answers.fates, [i]: { kind: "proposed" } } } } ];
+    });
+    const candidates = (list: CandidateData[]): StepPick[] => list.flatMap((c, i) => {
+        const answer = answers.candidates?.[i];
+        return answer ? [ { what: c.text, choice: CANDIDATE_LABELS[answer], undo: { candidates: { ...answers.candidates, [i]: null } } } ] : [];
+    });
+    const evening = (): StepPick[] => answers.evening ? [ { what: "Evening", choice: capitalize(answers.evening), undo: { evening: null } } ] : [];
+
+    switch (`${step.ritual}:${step.step}`) {
+        // The catch-up has no default: until he picks, it isn't answered at all, so it counts only once picked.
+        case "plan:catchup":
+            return answers.catchup ? { picks: [ { what: "Catch-up", choice: CATCHUP_LABELS[answers.catchup] ?? capitalize(answers.catchup), undo: { catchup: null } } ], total: 1 } : { picks: [], total: 0 };
+        case "winddown:open":
+            return { picks: fates(d.items ?? []), total: (d.items ?? []).length };
+        case "plan:inputs":
+            return { picks: [ ...fates(d.onDeck ?? []), ...candidates(d.candidates ?? []), ...evening() ], total: (d.onDeck ?? []).length + (d.candidates ?? []).length + 1 };
+        case "winddown:next":
+            return { picks: [ ...candidates(d.candidates ?? []), ...evening() ], total: (d.candidates ?? []).length + 1 };
+        case "winddown:context": {
+            const lines = d.context ?? [];
+            const picks = lines.flatMap((line, i) => {
+                const answer = answers.context?.[i];
+                return answer ? [ { what: line.text, choice: answer === "keep" ? "Keep" : "Let it end", undo: { context: { ...answers.context, [i]: null } } } ] : [];
+            });
+            return { picks, total: lines.length };
+        }
+        default:
+            return { picks: [], total: 0 };
+    }
+}
+
+function capitalize(text: string) {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
