@@ -7,7 +7,7 @@ import { dayCapacity, readPlan } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { readDay } from "./day-read.js";
+import { readDay, readDays } from "./day-read.js";
 import type { CaiusInputs, CalendarEvent, InputError } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
 import { createCaiusService } from "./service.js";
@@ -175,5 +175,42 @@ describe("the day read", () => {
         if (!("data" in steps)) throw new Error(`the inputs step answered ${JSON.stringify(steps)}`);
         expect(steps.data.capacity).toEqual({ ...day.capacity, sentence: expect.any(String) });
         expect(JSON.parse(JSON.stringify(day))).toEqual(day);
+    });
+});
+
+describe("several days", () => {
+    it("reads Monday to Friday with an empty future Thursday, the Week row less what is on a day, and the week's Foundation total", async () => {
+        const { service } = countedService();
+        vi.stubEnv("CAIUS_NOW", `${MON}T17:30`);
+        const FRI = "2032-03-05";
+        const week = await run(async () => (await store.calendarWeek("2032-W10")).noteId);
+        await run(() => store.putContent(week, `<h3>Work</h3>${ul(li("w-open", "Draft the plan ~2h"), li("w-pulled", "Pull me to a day ~1h"))}`));
+        await dayWith(WED, `<h3>Work</h3>${ul(li("d-wed", "Wednesday task ~1h"))}`);
+        const moved = await run(() => service.forward({ items: [ { noteId: week, listItemId: "w-pulled", to: WED } ] }));
+        expect(moved.results.map((r: { status: string }) => r.status)).toEqual([ "moved" ]);
+        calendars[THU] = [ event("11:00", "11:30", "Thursday planning") ];
+
+        const now = new Date(`${MON}T17:30:00`);
+        const deps = { store, dayFrame: (date: string) => service.dayFrame(date), locked: withCaiusLock };
+        const read = await run(() => readDays(deps, MON, 5, now));
+
+        expect(read.days.map((d) => [ d.date, d.workday ])).toEqual([ [ MON, true ], [ TUE, true ], [ WED, true ], [ THU, true ], [ FRI, true ] ]);
+        const thu = read.days.find((d) => d.date === THU)?.day;
+        expect(thu?.meetings.map((m) => m.title)).toEqual([ "Thursday planning" ]);
+        expect(thu?.plan.noteId).toBeNull();
+        expect(thu?.layout.groups.flatMap((g) => g.count)).toEqual([]);
+        expect(read.week.key).toBe("2032-W10");
+        expect(read.week.tasks.map((t) => t.text)).toEqual([ "Draft the plan" ]);
+        const wed = read.days.find((d) => d.date === WED)?.day;
+        expect(wed?.plan.capacity.areas.foundation.minutes).toBe(60 + 60);
+        // The week's 2h plus every day's list; the earlier specs left tasks on Monday and Tuesday.
+        const onDays = read.days.reduce((sum, d) => sum + d.day.plan.capacity.areas.foundation.minutes, 0);
+        expect(onDays).toBeGreaterThan(120);
+        expect(read.week.foundation.minutes).toBe(120 + onDays);
+        expect(read.week.foundation.target).toEqual({ min: 720, max: 900 });
+        expect(JSON.parse(JSON.stringify(read))).toEqual(read);
+        delete calendars[THU];
+
+        expect((await run(() => readDays(deps, "2032-03-06", 3, now))).days.map((d) => d.workday)).toEqual([ false, false, true ]);
     });
 });

@@ -3,7 +3,7 @@
  * steps' capacity and Growth sentences and the views take their figures from it, so they agree.
  */
 
-import type { ContextEntry, NoteStore, PlanView, Rhythm } from "@triliumnext/caius";
+import { isoWeekKey, type ContextEntry, type NoteStore, type PlanTask, type PlanView, readPlan, type Rhythm } from "@triliumnext/caius";
 
 import { drawnNamesOf } from "./brief.js";
 import { type DayFrame, deckTasks, drawnEvents, failedCalendar, focusFor, mainTasks, meetingsOf, rolloverOf, withBooked, workBlocks } from "./daily.js";
@@ -85,4 +85,50 @@ export function growthFigures(frame: DayFrame, plan: PlanView, incoming = 0): Gr
     const minutes = plan.capacity.areas.growth.minutes + incoming;
     const target = frame.rhythm.targets.growth;
     return { minutes, target, over: minutes > target.max };
+}
+
+/** Several days as `readDays` reads them, with the week row above them. Plain data. */
+export interface DaysRead {
+    from: string;
+    days: { date: string; workday: boolean; day: DayView }[];
+    week: {
+        key: string;
+        /** The week note's live top-level tasks: the ones not yet pulled to a day. */
+        tasks: PlanTask[];
+        /** The week's Foundation minutes: the week note's own items plus its days' lists, against the week's target. */
+        foundation: { minutes: number; target: { min: number; max: number } | null };
+    };
+}
+
+/** What `readDays` needs from the service: a day's frame (reads its own notes, so never under the lock) and the lock. */
+export interface DaysDeps {
+    store: NoteStore;
+    dayFrame: (date: string) => Promise<DayFrame>;
+    locked: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
+}
+
+/**
+ * `count` days from `from`: each day's `readDay`, and the plan of the ISO week of `from` (when the
+ * days span two weeks, the week row is the first one's). The frames are read first and the plans
+ * under one lock. A day without a note reads as empty, with its meetings. The caller keeps `count` within 2 to 7.
+ */
+export async function readDays(deps: DaysDeps, from: string, count: number, now: Date): Promise<DaysRead> {
+    const dates = Array.from({ length: count }, (_, index) => addDays(from, index));
+    const frames = await Promise.all(dates.map((date) => deps.dayFrame(date)));
+    const key = isoWeekKey(new Date(`${from}T00:00:00Z`));
+    return deps.locked("caius_days", async () => {
+        const weekPlan = await readPlan(deps.store, "week", key, now);
+        const days: DaysRead["days"] = [];
+        for (const [ index, date ] of dates.entries()) {
+            const plan = await readPlan(deps.store, "day", date, now);
+            const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+            days.push({ date, workday: weekday !== 0 && weekday !== 6, day: await readDay(deps.store, frames[index] as DayFrame, plan, { date, now }) });
+        }
+        const minutes = weekPlan.capacity.areas.foundation.minutes + days.reduce((sum, { day }) => sum + day.plan.capacity.areas.foundation.minutes, 0);
+        return { from, days, week: { key, tasks: mainTasks(weekPlan), foundation: { minutes, target: weekPlan.capacity.target } } };
+    });
+}
+
+function addDays(date: string, days: number): string {
+    return new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }
