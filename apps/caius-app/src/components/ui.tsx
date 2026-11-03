@@ -12,6 +12,7 @@ import editsquareSvg from "@material-symbols/svg-300/rounded/edit_square.svg?raw
 import forumSvg from "@material-symbols/svg-300/rounded/forum.svg?raw";
 import helpSvg from "@material-symbols/svg-300/rounded/help.svg?raw";
 import keyboardarrowdownSvg from "@material-symbols/svg-300/rounded/keyboard_arrow_down.svg?raw";
+import morevertSvg from "@material-symbols/svg-300/rounded/more_vert.svg?raw";
 import notificationsSvg from "@material-symbols/svg-300/rounded/notifications.svg?raw";
 import openinnewSvg from "@material-symbols/svg-300/rounded/open_in_new.svg?raw";
 import refreshSvg from "@material-symbols/svg-300/rounded/refresh.svg?raw";
@@ -105,6 +106,7 @@ const ICONS = {
     forum: forumSvg,
     help: helpSvg,
     keyboard_arrow_down: keyboardarrowdownSvg,
+    more_vert: morevertSvg,
     notifications: notificationsSvg,
     open_in_new: openinnewSvg,
     refresh: refreshSvg,

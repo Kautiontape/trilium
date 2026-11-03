@@ -168,6 +168,8 @@ it("speaks in a rundown that leads into the cards, in gist, never reading a ques
     expect(voice).toContain("never by dropping something a step's `question` needs answered");
     expect(voice).toContain("The step's `question` is what it needs answered: cover it in your own words, in the rundown or its last line, and do not read it out.");
     expect(voice).toContain("**The gist, not the data.**");
+    expect(voice).toContain("**After the first message, stay on what he is saying.** The rundown is the ritual's first message only.");
+    expect(voice).toContain("Never bring back the schedule, the day's shape, a deadline, a pick or a reminder he didn't ask about in that message");
     expect(voice).toContain("A time, a number, a key or a name goes in only when he has to act on it, such as a deadline or a meeting to prepare for");
     expect(voice).toContain("> Good Monday: the hills shipped and Trilium was bumped to a newer version. A couple of work things didn't happen; they're on Tuesday's deck.\n>\n> Tuesday's light in the morning, with a couple of meetings in the afternoon. The ballot's due by 8 pm, so I'd put it first in your evening, or in the afternoon if there's a gap.\n>\n> The rest is below; change anything before I close the day.");
     // Nothing tells Caius to ask the question word for word or to start with it.

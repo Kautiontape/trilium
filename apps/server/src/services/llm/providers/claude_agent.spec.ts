@@ -452,6 +452,17 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         vi.unstubAllEnvs();
     });
 
+    it("tells a ritual its own day is \"today\" in his words, even after midnight, and an Ask nothing of the kind", async () => {
+        const promptOf = async (content: string, call: number) => {
+            scriptAgent([successResult()]);
+            await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content }], { enableNoteTools: true }));
+            return queryMock.mock.calls[call][0].options.systemPrompt as string;
+        };
+        expect(await promptOf("Wind down 2026-11-02", 0)).toContain("This conversation winds down Mon 2 Nov. When he says \"today\" he means Mon 2 Nov, even after midnight");
+        expect(await promptOf("Plan my day 2026-11-03", 1)).toContain("This conversation plans Tue 3 Nov. When he says \"today\" he means Tue 3 Nov");
+        expect(await promptOf("Ask 2026-11-02", 2)).not.toContain("he means");
+    });
+
     it("gives a Plan my day or Wind down conversation every Caius tool and the note reads, and no generic note write", async () => {
         scriptAgent([successResult()]);
         await collect(new ClaudeAgentProvider().chatChunks([{ role: "user", content: "Wind down 2026-11-06" }], { enableNoteTools: true }));
@@ -485,7 +496,9 @@ describe("ClaudeAgentProvider.chatChunks", () => {
         expect(ask.systemPrompt).toContain("follow its \"Who you are\" and \"Ask\" sections.");
         expect(ask.systemPrompt).not.toContain("Wind down and Plan my day");
         expect(ritual.systemPrompt).toContain("follow its \"Who you are\" and \"Wind down and Plan my day\" sections.");
-        expect((await optionsOf("Plan my day 2026-11-06", 2)).systemPrompt).toBe(ritual.systemPrompt);
+        // The two rituals share one prompt; only the line naming the day each is about differs.
+        const shared = (prompt: string) => prompt.slice(0, prompt.indexOf("\n\nThis conversation "));
+        expect(shared((await optionsOf("Plan my day 2026-11-06", 2)).systemPrompt)).toBe(shared(ritual.systemPrompt));
 
         const question = await optionsOf("Ask 2026-11-06 what's next?", 3);
         expect(question.disallowedTools).toBeUndefined();

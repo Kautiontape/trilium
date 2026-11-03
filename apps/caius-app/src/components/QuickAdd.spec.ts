@@ -35,4 +35,12 @@ describe("displayText", () => {
         expect(displayText("09:30 Standup prep")).toEqual({ text: "Standup prep", forwardedTo: null });
         expect(displayText("Plan 10:30 slots").area).toBeUndefined();
     });
+
+describe("displayText's emphasis", () => {
+    it("drops **bold**, *italic* and _italic_ markers and keeps their words, but not an underscore inside a word", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect(displayText("**Drop off the mail-in ballot.** [from Thu 29 Oct](#root/HwEzPVPRECFu)").text).toBe("Drop off the mail-in ballot.");
+        expect(displayText("Read *the* runbook, _then_ run snake_case_job").text).toBe("Read the runbook, then run snake_case_job");
+    });
+});
 });
