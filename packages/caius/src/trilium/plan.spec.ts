@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, setAreas, setStates } from './plan.js';
+import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, placeTasks, setAreas, setStates } from './plan.js';
 import { parseSource, taskKeys, textHash } from './keys.js';
 import { readPlan } from './plan-read.js';
 import { fakeTrilium, li, periodNote, STATES, TEMPLATE, ul } from './helpers.js';
@@ -440,5 +440,61 @@ describe('setAreas', () => {
     expect((await setAreas(f.api, [{ noteId: 'd', listItemId: 'e1', area: 'growth' }], base))[0]).toMatchObject({ reason: 'edited' });
     const g = fakeTrilium(seed(html), { failPut: 'd' });
     expect((await setAreas(g.api, [{ noteId: 'd', listItemId: 'e1', area: 'growth' }], base))[0].status).toBe('failed');
+  });
+});
+
+describe('placeTasks', () => {
+  const html = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'One'), li('m2', 'Two', { sub: ul(li('m2a', 'Part')) })) + '<h3>Afternoon</h3>' + ul(li('a1', 'Three'))
+    + '<h3>On deck</h3>' + ul(li('d1', 'Four'));
+  const order = (doc: string | undefined) => [...(doc ?? '').matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1]);
+
+  it('places the items of one note in order, in a single write', async () => {
+    const f = fakeTrilium(seed(html));
+    const out = await placeTasks(f.api, [
+      { noteId: 'd', listItemId: 'm2', block: 'afternoon' },
+      { noteId: 'd', listItemId: 'd1', before: 'm2' },
+      { noteId: 'd', listItemId: 'a1', block: 'afternoon' },
+    ], base);
+    expect(out.map((r) => r.status)).toEqual(['moved', 'moved', 'unchanged']);
+    expect(order(f.html.d)).toEqual(['m1', 'a1', 'd1', 'm2', 'm2a']);
+    expect(f.html.d).not.toContain('On deck');
+    expect(puts(f.log)).toEqual(['put d']);
+  });
+  it('skips what it cannot place and rejects a bad request, keeping the order and writing nothing', async () => {
+    const f = fakeTrilium(seed(html));
+    const out = await placeTasks(f.api, [
+      { noteId: 'd', listItemId: 'zz', block: 'morning' },
+      { noteId: 'd', listItemId: 'm1' },
+      { noteId: 'd', listItemId: 'm1', before: 'm2', after: 'm2' },
+      { noteId: 'd', listItemId: 'm1', after: 'm1' },
+      { noteId: 'd', listItemId: 'm1', block: 'noon' as never },
+      { noteId: 'd', listItemId: 'm2a', block: 'afternoon' },
+      { noteId: 'd', listItemId: 'm1', block: 'morning' },
+    ], base);
+    expect(out.map((r) => [r.listItemId, r.status, 'reason' in r ? r.reason : undefined])).toEqual([
+      ['zz', 'skipped', 'not_found'], ['m1', 'skipped', 'bad_request'], ['m1', 'skipped', 'bad_request'], ['m1', 'skipped', 'bad_request'],
+      ['m1', 'skipped', 'bad_request'], ['m2a', 'skipped', 'bad_request'], ['m1', 'unchanged', undefined],
+    ]);
+    expect(out[5]).toMatchObject({ detail: 'place its parent' });
+    expect(puts(f.log)).toEqual([]);
+  });
+  it('dry run writes nothing; a note changed meanwhile is edited and nothing is written; a failed put is reported', async () => {
+    const f = fakeTrilium(seed(html));
+    const dry = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'm1', onDeck: true }, { noteId: 'd', listItemId: 'a1', block: 'evening' }], { ...base, dryRun: true });
+    expect(dry.map((r) => [r.status, 'dryRun' in r && r.dryRun])).toEqual([['moved', true], ['moved', true]]);
+    expect(dry[0]).toMatchObject({ changes: [{ noteId: 'd', role: 'target', before: html }] });
+    expect(order((dry[0] as { changes: { after: string }[] }).changes[0]?.after)).toEqual(['m2', 'm2a', 'a1', 'd1', 'm1']);
+    expect(puts(f.log)).toEqual([]);
+
+    const put = f.api.putContent;
+    f.api.putContent = async (id, body, expected) => { f.html.d += '<p>x</p>'; return put(id, body, expected); };
+    const raced = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'm1', onDeck: true }, { noteId: 'd', listItemId: 'a1', block: 'evening' }], base);
+    expect(raced.map((r) => 'reason' in r && r.reason)).toEqual(['edited', 'edited']);
+    expect(raced[0]).toMatchObject({ detail: 'note changed meanwhile; nothing written' });
+    expect(puts(f.log)).toEqual([]);
+    expect(f.html.d).toBe(html + '<p>x</p>');
+
+    const g = fakeTrilium(seed(html), { failPut: 'd' });
+    expect((await placeTasks(g.api, [{ noteId: 'd', listItemId: 'm1', onDeck: true }], base))[0]?.status).toBe('failed');
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { moveInMainList, placeForwarded, placeInMainList, placeTask, setTaskArea, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
+import { moveInMainList, placeForwarded, placeInDay, placeInMainList, placeTask, setTaskArea, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
 import { critical, li, STATES, TEMPLATE, ul } from './helpers.js';
 
 const item = itemMarkup('enew', 'New thing');
@@ -272,5 +272,79 @@ describe('setTaskArea', () => {
   it('fails for an unknown item, or one in Meetings', () => {
     expect(setTaskArea(note, 'zz', 'growth')).toEqual({ ok: false, reason: 'not_found' });
     expect(setTaskArea(note, 'p1', 'growth')).toMatchObject({ ok: false });
+  });
+});
+
+describe('placeInDay', () => {
+  const sub = ul(li('m2a', 'B1'));
+  const note = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A'), li('m2', 'B ~30m', { state: 'doing', sub }), li('m3', 'Done', { checked: true }))
+    + '<h3>Afternoon</h3>' + ul(li('a1', 'C')) + '<h3>On deck</h3>' + ul(li('d1', 'D'), li('d2', 'E')) + '<h3>Suggested</h3>' + ul(li('s1', 'S'));
+  const place = (html: string, id: string, at: Parameters<typeof placeInDay>[2]) => {
+    const r = placeInDay(html, id, at, STATES);
+    if (!r.ok) throw new Error(`${id}: ${r.reason}`);
+    return r;
+  };
+
+  it('moves a task from Morning to Afternoon, the same item with its state, sub-items and id', () => {
+    const r = place(note, 'm2', { block: 'afternoon' });
+    expect(r.unchanged).toBe(false);
+    expect(ids(r.html)).toEqual(['m1', 'm3', 'a1', 'm2', 'm2a', 'd1', 'd2', 's1']);
+    expect(r.html).toContain(`<h3>Afternoon</h3>${ul(li('a1', 'C'), li('m2', 'B ~30m', { state: 'doing', sub }))}<h3>On deck</h3>`);
+  });
+  it('puts a task On deck and back onto the list, which is the end of the first block with a list', () => {
+    const deck = place(note, 'm1', { onDeck: true });
+    expect(ids(deck.html)).toEqual(['m2', 'm2a', 'm3', 'a1', 'd1', 'd2', 'm1', 's1']);
+    const back = place(deck.html, 'm1', { onDeck: false });
+    expect(ids(back.html)).toEqual(['m2', 'm2a', 'm3', 'm1', 'a1', 'd1', 'd2', 's1']);
+  });
+  it('takes the On deck heading away with its last item, and leaves an emptied block heading', () => {
+    const one = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A')) + '<h3>On deck</h3>' + ul(li('d1', 'D')) + '<h3>Suggested</h3>' + ul(li('s1', 'S'));
+    const committed = place(one, 'd1', { block: 'morning' });
+    expect(committed.html).toBe('<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A'), li('d1', 'D')) + '<h3>Suggested</h3>' + ul(li('s1', 'S')));
+    const decked = place(one, 'm1', { onDeck: true });
+    expect(decked.html).toBe('<h2>☑️ Tasks</h2><h3>Morning</h3><h3>On deck</h3>' + ul(li('d1', 'D'), li('m1', 'A')) + '<h3>Suggested</h3>' + ul(li('s1', 'S')));
+  });
+  it('places before or after another item, in its list or in the target named', () => {
+    expect(ids(place(note, 'a1', { before: 'm1' }).html)).toEqual(['a1', 'm1', 'm2', 'm2a', 'm3', 'd1', 'd2', 's1']);
+    expect(ids(place(note, 'm1', { after: 'm2' }).html)).toEqual(['m2', 'm2a', 'm1', 'm3', 'a1', 'd1', 'd2', 's1']);
+    expect(ids(place(note, 'm1', { onDeck: true, before: 'd2' }).html)).toEqual(['m2', 'm2a', 'm3', 'a1', 'd1', 'm1', 'd2', 's1']);
+    expect(ids(place(note, 'd2', { block: 'morning', after: 'm1' }).html)).toEqual(['m1', 'd2', 'm2', 'm2a', 'm3', 'a1', 'd1', 's1']);
+  });
+  it('makes the Evening heading when the day has none', () => {
+    const r = place(note, 'a1', { block: 'evening' });
+    expect(r.html).toContain(`<h3>Afternoon</h3><h3>Evening</h3>${ul(li('a1', 'C'))}<h3>On deck</h3>`);
+  });
+  it('is unchanged where the task already is, however its heading is dressed', () => {
+    const dressed = note.replace('<h3>On deck</h3>', '<h4>🃏 On deck</h4>');
+    for (const [id, at] of [
+      ['m1', { block: 'morning' }], ['m1', { onDeck: false }], ['m2', { after: 'm1' }], ['m1', { before: 'm2' }], ['d1', { onDeck: true }], ['d2', { onDeck: true, after: 'd1' }],
+    ] as const) {
+      expect(placeInDay(dressed, id, at, STATES)).toEqual({ ok: true, html: dressed, unchanged: true });
+    }
+  });
+  it('refuses what it cannot place, and an anchor outside the target', () => {
+    const withMore = critical(li('c1', 'Rent')) + note + '<h2>Meetings</h2>' + ul(li('p1', 'Standup'));
+    const reason = (id: string, at: Parameters<typeof placeInDay>[2]) => {
+      const r = placeInDay(withMore, id, at, STATES);
+      return r.ok ? 'ok' : r.reason;
+    };
+    expect([
+      reason('zz', { block: 'morning' }),
+      reason('m2a', { block: 'afternoon' }),
+      reason('m3', { block: 'afternoon' }),
+      reason('p1', { block: 'afternoon' }),
+      reason('s1', { block: 'afternoon' }),
+      reason('c1', { block: 'afternoon' }),
+      reason('m1', { before: 'zz' }),
+      reason('m1', { block: 'afternoon', before: 'd1' }),
+      reason('m1', { onDeck: true, after: 'a1' }),
+      reason('d1', { onDeck: false, before: 'd2' }),
+      reason('m1', { before: 's1' }),
+      reason('m1', { before: 'm2a' }),
+      reason('m1', { block: 'morning', onDeck: true }),
+      reason('m1', {}),
+    ]).toEqual(['not_found', 'bad_request', 'not_live', 'not_live', 'bad_request', 'bad_request', 'not_found', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request']);
+    const parent = placeInDay(withMore, 'm2a', { block: 'afternoon' }, STATES);
+    expect(parent.ok ? '' : parent.detail).toBe('place its parent');
   });
 });
