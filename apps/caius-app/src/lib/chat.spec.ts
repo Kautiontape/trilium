@@ -1,8 +1,10 @@
 import { readFileSync } from "fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { activityLine, applyChunk, type AssistantTurn, type ChatChunk, chatApi, type ContentBlock, firstLine, historyForServer, latestLine, NeedsServerUpdateError, NoTurnError, sseParser, type StoredMessage, stepOf, turnText, TurnRunningError, workingLine } from "./chat.js";
+import { activityLine, applyChunk, type AssistantTurn, type ChatChunk, chatApi, type ContentBlock, firstLine, historyForServer, latestLine, NeedsServerUpdateError, NoTurnError, sseParser, TooManyTurnsError, type StoredMessage, stepOf, turnText, TurnRunningError, workingLine } from "./chat.js";
 import { HttpError, request } from "./http.js";
+import { afterStreamError } from "./chats.js";
+import { messageOf } from "./store.js";
 
 vi.mock("./http.js", async (importOriginal) => ({ ...await importOriginal<typeof import("./http.js")>(), request: vi.fn() }));
 
@@ -81,6 +83,14 @@ describe("the turn routes", () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.mocked(request).mockReset();
+    });
+
+    it("words a 429 too_many_turns as a refusal the phone saves itself", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(429, { error: "too_many_turns" })));
+        const error = await api.stream([], "note1", "low", { replyId: "r", transcript: [] }, () => {}).catch((e) => e);
+        expect(error).toBeInstanceOf(TooManyTurnsError);
+        expect(messageOf(error)).toBe("Caius is busy with other chats. Try again in a minute.");
+        expect(afterStreamError(error)).toBe("refused");
     });
 
     it("sends the reply id and transcript with a turn, and a 409 means a turn is running", async () => {

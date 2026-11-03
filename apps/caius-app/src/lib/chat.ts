@@ -80,7 +80,8 @@ export function chatApi(conn: Connection) {
                 throw new TurnRunningError();
             }
             if (!res.ok || !res.body) {
-                throw new HttpError(res.status, await res.text().catch(() => ""));
+                const body = await res.text().catch(() => "");
+                throw res.status === 429 && errorOf(body) === "too_many_turns" ? new TooManyTurnsError(body) : new HttpError(res.status, body);
             }
             await readChunks(res.body, onChunk, signal);
         },
@@ -339,6 +340,15 @@ export class TurnRunningError extends Error {
     constructor() {
         super("Caius is still answering the last message.");
         this.name = "TurnRunningError";
+    }
+}
+
+/** The server refused the turn (429) because it runs as many as it allows. */
+export class TooManyTurnsError extends HttpError {
+    constructor(body: string) {
+        super(429, body);
+        this.message = "Caius is busy with other chats. Try again in a minute.";
+        this.name = "TooManyTurnsError";
     }
 }
 

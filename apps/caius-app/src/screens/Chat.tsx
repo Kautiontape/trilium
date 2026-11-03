@@ -466,16 +466,17 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
             if (generation.current !== mine) {
                 return;
             }
-            noteId.current = null;
             // A gone note (400) and a server without the turn routes (404) both leave nothing to reopen.
             if ((e instanceof HttpError && e.status === 400) || e instanceof NeedsServerUpdateError) {
+                noteId.current = null;
                 storeChat(slot, null);
                 setState("idle");
                 if (kind !== "ask") {
                     await start();
                 }
             } else {
-                setError(messageOf(e));
+                stale.current = {};
+                setError(`${messageOf(e)} ${OUT_OF_SYNC}`);
                 setState("failed");
             }
             return;
@@ -548,6 +549,8 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         if (fate === "unanswered" && generation.current === mine) {
             setError(`${NO_REPLY} ${PUT_BACK}`);
             setState("failed");
+        } else if (fate === "missed" && generation.current === mine) {
+            setError(`${NOT_RECEIVED} ${PUT_BACK}`);
         }
         return { running: !!synced.replyId, missed: fate === "held" ? null : asked?.putBack ?? null };
     };
@@ -639,6 +642,7 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
 const DETACH = "detach";
 const PUT_BACK = "Your message is back in the box: send it again.";
 const OUT_OF_SYNC = "The chat reloads from the server when you reopen the app or send again.";
+const NOT_RECEIVED = "Your message didn't reach Caius.";
 const NO_REPLY = "No reply came back from the server.";
 
 function newId() {
