@@ -11,6 +11,7 @@ import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTi
 import { ritual } from "../app-state.js";
 import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
+import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack, today } from "../lib/store.js";
@@ -479,23 +480,32 @@ function Notes({ notes, label, working }: { notes: TurnNotes; label: string; wor
     );
 }
 
-/** Caius's prose: paragraphs and bullets, no markup beyond that. */
+/** Caius's prose: paragraphs, bullets, numbered steps, quotes and headings, bold and code inline. `withoutLists` leaves the lists out. */
 function CaiusText({ text, withoutLists }: { text: string; withoutLists?: boolean }) {
+    return <div class="caius-text"><Blocks blocks={proseBlocks(text)} withoutLists={withoutLists} /></div>;
+}
+
+function Blocks({ blocks, withoutLists }: { blocks: ProseBlock[]; withoutLists?: boolean }) {
     return (
-        <div class="caius-text">
-            {text.split(/\n{2,}/).map((para, i) => {
-                const lines = para.split("\n");
-                if (lines.every((l) => /^\s*[-*•]\s/.test(l))) {
-                    return withoutLists ? null : <ul key={i}>{lines.map((l, j) => <li key={j}>{strip(l.replace(/^\s*[-*•]\s/, ""))}</li>)}</ul>;
+        <>
+            {blocks.map((block, i) => {
+                switch (block.kind) {
+                    case "heading": return <p key={i} class="caius-heading"><Spans spans={block.text} /></p>;
+                    case "p": return <p key={i}><Spans spans={block.text} /></p>;
+                    case "quote": return <blockquote key={i}><Blocks blocks={block.blocks} withoutLists={withoutLists} /></blockquote>;
+                    default: {
+                        if (withoutLists) return null;
+                        const items = block.items.map((item, j) => <li key={j}><Spans spans={item} /></li>);
+                        return block.kind === "ol" ? <ol key={i}>{items}</ol> : <ul key={i}>{items}</ul>;
+                    }
                 }
-                return <p key={i}>{strip(para)}</p>;
             })}
-        </div>
+        </>
     );
 }
 
-function strip(text: string) {
-    return text.replace(/\*\*(.+?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1");
+function Spans({ spans }: { spans: Span[] }) {
+    return <>{spans.map((span, i) => span.bold ? <strong key={i}>{span.text}</strong> : span.code ? <code key={i}>{span.text}</code> : span.text)}</>;
 }
 
 /**

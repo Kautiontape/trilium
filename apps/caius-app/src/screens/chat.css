@@ -69,8 +69,28 @@
     margin: 0 0 var(--s2);
 }
 
-.caius-text ul {
+.caius-text ul, .caius-text ol {
     padding-left: var(--s5);
+}
+
+.caius-text ol {
+    margin: 0 0 var(--s2);
+}
+
+.caius-text blockquote {
+    margin: 0 0 var(--s2);
+    padding-left: var(--s3);
+    border-left: 3px solid var(--line);
+    color: var(--ink-2);
+}
+
+.caius-text .caius-heading {
+    font-weight: 600;
+}
+
+.caius-text code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
 }
 
 /* Caius's thinking and taken-back narration, folded under one line that opens them. */
