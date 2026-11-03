@@ -13,6 +13,14 @@ export const FEED_TIMEOUT_MS = 10_000;
 export interface CalendarDeps {
     fetch: typeof fetch;
     env: Record<string, string | undefined>;
+    /** The feed texts already downloaded, so one download serves every date; without it each read downloads every feed. */
+    feeds?: FeedCache;
+}
+
+/** Feed texts by URL (`createFeedCache`). */
+export interface FeedCache {
+    /** The text of `url`: a download still running or younger than the TTL, else `download()`'s. */
+    text(url: string, download: () => Promise<string>): Promise<string>;
 }
 
 type Ical = typeof ICALType;
@@ -47,7 +55,7 @@ export async function readCalendar(deps: CalendarDeps, date: string): Promise<{ 
     for (const [ index, url ] of urls.entries()) {
         let text: string;
         try {
-            text = await fetchFeed(deps.fetch, url);
+            text = await (deps.feeds ? deps.feeds.text(url, () => fetchFeed(deps.fetch, url)) : fetchFeed(deps.fetch, url));
         } catch (e) {
             errors.push({ source: "calendar", error: `feed_${index}_${e instanceof Error ? e.message : "network"}` });
             continue;
@@ -64,6 +72,26 @@ export async function readCalendar(deps: CalendarDeps, date: string): Promise<{ 
     }
 
     return { events: flagOverlaps(mergeDuplicates(events)), errors };
+}
+
+/**
+ * A `FeedCache` that keeps a downloaded text for `ttlMs` on `clockMs`. Reads that run at once share
+ * one download; a failed download is dropped, so the next read tries the feed again.
+ */
+export function createFeedCache(clockMs: () => number, ttlMs: number): FeedCache {
+    const texts = new Map<string, { at: number; text: Promise<string> }>();
+    return {
+        text(url, download) {
+            const hit = texts.get(url);
+            if (hit && clockMs() - hit.at < ttlMs) return hit.text;
+            const text = download();
+            texts.set(url, { at: clockMs(), text });
+            text.catch(() => {
+                if (texts.get(url)?.text === text) texts.delete(url);
+            });
+            return text;
+        }
+    };
 }
 
 /** The user's addresses, for finding their own PARTSTAT: `JIRA_EMAIL` and the comma-separated `CAIUS_USER_EMAILS`. */

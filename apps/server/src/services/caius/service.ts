@@ -104,7 +104,7 @@ import { blockFor } from "./filing.js";
 import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import { catchupOf, type DayFrame, type DayRead, dayLabels, dayPeriods, drawnTitle, failedCalendar, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
 import { dayCapacityOf, statedFocus } from "./day-read.js";
-import { readCalendar } from "./inputs/calendar.js";
+import { createFeedCache, readCalendar } from "./inputs/calendar.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
 import type { CalendarEvent, InputError } from "./inputs/types.js";
@@ -117,6 +117,9 @@ export { routeInputs } from "./schemas.js";
 
 /** How long a `caius_inputs` answer is reused for the same day and Context. */
 export const INPUTS_TTL_MS = 15 * 60_000;
+
+/** How long a failed calendar read for a day is reused before the feeds are read again. */
+export const CALENDAR_RETRY_MS = 60_000;
 
 export type InputsReader = (input: InputsInput) => Promise<CaiusInputs>;
 
@@ -140,12 +143,14 @@ export function createCaiusService(
     inputsOf: InputsReader = (input) => readInputs(input),
     clockMs: () => number = Date.now,
     ticketOf: TicketReader = (key) => readTicket({ fetch: globalThis.fetch, env: process.env, now: () => new Date() }, key),
-    calendarOf: CalendarReader = (date) => readCalendar({ fetch: globalThis.fetch, env: process.env }, date)
+    calendarOf?: CalendarReader
 ) {
     const store = withListItemIds(baseStore);
     const inputsCache = new Map<string, { at: number; inputs: CaiusInputs }>();
     const ticketCache = new Map<string, { at: number; card: TicketCard }>();
-    const calendarCache = new Map<string, { at: number; calendar: Awaited<ReturnType<CalendarReader>> }>();
+    const calendarCache = new Map<string, { at: number; ttl: number; calendar: Awaited<ReturnType<CalendarReader>> }>();
+    const feeds = createFeedCache(clockMs, INPUTS_TTL_MS);
+    const readDayCalendar: CalendarReader = calendarOf ?? ((date) => readCalendar({ fetch: globalThis.fetch, env: process.env, feeds }, date));
 
     /** The standing note (`#assistantContext`) as markdown. The caller holds the lock. */
     async function readStanding(): Promise<Standing> {
@@ -229,25 +234,23 @@ export function createCaiusService(
 
     /**
      * The calendar of `date`: a fresh `caius_inputs` answer's for that day, else `calendarOf`'s,
-     * reused for `INPUTS_TTL_MS` unless a feed failed. A reader that throws reads as `unexpected`.
+     * reused for `INPUTS_TTL_MS`, or for `CALENDAR_RETRY_MS` when a feed failed, so a day whose feed
+     * is down waits on it at most once a minute. A reader that throws reads as `unexpected`.
      */
     async function cachedCalendar(date: string): Promise<Awaited<ReturnType<CalendarReader>>> {
-        const fresh = (at: number) => clockMs() - at < INPUTS_TTL_MS;
+        const fresh = (at: number, ttl = INPUTS_TTL_MS) => clockMs() - at < ttl;
         const answered = [ ...inputsCache.values() ].filter((entry) => entry.inputs.date === date && fresh(entry.at)).sort((a, b) => b.at - a.at)[0];
         if (answered) {
             return { events: answered.inputs.calendar, errors: answered.inputs.errors.filter((e) => e.source === "calendar") };
         }
         const hit = calendarCache.get(date);
-        if (hit && fresh(hit.at)) return hit.calendar;
-        const calendar = await calendarOf(date).catch((): Awaited<ReturnType<CalendarReader>> => ({ events: [], errors: [ { source: "calendar", error: "unexpected" } ] }));
+        if (hit && fresh(hit.at, hit.ttl)) return hit.calendar;
+        const calendar = await readDayCalendar(date).catch((): Awaited<ReturnType<CalendarReader>> => ({ events: [], errors: [ { source: "calendar", error: "unexpected" } ] }));
         for (const [ old, entry ] of calendarCache) {
-            if (!fresh(entry.at)) calendarCache.delete(old);
+            if (!fresh(entry.at, entry.ttl)) calendarCache.delete(old);
         }
-        if (calendar.errors.every((e) => isInputWarning(e.error))) {
-            calendarCache.set(date, { at: clockMs(), calendar });
-        } else {
-            calendarCache.delete(date);
-        }
+        const failed = !calendar.errors.every((e) => isInputWarning(e.error));
+        calendarCache.set(date, { at: clockMs(), ttl: failed ? CALENDAR_RETRY_MS : INPUTS_TTL_MS, calendar });
         return calendar;
     }
 

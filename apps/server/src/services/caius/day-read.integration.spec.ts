@@ -105,8 +105,8 @@ describe("the day frame", () => {
         expect(inputsCalls).toEqual([]);
     });
 
-    it("keeps no failed read: a feed error or a reader that throws is read again next time", async () => {
-        const { service, calendarCalls } = countedService({ jiraFails: true, feeds: {
+    it("keeps a failed read for a minute: a feed error or a reader that throws is read again after it", async () => {
+        const { service, calendarCalls, advance } = countedService({ jiraFails: true, feeds: {
             [WED]: { events: [], errors: [ { source: "calendar", error: "feed_0_timeout" } ] },
             [THU]: "throws"
         } });
@@ -116,7 +116,14 @@ describe("the day frame", () => {
         await run(() => service.dayFrame(WED));
         expect((await run(() => service.dayFrame(THU))).inputs).toMatchObject({ calendar: [], errors: [ { source: "calendar", error: "unexpected" } ] });
         await run(() => service.dayFrame(THU));
-        expect(calendarCalls).toEqual([ WED, WED, THU, THU ]);
+        expect(calendarCalls).toEqual([ WED, THU ]);
+        advance(0.5);
+        await run(() => service.dayFrame(WED));
+        expect(calendarCalls).toEqual([ WED, THU ]);
+        advance(0.5);
+        await run(() => service.dayFrame(WED));
+        expect((await run(() => service.dayFrame(THU))).inputs.errors).toEqual([ { source: "calendar", error: "unexpected" } ]);
+        expect(calendarCalls).toEqual([ WED, THU, WED, THU ]);
     });
 
     it("takes the calendar of a fresh inputs read for the day instead of reading the feeds", async () => {

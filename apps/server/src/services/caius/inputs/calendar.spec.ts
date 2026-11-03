@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createFeedCache, readCalendar } from "./calendar.js";
 import { readInputs } from "./index.js";
 
 const NOW = new Date("2026-10-27T15:00:00Z");
@@ -165,5 +166,39 @@ describe("caius_inputs calendar", () => {
 
         const nobody = await run("2026-10-27", { ...ENV, JIRA_EMAIL: "someone@example.org" });
         expect(nobody.calendar.find((e) => e.title === "Vendor Demo")).toMatchObject({ declined: false, attendees: [ "Sam Example", "Riley Sample" ] });
+    });
+});
+
+describe("the feed cache", () => {
+    beforeEach(() => {
+        vi.stubEnv("TZ", "America/New_York");
+    });
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it("downloads each feed once for every date, again after the TTL, and keeps no failed download", async () => {
+        let clock = 0;
+        let fails = false;
+        const fetched: string[] = [];
+        const counted = (async (input: URL | string) => {
+            fetched.push(String(input));
+            return fails ? new Response("no", { status: 503 }) : fakeNetwork()(input);
+        }) as unknown as typeof fetch;
+        const feeds = createFeedCache(() => clock, 15 * 60_000);
+        const read = (date: string) => readCalendar({ fetch: counted, env: ENV, feeds }, date);
+
+        const [ tue, wed ] = await Promise.all([ read("2026-10-27"), read("2026-10-28") ]);
+        expect(summary(tue.events)).toContain("08:00-09:00 Dentist");
+        expect(summary(wed.events)).toEqual([ "09:00-10:00 Architecture Review" ]);
+        await read("2026-10-20");
+        expect(fetched).toEqual(FEEDS);
+
+        clock += 15 * 60_000;
+        fails = true;
+        expect((await read("2026-10-27")).errors).toEqual([ { source: "calendar", error: "feed_0_http_503" }, { source: "calendar", error: "feed_1_http_503" } ]);
+        fails = false;
+        expect((await read("2026-10-27")).errors).toEqual([]);
+        expect(fetched).toEqual([ ...FEEDS, ...FEEDS, ...FEEDS ]);
     });
 });
