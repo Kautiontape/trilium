@@ -51,6 +51,9 @@ it("offers the caius skill only while it is registered, and names every tool the
         expect(sheet, `the sheet should mention ${name}`).toContain(`\`${name}\``);
     }
     expect(sheet.split("\n").length).toBeGreaterThanOrEqual(80);
+    // The agent CLI saves a tool result over about 50,000 characters to a file and shows Caius only a
+    // 2 KB preview of it, so `load_skill`'s answer, the sheet plus its JSON wrapper, must stay under that.
+    expect(sheet.length).toBeLessThanOrEqual(48_000);
     // Each conversation is one question set, then one apply call that makes every write.
     expect(sheet).toContain("For `Wind down` and `Plan my day` openers, follow only this section.");
     expect(sheet).toContain("call `caius_plan_apply` **once**");
