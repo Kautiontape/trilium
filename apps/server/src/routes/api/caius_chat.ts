@@ -30,7 +30,8 @@ import { SSE_HEARTBEAT_FRAME, startSseHeartbeat } from "./llm_chat.js";
 export default {
     /**
      * `POST /etapi/llm-chat/stream`: starts a turn, as `checkCaiusChat` leaves it, and streams it
-     * as SSE. A note whose turn still runs answers 409 `turn_running`.
+     * as SSE. A note whose turn still runs answers 409 `turn_running`, and a turn while
+     * `MAX_RUNNING_TURNS` run answers 429 `too_many_turns`.
      */
     streamCaiusChat: (req: Request, res: Response) => {
         const checked = checkCaiusChat(req.body);
@@ -47,6 +48,10 @@ export default {
         });
         if (turn === "running") {
             res.status(409).json({ error: "turn_running" });
+            return;
+        }
+        if (turn === "busy") {
+            res.status(429).json({ error: "too_many_turns" });
             return;
         }
         streamTurn(turn, 0, res);

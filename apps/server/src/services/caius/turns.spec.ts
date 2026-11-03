@@ -3,6 +3,7 @@ import { becca, cls, hidden_subtree, special_notes, sql_init } from "@triliumnex
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
+    MAX_RUNNING_TURNS,
     MAX_TURN_CHUNKS,
     MAX_TURN_MS,
     phoneChatNoteOf,
@@ -151,6 +152,51 @@ describe("startTurn", () => {
         expect(second).not.toBe(first);
         expect(turnOf(noteId)).toBe(second);
         await second.finished;
+    });
+
+    it("refuses a turn on another note while `MAX_RUNNING_TURNS` run, and starts it once one ends", async () => {
+        const chat = gated([ text("Hi") ], [ { type: "done" } ]);
+        const running: Turn[] = [];
+        try {
+            for (let i = 0; i < MAX_RUNNING_TURNS; i++) {
+                running.push(started({ noteId: newChatNote(), messages: OPENER, config: {} }));
+            }
+            const noteId = newChatNote();
+            expect(startTurn({ noteId, messages: OPENER, config: {} })).toBe("busy");
+            expect(turnOf(noteId)).toBeUndefined();
+            expect(startTurn({ noteId: running[0].noteId, messages: OPENER, config: {} })).toBe("running");
+        } finally {
+            chat.release();
+            await Promise.all(running.map((turn) => turn.finished));
+        }
+
+        const next = started({ noteId: newChatNote(), messages: OPENER, config: {} });
+        await next.finished;
+        expect(next.chunks.at(-1)).toEqual({ type: "done" });
+    });
+
+    it("keeps tool-input chunks out of the log and from subscribers, with matching offsets", async () => {
+        const noteId = newChatNote();
+        const toolInput = { date: "2026-11-04" };
+        const chat = gated([ text("a") ], [
+            { type: "tool_input_start", toolCallId: "t1", toolName: "caius_plan" },
+            { type: "tool_input_delta", toolCallId: "t1", delta: "{\"date\":" },
+            { type: "tool_input_delta", toolCallId: "t1", delta: "\"2026-11-04\"}" },
+            { type: "tool_use", toolCallId: "t1", toolName: "caius_plan", toolInput },
+            { type: "tool_result", toolCallId: "t1", toolName: "caius_plan", result: "{}" },
+            { type: "done" }
+        ]);
+        const turn = started({ noteId, messages: OPENER, config: {} });
+        await chat.reached;
+
+        const live: string[] = [];
+        subscribe(turn, 0, (chunk, index) => live.push(`${index}:${chunk.type}`), () => {});
+        chat.release();
+        await turn.finished;
+
+        const types = [ "text", "tool_use", "tool_result", "done" ];
+        expect(turn.chunks.map((chunk) => chunk.type)).toEqual(types);
+        expect(live).toEqual(types.map((type, index) => `${index}:${type}`));
     });
 
     it("runs `runChat` in a context of its own, apart from the caller's", async () => {
@@ -314,8 +360,8 @@ describe("phoneChatNoteOf", () => {
 
 function started(start: TurnStart): Turn {
     const turn = startTurn(start);
-    if (turn === "running") {
-        throw new Error("A turn is already running");
+    if (typeof turn === "string") {
+        throw new Error(`The turn did not start: ${turn}`);
     }
     return turn;
 }

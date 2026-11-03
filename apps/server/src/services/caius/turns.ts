@@ -18,6 +18,8 @@ export const SAVE_INTERVAL_MS = 2000;
 export const MAX_TURN_MS = 15 * 60 * 1000;
 /** The most chunks a turn's log holds before the turn is aborted. */
 export const MAX_TURN_CHUNKS = 20_000;
+/** The most turns that run at once across all chat notes: each one is a Claude Code subprocess. */
+export const MAX_RUNNING_TURNS = 4;
 /** How long a finished turn stays in the registry for a client to reattach to. */
 export const RETAIN_MS = 10 * 60 * 1000;
 
@@ -28,7 +30,10 @@ export interface Turn {
     readonly replyId: string;
     /** When the turn started, as the reply's `createdAt`. */
     readonly createdAt: string;
-    /** Every chunk `runChat` gave, ending in exactly one `done` or `error` once the turn ends. */
+    /**
+     * The chunks `runChat` gave, without the `tool_input_*` chunks, ending in exactly one `done` or
+     * `error` once the turn ends.
+     */
     readonly chunks: readonly LlmStreamChunk[];
     readonly running: boolean;
     /** Resolves once the turn has ended and its final transcript is saved. */
@@ -47,13 +52,17 @@ export interface TurnStart {
 export type ChunkListener = (chunk: LlmStreamChunk, index: number) => void;
 
 /**
- * Starts a turn for a chat note and runs it to its end in the background, or returns `"running"`
- * when the note already has a running turn. A finished turn for the note is replaced.
+ * Starts a turn for a chat note and runs it to its end in the background. Returns `"running"` when
+ * the note already has a running turn, and `"busy"` when `MAX_RUNNING_TURNS` turns run. A finished
+ * turn for the note is replaced.
  */
-export function startTurn(start: TurnStart): Turn | "running" {
+export function startTurn(start: TurnStart): Turn | "running" | "busy" {
     const { noteId, messages, config, transcript } = start;
     if (registry.get(noteId)?.running) {
         return "running";
+    }
+    if ([ ...registry.values() ].filter((turn) => turn.running).length >= MAX_RUNNING_TURNS) {
+        return "busy";
     }
     let resolveFinished = () => {};
     const finished = new Promise<void>((resolve) => {
@@ -152,6 +161,12 @@ const STOPPED = "The reply stopped before it finished.";
 const OUT_OF_TIME = "Caius ran out of time on this reply.";
 const TOO_LONG = "The reply grew too long.";
 
+/**
+ * The chunks that stream a tool call's input as it is written. `applyChunk` builds the call from
+ * `tool_use` alone, so the turn neither logs nor sends these.
+ */
+const TOOL_INPUT_CHUNKS = new Set<LlmStreamChunk["type"]>([ "tool_input_start", "tool_input_delta" ]);
+
 /** Each chat note's latest turn; a turn no longer here has finished. */
 const registry = new Map<string, TurnState>();
 
@@ -161,7 +176,7 @@ async function run(state: TurnState, messages: LlmMessage[], config: LlmProvider
     for await (const chunk of runChat(messages, config, state.controller.signal)) {
         // After its terminal chunk `runChat` still releases the agent session and names the chat
         // note, so the generator is drained to its end rather than stopped.
-        if (!state.running) {
+        if (!state.running || TOOL_INPUT_CHUNKS.has(chunk.type)) {
             continue;
         }
         push(state, chunk);

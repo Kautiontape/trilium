@@ -5,6 +5,7 @@ import type { AddressInfo } from "net";
 import supertest from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MAX_RUNNING_TURNS } from "../../src/services/caius/turns.js";
 import config from "../../src/services/config.js";
 import { login } from "./utils.js";
 
@@ -404,6 +405,26 @@ describe("Caius phone token routes", () => {
             const ended = await settled(noteId);
             expect(ended).toMatchObject({ running: false, replyId: "r-read", chunks: 2 });
             expect(ended.content?.messages[1]).toEqual({ id: "r-read", role: "assistant", content: REPLY, createdAt: expect.any(String) });
+        });
+
+        it("answers 429 to a turn on another note while the most turns run", async () => {
+            holdTurns();
+            const posts: Promise<supertest.Response>[] = [];
+            try {
+                for (let i = 0; i < MAX_RUNNING_TURNS; i++) {
+                    const noteId = await newChatNote();
+                    posts.push(stream(turnBody(noteId, `r-busy-${i}`)).then((res) => res));
+                    await vi.waitFor(async () => expect((await turnState(noteId)).chunks).toBe(1));
+                }
+                const res = await stream(turnBody(await newChatNote(), "r-over")).expect(429);
+                expect(res.body).toEqual({ error: "too_many_turns" });
+                expect(chat.calls).toHaveLength(MAX_RUNNING_TURNS);
+            } finally {
+                chat.release();
+                for (const res of await Promise.all(posts)) {
+                    expect(res.status).toBe(200);
+                }
+            }
         });
 
         it("replays a turn from the start or an offset, and follows one that still runs", async () => {
