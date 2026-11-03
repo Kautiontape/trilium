@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_SETTINGS } from "./local.js";
-import { NUDGE_IDS, plannedNudges, SNOOZE_IDS, staleSnoozes } from "./notify.js";
+import { CHAT_IDS, NUDGE_IDS, plannedNudges, SNOOZE_IDS, staleSnoozes } from "./notify.js";
 import type { TodayData } from "./store.js";
 
 function today(overrides: Partial<TodayData> = {}, state: "unplanned" | "planned" | "wound_down" = "unplanned"): TodayData {
@@ -47,5 +47,12 @@ describe("plannedNudges", () => {
         expect(staleSnoozes("planned")).toEqual([ SNOOZE_IDS.plan ]);
         expect(staleSnoozes("wound_down")).toEqual([ SNOOZE_IDS.plan, SNOOZE_IDS.winddown ]);
         expect(staleSnoozes(undefined)).toEqual([]);
+    });
+});
+
+describe("CHAT_IDS", () => {
+    it("stays clear of the nudges, their snoozes and the test notification", () => {
+        const taken = new Set<number>([ ...Object.values(NUDGE_IDS), ...Object.values(SNOOZE_IDS), 99 ]);
+        expect(Object.values(CHAT_IDS).filter((id) => taken.has(id))).toEqual([]);
     });
 });

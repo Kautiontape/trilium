@@ -19,6 +19,8 @@ export const onboarding = signal(false);
 export const quickAddRequested = signal(0);
 /** Bumped when the app comes back to the front, so a chat that was streaming asks the server where its turn is. */
 export const resumed = signal(0);
+/** False while the app is in the background, between Capacitor's `pause` and `resume`. */
+export const appVisible = signal(true);
 
 /**
  * Runs `action` with the server's today, now or as soon as Today has been read. A shortcut or a

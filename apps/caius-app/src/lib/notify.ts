@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { type ActionPerformed, LocalNotifications, type LocalNotificationSchema } from "@capacitor/local-notifications";
+import { ForegroundService, Importance } from "@capawesome-team/capacitor-android-foreground-service";
 
 import { clockMinutes, duration, hhmm, keyOf, nextWorkdayKey } from "./day.js";
 import type { Reminder, Settings } from "./local.js";
@@ -25,6 +26,9 @@ export const NUDGE_IDS = { plan: 11, winddown: 12, overcap: 13, nextPlan: 14 } a
 /** In 30 min / In 1 h bring a nudge back once, under a fixed id of its own, so a later read of Today can cancel it. */
 export const SNOOZE_IDS = { plan: 111, winddown: 112 } as const;
 
+/** A chat turn's notifications: the foreground service's while it runs. */
+export const CHAT_IDS = { working: 21 } as const;
+
 export async function setUpNotifications(onAction: (action: ActionPerformed) => void) {
     if (!Capacitor.isNativePlatform()) {
         return;
@@ -43,6 +47,10 @@ export async function setUpNotifications(onAction: (action: ActionPerformed) => 
         ]
     });
     await LocalNotifications.addListener("localNotificationActionPerformed", onAction);
+    // The foreground service posts its own notification, on a channel only its plugin creates.
+    await ForegroundService.createNotificationChannel({
+        id: "caius-working", name: "Caius thinking", description: "While Caius writes a reply", importance: Importance.Low
+    }).catch(() => undefined);
 }
 
 export async function notificationsAllowed(): Promise<boolean> {

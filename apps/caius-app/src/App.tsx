@@ -5,10 +5,11 @@ import { Capacitor } from "@capacitor/core";
 import type { ActionPerformed } from "@capacitor/local-notifications";
 import { useEffect, useRef } from "preact/hooks";
 
-import { chatActivity, closeRitual, minimizeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
+import { appVisible, chatActivity, closeRitual, minimizeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
 import { MiniChat } from "./components/MiniChat.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
+import { startChatNotifications } from "./lib/chat-notify.js";
 import { readStoredChats } from "./lib/chats.js";
 import { loadConnection } from "./lib/connection.js";
 import type { Reminder } from "./lib/local.js";
@@ -136,6 +137,7 @@ async function boot() {
     }
 
     await setUpNotifications(onNotificationAction).catch(() => undefined);
+    startChatNotifications();
     await CapApp.addListener("backButton", () => {
         if (sheet.value) {
             closeSheet();
@@ -154,8 +156,12 @@ async function boot() {
             void CapApp.minimizeApp();
         }
     });
-    await CapApp.addListener("pause", () => void flushHeld());
+    await CapApp.addListener("pause", () => {
+        appVisible.value = false;
+        void flushHeld();
+    });
     await CapApp.addListener("resume", () => {
+        appVisible.value = true;
         resumed.value++;
         if (connection.value) {
             void refreshToday();
