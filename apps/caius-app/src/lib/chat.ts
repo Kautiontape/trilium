@@ -262,14 +262,15 @@ export function stepOf(call: ToolCall): RitualStep | null {
     if (!parsed || typeof parsed !== "object" || typeof (parsed as { step?: unknown }).step !== "string") {
         return null;
     }
-    const later = parsed as { error?: string; date?: string; dateLabel?: string };
+    const later = parsed as { error?: string; date?: string; dateLabel?: string; title?: string };
     if (later.error === "not_today") {
-        return { ritual: "plan", step: "not_today", question: null, data: { date: later.date }, dateLabel: later.dateLabel };
+        return { ritual: "plan", step: "not_today", title: later.title ?? null, question: null, data: { date: later.date }, dateLabel: later.dateLabel };
     }
-    const step = parsed as { step: string; question?: string | null; data?: Record<string, unknown>; dateLabel?: string };
+    const step = parsed as { step: string; title?: string; question?: string | null; data?: Record<string, unknown>; dateLabel?: string };
     return {
         ritual: tool === "caius_winddown" ? "winddown" : "plan",
         step: step.step,
+        title: step.title ?? null,
         question: step.question ?? null,
         data: step.data ?? {},
         dateLabel: step.dateLabel
@@ -293,9 +294,36 @@ function parseResult(result: string): unknown {
 export interface RitualStep {
     ritual: "plan" | "winddown";
     step: string;
+    /** The card's heading; null from a server that predates titles, where the question stands in. */
+    title: string | null;
     question: string | null;
     data: Record<string, unknown>;
     dateLabel?: string;
+}
+
+/**
+ * Whether a step's card has anything to answer or read: a card with nothing in it is left out, and
+ * the ask lives in Caius's message. A sentence alone (the capacity, a summary) is worth a card.
+ */
+export function stepHasBody(step: RitualStep): boolean {
+    const d = step.data as Record<string, any>;
+    const some = (list: unknown) => Array.isArray(list) && list.length > 0;
+    switch (`${step.ritual}:${step.step}`) {
+        case "plan:not_today":
+            return true;
+        case "plan:catchup":
+            return some(d.tasks);
+        case "winddown:open":
+            return some(d.items);
+        case "plan:inputs":
+            return some(d.onDeck) || some(d.candidates) || some(d.unmarked);
+        case "winddown:next":
+            return some(d.candidates) || !!d.capacity?.sentence || !!d.summary;
+        case "winddown:context":
+            return some(d.context);
+        default:
+            return false;
+    }
 }
 
 /** The server has no phone chat routes: it predates them. */

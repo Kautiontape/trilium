@@ -176,7 +176,7 @@ describe("Growth and Recharge picks", () => {
             expect(inputs.question).toBeNull();
             expect(inputs.data).not.toHaveProperty("evening");
             expect(inputs.data.candidates).toEqual([
-                expect.objectContaining({ candidateId: `project:${caius}`, kind: "project", area: "growth", text: "Caius: the fate menu", because: "from your active projects", minutes: 60, noteId: caius, ref: refOf("c", `project:${caius}`) }),
+                expect.objectContaining({ candidateId: `project:${caius}`, kind: "project", area: "growth", text: "Caius: the fate menu", because: "it's one of your active projects", minutes: 60, noteId: caius, ref: refOf("c", `project:${caius}`) }),
                 expect.objectContaining({ candidateId: `project:${printing}`, kind: "project", area: "recharge", text: "3D printing", minutes: 60 })
             ]);
             // Foundation's total is the one task; the picks are not work.

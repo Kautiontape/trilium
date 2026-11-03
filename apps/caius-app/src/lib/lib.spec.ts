@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyChunk, type AssistantTurn, type ChatChunk, opener, sseParser, stepOf, turnText } from "./chat.js";
+import { applyChunk, type AssistantTurn, type ChatChunk, opener, type RitualStep, sseParser, stepHasBody, stepOf, turnText } from "./chat.js";
 import { normalizeServerUrl } from "./connection.js";
 import { addMonths, addWeeks, dayLabel, mondayOf, nextWorkdayKey, parseMeeting, periodLabel, relativePeriod, weekLabel, weekOf } from "./day.js";
 import { McpError, parseToolReply } from "./mcp.js";
@@ -34,7 +34,7 @@ describe("sseParser and applyChunk", () => {
             "data: {\"type\":\"text\",\"content\":\"Here's \"}\n\ndata: {\"type\":\"te",
             "xt\",\"content\":\"what's left.\"}\n\n",
             "data: {\"type\":\"tool_use\",\"toolCallId\":\"t1\",\"toolName\":\"caius_winddown\",\"toolInput\":{\"step\":\"open\"}}\r\n\r\n",
-            "data: {\"type\":\"tool_result\",\"toolCallId\":\"t1\",\"toolName\":\"caius_winddown\",\"result\":\"{\\\"step\\\":\\\"open\\\",\\\"question\\\":\\\"Which are done?\\\",\\\"data\\\":{\\\"items\\\":[]}}\"}\n\n",
+            "data: {\"type\":\"tool_result\",\"toolCallId\":\"t1\",\"toolName\":\"caius_winddown\",\"result\":\"{\\\"step\\\":\\\"open\\\",\\\"title\\\":\\\"Today's leftovers\\\",\\\"question\\\":\\\"Which are done?\\\",\\\"data\\\":{\\\"items\\\":[]}}\"}\n\n",
             "data: {\"type\":\"done\"}\n\n"
         ];
         for (const part of wire) {
@@ -50,7 +50,7 @@ describe("sseParser and applyChunk", () => {
         expect(turnText(turn.blocks)).toBe("Here's what's left.");
         const call = turn.blocks.find((b) => b.type === "tool_call");
         expect(call?.type === "tool_call" && stepOf(call.toolCall)).toEqual({
-            ritual: "winddown", step: "open", question: "Which are done?", data: { items: [] }, dateLabel: undefined
+            ritual: "winddown", step: "open", title: "Today's leftovers", question: "Which are done?", data: { items: [] }, dateLabel: undefined
         });
     });
 
@@ -66,8 +66,24 @@ describe("sseParser and applyChunk", () => {
     it("reads a day that hasn't started as a not_today step, whose card sends nothing into the reply box", () => {
         const later = JSON.stringify({ step: "catchup", date: "2026-11-02", dateLabel: "Mon 2 Nov", error: "not_today", detail: "Monday hasn't started yet" });
         const step = stepOf({ id: "1", toolName: "mcp__trilium__caius_planday", input: {}, result: later });
-        expect(step).toEqual({ ritual: "plan", step: "not_today", question: null, data: { date: "2026-11-02" }, dateLabel: "Mon 2 Nov" });
+        expect(step).toEqual({ ritual: "plan", step: "not_today", title: null, question: null, data: { date: "2026-11-02" }, dateLabel: "Mon 2 Nov" });
         expect(step && stepReply(step, {})).toEqual([]);
+    });
+
+    it("leaves out a card with nothing to answer, and keeps one with a sentence to read", () => {
+        const step = (kind: string, data: Record<string, unknown>): RitualStep => {
+            const [ ritual, name ] = kind.split(":") as [ "plan" | "winddown", string ];
+            return { ritual, step: name, title: null, question: null, data };
+        };
+        expect(stepHasBody(step("winddown:context", { context: [] }))).toBe(false);
+        expect(stepHasBody(step("winddown:context", { context: [ { text: "Out Friday" } ] }))).toBe(true);
+        expect(stepHasBody(step("winddown:next", { candidates: [], unmarked: [] }))).toBe(false);
+        expect(stepHasBody(step("winddown:next", { candidates: [], capacity: { sentence: "Tuesday has room." } }))).toBe(true);
+        expect(stepHasBody(step("winddown:open", { items: [] }))).toBe(false);
+        expect(stepHasBody(step("plan:inputs", { onDeck: [], candidates: [ { text: "ZAP-1" } ] }))).toBe(true);
+        expect(stepHasBody(step("plan:inputs", { yesterday: { sentence: "Monday: 3 done." } }))).toBe(false);
+        expect(stepHasBody(step("plan:catchup", { tasks: [] }))).toBe(false);
+        expect(stepHasBody(step("plan:not_today", {}))).toBe(true);
     });
 
     it("writes the openers the server's check reads", () => {

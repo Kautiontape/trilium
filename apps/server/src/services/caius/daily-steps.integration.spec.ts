@@ -149,7 +149,7 @@ afterAll(() => {
 describe("caius_winddown", () => {
     it("open: lists today's leftovers, the last workdays' and the week's items for Friday, with fates on Monday and in next week's note", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "open" });
-        expect(answer).toMatchObject({ step: "open", date: FRIDAY, targetDay: MONDAY, next: "next" });
+        expect(answer).toMatchObject({ step: "open", title: "Today's leftovers", date: FRIDAY, targetDay: MONDAY, next: "next" });
         expect(answer.question).toBe("Here's what's left from today and what slipped. Which are done? The rest goes on Monday's On deck unless you say otherwise.");
         const items = answer.data.items.map((item: any) => [ item.group, item.listItemId, plain(item.fate) ]);
         expect(items).toEqual(expect.arrayContaining([
@@ -171,7 +171,7 @@ describe("caius_winddown", () => {
 
     it("next: offers candidates for Monday, leaving out done, live, suggested and dismissed ones, and asks about the overlap, with no evening question", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "next" });
-        expect(answer).toMatchObject({ step: "next", targetDay: MONDAY, next: "context" });
+        expect(answer).toMatchObject({ step: "next", title: "On deck and new picks", targetDay: MONDAY, next: "context" });
         const candidates = answer.data.candidates.map((c: any) => [ c.text, c.because, c.minutes, c.source ]);
         expect(candidates).toEqual([
             [ "Get ZAP-101 Summary ZAP-101 done", "sitting in Dev Verify for 3 days", 30, "ZAP-101" ],
@@ -241,7 +241,7 @@ describe("caius_winddown", () => {
 
     it("context: notices an override that lapses before Monday and asks to keep it", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "context" });
-        expect(answer).toMatchObject({ step: "context", targetDay: MONDAY, next: null });
+        expect(answer).toMatchObject({ step: "context", title: "For Monday", targetDay: MONDAY, next: null });
         expect(answer.data.targetWeek).toBe("2026-W46");
         expect(plain(answer.data.noticed)).toEqual([
             { kind: "keep", line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) },
@@ -313,7 +313,7 @@ describe("caius_winddown", () => {
 describe("caius_planday", () => {
     it("catchup: offers to move every missed night's open tasks, and stops asking once skipped", async () => {
         const answer = await planday({ date: MONDAY, step: "catchup" });
-        expect(answer).toMatchObject({ step: "catchup", date: MONDAY, next: "inputs" });
+        expect(answer).toMatchObject({ step: "catchup", title: "Catch-up", date: MONDAY, next: "inputs" });
         // Thursday was never closed either, so its tasks come with Friday's.
         expect(answer.question).toBe("Thu 5 Nov and Fri 6 Nov have 4 open tasks. Move all to today, review them, or skip?");
         expect(answer.data).toMatchObject({ lastWorkday: FRIDAY, days: [ THURSDAY, FRIDAY ], moveTo: MONDAY, skipped: false });
@@ -337,7 +337,7 @@ describe("caius_planday", () => {
 
     it("inputs: gives the candidates, the Meetings block to write and the overlap question", async () => {
         const answer = await planday({ date: MONDAY, step: "inputs" });
-        expect(answer).toMatchObject({ step: "inputs", next: "brief" });
+        expect(answer).toMatchObject({ step: "inputs", title: "New since yesterday", next: "brief" });
         expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-102", "ZAP-2600", "2026-W46" ]);
         expect(answer.data.meetings).toEqual({
             lines: [ "10:00 Standup", "12:00 Release call (overlaps)", "12:30 Review (overlaps)" ], current: [], changed: true
@@ -357,7 +357,7 @@ describe("caius_planday", () => {
 
     it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
         const answer = await planday({ date: MONDAY, step: "brief" });
-        expect(answer).toMatchObject({ step: "brief", question: null, next: null });
+        expect(answer).toMatchObject({ step: "brief", title: "Today's plan", question: null, next: null });
         expect(answer.data.day).toEqual({ start: "10:00", end: "23:00", workEnd: "18:00", from: { start: "rhythm", end: "rhythm", workEnd: "default", noon: "default", rollover: "default", targets: "default" } });
         expect(answer.data.header).toEqual({
             start: "10:00", end: "23:00", workEnd: "18:00",

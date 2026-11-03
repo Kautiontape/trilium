@@ -126,7 +126,7 @@ describe("Wind down in the small hours", () => {
 describe("Plan my day in the small hours", () => {
     it("Tue 01:30: plans Monday, from 25:30, and refuses Tuesday", async () => {
         at(`${TUE}T01:30`);
-        expect(await call("caius_planday", { date: TUE, step: "inputs" })).toMatchObject({ error: "not_today" });
+        expect(await call("caius_planday", { date: TUE, step: "inputs" })).toMatchObject({ error: "not_today", title: expect.any(String) });
         const offer = await call("caius_planday", { date: MON, step: "inputs" });
         expect(offer.error).toBeUndefined();
         expect(offer.data).toMatchObject({ planFrom: "25:30" });

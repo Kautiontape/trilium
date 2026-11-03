@@ -7,9 +7,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
-import { Button, Chip, haptic, Icon } from "../components/ui.js";
+import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { ritual } from "../app-state.js";
-import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
+import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
@@ -429,9 +429,9 @@ function Message({ message, chat, live, notes }: { message: ChatMessage; chat: C
 }
 
 /**
- * One assistant turn. Caius asks every step's question in one message after the steps ran, so its
- * text comes first and the step cards follow with the data to answer from; the bullet lists in the
- * text repeat what the cards show, and are left out when there are cards.
+ * One assistant turn. Caius sends one rundown after the steps ran, so its text comes first and the
+ * step cards follow with the data to answer from; a card with nothing to answer is left out, and
+ * the bullet lists in the text repeat what the cards show, so they are left out when there are cards.
  */
 function AssistantBlocks({ blocks, chat, live, pending, notes, working }: {
     blocks: ContentBlock[];
@@ -445,7 +445,7 @@ function AssistantBlocks({ blocks, chat, live, pending, notes, working }: {
 }) {
     const steps = blocks.flatMap((b) => {
         const step = b.type === "tool_call" ? stepOf(b.toolCall) : null;
-        return step && b.type === "tool_call" ? [ { id: b.toolCall.id, step } ] : [];
+        return step && b.type === "tool_call" && stepHasBody(step) ? [ { id: b.toolCall.id, step } ] : [];
     });
     const text = turnText(blocks);
     return (
@@ -453,7 +453,7 @@ function AssistantBlocks({ blocks, chat, live, pending, notes, working }: {
             {notes && <Notes notes={notes} label={working ?? "Caius's notes"} working={!!working} />}
             {text && <CaiusText text={text} withoutLists={steps.length > 0} />}
             {!pending && steps.map(({ id, step }) => (
-                <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} askedInText={!!step.question && text.includes(step.question)} />
+                <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} />
             ))}
         </div>
     );
@@ -594,13 +594,12 @@ function SentAnswers({ answers }: { answers: NonNullable<ChatMessage["answers"]>
 // ---- Step cards --------------------------------------------------------------------------------
 
 /**
- * A ritual step as a card: Caius's question word for word (unless his text already asked it) over
- * its data. Every item shows its fate as a chip, set to the step's own default until he taps it.
+ * A ritual step as a card: its title (the question, from a server without titles) over its data. Every item shows its fate as a chip, set to the step's own default until he taps it.
  * The card reports its whole answer to the composer: the sentences (`stepReply`), so the message
  * names every item explicitly, and his taps (`stepPicks`) for the answers pill. The agent does the
  * judgment and the write.
  */
-function StepCard({ id, step, chat, live, askedInText }: { id: string; step: RitualStep; chat: Chat; live: boolean; askedInText: boolean }) {
+function StepCard({ id, step, chat, live }: { id: string; step: RitualStep; chat: Chat; live: boolean }) {
     const [ answers, setAnswers ] = useState<StepAnswers>({});
     const update = (patch: Partial<StepAnswers>) => {
         haptic("tick");
@@ -617,7 +616,7 @@ function StepCard({ id, step, chat, live, askedInText }: { id: string; step: Rit
     }, [ live, joined ]);
     return (
         <section class={`step-card step-${step.ritual}`}>
-            {step.question && !askedInText && <p class="step-question">{step.question}</p>}
+            {(step.title ?? step.question) && <h3 class="step-title">{step.title ?? step.question}</h3>}
             <StepBody step={step} answers={answers} update={update} disabled={!live} chat={chat} />
         </section>
     );
@@ -669,7 +668,7 @@ function StepBody({ step, answers, update, disabled, chat }: { step: RitualStep;
             <>
                 <FateList items={items} options={options} answers={answers} update={update} disabled={disabled} />
                 <div class="step-foot">
-                    <Button kind="quiet" disabled={disabled} onClick={() => update({ fates: Object.fromEntries(items.map((_, i) => [ i, { kind: "done" } ])) })}>All done</Button>
+                    <Button kind="quiet" disabled={disabled} onClick={() => update({ fates: Object.fromEntries(items.map((_, i) => [ i, { kind: "done" } ])) })}>Mark all done</Button>
                 </div>
             </>
         );
@@ -723,18 +722,26 @@ function StepBody({ step, answers, update, disabled, chat }: { step: RitualStep;
     return null;
 }
 
-/** Items with their fate as a chip, the step's proposal until he taps it; a tap moves to the next fate. Drop asks why. */
+/** Items with their fate as a chip, the step's proposal until he picks one; a tap opens a sheet of the fates. Drop asks why. */
 function FateList({ items, options, answers, update, disabled }: { items: StepItem[]; options: Choice[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
     const choiceOf = (i: number): Choice => answers.fates?.[i] ?? { kind: "proposed" };
-    const cycle = (i: number) => {
+    const pick = (i: number, choice: Choice) => {
+        update({ fates: { ...answers.fates, [i]: choice } });
+        closeSheet();
+    };
+    const choose = (i: number) => {
         const labels = options.map((o) => chipLabel(o, items[i].fate));
-        const at = labels.indexOf(chipLabel(choiceOf(i), items[i].fate));
-        let next = (at + 1) % options.length;
-        // Skip a fate that reads the same as the proposal.
-        while (next !== 0 && labels[next] === labels[0]) {
-            next = (next + 1) % options.length;
-        }
-        update({ fates: { ...answers.fates, [i]: options[next] } });
+        const now = chipLabel(choiceOf(i), items[i].fate);
+        openSheet(
+            <>
+                <SheetTitle title="Fate" sub={displayText(items[i].text).text} />
+                {options.map((option, at) => (
+                    // A fate that reads the same as the proposal is left out; the proposal itself stands for it.
+                    at > 0 && labels[at] === labels[0] ? null
+                        : <SheetAction key={labels[at]} glyph={labels[at] === now ? "check" : "·"} label={labels[at]} detail={at === 0 ? "proposed" : undefined} onClick={() => pick(i, option)} />
+                ))}
+            </>
+        );
     };
     return (
         <ul class="fate-list">
@@ -743,7 +750,7 @@ function FateList({ items, options, answers, update, disabled }: { items: StepIt
                 return (
                     <li key={i}>
                         <span class="fate-text">{displayText(item.text).text}</span>
-                        <Chip selected={choice.kind !== "proposed"} disabled={disabled} onClick={() => cycle(i)}>{chipLabel(choice, item.fate)}</Chip>
+                        <Chip selected={choice.kind !== "proposed"} disabled={disabled} onClick={() => choose(i)}>{chipLabel(choice, item.fate)}</Chip>
                         {choice.kind === "drop" && (
                             <input class="field fate-reason" placeholder="Why?" value={choice.reason} disabled={disabled}
                                 onInput={(e) => update({ fates: { ...answers.fates, [i]: { kind: "drop", reason: (e.target as HTMLInputElement).value } } })} />
@@ -803,7 +810,7 @@ function Unmarked({ items, answers, update, disabled }: { items: UnmarkedData[];
     const labels: [Area, string][] = [ [ "foundation", "Work" ], [ "growth", "🌱 Growth" ], [ "recharge", "🔋 Recharge" ] ];
     return (
         <div class="candidates">
-            <div class="label-caps">Unmarked</div>
+            <div class="label-caps">Which area?</div>
             {items.map((t, i) => (
                 <div key={i} class="candidate">
                     <p>{displayText(t.text).text}</p>
