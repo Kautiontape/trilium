@@ -7,6 +7,7 @@ import { dayCapacity, readPlan } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { mainTasks } from "./daily.js";
 import { readDay, readDays } from "./day-read.js";
 import type { CaiusInputs, CalendarEvent, InputError } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
@@ -274,6 +275,8 @@ describe("several days", () => {
         const thu = read.days.find((d) => d.date === THU)?.day;
         expect(thu?.meetings.map((m) => m.title)).toEqual([ "Thursday planning" ]);
         expect(thu?.plan.noteId).toBeNull();
+        expect(thu ? mainTasks(thu.plan) : "no Thursday").toEqual([]);
+        expect(thu?.plan.sections.flatMap((section) => section.tasks)).toEqual([]);
         expect(thu?.layout.groups.flatMap((g) => g.count)).toEqual([]);
         expect(read.week.key).toBe("2032-W10");
         expect(read.week.tasks.map((t) => t.text)).toEqual([ "Draft the plan" ]);
@@ -287,5 +290,24 @@ describe("several days", () => {
         expect(JSON.parse(JSON.stringify(read))).toEqual(read);
 
         expect((await run(() => readDays(deps, "2032-03-06", 3, now))).days.map((d) => d.workday)).toEqual([ false, false, true ]);
+    });
+
+    it("totals the week's Foundation from the week note and the days in that week only", async () => {
+        const { service } = countedService();
+        vi.stubEnv("CAIUS_NOW", "2033-03-03T17:30");
+        const FRI = "2033-03-04";
+        const NEXT_MON = "2033-03-07";
+        const week = await run(async () => (await store.calendarWeek("2033-W09")).noteId);
+        await run(() => store.putContent(week, `<h3>Work</h3>${ul(li("w2-open", "Draft the plan ~2h"))}`));
+        await dayWith(FRI, `<h3>Work</h3>${ul(li("d2-fri", "Friday task ~1h"))}`);
+        await dayWith(NEXT_MON, `<h3>Work</h3>${ul(li("d2-mon", "Next Monday task ~3h"))}`);
+
+        const deps = { store, dayFrame: (date: string) => service.dayFrame(date), locked: withCaiusLock };
+        const read = await run(() => readDays(deps, FRI, 4, new Date("2033-03-03T17:30:00")));
+
+        expect(read.days.map((d) => [ d.date, d.workday ])).toEqual([ [ FRI, true ], [ "2033-03-05", false ], [ "2033-03-06", false ], [ NEXT_MON, true ] ]);
+        expect(read.days[3]?.day.plan.capacity.areas.foundation.minutes).toBe(180);
+        expect(read.week.key).toBe("2033-W09");
+        expect(read.week.foundation).toEqual({ minutes: 120 + 60, target: { min: 720, max: 900 } });
     });
 });

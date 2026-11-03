@@ -138,7 +138,7 @@ export interface DaysRead {
         key: string;
         /** The week note's live top-level tasks: the ones not yet pulled to a day. */
         tasks: PlanTask[];
-        /** The week's Foundation minutes: the week note's own items plus its days' lists, against the week's target. */
+        /** The week's Foundation minutes: the week note's own items plus the lists of the requested days in that week, against the week's target. */
         foundation: { minutes: number; target: { min: number; max: number } | null };
     };
 }
@@ -152,7 +152,7 @@ export interface DaysDeps {
 
 /**
  * `count` days from `from`: each day's `readDay`, and the plan of the ISO week of `from` (when the
- * days span two weeks, the week row is the first one's). The frames are read first and the plans
+ * days span two weeks, the week row is the first one's and counts only the days in it). The frames are read first and the plans
  * under one lock. A day without a note reads as empty, with its meetings. The caller keeps `count` within 2 to 7.
  */
 export async function readDays(deps: DaysDeps, from: string, count: number, now: Date): Promise<DaysRead> {
@@ -169,7 +169,8 @@ export async function readDays(deps: DaysDeps, from: string, count: number, now:
             const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
             days.push({ date, workday: weekday !== 0 && weekday !== 6, day: await readDay(deps.store, frame, plan, { date, now }) });
         }
-        const minutes = weekPlan.capacity.areas.foundation.minutes + days.reduce((sum, { day }) => sum + day.plan.capacity.areas.foundation.minutes, 0);
+        const inWeek = days.filter(({ date }) => isoWeekKey(new Date(`${date}T00:00:00Z`)) === key);
+        const minutes = weekPlan.capacity.areas.foundation.minutes + inWeek.reduce((sum, { day }) => sum + day.plan.capacity.areas.foundation.minutes, 0);
         return { from, days, week: { key, tasks: mainTasks(weekPlan), foundation: { minutes, target: weekPlan.capacity.target } } };
     });
 }
