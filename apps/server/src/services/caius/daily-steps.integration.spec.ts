@@ -169,7 +169,7 @@ describe("caius_winddown", () => {
         expect(answer.data.items.find((item: any) => item.listItemId === "nw1")).toMatchObject({ group: "week", fate: { stay: "2026-W46" } });
     });
 
-    it("next: offers candidates for Monday, leaving out done, live, suggested and dismissed ones, and asks about the overlap and the empty evening", async () => {
+    it("next: offers candidates for Monday, leaving out done, live, suggested and dismissed ones, and asks about the overlap, with no evening question", async () => {
         const answer = await call("caius_winddown", { date: FRIDAY, step: "next" });
         expect(answer).toMatchObject({ step: "next", targetDay: MONDAY, next: "context" });
         const candidates = answer.data.candidates.map((c: any) => [ c.text, c.because, c.minutes, c.source ]);
@@ -183,8 +183,9 @@ describe("caius_winddown", () => {
         expect(answer.data.candidates[2]).toMatchObject({ overridden: true });
         expect(answer.data.capacity).toMatchObject({ plannedMinutes: 60 });
         expect(answer.data.overlaps).toEqual([ { first: "Release call", second: "Review", at: "12:30", overlapId: expect.stringMatching(/^o[0-9a-f]{10}$/) } ]);
-        expect(answer.data.evening).toEqual({ hasTask: false });
-        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Anything for the evening?");
+        expect(answer.data).not.toHaveProperty("evening");
+        expect(answer.data.growth).toMatchObject({ minutes: 0, target: { min: 60, max: 120 }, over: false, sentence: "Growth: nothing planned against 1–2 h." });
+        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take?");
     });
 
     it("next: reuses the inputs for 15 minutes unless told to refresh", async () => {
@@ -200,7 +201,7 @@ describe("caius_winddown", () => {
         const answer = await call("caius_winddown", { date: MONDAY, step: "next" });
         expect(answer.targetDay).toBe(TUESDAY);
         expect(answer.data.capacity).toMatchObject({ plannedMinutes: 240, targetMinutes: 234 });
-        expect(answer.data.evening).toEqual({ hasTask: true });
+        expect(answer.data).not.toHaveProperty("evening");
         expect(answer.question).toBe("Tuesday is over by about 1 h. Which of these can wait?");
     });
 
@@ -343,21 +344,21 @@ describe("caius_planday", () => {
         });
         expect(answer.data.forwardSuggestion).toBeNull();
         // Friday's wind-down never ran, so last week's lines are offered too.
-        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Keep 'Sam is out' and 'Release branch is cut' going? Anything for the evening?");
+        expect(answer.question).toBe("Release call overlaps Review at 12:30. Which one do you take? Keep 'Sam is out' and 'Release branch is cut' going?");
     });
 
-    it("inputs: on a day half booked or more whose work fits the focus target, says so and offers no move, least of all an evening task's", async () => {
+    it("inputs: on a day half booked or more whose work fits the focus target, says so and offers no move", async () => {
         calendars[WEDNESDAY] = [ event("10:00", "15:30", "Offsite") ];
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
         expect(answer.data.forwardSuggestion).toBeNull();
         expect(answer.data.summary).toBe("Small thing fits; that's the day.");
-        expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything for the evening?");
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going?");
     });
 
     it("brief: lays the main list out between the meetings, from the standing note's rhythm, with its brief rules and the input caius_brief_write takes", async () => {
         const answer = await planday({ date: MONDAY, step: "brief" });
         expect(answer).toMatchObject({ step: "brief", question: null, next: null });
-        expect(answer.data.day).toEqual({ start: "10:00", end: "23:00", workEnd: "18:00", from: { start: "rhythm", end: "rhythm", workEnd: "default", rollover: "default" } });
+        expect(answer.data.day).toEqual({ start: "10:00", end: "23:00", workEnd: "18:00", from: { start: "rhythm", end: "rhythm", workEnd: "default", noon: "default", rollover: "default", targets: "default" } });
         expect(answer.data.header).toEqual({
             start: "10:00", end: "23:00", workEnd: "18:00",
             events: [
@@ -439,13 +440,13 @@ describe("carrying Context", () => {
             { kind: "carry", line: "Sam is out", until: "2026-11-11", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) },
             { kind: "carry", line: "Release branch is cut", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) }
         ]);
-        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going? Anything for the evening?");
+        expect(answer.question).toBe("Keep 'Sam is out' and 'Release branch is cut' going?");
     });
 
     it("Plan my day offers Thursday's line on Wednesday after a missed Tuesday, after the step's other questions", async () => {
         const answer = await planday({ date: WEDNESDAY, step: "inputs", refresh: true });
         expect(plain(answer.data.carry)).toEqual([ { kind: "carry", line: "Vendor demo prep", until: "2026-11-13", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) } ]);
-        expect(answer.question).toBe("Keep 'Vendor demo prep' going? Anything for the evening?");
+        expect(answer.question).toBe("Keep 'Vendor demo prep' going?");
     });
 
     it("neither conversation offers a line already carried into a note the day reads", async () => {

@@ -93,9 +93,10 @@ export function plannedNudges(data: TodayData, settings: Settings, now: Date): L
                 `${open} open, ${onDeck} on deck.`, on(data.key, workEnd)));
         }
 
-        const target = data.plan.capacity.target;
-        if (settings.nudgeOvercap && target && data.plan.capacity.totalMinutes > target.max) {
-            const over = data.plan.capacity.totalMinutes - target.max;
+        const foundation = data.plan.capacity.areas?.foundation ?? { minutes: data.plan.capacity.totalMinutes, target: data.plan.capacity.target };
+        const target = foundation.target;
+        if (settings.nudgeOvercap && target && foundation.minutes > target.max) {
+            const over = foundation.minutes - target.max;
             nudges.push(nudge(NUDGE_IDS.overcap, "warnings", "overcap", "Over capacity",
                 `Today is ${duration(over)} over ${duration(target.min).replace(/ h$/, "")}–${duration(target.max)}.`, on(data.key, standup)));
         }

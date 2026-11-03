@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readRhythm, sectionOf } from './standing.js';
+import { DEFAULT_TARGETS, readRhythm, sectionOf } from './standing.js';
 
 const UNFILLED = `## Rhythm
 
@@ -28,15 +28,15 @@ const FILLED = `## Rhythm
 describe('readRhythm', () => {
   it('reads standup and falls back to 23:00 and 18:00 when bedtime and the end of work are not filled in', () => {
     expect(readRhythm(UNFILLED)).toEqual({
-      start: '10:00', end: '23:00', workEnd: '18:00', rollover: '04:00',
-      from: { start: 'rhythm', end: 'default', workEnd: 'default', rollover: 'default' },
+      start: '10:00', end: '23:00', workEnd: '18:00', noon: '12:00', rollover: '04:00', targets: DEFAULT_TARGETS,
+      from: { start: 'rhythm', end: 'default', workEnd: 'default', noon: 'default', rollover: 'default', targets: 'default' },
     });
   });
 
   it('reads standup, the end of work, bedtime and the coordinates when they are there', () => {
     expect(readRhythm(FILLED)).toEqual({
-      start: '09:30', end: '23:30', workEnd: '17:45', rollover: '04:00', latitude: 47.61, longitude: -122.33,
-      from: { start: 'rhythm', end: 'rhythm', workEnd: 'rhythm', rollover: 'default' },
+      start: '09:30', end: '23:30', workEnd: '17:45', noon: '12:00', rollover: '04:00', targets: DEFAULT_TARGETS, latitude: 47.61, longitude: -122.33,
+      from: { start: 'rhythm', end: 'rhythm', workEnd: 'rhythm', noon: 'default', rollover: 'default', targets: 'default' },
     });
   });
 
@@ -85,7 +85,7 @@ describe('readRhythm', () => {
   });
 
   it('uses the defaults with no standing note or no Rhythm section', () => {
-    const defaults = { start: '10:00', end: '23:00', workEnd: '18:00', rollover: '04:00', from: { start: 'default', end: 'default', workEnd: 'default', rollover: 'default' } };
+    const defaults = { start: '10:00', end: '23:00', workEnd: '18:00', noon: '12:00', rollover: '04:00', targets: DEFAULT_TARGETS, from: { start: 'default', end: 'default', workEnd: 'default', noon: 'default', rollover: 'default', targets: 'default' } };
     expect(readRhythm(null)).toEqual(defaults);
     expect(readRhythm('## People\n\n- Standup at 9:00\n')).toEqual(defaults);
   });
@@ -97,5 +97,34 @@ describe('sectionOf', () => {
     expect(sectionOf(UNFILLED, 'people')).toBe('*   **Sam**: tests the tickets.');
     expect(sectionOf(UNFILLED, 'Missing')).toBeNull();
     expect(sectionOf(null, 'Brief rules')).toBeNull();
+  });
+});
+
+describe('readRhythm noon and targets', () => {
+  const rhythm = (lines: string) => readRhythm(`## Rhythm\n\n- Standup at 10:00.\n- Work ends at 18:00.\n${lines}\n`);
+
+  it('reads the edge of Morning and Afternoon from either wording', () => {
+    expect(rhythm('- Afternoon starts at 13:00.')).toMatchObject({ noon: '13:00', from: { noon: 'rhythm' } });
+    expect(rhythm('- Lunch at 12:30.')).toMatchObject({ noon: '12:30' });
+    expect(rhythm('- Lunch at 8:00.')).toMatchObject({ noon: '12:00', from: { noon: 'default' } });
+    expect(rhythm('')).toMatchObject({ noon: '12:00', from: { noon: 'default' } });
+  });
+  it('reads the old Capacity wording: the evening range is Growth', () => {
+    const r = rhythm('- Capacity: 180–240 work minutes a day, and 45–60 minutes in the evening.');
+    expect(r.targets).toEqual({ foundation: { min: 180, max: 240 }, growth: { min: 45, max: 60 } });
+    expect(r.from.targets).toBe('rhythm');
+  });
+  it('reads the new wording in hours, minutes, with a hyphen or an en dash', () => {
+    expect(rhythm('- Capacity: Foundation 3–4 h, Growth 1–2 h, Recharge at least one thing.').targets).toEqual({
+      foundation: { min: 180, max: 240 }, growth: { min: 60, max: 120 },
+    });
+    expect(rhythm('- Capacity: Foundation 2.5-3 hours, Growth 30-45 minutes.').targets).toEqual({
+      foundation: { min: 150, max: 180 }, growth: { min: 30, max: 45 },
+    });
+  });
+  it('keeps the default for a target the line leaves out, and for no Capacity line', () => {
+    expect(rhythm('- Capacity: Growth 1–3 h.').targets).toEqual({ foundation: DEFAULT_TARGETS.foundation, growth: { min: 60, max: 180 } });
+    expect(rhythm('- Capacity: as much as fits.')).toMatchObject({ targets: DEFAULT_TARGETS, from: { targets: 'default' } });
+    expect(rhythm('')).toMatchObject({ targets: DEFAULT_TARGETS });
   });
 });

@@ -405,7 +405,7 @@ describe("the brief follows his list", () => {
 });
 
 describe("an evening thing he names", () => {
-    it("goes on his list under Evening, above Suggested, and is drawn after the end of work", async () => {
+    it("goes on his list under Evening, above Suggested, reads as Recharge there, and is drawn after the end of work", async () => {
         const day = "2026-11-12";
         await cls.init(() => dayNote(day, `<h3>Meetings</h3><ul><li>10:00 Daily Standup</li></ul><h3>Context</h3><ul><li>Taking Incident Review</li></ul>`
             + `<h2>☑️ Tasks</h2>${ul(li("e1", `${jiraLink("ZAP-150")} — Review the mapper ~30m`))}<h3>Suggested</h3>${ul(li("e2", `Get ${jiraLink("ZAP-151")} Check it done: because it waits (~30m)`))}`));
@@ -419,6 +419,9 @@ describe("an evening thing he names", () => {
             [ "☑️ Tasks", [ expect.stringContaining("Review the mapper") ] ],
             [ "Evening", [ "Laundry" ] ]
         ]);
+        // On a note with no Morning or Afternoon, an unmarked task under Evening is Recharge, so it isn't work.
+        expect(plan.sections[1].tasks[0]).toMatchObject({ area: "recharge", block: "evening" });
+        expect(plan.capacity).toMatchObject({ totalMinutes: 30, eveningMinutes: 45 });
         expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("Check it done") ]);
         const brief = await call("caius_planday", { date: day, step: "brief" });
         expect(brief.data.header.groups.find((group: any) => group.name === "Evening")).toMatchObject({ start: "18:00", end: "18:45", count: 1 });
@@ -621,7 +624,7 @@ describe("accepting past an Evening list", () => {
         const plan = await call("caius_plan", { period: "day", date: day });
         expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.listItemId) ])).toEqual([ [ "☑️ Tasks", [ "z9" ] ], [ "Evening", [ "l1" ] ] ]);
         const brief = await call("caius_planday", { date: day, step: "brief" });
-        expect(brief.data.list.map((task: any) => [ task.label, task.evening ])).toEqual([ [ "ZAP-9", false ], [ "Laundry", true ] ]);
+        expect(brief.data.list.map((task: any) => [ task.label, task.area ])).toEqual([ [ "ZAP-9", "foundation" ], [ "Laundry", "recharge" ] ]);
         expect(brief.data.header.groups.find((group: any) => group.name === "Tasks")).toMatchObject({ start: "10:00", end: "10:45" });
     });
 });

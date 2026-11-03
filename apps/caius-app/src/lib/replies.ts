@@ -1,3 +1,5 @@
+import type { Area } from "@triliumnext/caius/src/trilium/areas.js";
+
 /**
  * His reply to a ritual's step cards, written out in full: every item on every card with its
  * fate, the untouched ones with the default their own step data gives. Nothing is left to a
@@ -104,12 +106,21 @@ export function candidatesReply(candidates: CandidateData[], answers: CandidateA
     return `Candidates: ${parts.join("; ")}.`;
 }
 
-/** The evening: his words, the tasks already there, or nothing. */
-export function eveningReply(answer: string | null, tasks: string[]): string {
-    if (answer) {
-        return `Evening: ${answer}.`;
-    }
-    return tasks.length ? `Evening: ${tasks.map((t) => `"${t}"`).join(", ")} as it is, nothing else.` : "Evening: nothing.";
+/** An unmarked task Caius wants filed, as the inputs step offers it. */
+export interface UnmarkedData {
+    ref?: string;
+    text: string;
+}
+
+const AREA_WORDS: Record<Area, string> = { foundation: "work", growth: "Growth", recharge: "Recharge" };
+const AREA_LABELS: Record<Area, string> = { foundation: "Work", growth: "Growth", recharge: "Recharge" };
+
+/** Each unmarked task he filed, one sentence apiece: `The ballot is Growth.` Those he hasn't filed are left unsaid. */
+export function unmarkedReply(tasks: UnmarkedData[], answers: Record<number, Area | null> | undefined): string[] {
+    return tasks.flatMap((task, i) => {
+        const area = answers?.[i];
+        return area ? [ `${task.text} is ${AREA_WORDS[area]}.` ] : [];
+    });
 }
 
 export type ContextAnswer = "keep" | "end" | null;
@@ -128,7 +139,7 @@ export function contextReply(lines: { text: string; untilLabel?: string }[], ans
 export interface StepAnswers {
     fates?: Record<number, Choice>;
     candidates?: Record<number, CandidateAnswer>;
-    evening?: string | null;
+    areas?: Record<number, Area | null>;
     context?: Record<number, ContextAnswer>;
     catchup?: string | null;
 }
@@ -143,13 +154,13 @@ export function stepReply(step: { ritual: "plan" | "winddown"; step: string; dat
         items?: { text: string; fate?: StepFate }[];
         onDeck?: { text: string; fate?: StepFate }[];
         candidates?: CandidateData[];
-        evening?: { tasks?: string[] } | null;
+        unmarked?: UnmarkedData[];
         context?: { text: string; untilLabel?: string }[];
         keepDateLabel?: string;
     };
     const fate = (items: { text: string; fate?: StepFate }[]) => items.map((item, i) => ({ text: item.text, fate: item.fate, choice: answers.fates?.[i] ?? { kind: "proposed" as const } }));
     const candidates = (list: CandidateData[]) => candidatesReply(list, list.map((_, i) => answers.candidates?.[i] ?? null));
-    const evening = () => eveningReply(answers.evening ?? null, d.evening?.tasks ?? []);
+    const unmarked = () => unmarkedReply(d.unmarked ?? [], answers.areas);
 
     switch (`${step.ritual}:${step.step}`) {
         case "plan:catchup":
@@ -157,9 +168,9 @@ export function stepReply(step: { ritual: "plan" | "winddown"; step: string; dat
         case "winddown:open":
             return [ itemsReply("Leftovers", fate(d.items ?? [])) ].filter(Boolean);
         case "plan:inputs":
-            return [ itemsReply("On deck", fate(d.onDeck ?? [])), candidates(d.candidates ?? []), evening() ].filter(Boolean);
+            return [ itemsReply("On deck", fate(d.onDeck ?? [])), candidates(d.candidates ?? []), ...unmarked() ].filter(Boolean);
         case "winddown:next":
-            return [ candidates(d.candidates ?? []), evening() ].filter(Boolean);
+            return [ candidates(d.candidates ?? []) ].filter(Boolean);
         case "winddown:context":
             return [ contextReply(d.context ?? [], (d.context ?? []).map((_, i) => answers.context?.[i] ?? null), d.keepDateLabel) ];
         default:
@@ -207,6 +218,7 @@ export function stepPicks(step: { ritual: "plan" | "winddown"; step: string; dat
         items?: { text: string; fate?: StepFate }[];
         onDeck?: { text: string; fate?: StepFate }[];
         candidates?: CandidateData[];
+        unmarked?: UnmarkedData[];
         context?: { text: string }[];
     };
     const fates = (items: { text: string; fate?: StepFate }[]): StepPick[] => items.flatMap((item, i) => {
@@ -221,7 +233,10 @@ export function stepPicks(step: { ritual: "plan" | "winddown"; step: string; dat
         const answer = answers.candidates?.[i];
         return answer ? [ { what: c.text, choice: CANDIDATE_LABELS[answer], undo: { candidates: { ...answers.candidates, [i]: null } } } ] : [];
     });
-    const evening = (): StepPick[] => answers.evening ? [ { what: "Evening", choice: capitalize(answers.evening), undo: { evening: null } } ] : [];
+    const unmarked = (list: UnmarkedData[]): StepPick[] => list.flatMap((task, i) => {
+        const area = answers.areas?.[i];
+        return area ? [ { what: task.text, choice: AREA_LABELS[area], undo: { areas: { ...answers.areas, [i]: null } } } ] : [];
+    });
 
     switch (`${step.ritual}:${step.step}`) {
         // The catch-up has no default: until he picks, it isn't answered at all, so it counts only once picked.
@@ -230,9 +245,9 @@ export function stepPicks(step: { ritual: "plan" | "winddown"; step: string; dat
         case "winddown:open":
             return { picks: fates(d.items ?? []), total: (d.items ?? []).length };
         case "plan:inputs":
-            return { picks: [ ...fates(d.onDeck ?? []), ...candidates(d.candidates ?? []), ...evening() ], total: (d.onDeck ?? []).length + (d.candidates ?? []).length + 1 };
+            return { picks: [ ...fates(d.onDeck ?? []), ...candidates(d.candidates ?? []), ...unmarked(d.unmarked ?? []) ], total: (d.onDeck ?? []).length + (d.candidates ?? []).length + (d.unmarked ?? []).length };
         case "winddown:next":
-            return { picks: [ ...candidates(d.candidates ?? []), ...evening() ], total: (d.candidates ?? []).length + 1 };
+            return { picks: candidates(d.candidates ?? []), total: (d.candidates ?? []).length };
         case "winddown:context": {
             const lines = d.context ?? [];
             const picks = lines.flatMap((line, i) => {

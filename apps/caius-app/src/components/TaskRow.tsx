@@ -1,5 +1,6 @@
 import "./task_row.css";
 
+import { type Area, bareText, markedArea } from "@triliumnext/caius/src/trilium/areas.js";
 import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
 
@@ -78,7 +79,8 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
     };
 
     const shownState = heldState === "dismissed" ? "cancelled" : task.state;
-    const { text, forwardedTo } = displayText(task.text);
+    const { text, forwardedTo, area: marked } = displayText(task.text);
+    const area = task.area && task.area !== "foundation" ? task.area : marked;
     return (
         <div class={`task-row-wrap${dx ? " dragging" : ""}`}>
             {dx > 0 && right && <div class={`swipe-under swipe-right tone-${right.tone}`} aria-hidden="true">{right.label}</div>}
@@ -105,6 +107,7 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
                 <div class="task-row-body">
                     <div class="task-row-text">
                         {top !== undefined && <span class="top-mark mono">{top}</span>}
+                        {area && <span class={`area-dot area-${area}`} role="img" aria-label={area === "growth" ? "Growth" : "Recharge"} />}
                         {text}
                     </div>
                     {forwardedTo ? <div class="task-row-detail">Forwarded → {forwardedTo}</div> : detail && <div class="task-row-detail">{detail}</div>}
@@ -119,13 +122,16 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
  * A task's words as the row shows them. A forwarded task (state `tombstone`) keeps Caius's marker
  * in its text, `_scheduled [Thu 5 Nov](#root/…)_`; the row shows the day it went to instead, and
  * links as their labels. A copy's "from …" link to where it came from is left out: on a narrow row
- * it only cuts the task off, and the task tray's From block carries it.
+ * it only cuts the task off, and the task tray's From block carries it. A leading area marker and
+ * clock are left out too; the marker comes back as `area` for the row to draw as a dot.
  */
-export function displayText(raw: string): { text: string; forwardedTo: string | null } {
+export function displayText(raw: string): { text: string; forwardedTo: string | null; area?: Area } {
+    const area = markedArea(raw) ?? undefined;
+    raw = bareText(raw);
     const marker = /\s*_?(?:re)?scheduled\s+\[([^\]]+)\]\([^)]*\)_?/i.exec(raw);
     const kept = raw.replace(/\s*\[from\s[^\]]*\]\(#root\/[^)]*\)/i, "");
     const rest = marker ? kept.replace(marker[0], "").replace(/\s~\d+(?:h\d+m|h|m)\b/g, "") : kept;
-    return { text: rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim(), forwardedTo: marker ? marker[1] : null };
+    return { text: rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim(), forwardedTo: marker ? marker[1] : null, area };
 }
 
 export interface SwipeAction {

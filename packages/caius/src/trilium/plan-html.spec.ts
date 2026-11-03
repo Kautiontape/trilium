@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { placeTask, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
+import { moveInMainList, placeForwarded, placeInMainList, placeTask, setTaskArea, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
 import { critical, li, STATES, TEMPLATE, ul } from './helpers.js';
 
 const item = itemMarkup('enew', 'New thing');
@@ -139,5 +139,138 @@ describe('setTaskState', () => {
     const h = '<p>keep</p>' + ul(li('eo', 'Open one'), li('eq', 'Neighbour'));
     const r = setTaskState(h, 'eo', 'done', o);
     expect(r.ok && r.html).toBe(h.replace('<input type="checkbox" disabled', '<input type="checkbox" checked="checked" disabled'));
+  });
+});
+
+describe('time blocks', () => {
+  const sec = (name: string) => ({ kind: 'section' as const, name });
+  const heads = (html: string) => parse(html).querySelectorAll('h1,h2,h3,h4').map((h) => h.text);
+
+  it('makes a missing block between the others, Afternoon after Morning and before Evening', () => {
+    const html = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A')) + '<h3>Evening</h3>' + ul(li('v1', 'B')) + '<h2>Suggested</h2>' + ul(li('s1', 'C'));
+    const out = placeTask(html, item, sec('Afternoon'));
+    expect(heads(out)).toEqual(['☑️ Tasks', 'Morning', 'Afternoon', 'Evening', 'Suggested']);
+    expect(out).toContain(`<h3>Afternoon</h3><ul class="todo-list">${item}</ul><h3>Evening</h3>`);
+  });
+  it('makes Morning before the first later block, and a last block above On deck', () => {
+    const html = '<h2>☑️ Tasks</h2><h3>Afternoon</h3>' + ul(li('a1', 'A')) + '<h3>On deck</h3>' + ul(li('d1', 'D'));
+    expect(heads(placeTask(html, item, sec('Morning')))).toEqual(['☑️ Tasks', 'Morning', 'Afternoon', 'On deck']);
+    expect(heads(placeTask(html, item, sec('Evening')))).toEqual(['☑️ Tasks', 'Afternoon', 'Evening', 'On deck']);
+  });
+  it('matches a block heading with an emoji, and writes a new one plainly', () => {
+    const html = '<h2>☑️ Tasks</h2><h3>🌅 Morning</h3>' + ul(li('m1', 'A'));
+    expect(ids(placeTask(html, item, sec('Morning')))).toEqual(['m1', 'enew']);
+    expect(placeTask(html, item, sec('evening'))).toContain('<h3>Evening</h3>');
+  });
+});
+
+describe('placeForwarded into blocks', () => {
+  const note = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A')) + '<h3>Evening</h3>' + ul(li('v1', 'B')) + '<h2>Suggested</h2>' + ul(li('s1', 'C'));
+  it('keeps an Evening task in the Evening block', () => {
+    expect(ids(placeForwarded(note, item, 'Evening'))).toEqual(['m1', 'v1', 'enew', 's1']);
+    expect(ids(placeForwarded(note, item, '🌙 Evening'))).toEqual(['m1', 'v1', 'enew', 's1']);
+  });
+  it('makes the block when the target lacks it, in order', () => {
+    const out = placeForwarded(note, item, 'Afternoon');
+    expect(out).toContain(`<h3>Afternoon</h3><ul class="todo-list">${item}</ul><h3>Evening</h3>`);
+  });
+  it('sends a legacy Recharge or Growth section the target lacks to its Evening block', () => {
+    expect(ids(placeForwarded(note, item, 'Recharge'))).toEqual(['m1', 'v1', 'enew', 's1']);
+    expect(ids(placeForwarded(note, item, 'Growth'))).toEqual(['m1', 'v1', 'enew', 's1']);
+    const bare = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A'));
+    expect(placeForwarded(bare, item, 'Recharge')).toBe(`${bare}<h3>Evening</h3><ul class="todo-list">${item}</ul>`);
+  });
+  it('puts a task with no section in the first work list, not in the evening', () => {
+    expect(ids(placeForwarded(note, item, null))).toEqual(['m1', 'enew', 'v1', 's1']);
+    const evening = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('v1', 'B'));
+    expect(placeForwarded(evening, item, null)).toMatch(/^<h2>☑️ Tasks<\/h2><ul class="todo-list"><li[^>]*>.*<\/ul><h3>Evening<\/h3>/);
+  });
+});
+
+describe('placeInMainList with blocks', () => {
+  const note = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A')) + '<h3>Afternoon</h3>' + ul(li('a1', 'B')) + '<h3>Evening</h3>' + ul(li('v1', 'C'));
+  it('places into the named block', () => {
+    expect(ids(placeInMainList(note, item, 'afternoon'))).toEqual(['m1', 'a1', 'enew', 'v1']);
+    expect(ids(placeInMainList(note, item, 'evening'))).toEqual(['m1', 'a1', 'v1', 'enew']);
+  });
+  it('without a block, goes to the end of the first block with a list, never a stray list under the heading', () => {
+    const out = placeInMainList(note, item);
+    expect(ids(out)).toEqual(['m1', 'enew', 'a1', 'v1']);
+    expect(out.startsWith('<h2>☑️ Tasks</h2><h3>Morning</h3>')).toBe(true);
+    const later = '<h2>☑️ Tasks</h2><h3>Morning</h3><h3>Afternoon</h3>' + ul(li('a1', 'B'));
+    expect(ids(placeInMainList(later, item))).toEqual(['a1', 'enew']);
+  });
+  it('without a block or a list, makes Morning', () => {
+    const empty = '<h2>☑️ Tasks</h2><h3>Morning</h3><h3>Evening</h3>' + ul(li('v1', 'C'));
+    expect(placeInMainList(empty, item)).toBe(`<h2>☑️ Tasks</h2><h3>Morning</h3><ul class="todo-list">${item}</ul><h3>Evening</h3>${ul(li('v1', 'C'))}`);
+    const bare = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('v1', 'C'));
+    expect(placeInMainList(bare, item)).toBe(`<h2>☑️ Tasks</h2><ul class="todo-list">${item}</ul><h3>Evening</h3>${ul(li('v1', 'C'))}`);
+  });
+  it('keeps today\'s behaviour on a note without blocks', () => {
+    const plain = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(li('s1', 'x'));
+    expect(ids(placeInMainList(plain, item))).toEqual(['e1', 'enew', 's1']);
+  });
+});
+
+describe('moveInMainList in a block', () => {
+  const note = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A'), li('m2', 'B'), li('m3', 'C')) + '<h3>Afternoon</h3>' + ul(li('a1', 'D'), li('a2', 'E'))
+    + '<h3>On deck</h3>' + ul(li('d1', 'F'), li('d2', 'G'));
+  const order = (html: string) => ids(html);
+  it('moves within a block list, first meaning first of its own list', () => {
+    const r = moveInMainList(note, 'a2', { first: true });
+    expect(r).toMatchObject({ ok: true, unchanged: false });
+    expect(r.ok && order(r.html)).toEqual(['m1', 'm2', 'm3', 'a2', 'a1', 'd1', 'd2']);
+    const after = moveInMainList(note, 'm1', { after: 'm3' });
+    expect(after.ok && order(after.html)).toEqual(['m2', 'm3', 'm1', 'a1', 'a2', 'd1', 'd2']);
+    expect(moveInMainList(note, 'a1', { first: true })).toMatchObject({ ok: true, unchanged: true });
+  });
+  it('fails across lists, or in On deck', () => {
+    expect(moveInMainList(note, 'm1', { before: 'a1' })).toEqual({ ok: false, reason: 'not_in_main_list' });
+    expect(moveInMainList(note, 'd2', { first: true })).toEqual({ ok: false, reason: 'not_in_main_list' });
+    expect(moveInMainList(note, 'zz', { first: true })).toEqual({ ok: false, reason: 'not_in_main_list' });
+  });
+  it('still moves in the list under the main heading', () => {
+    const plain = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One'), li('e2', 'Two'));
+    const r = moveInMainList(plain, 'e2', { first: true });
+    expect(r.ok && order(r.html)).toEqual(['e2', 'e1']);
+  });
+});
+
+describe('setTaskArea', () => {
+  const note = '<h2>☑️ Tasks</h2>' + ul(
+    li('t1', 'Write the spec ~1h'),
+    li('t2', '🌱 Read a chapter', { sub: ul(li('t2a', 'Take notes')) }),
+    li('t3', '<a href="https://example.com/x">Link</a> first ~30m'),
+    li('t4', '🔋&nbsp;Walk 09:00'),
+  ) + '<h2>Meetings</h2>' + ul(li('p1', 'Standup'));
+  const text = (html: string, id: string) => parse(html).querySelectorAll('li').find((l) => l.getAttribute('data-list-item-id') === id)!.querySelector('span.todo-list__label__description')!.innerHTML;
+
+  it('adds, replaces and removes the marker, touching only the first text', () => {
+    const grown = setTaskArea(note, 't1', 'growth');
+    expect(grown).toMatchObject({ ok: true, unchanged: false });
+    expect(grown.ok && text(grown.html, 't1')).toBe('🌱 Write the spec ~1h');
+    const moved = setTaskArea(note, 't2', 'recharge');
+    expect(moved.ok && text(moved.html, 't2')).toBe('🔋 Read a chapter');
+    expect(moved.ok && text(moved.html, 't2a')).toBe('Take notes');
+    const bare = setTaskArea(note, 't2', 'foundation');
+    expect(bare.ok && text(bare.html, 't2')).toBe('Read a chapter');
+    expect(bare.ok && bare.html).toContain(ul(li('t2a', 'Take notes')));
+  });
+  it('keeps a leading link whole, and puts the marker before it', () => {
+    const r = setTaskArea(note, 't3', 'growth');
+    expect(r.ok && text(r.html, 't3')).toBe('🌱 <a href="https://example.com/x">Link</a> first ~30m');
+    expect(setTaskArea(note, 't3', 'foundation')).toMatchObject({ ok: true, unchanged: true });
+  });
+  it('replaces a marker followed by a non-breaking space, and leaves the rest of the note byte for byte', () => {
+    const r = setTaskArea(note, 't4', 'growth');
+    expect(r.ok && text(r.html, 't4')).toBe('🌱 Walk 09:00');
+    expect(r.ok && r.html.replace('🌱 Walk 09:00', '🔋&nbsp;Walk 09:00')).toBe(note);
+  });
+  it('is unchanged when the marker is already right', () => {
+    expect(setTaskArea(note, 't2', 'growth')).toEqual({ ok: true, html: note, unchanged: true });
+  });
+  it('fails for an unknown item, or one in Meetings', () => {
+    expect(setTaskArea(note, 'zz', 'growth')).toEqual({ ok: false, reason: 'not_found' });
+    expect(setTaskArea(note, 'p1', 'growth')).toMatchObject({ ok: false });
   });
 });

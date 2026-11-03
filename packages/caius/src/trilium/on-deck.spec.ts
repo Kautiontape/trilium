@@ -63,7 +63,7 @@ describe('placing On deck', () => {
     const html = DECK + SUGGESTED;
     expect(placeTask(html, '<li>NEW</li>', { kind: 'section', name: 'Home' })).toMatch(/^<h2>Home<\/h2><ul class="todo-list"><li>NEW<\/li><\/ul><h3>On deck<\/h3>/);
     expect(placeForwarded(html, '<li>NEW</li>', null)).toMatch(/^<h2>☑️ Tasks<\/h2><ul class="todo-list"><li>NEW<\/li><\/ul><h3>On deck<\/h3>/);
-    expect(placeForwarded(html, '<li>NEW</li>', 'Evening')).toMatch(/^<h3>Evening<\/h3><ul class="todo-list"><li>NEW<\/li><\/ul><h3>On deck<\/h3>/);
+    expect(placeForwarded(html, '<li>NEW</li>', 'Evening')).toMatch(/^<h2>Evening<\/h2><ul class="todo-list"><li>NEW<\/li><\/ul><h3>On deck<\/h3>/);
     expect(placeInMainList(TASKS + DECK, '<li>NEW</li>')).toContain('Write the spec ~1h</span></label></li><li>NEW</li></ul><h3>On deck</h3>');
   });
 

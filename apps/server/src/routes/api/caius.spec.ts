@@ -203,6 +203,30 @@ describe("Caius routes", () => {
         await post("/api/caius/assign-ids", { dryRun: "yes" }).expect(400);
     });
 
+    it("sets areas: writes and removes the marker, and skips a stale item, with the batch's blobIds", async () => {
+        const noteId = await cls.init(async () => {
+            const day = await store.calendarDay("2031-05-07");
+            await store.putContent(day.noteId, `<h3>Work</h3>${ul(li("ar1", "Area me"), li("ar2", "Not me"))}`);
+            return day.noteId;
+        });
+        const blobId = blobOf(noteId);
+        const grown = await post("/api/caius/set-area", { items: [
+            { noteId: noteId, listItemId: "ar1", area: "growth", expectedBlobId: blobId },
+            { noteId: noteId, listItemId: "ar2", area: "recharge", expectedBlobId: "an-old-blob" }
+        ], dryRun: false }).expect(200);
+        expect(grown.body.results.map((r: { listItemId: string; status: string; reason?: string }) => [r.listItemId, r.status, r.reason])).toEqual([
+            ["ar1", "updated", undefined], ["ar2", "skipped", "stale"]
+        ]);
+        expect(grown.body.blobIds).toEqual({ [noteId]: blobOf(noteId) });
+        expect(await store.content(noteId)).toContain(">🌱 Area me<");
+
+        const removed = await post("/api/caius/set-area", { items: [{ noteId: noteId, listItemId: "ar1", area: "foundation", expectedBlobId: blobOf(noteId) }] }).expect(200);
+        expect(removed.body.results[0]).toMatchObject({ status: "updated" });
+        expect(await store.content(noteId)).toContain(">Area me<");
+
+        await post("/api/caius/set-area", { items: [{ noteId: noteId, listItemId: "ar1", area: "work" }] }).expect(400);
+    });
+
     it("runs every operation route under the Caius lock", async () => {
         let release = () => {};
         const held = withCaiusLock("spec", () => new Promise<void>((resolve) => {
@@ -216,6 +240,7 @@ describe("Caius routes", () => {
             accept: post("/api/caius/accept", { items: [{ noteId: noteIds.today, listItemId: "s1", section: "Work" }], dryRun: true }),
             dismiss: post("/api/caius/dismiss", { items: [{ noteId: noteIds.today, listItemId: "s2" }], dryRun: true }),
             setState: post("/api/caius/set-state", { items: [{ noteId: noteIds.today, listItemId: "t1", state: "doing" }], dryRun: true }),
+            setArea: post("/api/caius/set-area", { items: [{ noteId: noteIds.today, listItemId: "t1", area: "growth" }], dryRun: true }),
             forward: post("/api/caius/forward", { items: [{ noteId: noteIds.today, listItemId: "t1", to: "2031-05-08" }], dryRun: true }),
             assignIds: post("/api/caius/assign-ids", { dryRun: true }),
             apply: post("/api/caius/apply", { forwards: [], drops: [ { noteId: noteIds.today, listItemId: "zz", state: "done" } ] })

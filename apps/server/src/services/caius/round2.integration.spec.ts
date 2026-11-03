@@ -436,12 +436,12 @@ describe("a wind-down of an older day works against today", () => {
         const open = await call("caius_winddown", { date: "2027-01-11", step: "open" });
         expect(open).toMatchObject({ targetDay: "2027-01-13", targetDayLabel: "Wed 13 Jan" });
         expect(open.data.items.find((i: any) => i.listItemId === "j11")?.fate).toMatchObject({ forward: "2027-01-13" });
-        const applied = await call("caius_winddown_apply", { date: "2027-01-11", evening: [ "Laundry" ] });
+        const applied = await call("caius_winddown_apply", { date: "2027-01-11" });
         expect(applied).toMatchObject({ targetDay: "2027-01-13" });
         const today = await call("caius_plan", { period: "day", date: "2027-01-13" });
         // The leftover waits on today's On deck, for the plan that follows the Review.
         expect(today.onDeck.map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Renew the domain" ]);
-        expect(today.sections.flatMap((s: any) => s.tasks).map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Laundry" ]);
+        expect(today.sections.flatMap((s: any) => s.tasks)).toEqual([]);
     });
 });
 
@@ -483,19 +483,19 @@ describe("the catch-up walks past a day with nothing in it", () => {
     });
 });
 
-describe("evening stays evening", () => {
-    it("Mon night: Laundry under Evening, wound down to Tuesday, stays under Tuesday's Evening and is no pick", async () => {
+describe("Growth and Recharge stay on the list", () => {
+    it("Mon night: a Recharge Laundry under Evening, wound down to Tuesday, stays under Tuesday's Evening and is no pick", async () => {
         await cls.init(async () => {
             const mon = await store.calendarDay("2027-02-01");
-            await store.putContent(mon.noteId, `<h2>☑️ Tasks</h2>${ul(li("ev1", "Write the report"))}<h3>Evening</h3>${ul(li("ev2", "Laundry"))}`);
+            await store.putContent(mon.noteId, `<h2>☑️ Tasks</h2>${ul(li("ev1", "Write the report"))}<h3>Evening</h3>${ul(li("ev2", "🔋 Laundry"))}`);
         });
         at("2027-02-01T17:30");
-        const wound = await call("caius_winddown_apply", { date: "2027-02-01", evening: [ "Laundry" ] });
-        expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "evening", status: "unchanged" }) ]));
+        const wound = await call("caius_winddown_apply", { date: "2027-02-01" });
+        expect(wound.skipped).toEqual([]);
         const tuesday = await call("caius_plan", { period: "day", date: "2027-02-02" });
-        // The work leftover waits on Tuesday's On deck; the evening's stays in the evening.
+        // The work leftover waits on Tuesday's On deck; the Recharge leftover keeps its place in the evening, its marker too.
         expect(tuesday.sections.map((section: any) => [ section.name, section.tasks.map((t: any) => String(t.text).split(" [")[0]) ])).toEqual([
-            [ "Evening", [ "Laundry" ] ]
+            [ "Evening", [ "🔋 Laundry" ] ]
         ]);
         expect(tuesday.onDeck.map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Write the report" ]);
         at("2027-02-02T09:40");
@@ -505,19 +505,25 @@ describe("evening stays evening", () => {
         expect(brief).not.toContain("Laundry (~30m)");
     });
 
-    it("an evening answer that is already a work task is reported, not called written; a Recharge heading counts as the evening", async () => {
+    it("an evening answer is retired and skipped; a Recharge heading still reads as Recharge, and an area files a new thing under Evening", async () => {
         await cls.init(async () => {
             const day = await store.calendarDay("2027-02-03");
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("ew1", "Groceries"))}<h3>🌙 Recharge</h3>${ul(li("ew2", "Read"))}`);
         });
         at("2027-02-03T09:40");
         const applied = await call("caius_plan_apply", { date: "2027-02-03", evening: [ "Groceries", "Iron the shirts" ], brief: prose });
-        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "Groceries", reason: "duplicate" }) ]);
-        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "evening", text: "Iron the shirts", status: "written" }) ]));
-        const plan = await call("caius_plan", { period: "day", date: "2027-02-03" });
-        expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((t: any) => t.text) ])).toEqual([
-            [ "☑️ Tasks", [ "Groceries" ] ], [ "🌙 Recharge", [ "Read", "Iron the shirts" ] ]
+        expect(applied.skipped).toEqual([
+            expect.objectContaining({ kind: "evening", text: "Groceries", reason: "use_add" }), expect.objectContaining({ kind: "evening", text: "Iron the shirts", reason: "use_add" })
         ]);
+        expect(applied.say).toContain("'Iron the shirts' isn't on your list yet");
+        const added = await call("caius_add", { items: [ { date: "2027-02-03", area: "recharge", text: "Iron the shirts" } ] });
+        expect(added.results[0]).toMatchObject({ status: "added" });
+        const plan = await call("caius_plan", { period: "day", date: "2027-02-03" });
+        expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((t: any) => [ t.text, t.area ]) ])).toEqual([
+            [ "☑️ Tasks", [ [ "Groceries", "foundation" ] ] ], [ "🌙 Recharge", [ [ "Read", "recharge" ] ] ], [ "Evening", [ [ "🔋 Iron the shirts", "recharge" ] ] ]
+        ]);
+        // Only Groceries is work.
+        expect(plan.capacity).toMatchObject({ totalMinutes: 30, eveningMinutes: 60 });
     });
 });
 
@@ -596,9 +602,9 @@ describe("a write that throws", () => {
         const run = (args: object) => cls.init(() => [ ...fragile ].find(([ n ]) => n === "caius_plan_apply")?.[1].execute(args)) as Promise<any>;
         jira.handoff.push({ ...ticket("ZAP-150"), daysInStatus: 1 });
         at("2027-03-08T09:40");
-        const applied = await run({ date: "2027-03-08", said: "150 not today. evening water the plants", notToday: [ { candidateId: "ZAP-150" } ], evening: [ "Water the plants" ], brief: prose });
+        const applied = await run({ date: "2027-03-08", said: "150 not today. Riley covers the deploy", notToday: [ { candidateId: "ZAP-150" } ], context: [ "Riley covers the deploy" ], brief: prose });
         expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "not_today", reason: "failed", detail: "boom" }) ]);
-        expect(applied.written.map((w: any) => w.kind)).toEqual(expect.arrayContaining([ "evening", "brief" ]));
+        expect(applied.written.map((w: any) => w.kind)).toEqual(expect.arrayContaining([ "context", "brief" ]));
 
         const noteId = (await call("caius_plan", { period: "day", date: "2027-03-08" })).noteId;
         becca.getNoteOrThrow(noteId).isProtected = true;

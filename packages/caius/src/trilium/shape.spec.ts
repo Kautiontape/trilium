@@ -60,7 +60,7 @@ describe('forwarding an evening task', () => {
   it('keeps it under an evening heading: the same one, else any Evening or Recharge, else a new ### Evening above Suggested', () => {
     const made = placeForwarded(work + suggested, '<li>NEW</li>', 'Evening');
     expect(made).toBe(`${work}<h3>Evening</h3><ul class="todo-list"><li>NEW</li></ul>${suggested}`);
-    expect(placeForwarded(work, '<li>NEW</li>', 'Recharge')).toBe(`${work}<h3>Recharge</h3><ul class="todo-list"><li>NEW</li></ul>`);
+    expect(placeForwarded(work, '<li>NEW</li>', 'Recharge')).toBe(`${work}<h3>Evening</h3><ul class="todo-list"><li>NEW</li></ul>`);
     const recharge = `${work}<h3>🌙 Recharge</h3>${ul(li('r1', 'Read ~30m'))}${suggested}`;
     expect(placeForwarded(recharge, '<li>NEW</li>', 'Evening')).toContain('Read ~30m</span></label></li><li>NEW</li>');
   });

@@ -537,7 +537,7 @@ describe("PlanTab", () => {
         const plan = dayPlan();
         api.plan.mockResolvedValue({
             ...plan,
-            sections: [ ...plan.sections, { name: "Evening", kind: "slot", tasks: [ planTask({ listItemId: "t4", text: "Laundry", section: "Evening" }) ] } ],
+            sections: [ ...plan.sections, { name: "Evening", kind: "slot", tasks: [ planTask({ listItemId: "t4", text: "Laundry", section: "Evening", area: "recharge" }) ] } ],
             capacity: { ...plan.capacity, eveningMinutes: 45 }
         });
         const tab = await mount();
@@ -666,7 +666,9 @@ function dayPlan(): CaiusPlan {
         dismissed: [],
         capacity: {
             plannedMinutes: 45, estimatedCount: 1, unestimatedCount: 1, unestimatedMinutes: 30,
-            totalMinutes: 75, eveningMinutes: 0, target: { min: 180, max: 240 }, horizons: {}
+            totalMinutes: 75, eveningMinutes: 0,
+            areas: { foundation: { minutes: 75, target: null }, growth: { minutes: 0, target: null }, recharge: { minutes: 0, target: null } },
+            target: { min: 180, max: 240 }, horizons: {}
         }
     };
 }
@@ -674,7 +676,7 @@ function dayPlan(): CaiusPlan {
 function planTask(overrides: Partial<CaiusPlanTask>): CaiusPlanTask {
     return {
         noteId: "today", listItemId: null, state: "open", text: "", estMinutes: null, parent: null,
-        parentListItemId: null, section: "Morning", critical: false, ...overrides
+        parentListItemId: null, section: "Morning", critical: false, area: "foundation", block: null, at: null, ...overrides
     };
 }
 

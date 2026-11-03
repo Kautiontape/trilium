@@ -32,6 +32,7 @@ export default {
     accept: caiusRoute((caius, req) => caius.caiusService.accept(parse(caius.routeInputs.accept, req.body))),
     dismiss: caiusRoute((caius, req) => caius.caiusService.dismiss(parse(caius.routeInputs.dismiss, req.body))),
     setState: caiusRoute((caius, req) => caius.caiusService.setState(parse(caius.routeInputs.setState, req.body))),
+    setArea: caiusRoute((caius, req) => caius.caiusService.setArea(parse(caius.routeInputs.setArea, req.body))),
     forward: caiusRoute((caius, req) => caius.caiusService.forward(parse(caius.routeInputs.forward, req.body))),
     assignIds: caiusRoute((caius, req) => caius.caiusService.assignIds(parse(caius.routeInputs.assignIds, req.body))),
     apply: caiusRoute((caius, req) => caius.caiusService.apply(parse(caius.routeInputs.apply, req.body))),

@@ -3,6 +3,7 @@ import "./today.css";
 import { layoutGroups } from "@triliumnext/caius/src/daily/blocks.js";
 import { groupTasks, meetingName } from "@triliumnext/caius/src/daily/groups.js";
 import { renderDayTerrain } from "@triliumnext/caius/src/draw/terrain.js";
+import { bareText } from "@triliumnext/caius/src/trilium/areas.js";
 import { useLayoutEffect, useMemo, useRef } from "preact/hooks";
 
 import { openRitual, openSettings } from "../app-state.js";
@@ -87,7 +88,7 @@ function TerrainView({ data, now }: { data: TodayData; now: Date }) {
             .filter(live)
             .map((t) => ({
                 id: t.listItemId ?? null, section: t.section ?? null, critical: t.critical,
-                label: t.text, minutes: t.estMinutes ?? 30, evening: /^(evening|recharge)$/i.test(t.section ?? "")
+                label: bareText(t.text), minutes: t.estMinutes ?? 30, block: t.block, area: t.area, at: t.at
             }));
         const groups = groupTasks(tasks, data.plan.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
         const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -200,7 +201,7 @@ function NowCard({ data, now }: { data: TodayData; now: Date }) {
     const workEnd = clockMinutes(data.rhythm.workEnd) ?? 18 * 60;
     const order = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ]
         .filter((t) => !t.parent && (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)])
-        .filter((t) => minutes >= workEnd || !/^(evening|recharge)$/i.test(t.section ?? ""));
+        .filter((t) => minutes >= workEnd || (t.area !== "recharge" && t.block !== "evening"));
     if (!order.length) {
         return null;
     }
@@ -235,31 +236,54 @@ function NowCard({ data, now }: { data: TodayData; now: Date }) {
 
 function CapacityCard({ data }: { data: TodayData }) {
     const cap = data.plan.capacity;
-    if (!cap.target) {
+    const foundation = cap.areas?.foundation ?? { minutes: cap.totalMinutes, target: cap.target };
+    const growth = cap.areas?.growth;
+    const recharge = cap.areas?.recharge;
+    const live = (t: PlanTask) => (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)];
+    const recharging = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ].filter((t) => !t.parent && t.area === "recharge" && live(t)).length;
+    if (!foundation.target) {
         return null;
     }
-    const over = cap.totalMinutes - cap.target.max;
-    const range = `${duration(cap.target.min).replace(/ h$/, "")}–${duration(cap.target.max)}`;
+    const over = foundation.minutes - foundation.target.max;
     return (
         <Card class="capacity" tone={over > 0 ? "ochre" : undefined}>
-            <div class="capacity-line">
-                <span><strong>{duration(cap.totalMinutes)}</strong> planned of {range}</span>
-                {over > 0 && <span class="capacity-over mono">▲ {duration(over)} over</span>}
-            </div>
-            <CapacityBar planned={cap.totalMinutes} min={cap.target.min} max={cap.target.max} />
+            <CapacityRow name="Foundation" minutes={foundation.minutes} target={foundation.target} tone />
             {cap.unestimatedCount > 0 && <p class="capacity-note ink-2">{cap.unestimatedCount} unestimated, counted at 30 m</p>}
             {cap.onDeckMinutes > 0 && <p class="capacity-note ink-2">{duration(cap.onDeckMinutes)} on deck, not counted yet</p>}
+            {growth && <CapacityRow name="Growth" minutes={growth.minutes} target={growth.target} />}
+            {recharge && (
+                <CapacityRow name="Recharge" minutes={recharge.minutes} target={recharge.target}
+                    summary={recharging ? `${recharging} ${recharging === 1 ? "thing" : "things"}` : "nothing yet"} />
+            )}
         </Card>
     );
 }
 
-function CapacityBar({ planned, min, max }: { planned: number; min: number; max: number }) {
+/** One area's meter: its minutes against its target, and a note when they run past it. Foundation alone turns ochre. */
+function CapacityRow({ name, minutes, target, summary, tone }: { name: string; minutes: number; target: { min: number; max: number } | null; summary?: string; tone?: boolean }) {
+    const over = target ? minutes - target.max : 0;
+    const range = target ? `${duration(target.min).replace(/ h$/, "")}–${duration(target.max)}` : null;
+    return (
+        <div class={`capacity-row${tone ? "" : " thin"}`}>
+            <div class="capacity-line">
+                <span class="capacity-name">{name}</span>
+                <span>
+                    {summary ?? <><strong>{duration(minutes)}</strong>{range && ` of ${range}`}</>}
+                </span>
+                {over > 0 && (tone ? <span class="capacity-over mono">▲ {duration(over)} over</span> : <span class="capacity-note ink-2">{duration(over)} over</span>)}
+            </div>
+            {target && <CapacityBar planned={minutes} min={target.min} max={target.max} warn={tone} />}
+        </div>
+    );
+}
+
+function CapacityBar({ planned, min, max, warn }: { planned: number; min: number; max: number; warn?: boolean }) {
     const scale = Math.max(planned, max) * 1.1;
     const pct = (v: number) => `${Math.min(100, (v / scale) * 100)}%`;
     return (
         <div class="capacity-bar" aria-hidden="true">
             <div class="capacity-target" style={{ left: pct(min), width: `calc(${pct(max)} - ${pct(min)})` }} />
-            <div class={`capacity-fill${planned > max ? " over" : ""}`} style={{ width: pct(planned) }} />
+            <div class={`capacity-fill${warn && planned > max ? " over" : ""}`} style={{ width: pct(planned) }} />
         </div>
     );
 }

@@ -76,6 +76,23 @@ export function headingsByLine(markdown: string): (string | null)[] {
   });
 }
 
+/**
+ * Per line: the headings it sits under, outermost first. A heading runs to the next heading of the
+ * same or a higher level, so `#### Release` under `### Morning` leaves a line under both.
+ */
+export function headingStacks(markdown: string): string[][] {
+  const stack: { level: number; name: string }[] = [];
+  return markdown.split('\n').map((line) => {
+    const m = HEADING.exec(line);
+    if (m && m[2]) {
+      const level = m[1]!.length;
+      while (stack.length && stack.at(-1)!.level >= level) stack.pop();
+      stack.push({ level, name: m[2] });
+    }
+    return stack.map((h) => h.name);
+  });
+}
+
 /** Per line: the Meetings or Context section it falls in (a heading line itself is outside). */
 export function proseKinds(markdown: string): (ProseKind | null)[] {
   const tracker = new ProseTracker();

@@ -33,7 +33,6 @@ describe("stepReply", () => {
         for (const candidate of candidates) {
             expect(reply).toContain(`"${candidate.text}": not taken, ${candidate.kind === "week" ? `stays on ${candidate.sourceLabel}` : "goes to Suggested"}`);
         }
-        expect(reply).toContain("Evening: nothing.");
         expect(reply).toContain(`"Phone alpha week" stays as it is (until Sat 7 Nov); nothing to add for Thu 5 Nov.`);
         expect(reply.toLowerCase()).not.toContain("looks right");
         expect(reply).not.toContain("as you said");
@@ -45,25 +44,26 @@ describe("stepReply", () => {
         const next = steps.find((s) => s.step === "next");
         const reply = [
             ...(open ? stepReply(open, { fates: { 0: { kind: "done" }, 1: { kind: "day", label: "Thu 5 Nov", onDeck: false }, 2: { kind: "drop", reason: "Sam has it" } } }) : []),
-            ...(next ? stepReply(next, { candidates: { 0: "take" }, evening: "nothing tonight" }) : [])
+            ...(next ? stepReply(next, { candidates: { 0: "take" } }) : [])
         ].join(" ");
         expect(reply).toMatch(/^Leftovers: "[^"]+" is done; "[^"]+" goes on Thu 5 Nov's list; "[^"]+" drop it: Sam has it; /);
         expect(reply).toContain(`"${((next?.data.candidates ?? []) as { text: string }[])[0]?.text}": take it`);
-        expect(reply).toContain("Evening: nothing tonight.");
     });
 
-    it("words Plan my day's On deck, candidates and evening, and the catch-up only once picked", () => {
+    it("words Plan my day's On deck, candidates and unmarked tasks, and the catch-up only once picked", () => {
         const inputs = {
             ritual: "plan" as const, step: "inputs", data: {
                 onDeck: [ { text: "Sketch the copy", fate: { list: true } }, { text: "Write the report", fate: { forward: "2026-W45", forwardLabel: "the week of Mon 2 Nov" } } ],
                 candidates: [ { text: "Get ZAP-2041 reviewed", kind: "jira", sourceLabel: "Jira" } ],
-                evening: { tasks: [ "Laundry" ] }
+                unmarked: [ { ref: "u1", text: "The ballot" }, { ref: "u2", text: "Vincent relink" }, { ref: "u3", text: "Pay the invoice" } ]
             }
         };
         expect(stepReply(inputs, {})).toEqual([
             `On deck: "Sketch the copy" goes on today's list; "Write the report" goes to the week of Mon 2 Nov.`,
-            `Candidates: "Get ZAP-2041 reviewed": not taken, goes to Suggested.`,
-            `Evening: "Laundry" as it is, nothing else.`
+            `Candidates: "Get ZAP-2041 reviewed": not taken, goes to Suggested.`
+        ]);
+        expect(stepReply(inputs, { areas: { 0: "growth", 1: "recharge", 2: "foundation" } }).slice(2)).toEqual([
+            "The ballot is Growth.", "Vincent relink is Recharge.", "Pay the invoice is work."
         ]);
         const catchup = { ritual: "plan" as const, step: "catchup", data: { tasks: [ { text: "Book the dentist" } ] } };
         expect(stepReply(catchup, {})).toEqual([]);
@@ -76,7 +76,7 @@ describe("stepPicks", () => {
         ritual: "plan" as const, step: "inputs", data: {
             onDeck: [ { text: "Sketch the copy", fate: { list: true } }, { text: "Write the report", fate: { forward: "2026-11-03", forwardLabel: "Tue 3 Nov", onDeck: true } } ],
             candidates: [ { text: "Get ZAP-2041 reviewed", kind: "jira" }, { text: "Clean up the branch notes", kind: "week" } ],
-            evening: { tasks: [] }
+            unmarked: [ { ref: "u1", text: "The ballot" } ]
         }
     };
 
@@ -85,13 +85,13 @@ describe("stepPicks", () => {
         const { picks, total } = stepPicks(inputs, {
             fates: { 0: { kind: "proposed" }, 1: { kind: "drop", reason: "Sam has it" } },
             candidates: { 0: "take", 1: null },
-            evening: "nothing tonight"
+            areas: { 0: "growth" }
         });
         expect(total).toBe(5);
         expect(picks.map(({ what, choice }) => [ what, choice ])).toEqual([
             [ "Write the report", "Drop: Sam has it" ],
             [ "Get ZAP-2041 reviewed", "Take" ],
-            [ "Evening", "Nothing tonight" ]
+            [ "The ballot", "Growth" ]
         ]);
     });
 

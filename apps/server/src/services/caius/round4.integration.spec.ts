@@ -253,7 +253,7 @@ describe("'done' means done", () => {
         at("2026-12-02T17:45");
         const applied = await call("caius_winddown_apply", {
             date: "2026-12-02", done: [], finished: [ "ZAP-111", "ZAP-101", "the gym bag" ], fates: [],
-            context: [ "Taking Incident Review over Vendor Onboarding at 11:00" ], evening: [ "Laundry" ]
+            context: [ "Taking Incident Review over Vendor Onboarding at 11:00" ]
         });
         expect(applied.skipped).toEqual([]);
         expect(applied.written).toEqual(expect.arrayContaining([
@@ -263,9 +263,8 @@ describe("'done' means done", () => {
             expect.objectContaining({ kind: "finished", id: "ZAP-111" }),
             expect.objectContaining({ kind: "finished", id: "ZAP-101" })
         ]));
-        // Only Dave goes on to Thursday, on its On deck, with the evening's Laundry on the list.
+        // Only Dave goes on to Thursday, on its On deck.
         expect(await tasksOf("2026-12-03")).toEqual([
-            { text: "Laundry", state: "open" },
             { text: "Message Dave if he knows anyone who will hang lights as a small job", state: "open" }
         ]);
     });
@@ -293,10 +292,10 @@ describe("the result is the recap", () => {
         await wednesday("2026-12-16");
         at("2026-12-16T17:45");
         const applied = await call("caius_winddown_apply", {
-            date: "2026-12-16", done: [ "111", "101", "the bag", "groceries" ], fates: [ { listItemId: "dave", to: "d1" } ], evening: [ "Water the plants" ]
+            date: "2026-12-16", done: [ "111", "101", "the bag", "groceries" ], fates: [ { listItemId: "dave", to: "d1" } ], areas: [ { item: "dave", area: "growth" } ]
         });
         expect(applied.say).toBe("ZAP-111, ZAP-101 and Pack the climbing gym bag are done, "
-            + "Message Dave if he knows anyone who will hang lights as a small job moved to Thu 17 Dec's On deck and Water the plants is on Thursday evening. "
+            + "Message Dave if he knows anyone who will hang lights as a small job moved to Thu 17 Dec's On deck and Message Dave if he knows anyone who will hang lights as a small job is marked Growth. "
             + "'groceries' wasn't found.");
         expect(applied.say).not.toMatch(/2026-12-16-|\b[ocl]\d\b|\d{4}-\d{2}-\d{2}/);
     });
@@ -311,46 +310,63 @@ describe("the result is the recap", () => {
 });
 
 describe("a question answered once stays answered", () => {
-    const EVENING = "Anything for the evening?";
     const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
 
-    it("Tue 09:35 then 11:05: the plan asks about the evening, and the refresh doesn't ask again, in that conversation or a later one", async () => {
+    it("Tue 09:35 then 11:05: the plan lists an unmarked chore once, and the refresh after its apply doesn't, in that conversation or a later one", async () => {
         const DAY = "2027-01-12";
+        await cls.init(async () => {
+            const day = await store.calendarDay(DAY);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("um1", "Drop off the ballot ~30m"), li("um2", "ZAP-9 Fix the gate ~30m"))}`);
+        });
         at(`${DAY}T09:35`);
-        expect((await call("caius_planday", { date: DAY, step: "inputs", refresh: true })).question).toContain(EVENING);
-        await call("caius_plan_apply", { date: DAY, brief: prose });
-        expect(await labelsOf(DAY, "caiusAsked")).toContain("evening");
+        const first = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+        // The ticket is work by its key; the ballot is the one to ask about, with no question of its own in the step.
+        expect(first.data.unmarked).toEqual([ { ref: refOf("l", "um1"), listItemId: "um1", text: "Drop off the ballot" } ]);
+        expect(first.question ?? "").not.toMatch(/evening/i);
+        await call("caius_plan_apply", { date: DAY, areas: [ { item: refOf("l", "um1"), area: "growth" } ], brief: prose });
+        expect(await labelsOf(DAY, "caiusAsked")).toContain("area:um1");
 
         at(`${DAY}T11:05`);
         calendars[DAY] = [ event("15:00", "16:00", "Customer Call") ];
         const refresh = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(refresh.question).toBeNull();
+        expect(refresh.data.unmarked).toEqual([]);
         expect(refresh.data.headsUp).toEqual([]);
         delete calendars[DAY];
     });
 
-    it("Mon 17:30: the wind-down asks about Tuesday's evening, so Tuesday's plan doesn't", async () => {
+    it("Mon 17:30: a Foundation answer in the wind-down is asked once for Tuesday too, so Tuesday's plan lists only the chore he didn't answer about", async () => {
+        await cls.init(async () => {
+            const monday = await store.calendarDay("2027-01-04");
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("wv1", "Review the sign-offs ~30m"), li("wv2", "Call the vet ~30m"))}`);
+        });
         at("2027-01-04T17:30");
-        expect((await call("caius_winddown", { date: "2027-01-04", step: "next" })).question).toContain(EVENING);
-        await call("caius_winddown_apply", { date: "2027-01-04", evening: [ "Pack the climbing gym bag" ] });
+        const next = await call("caius_winddown", { date: "2027-01-04", step: "next" });
+        expect(next.question ?? "").not.toMatch(/evening/i);
+        await call("caius_winddown_apply", {
+            date: "2027-01-04",
+            fates: [ { listItemId: "wv1", to: "2027-01-05", onDeck: false }, { listItemId: "wv2", to: "2027-01-05", onDeck: false } ],
+            areas: [ { item: "sign-offs", area: "foundation" } ]
+        });
         at("2027-01-05T09:35");
-        expect((await call("caius_planday", { date: "2027-01-05", step: "inputs", refresh: true })).question).toBeNull();
+        const tuesday = await call("caius_planday", { date: "2027-01-05", step: "inputs", refresh: true });
+        expect(tuesday.data.unmarked.map((task: any) => task.text.split(" [")[0])).toEqual([ "Call the vet" ]);
     });
 
-    it("Wed 11 09:45: the Review of Monday asks about Wednesday's evening once, and the plan after it doesn't", async () => {
+    it("Wed 11 09:45: the Review of Monday asks nothing about Wednesday's evening, and the plan after it doesn't either", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2027-01-18");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("m-dave", "Message Dave about the lights"))}<h3>Evening</h3>${ul(li("m-groc", "Groceries"))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("m-dave", "Message Dave about the lights"))}<h3>Evening</h3>${ul(li("m-groc", "🔋 Groceries"))}`);
         });
         at("2027-01-20T09:45");
         const next = await call("caius_winddown", { date: "2027-01-18", step: "next" });
-        expect(next.question).toContain(EVENING);
+        expect(next.question ?? "").not.toMatch(/evening/i);
         await call("caius_winddown_apply", { date: "2027-01-18", done: [ "groceries" ] });
         const inputs = await call("caius_planday", { date: "2027-01-20", step: "inputs", refresh: true });
-        // Dave went on today's On deck, which the plan asks about; the evening it doesn't ask again.
+        // Dave went on today's On deck, which the plan asks about; the evening it doesn't ask about at all.
         expect(inputs.data.onDeck.map((item: any) => item.text)).toEqual([ expect.stringContaining("Message Dave about the lights") ]);
         expect(inputs.question).toMatch(/^On deck: 'Message Dave about the lights/);
-        expect(inputs.question).not.toContain(EVENING);
+        expect(inputs.question).not.toMatch(/evening/i);
     });
 
     it("Wed 17:45: an overlap on Thursday asked in the wind-down isn't asked again in Thursday's plan", async () => {
@@ -383,7 +399,8 @@ describe("review continues", () => {
 
         // A day nothing recorded: the answers he gave in this conversation are passed through instead.
         at("2027-02-10T09:45");
-        expect((await call("caius_planday", { date: "2027-02-10", step: "inputs", refresh: true })).question).toContain("Anything for the evening?");
+        expect((await call("caius_planday", { date: "2027-02-10", step: "inputs", refresh: true })).question).toBeNull();
+        // The evening answer is retired, but an older call that passes it still validates.
         expect((await call("caius_planday", { date: "2027-02-10", step: "inputs", answered: { evening: [] } })).question).toBeNull();
 
         // Last week's line is offered to carry on Tuesday, unless he already said to keep it.

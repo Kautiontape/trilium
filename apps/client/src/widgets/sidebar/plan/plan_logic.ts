@@ -161,21 +161,14 @@ export function closeCandidates(plan: CaiusPlan) {
 
 /**
  * The live tasks without an estimate, counted as `capacity.unestimatedCount` counts them: a task
- * with live sub-items counts through its sub-items instead, an empty to-do is not a task, and an
- * evening task (under Evening or Recharge) is not work.
+ * with live sub-items counts through its sub-items instead, an empty to-do is not a task, and on
+ * a day a Growth or Recharge task is not work.
  */
 export function unestimatedTasks(plan: CaiusPlan) {
     const live = planTasks(plan).filter((task) => isLive(task) && task.text.trim() !== "");
     const parents = new Set(live.filter((task) => task.parent !== null).map((task) => task.parent));
-    return live.filter((task) => !parents.has(task.text) && task.estMinutes === null && !EVENING_SECTIONS.has(sectionName(task.section)));
-}
-
-/** The sections whose tasks are the evening's, as the library's `isEveningName` reads them. */
-const EVENING_SECTIONS = new Set([ "evening", "recharge" ]);
-
-/** A heading as the library compares it: lower-case letters and digits only. */
-function sectionName(name: string | null) {
-    return (name ?? "").replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase();
+    return live.filter((task) => !parents.has(task.text) && task.estMinutes === null
+        && (plan.period !== "day" || task.area === "foundation"));
 }
 
 /** Where the capacity of the plan stands against its target. */

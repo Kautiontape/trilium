@@ -7,7 +7,8 @@ import { scanDocs, type IndexedTask } from '../index/index.js';
 import { oldestFirst, type NoteReader, type StoreNote } from './store.js';
 import { buildDoc, loadStateSymbols, type TriliumDoc } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
-import { headingsByLine, isSuggestedName, normName, sectionKind, type SectionKind } from './sections.js';
+import { headingStacks, headingsByLine, isSuggestedName, normName, sectionKind, type SectionKind } from './sections.js';
+import { AREAS, blockOf, clockOf, headingArea, markedArea, type Area, type Block } from './areas.js';
 import { parentItemId } from './open.js';
 import { parseContext, periodSpan, type ContextLine } from './until.js';
 
@@ -64,6 +65,12 @@ export interface PlanTask {
   /** Nearest heading above the task, null before any heading. */
   section: string | null;
   critical: boolean;
+  /** Its area: its marker, else an area heading above it, else Foundation (see `areaOfTask`). */
+  area: Area;
+  /** The time block heading above it (Morning, Afternoon, Evening), or null. */
+  block: Block | null;
+  /** The `HH:MM` its text starts with, which pins it to that time; null when it has none. */
+  at: string | null;
 }
 
 export interface PlanSection {
@@ -80,8 +87,13 @@ export interface Capacity {
   /** unestimatedCount x 30 */
   unestimatedMinutes: number;
   totalMinutes: number;
-  /** On a day note, minutes of the live tasks under Evening or Recharge, which the counts above leave out: not work. */
+  /** On a day note, minutes of the live Growth and Recharge tasks, which the counts above leave out: not work. */
   eveningMinutes: number;
+  /**
+   * Live minutes by area (unestimated at 30) and each area's target. On a day note the counts above
+   * are Foundation's; a week's or month's count every area.
+   */
+  areas: Record<Area, { minutes: number; target: { min: number; max: number } | null }>;
   /** Minutes of the live On deck tasks (unestimated at 30), which the counts above leave out: not committed. */
   onDeckMinutes: number;
   /** Suggested range for this period (minutes), null when there is none (a month). */
@@ -112,6 +124,24 @@ export interface PlanView {
   expiredContext: ContextLine[];
   /** Context lines whose `(from …)` date is after the plan's date. */
   pendingContext: ContextLine[];
+}
+
+/** A day's targets for Growth and Recharge; Foundation's is the day's `TARGETS`. */
+export const AREA_TARGETS: Record<Exclude<Area, 'foundation'>, { min: number; max: number } | null> = {
+  growth: { min: 60, max: 120 },
+  recharge: null,
+};
+
+/**
+ * A task's area: its marker; else the nearest Foundation, Growth or Recharge heading above it (a note
+ * laid out by area); else Recharge for a task under an Evening heading on a note with no Morning or
+ * Afternoon heading (the evening before time blocks, which was never work); else Foundation.
+ */
+export function areaOfTask(text: string, headings: string[], timeBlocks: boolean): Area {
+  const headed = headings.map(headingArea).findLast((a) => a !== null);
+  if (markedArea(text)) return markedArea(text)!;
+  if (headed) return headed;
+  return !timeBlocks && headings.some((h) => blockOf(h) === 'evening') ? 'recharge' : 'foundation';
 }
 
 const TARGETS: Record<PeriodKind, { min: number; max: number } | null> = {
@@ -177,6 +207,8 @@ export async function duplicateWarnings(api: NoteReader, periods: { period: Peri
 export function planTasks(doc: TriliumDoc, now: Date): { tasks: (PlanTask & { line: number; horizon: string | null; live: boolean })[] } {
   const result = scanDocs([{ path: doc.path, text: doc.fullText, mtime: doc.mtime }], TRILIUM_CONFIG, now);
   const headings = headingsByLine(doc.fullText);
+  const stacks = headingStacks(doc.fullText);
+  const timeBlocks = stacks.some((stack) => stack.some((h) => blockOf(h) === 'morning' || blockOf(h) === 'afternoon'));
   const byRowid = new Map(result.tasks.map((t) => [t.rowid, t]));
   return {
     tasks: result.tasks.map((t) => ({
@@ -189,6 +221,9 @@ export function planTasks(doc: TriliumDoc, now: Date): { tasks: (PlanTask & { li
       parentListItemId: parentItemId(doc, t.parentRowid === null ? undefined : byRowid.get(t.parentRowid)),
       section: headings[t.line] ?? null,
       critical: doc.critical.has(t.line),
+      area: areaOfTask(t.text, stacks[t.line] ?? [], timeBlocks),
+      block: (stacks[t.line] ?? []).map(blockOf).findLast((b) => b !== null) ?? null,
+      at: clockOf(t.text),
       line: t.line,
       horizon: doc.suggested.has(t.line) ? null : t.horizon,
       live: t.live,
@@ -223,10 +258,12 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   // blank checkbox, not a task, and neither counts nor makes its parent a parent.
   const countable = main.filter((t) => t.live && t.text.trim() !== '');
   const parents = new Set(countable.filter((t) => t.parent !== null).map((t) => t.parent));
-  // Only a day's evening is apart from its work; a week's or month's Recharge is planned time.
-  const inEvening = (t: { section: string | null }) => period === 'day' && isEveningName(t.section);
-  const evening = countable.filter((t) => !parents.has(t.text) && inEvening(t));
-  const counted = countable.filter((t) => !parents.has(t.text) && !inEvening(t));
+  // Only a day's Growth and Recharge are apart from its work; a week's or month's are planned time.
+  const leaves = countable.filter((t) => !parents.has(t.text));
+  const apart = (t: { area: Area }) => period === 'day' && t.area !== 'foundation';
+  const evening = leaves.filter(apart);
+  const counted = leaves.filter((t) => !apart(t));
+  const minutesOf = (area: Area) => leaves.filter((t) => t.area === area).reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0);
   const estimated = counted.filter((t) => t.estMinutes !== null);
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;
@@ -255,6 +292,10 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
       eveningMinutes: evening.reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0),
       onDeckMinutes,
       target: TARGETS[period],
+      areas: Object.fromEntries(AREAS.map((area) => [
+        area,
+        { minutes: minutesOf(area), target: period !== 'day' ? null : area === 'foundation' ? TARGETS.day : AREA_TARGETS[area] },
+      ])) as Capacity['areas'],
       horizons,
     },
     meetings: doc.meetings,
@@ -262,12 +303,6 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   };
 }
 
-/** Whether a section is the evening, Evening or Recharge: its tasks are not work. */
-export function isEveningName(name: string | null): boolean {
-  return name !== null && EVENING_NAMES.has(normName(name));
-}
-
-const EVENING_NAMES = new Set(['evening', 'recharge']);
 
 /**
  * The day Context expires against: the day itself, or `now` when it falls inside the week or
@@ -299,6 +334,10 @@ function emptyView(period: PeriodKind, key: string): PlanView {
       eveningMinutes: 0,
       onDeckMinutes: 0,
       target: TARGETS[period],
+      areas: Object.fromEntries(AREAS.map((area) => [
+        area,
+        { minutes: 0, target: period !== 'day' ? null : area === 'foundation' ? TARGETS.day : AREA_TARGETS[area] },
+      ])) as Capacity['areas'],
       horizons: {},
     },
     meetings: [],
