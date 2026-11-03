@@ -2,13 +2,13 @@ import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import { layoutGroups } from "@triliumnext/caius/src/daily/blocks.js";
 import { groupTasks, meetingName } from "@triliumnext/caius/src/daily/groups.js";
 import { type DayLoad, dayLoad, DEFAULT_ESTIMATE, liveMinutes } from "@triliumnext/caius/src/daily/load.js";
-import type { DayViewData, ShownView, ViewName, ViewTask } from "@triliumnext/caius/src/daily/views.js";
+import type { DaysViewData, DaysViewDay, DayViewData, ItemViewData, ShownView, SlippingViewData, ViewName, ViewTask, ViewTrailStep } from "@triliumnext/caius/src/daily/views.js";
 import type { TerrainInput } from "@triliumnext/caius/src/draw/terrain.js";
 import { type Area, bareText, type Block } from "@triliumnext/caius/src/trilium/areas.js";
 
 import { displayText } from "../components/TaskRow.js";
 import { type ToolCall, parseResult } from "./chat.js";
-import { clockMinutes, dayLabel, hhmm, monthLabel, weekLabel } from "./day.js";
+import { clockMinutes, dayLabel, duration, hhmm, monthLabel, periodLabel, weekLabel } from "./day.js";
 import { chipLabel, choicePhrase } from "./replies.js";
 
 export type { ShownView, ViewName, ViewTask };
@@ -55,9 +55,15 @@ export interface ViewPick {
     undo: ViewAnswers;
 }
 
-/** A row as it would stand after the taps; `leaving` when a tap takes it (or its parent) off the day. */
+/**
+ * A row as it would stand after the taps; `leaving` when a tap takes it (or its parent) off the day.
+ * `fate` is the row's own tap or its parent's; `landed` is set on a copy a tap brings from another
+ * day or the week (Days), and names the period it came from.
+ */
 export interface RedrawnTask extends ViewTask {
     leaving: boolean;
+    fate?: ViewFate;
+    landed?: ViewTask["period"];
 }
 
 export interface RedrawnDay {
@@ -163,7 +169,7 @@ export function redraw(view: ShownView, answers: ViewAnswers): RedrawnDay[] {
         case "day":
             return [ redrawDay(view.data, answers) ];
         case "days":
-            return view.data.days.map((day) => redrawDay(day, answers));
+            return redrawDays(view.data, answers).days;
         default:
             return [];
     }
@@ -171,7 +177,94 @@ export function redraw(view: ShownView, answers: ViewAnswers): RedrawnDay[] {
 
 /** One day's rows and load after the taps. A leaving row stays in `tasks`, so the view can strike it through. */
 export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad }, answers: ViewAnswers): RedrawnDay {
-    const tasks = redrawRows(day.tasks, answers);
+    return withLoad(day.load, redrawRows(day.tasks, answers));
+}
+
+/**
+ * Days after the taps: each day's own rows, and a copy of each row a tap sends to a shown day,
+ * `landed` on its list or On deck, before its meters are worked again; the week's rows, with a copy of
+ * each day's row sent to the week. A row sent anywhere else only leaves.
+ */
+export function redrawDays(data: DaysViewData, answers: ViewAnswers): { days: RedrawnDay[]; week: RedrawnTask[] } {
+    const rows = redrawRows([ ...data.days.flatMap((d) => d.tasks), ...data.week.tasks ], answers);
+    const landing = (own: ViewTask[], lands: (fate: ViewFate) => Partial<ViewTask> | null) => {
+        const keys = new Set(own.map(rowKey));
+        return [
+            ...rows.filter((t) => keys.has(rowKey(t))),
+            ...rows.flatMap((t): RedrawnTask[] => {
+                const to = t.fate && !keys.has(rowKey(t)) ? lands(t.fate) : null;
+                return to ? [ { ...t, ...to, leaving: false, landed: t.period } ] : [];
+            })
+        ];
+    };
+    return {
+        days: data.days.map((day) => withLoad(day.load, landing(day.tasks, (fate) => fate.kind === "day" && fate.date === day.date
+            ? { period: { kind: "day", key: day.date }, place: fate.onDeck ? "onDeck" : "list", block: null }
+            : null))),
+        week: landing(data.week.tasks, (fate) => fate.kind === "week" && fate.week === data.week.key
+            ? { period: { kind: "week", key: data.week.key }, place: "list", block: null }
+            : null)
+    };
+}
+
+/** Each figure of a Days grid column after the taps: ▲ on an area over its target, ○ for no Recharge, and `was` when a tap changed it. */
+export function daysCells(day: DaysViewDay, after: RedrawnDay): { meetings: string; foundation: DaysCell; growth: DaysCell; recharge: DaysCell } {
+    const cell = (before: string, figure: string, over: boolean): DaysCell => ({ figure: over ? `▲ ${figure}` : figure, ...(before !== figure ? { was: before } : {}), over });
+    const recharge = (count: number) => count ? "●".repeat(count) : "○";
+    return {
+        meetings: day.calendarFailed ? "?" : day.meetingMinutes ? duration(day.meetingMinutes) : "–",
+        foundation: cell(duration(day.load.foundation.minutes), duration(after.load.foundation.minutes), after.load.foundation.over),
+        growth: cell(duration(day.load.growth.minutes), duration(after.load.growth.minutes), after.load.growth.over),
+        recharge: cell(recharge(day.load.recharge.count), recharge(after.load.recharge.count), false)
+    };
+}
+
+/** One cell of the Days grid. */
+export interface DaysCell {
+    figure: string;
+    was?: string;
+    over: boolean;
+}
+
+/** A trail in words, oldest first: `moved on from Mon 2 Nov, then Tue 3 Nov; on Wed 4 Nov now`. Null for no trail. */
+export function trailWords(trail: ViewTrailStep[]): string | null {
+    const moved = trail.filter((step) => step.movedOn).map((step) => step.label);
+    const now = trail.find((step) => !step.movedOn);
+    const parts = [
+        moved.length ? `moved on from ${moved.join(", then ")}` : null,
+        now ? (now.state === "done" ? `done on ${now.label}` : now.state === "cancelled" ? `dropped on ${now.label}` : `on ${now.label} now`) : null
+    ].filter((part): part is string => !!part);
+    return parts.length ? parts.join("; ") : null;
+}
+
+/** The overdue lane by how late, `3 under a week · 1 from 1–2 weeks · 2 older`; null when nothing is overdue. */
+export function overdueLine(overdue: SlippingViewData["overdue"]): string | null {
+    const parts = [
+        overdue.underWeek && `${overdue.underWeek} under a week`,
+        overdue.oneToTwoWeeks && `${overdue.oneToTwoWeeks} from 1–2 weeks`,
+        overdue.older && `${overdue.older} older`
+    ].filter((part): part is string => !!part);
+    return parts.length ? parts.join(" · ") : null;
+}
+
+/** `Dismissed until Mon 9 Nov`, `Finished`, `Not today`. */
+export function dispositionWords(disposition: ItemViewData["dispositions"][number]): string {
+    const name = disposition.kind === "dismissed" ? "Dismissed" : disposition.kind === "finished" ? "Finished" : "Not today";
+    return disposition.until ? `${name} until ${periodLabel(disposition.until)}` : name;
+}
+
+/** The Item view's Take chips for a ticket no task names: today, the next workday and the week, each landing On deck unless `onDeck` is false. */
+export function ticketTakes(data: ItemViewData, onDeck: boolean): { chip: string; answer: TicketAnswer }[] {
+    const keys = [ ...new Set([ data.today, data.nextWorkday, data.week ]) ];
+    return keys.map((to) => ({ chip: to === data.today ? "Today" : takeLabel(data, to), answer: takeTicket(data, to, onDeck) }));
+}
+
+/** Take to a day (`today` for today's) or a week. */
+export function takeTicket(data: ItemViewData, to: string, onDeck: boolean): TicketAnswer {
+    return { kind: "take", to, label: takeLabel(data, to), onDeck };
+}
+
+function withLoad(before: DayLoad, tasks: RedrawnTask[]): RedrawnDay {
     const staying = tasks.filter((t) => !t.leaving);
     const list = staying.filter((t) => t.place === "list");
     const onDeck = staying.filter((t) => t.place === "onDeck");
@@ -180,7 +273,7 @@ export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad }, answers: Vi
         onDeck: liveMinutes(onDeck, "foundation"),
         growth: liveMinutes(list, "growth"),
         recharge: list.filter((t) => !t.parent && t.area === "recharge" && isLive(t)).length
-    }, { focus: day.load.foundation.focus, growthTarget: day.load.growth.target });
+    }, { focus: before.foundation.focus, growthTarget: before.growth.target });
     return { tasks, load };
 }
 
@@ -213,7 +306,8 @@ export function redrawRows(tasks: ViewTask[], answers: ViewAnswers): RedrawnTask
             ...task,
             estMinutes: answer?.estimate ?? task.estMinutes,
             area: answer?.area ?? task.area,
-            leaving: !!fate && LEAVING.has(fate.kind)
+            leaving: !!fate && LEAVING.has(fate.kind),
+            ...(fate ? { fate } : {})
         };
         if (fate?.kind === "block") {
             return { ...moved, block: fate.block, place: "list" };
@@ -433,6 +527,13 @@ function minutesWords(minutes: number) {
     const hours = h ? `${h} ${h === 1 ? "hour" : "hours"}` : "";
     const rest = m ? `${m} ${m === 1 ? "minute" : "minutes"}` : "";
     return [ hours, rest ].filter(Boolean).join(" ") || "0 minutes";
+}
+
+function takeLabel(data: ItemViewData, to: string) {
+    if (to === data.today) {
+        return "today";
+    }
+    return isDayKey(to) ? dayLabel(to) : weekLabel(to).split(" · ")[0];
 }
 
 function isDayKey(key: string) {

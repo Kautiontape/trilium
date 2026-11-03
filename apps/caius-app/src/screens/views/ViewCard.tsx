@@ -1,8 +1,11 @@
 import { useLayoutEffect, useMemo, useState } from "preact/hooks";
 
 import { haptic } from "../../components/ui.js";
-import { type RowAnswer, type ShownView, type ViewAnswers, viewPicks, viewReply } from "../../lib/views.js";
+import { type RowAnswer, type ShownView, type TicketAnswer, type ViewAnswers, viewPicks, viewReply } from "../../lib/views.js";
+import { DaysView } from "./DaysView.js";
 import { DayView } from "./DayView.js";
+import { ItemView } from "./ItemView.js";
+import { SlippingView } from "./SlippingView.js";
 
 /** A view's answer for the answers pill, in the step cards' form. */
 export interface ViewReport {
@@ -14,8 +17,8 @@ export interface ViewReport {
 /**
  * A `caius_show` result in the chat: the view `view.view` names, its taps kept here. While `live`,
  * it reports its sentences (`viewReply`) and pill rows (`viewPicks`) under `id` as a step card does;
- * with no taps the report is empty and adds nothing to the pill. Days, Item and Slipping show the
- * view's one-line `sentence` for now.
+ * with no taps the report is empty and adds nothing to the pill. Rows answer through `onAnswer`,
+ * and the Item view's ticket through `onTicket`.
  */
 export function ViewCard({ id, view: parsed, live, report }: {
     id: string;
@@ -31,6 +34,14 @@ export function ViewCard({ id, view: parsed, live, report }: {
         haptic("tick");
         setAnswers((prev) => ({ ...prev, rows: { ...prev.rows, [key]: answer } }));
     };
+    const answerTicket = (key: string, answer: TicketAnswer | undefined) => {
+        haptic("tick");
+        setAnswers((prev) => {
+            const { [key]: _, ...rest } = prev.tickets ?? {};
+            return { ...prev, tickets: answer ? { ...rest, [key]: answer } : rest };
+        });
+    };
+    const onAnswer = live ? answerRow : undefined;
     const { sentences, picks, total } = useMemo(() => ({ sentences: viewReply(view, answers), ...viewPicks(view, answers) }), [ view, answers ]);
     const joined = JSON.stringify([ sentences, picks.map((p) => [ p.what, p.choice ]) ]);
     // A layout effect, so the pill holds the new answer before the next paint and a quick Send never sends the old one.
@@ -42,9 +53,10 @@ export function ViewCard({ id, view: parsed, live, report }: {
     return (
         <section class={`step-card view-card view-${view.view}`}>
             {view.title && <h3 class="step-title">{view.title}</h3>}
-            {view.view === "day"
-                ? <DayView data={view.data} answers={answers} onAnswer={live ? answerRow : undefined} />
-                : view.sentence && <p class="step-note ink-2">{view.sentence}</p>}
+            {view.view === "day" && <DayView data={view.data} answers={answers} onAnswer={onAnswer} />}
+            {view.view === "days" && <DaysView data={view.data} answers={answers} onAnswer={onAnswer} />}
+            {view.view === "item" && <ItemView data={view.data} answers={answers} onAnswer={onAnswer} onTicket={live ? answerTicket : undefined} />}
+            {view.view === "slipping" && <SlippingView data={view.data} answers={answers} onAnswer={onAnswer} />}
         </section>
     );
 }

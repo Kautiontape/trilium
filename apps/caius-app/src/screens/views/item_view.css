@@ -1,0 +1,25 @@
+.item-trail {
+    margin: var(--s2) 0 var(--s3);
+    font-size: 14px;
+    line-height: 20px;
+
+    &::first-letter { text-transform: uppercase; }
+}
+
+.item-origin { animation: none; }
+
+.item-take {
+    margin-top: var(--s3);
+
+    & .chip-row { align-items: center; }
+
+    & .label-caps { flex-basis: 100%; }
+
+    & .picker { margin-top: var(--s2); }
+}
+
+.item-dispositions {
+    margin: var(--s3) 0 0;
+    font-size: 14px;
+    line-height: 20px;
+}

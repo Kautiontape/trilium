@@ -35,7 +35,7 @@ export function originView(origin: TaskOrigin | null | undefined, taskNoteId: st
 }
 
 /** A Journal note by its period ("Tue 28 Apr"), any other by its title, with the day it was made unless the title has a date. */
-function sourceName(origin: TaskOrigin): string {
+export function sourceName(origin: TaskOrigin): string {
     if (origin.date && !/^\d{4}-\d{2}-\d{2}$/.test(origin.date)) {
         return origin.date;
     }

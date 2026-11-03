@@ -1,9 +1,12 @@
 import { dayLoad, liveMinutes } from "@triliumnext/caius/src/daily/load.js";
-import type { DayViewData, DaysViewData, ItemViewData, ShownView, ViewTask } from "@triliumnext/caius/src/daily/views.js";
+import type { DayViewData, DaysViewData, ItemViewData, ShownView, SlippingViewData, ViewTask } from "@triliumnext/caius/src/daily/views.js";
 import { describe, expect, it } from "vitest";
 
 import { slipLabel } from "../components/TaskRow.js";
-import { dayGroups, dayTerrain, fateChoices, hasLiveSubItems, redraw, redrawRows, rowKey, type ViewAnswers, viewOf, viewPicks, viewReply } from "./views.js";
+import {
+    dayGroups, daysCells, dayTerrain, dispositionWords, fateChoices, hasLiveSubItems, overdueLine, redraw, redrawDays, redrawRows, rowKey, takeTicket,
+    ticketTakes, trailWords, type ViewAnswers, viewOf, viewPicks, viewReply
+} from "./views.js";
 
 const FOCUS = { min: 180, max: 240 };
 const GROWTH = { min: 30, max: 60 };
@@ -319,5 +322,138 @@ describe("dayTerrain", () => {
 describe("slipLabel", () => {
     it("shows the slip count from 2 only", () => {
         expect([ 0, 1, 2, 3 ].map(slipLabel)).toEqual([ null, null, "↻2", "↻3" ]);
+    });
+});
+
+/** Two days of Days: the same rows on Tue 3 Nov (`day1`) and Wed 4 Nov (`day2`), and one week item of 40 minutes. */
+const DAYS: DaysViewData = {
+    from: "2026-11-03",
+    days: [
+        { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 90, load: DAY.load, calendarFailed: false, tasks: TASKS },
+        {
+            date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false,
+            tasks: TASKS.map((t) => ({ ...t, noteId: "day2", period: { kind: "day" as const, key: "2026-11-04" } }))
+        }
+    ],
+    week: {
+        key: "2026-W45", label: "Week 45",
+        tasks: [ row("w1", "Week thing", { noteId: "week", estMinutes: 40, period: { kind: "week", key: "2026-W45" }, place: "list" }) ],
+        foundation: { minutes: 430, target: { min: 720, max: 900 } }
+    }
+};
+const DAYS_VIEW: ShownView = { view: "days", title: "", sentence: "", data: DAYS };
+const toWed = { kind: "day", date: "2026-11-04", label: "Wed 4 Nov", onDeck: false } as const;
+
+describe("redrawDays", () => {
+    it("moves a tapped row out of one day's meter and into the other's, with its sub-items", () => {
+        expect(redraw(DAYS_VIEW, tap({ [key("a2")]: { fate: toWed } })).map((d) => d.load.foundation.minutes)).toEqual([ 165, 225 ]);
+        const { days } = redrawDays(DAYS, tap({ [key("a2")]: { fate: toWed }, [key("p")]: { fate: { ...toWed, onDeck: true } } }));
+        expect(days.map((d) => d.load.foundation.minutes)).toEqual([ 195 - 30 - 45, 195 + 30 ]);
+        expect(days[1].load.onDeck.minutes).toBe(30 + 45);
+        const landed = days[1].tasks.filter((t) => t.landed);
+        expect(landed.map((t) => [ t.listItemId, t.place, t.period.key, t.leaving ])).toEqual([
+            [ "a2", "list", "2026-11-04", false ], [ "p", "onDeck", "2026-11-04", false ], [ "s1", "onDeck", "2026-11-04", false ], [ "s2", "onDeck", "2026-11-04", false ]
+        ]);
+        expect(days[0].tasks.filter((t) => t.leaving).map((t) => t.listItemId)).toEqual([ "a2", "p", "s1", "s2" ]);
+    });
+
+    it("lands a week item on a day and a day's row on the week, and leaves a row sent past the shown days off both", () => {
+        const weekKey = rowKey({ noteId: "week", listItemId: "w1" });
+        const after = redrawDays(DAYS, tap({
+            [weekKey]: { fate: { kind: "day", date: "2026-11-03", label: "Tue 3 Nov", onDeck: false }, estimate: 60 },
+            [key("a1")]: { fate: { kind: "week", week: "2026-W45", label: "Week 45" } },
+            [rowKey({ noteId: "day2", listItemId: "a2" })]: { fate: { kind: "day", date: "2026-11-09", label: "Mon 9 Nov", onDeck: true } }
+        }));
+        expect(after.days.map((d) => d.load.foundation.minutes)).toEqual([ 195 + 60 - 60, 195 - 30 ]);
+        expect(after.week.map((t) => [ t.listItemId, t.leaving, !!t.landed ])).toEqual([ [ "w1", true, false ], [ "a1", false, true ] ]);
+        expect(after.days[0].tasks.find((t) => t.landed)).toMatchObject({ listItemId: "w1", estMinutes: 60, place: "list" });
+    });
+
+    it("gives the cells of the grid from the redrawn days: meetings, ▲ over, ○ no Recharge, and the figure before the taps", () => {
+        const heavy = { ...DAYS.days[0], load: { ...DAY.load } };
+        const answers = tap({ [key("r")]: { fate: { kind: "done" } }, [rowKey({ noteId: "day2", listItemId: "a2" })]: { estimate: 90 } });
+        const { days } = redrawDays({ ...DAYS, days: [ heavy, DAYS.days[1] ] }, answers);
+        expect(daysCells(heavy, days[0])).toEqual({
+            meetings: "1 h 30 m",
+            foundation: { figure: "3 h 15 m", over: false },
+            growth: { figure: "45 m", over: false },
+            recharge: { figure: "○", was: "●", over: false }
+        });
+        expect(daysCells(DAYS.days[1], days[1])).toMatchObject({ meetings: "–", foundation: { figure: "▲ 4 h 15 m", was: "3 h 15 m", over: true } });
+        expect(daysCells({ ...DAYS.days[1], calendarFailed: true }, days[1]).meetings).toBe("?");
+    });
+});
+
+describe("the new views' sentences", () => {
+    const one = (view: ShownView, answers: ViewAnswers) => ({ reply: viewReply(view, answers), picks: viewPicks(view, answers).picks.map(({ what, choice }) => ({ what, choice })) });
+
+    it("says a day picked in Days, from the fate menu's own line, and a week item sent to a day", () => {
+        const choice = fateChoices(TASKS[1], { days: DAYS.days.map((d) => d.date), week: DAYS.week.key }).find((c) => c.label === "Wed 4 Nov");
+        expect(choice?.fate).toBeDefined();
+        const answers = tap({ [key("a2")]: { fate: choice?.fate }, [rowKey({ noteId: "week", listItemId: "w1" })]: { fate: { kind: "day", date: "2026-11-03", label: "Tue 3 Nov", onDeck: true } } });
+        expect(one(DAYS_VIEW, answers)).toEqual({
+            reply: [ `From the days view: "The ballot" goes on Wed 4 Nov's On deck; "Week thing" goes on Tue 3 Nov's On deck.` ],
+            picks: [ { what: "The ballot", choice: "Wed · On deck" }, { what: "Week thing", choice: "Tue · On deck" } ]
+        });
+    });
+
+    it("says Park from Slipping, and lists the rows longest trail first", () => {
+        const data: SlippingViewData = { tasks: [ { ...TASKS[0], slips: 4 } ], overdue: { underWeek: 0, oneToTwoWeeks: 0, older: 0 }, parkMonth: "2026-12" };
+        const park = fateChoices(data.tasks[0], { parkMonth: data.parkMonth }).find((c) => c.label === "Park");
+        expect(park?.detail).toBe("December 2026");
+        const view: ShownView = { view: "slipping", title: "", sentence: "", data };
+        expect(one(view, tap({ [key("a1")]: { fate: park?.fate } }))).toEqual({
+            reply: [ `From the slipping view: "Garage shelf" goes to December 2026.` ],
+            picks: [ { what: "Garage shelf", choice: "Park · December 2026" } ]
+        });
+    });
+
+    it("says Take and Finished as the Item view's chips give them", () => {
+        const item: ItemViewData = {
+            task: null, trail: [], origin: null, context: [], dispositions: [],
+            ticket: { key: "ZAP-2640", error: "timeout" }, today: "2026-11-03", nextWorkday: "2026-11-04", week: "2026-W45"
+        };
+        const view: ShownView = { view: "item", title: "ZAP-2640", sentence: "", data: item };
+        const takes = ticketTakes(item, true);
+        expect(takes.map((t) => t.chip)).toEqual([ "Today", "Wed 4 Nov", "Week 45" ]);
+        const say = (answer: NonNullable<ViewAnswers["tickets"]>[string]) => one(view, { tickets: { "ZAP-2640": answer } });
+        expect(takes.map((t) => say(t.answer).reply[0])).toEqual([
+            "From the item view: Take ZAP-2640 to today's On deck.",
+            "From the item view: Take ZAP-2640 to Wed 4 Nov's On deck.",
+            "From the item view: Take ZAP-2640 to Week 45."
+        ]);
+        expect(say(takeTicket(item, "2026-11-10", false))).toEqual({
+            reply: [ "From the item view: Take ZAP-2640 to Tue 10 Nov's list." ],
+            picks: [ { what: "ZAP-2640", choice: "Take: Tue 10 Nov · list" } ]
+        });
+        expect(takeTicket(item, "2026-11-03", false)).toEqual({ kind: "take", to: "2026-11-03", label: "today", onDeck: false });
+        expect(say({ kind: "finished" }).reply).toEqual([ "From the item view: ZAP-2640 is finished." ]);
+    });
+});
+
+describe("trailWords", () => {
+    const step = (key: string, label: string, movedOn: boolean, state = movedOn ? "tombstone" : "open") => ({ period: { kind: "day" as const, key }, label, movedOn, state });
+
+    it("names where the task moved on from, oldest first, and where it is now", () => {
+        expect(trailWords([ step("2026-11-02", "Mon 2 Nov", true), step("2026-11-03", "Tue 3 Nov", true), step("2026-11-04", "Wed 4 Nov", false) ]))
+            .toBe("moved on from Mon 2 Nov, then Tue 3 Nov; on Wed 4 Nov now");
+        expect(trailWords([ step("2026-11-04", "Wed 4 Nov", false) ])).toBe("on Wed 4 Nov now");
+        expect(trailWords([ step("2026-11-02", "Mon 2 Nov", true), step("2026-11-04", "Wed 4 Nov", false, "done") ])).toBe("moved on from Mon 2 Nov; done on Wed 4 Nov");
+        expect(trailWords([ step("2026-11-02", "Week 45", true) ])).toBe("moved on from Week 45");
+        expect(trailWords([])).toBeNull();
+    });
+});
+
+describe("overdueLine and dispositionWords", () => {
+    it("counts the overdue lane by how late, leaving out the empty parts", () => {
+        expect(overdueLine({ underWeek: 3, oneToTwoWeeks: 1, older: 2 })).toBe("3 under a week · 1 from 1–2 weeks · 2 older");
+        expect(overdueLine({ underWeek: 0, oneToTwoWeeks: 0, older: 5 })).toBe("5 older");
+        expect(overdueLine({ underWeek: 0, oneToTwoWeeks: 0, older: 0 })).toBeNull();
+    });
+
+    it("names a disposition and its until", () => {
+        expect(dispositionWords({ kind: "dismissed", until: "2026-11-09" })).toBe("Dismissed until Mon 9 Nov");
+        expect(dispositionWords({ kind: "not_today" })).toBe("Not today");
+        expect(dispositionWords({ kind: "finished" })).toBe("Finished");
     });
 });
