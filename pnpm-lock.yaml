@@ -227,6 +227,9 @@ importers:
       '@capacitor/share':
         specifier: 8.0.2
         version: 8.0.2(@capacitor/core@8.5.2)
+      '@capawesome-team/capacitor-android-foreground-service':
+        specifier: 8.1.0
+        version: 8.1.0(@capacitor/core@8.5.2)
       '@fontsource/atkinson-hyperlegible-mono':
         specifier: 5.3.0
         version: 5.3.0
@@ -1922,6 +1925,11 @@ packages:
 
   '@capacitor/synapse@1.0.4':
     resolution: {integrity: sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==}
+
+  '@capawesome-team/capacitor-android-foreground-service@8.1.0':
+    resolution: {integrity: sha512-q1LaZQ5K2cu2IXjbabwssF+RpUBikLxkOHYS69ahXz6a1kIsr2jC4RU1bwAEBTopRz0ccgfai0dSSTdqbtEwhw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@catppuccin/codemirror@1.0.3':
     resolution: {integrity: sha512-P1ZCj4DZVLqr/TNz28m3aaF2Elrikpb8OOnzN0Vyf95Un4pTWTkCSvhbskbnJbnNJ87Rfvt3fXoaUj4o55X30Q==}
@@ -12438,6 +12446,10 @@ snapshots:
       '@capacitor/core': 8.5.2
 
   '@capacitor/synapse@1.0.4': {}
+
+  '@capawesome-team/capacitor-android-foreground-service@8.1.0(@capacitor/core@8.5.2)':
+    dependencies:
+      '@capacitor/core': 8.5.2
 
   '@catppuccin/codemirror@1.0.3':
     dependencies:
