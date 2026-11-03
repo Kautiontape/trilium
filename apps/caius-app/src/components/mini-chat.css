@@ -1,0 +1,77 @@
+.mini-chat {
+    position: fixed;
+    left: var(--s2);
+    right: var(--s2);
+    bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--s2));
+    z-index: 21;
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    height: var(--mini-chat-height);
+    padding: 0 var(--s2) 0 var(--s4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    text-align: left;
+    cursor: pointer;
+
+    & .mini-chat-dot {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--line);
+    }
+
+    &.unseen .mini-chat-dot { background: var(--clay); }
+
+    &.working .mini-chat-dot {
+        background: var(--clay);
+        animation: mini-chat-pulse 1.6s ease-in-out infinite;
+    }
+
+    & .mini-chat-text {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        font-size: 14px;
+        line-height: 20px;
+    }
+
+    & .mini-chat-line {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    & .mini-chat-open {
+        display: inline-flex;
+        color: var(--ink-2);
+        transform: rotate(180deg);
+    }
+}
+
+@keyframes mini-chat-pulse {
+    50% { opacity: 0.3; transform: scale(0.8); }
+}
+
+/* While the bar shows, what sits at the bottom of the tabs moves up by the bar's height and gap. */
+body:has(.mini-chat) {
+    --mini-chat-height: 56px;
+    --mini-chat-space: calc(var(--mini-chat-height) + var(--s2));
+
+    & .fab, & .snackbar:not(.snackbar-top) {
+        bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--mini-chat-space) + var(--s4));
+    }
+
+    /* The 96px matches the FAB's room in `.screen` (today.css). */
+    & .screen {
+        padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--mini-chat-space) + 96px);
+    }
+
+    & .chat-screen.ask {
+        height: calc(100vh - var(--nav-height) - var(--safe-bottom) - var(--mini-chat-space));
+    }
+}

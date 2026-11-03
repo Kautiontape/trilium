@@ -3,14 +3,17 @@ import "./app.css";
 import { App as CapApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import type { ActionPerformed } from "@capacitor/local-notifications";
-import { useEffect } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 
-import { onboarding, openRitual, quickAddRequested, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
+import { appVisible, chatActivity, chatOnScreen, closeRitual, minimizeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
+import { MiniChat } from "./components/MiniChat.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
+import { chatTarget, openChat, startChatNotifications } from "./lib/chat-notify.js";
+import { readStoredChats } from "./lib/chats.js";
 import { loadConnection } from "./lib/connection.js";
-import type { Reminder } from "./lib/local.js";
 import { nextWorkdayKey } from "./lib/day.js";
+import type { Reminder } from "./lib/local.js";
 import { scheduleNudges, scheduleReminder, setUpNotifications, snoozeNudge } from "./lib/notify.js";
 import { api, appNow, connection, flushHeld, refreshToday, reminders, runWrite, saveReminders, settings, today } from "./lib/store.js";
 import { Ask, Ritual } from "./screens/Chat.js";
@@ -29,7 +32,16 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 
 let booted: Promise<void> | null = null;
 
+/**
+ * The tabs, with the ritual and Settings over them. The ritual and Ask stay mounted while hidden, so
+ * a turn keeps streaming and the answers gathered in a step card's pill stay.
+ */
 export function App() {
+    // Ask mounts on its first visit, since `useChat` reads `serverStatus` as it mounts, and stays mounted
+    // after. Keyed by its day, it starts fresh on a new one, but only once it is out of sight with no
+    // turn running and no reply unseen, so a turn that runs past midnight keeps its reply.
+    const askVisited = useRef(false);
+    const askDay = useRef<string | undefined>(undefined);
     useEffect(() => {
         booted ??= boot();
     }, []);
@@ -69,44 +81,60 @@ export function App() {
     if (!connection.value || onboarding.value) {
         return <><Connect /><Snackbar /></>;
     }
-    if (settingsOpen.value) {
-        return <><Settings /><Snackbar /></>;
-    }
-    if (ritual.value) {
-        return <><Ritual kind={ritual.value.kind} date={ritual.value.date} /><SheetHost /><Snackbar /></>;
+    const open = ritual.value;
+    askVisited.current ||= tab.value === "ask";
+    const ask = chatActivity.value.ask;
+    if (askDay.current === undefined || !(ask?.working || ask?.unseen || chatOnScreen("ask"))) {
+        askDay.current = today.value?.key;
     }
 
     return (
-        <div class="shell">
-            <main class="shell-main">
-                {tab.value === "today" && <Today />}
-                {tab.value === "plan" && <Plan />}
-                {tab.value === "ask" && <Ask />}
-                {tab.value === "reminders" && <Reminders />}
-            </main>
-            {(tab.value === "today" || tab.value === "plan") && (
-                <button type="button" class="fab" aria-label="Add a task" onClick={() => openSheet(<QuickAdd />)}><Icon name="add" size={28} /></button>
+        <>
+            <div class="shell" hidden={settingsOpen.value || (!!open && !open.minimized)}>
+                <main class="shell-main">
+                    {tab.value === "today" && <Today />}
+                    {tab.value === "plan" && <Plan />}
+                    {askVisited.current && <div key={askDay.current} class="ask-host" hidden={tab.value !== "ask"}><Ask day={askDay.current} /></div>}
+                    {tab.value === "reminders" && <Reminders />}
+                </main>
+                <MiniChat />
+                {(tab.value === "today" || tab.value === "plan") && (
+                    <button type="button" class="fab" aria-label="Add a task" onClick={() => openSheet(<QuickAdd />)}><Icon name="add" size={28} /></button>
+                )}
+                <nav class="nav">
+                    {TABS.map((t) => (
+                        <button key={t.id} type="button" class={`nav-item${tab.value === t.id ? " active" : ""}`}
+                            aria-current={tab.value === t.id ? "page" : undefined} onClick={() => { tab.value = t.id; }}>
+                            <span class="nav-glyph"><Icon name={t.icon} /></span>
+                            <span class="nav-label">{t.label}</span>
+                        </button>
+                    ))}
+                </nav>
+            </div>
+            {open && (
+                <div key={`${open.kind}:${open.date}`} class="ritual-host" hidden={settingsOpen.value || open.minimized}>
+                    <Ritual kind={open.kind} date={open.date} noteId={open.noteId} minimized={!!open.minimized} />
+                </div>
             )}
-            <nav class="nav">
-                {TABS.map((t) => (
-                    <button key={t.id} type="button" class={`nav-item${tab.value === t.id ? " active" : ""}`}
-                        aria-current={tab.value === t.id ? "page" : undefined} onClick={() => { tab.value = t.id; }}>
-                        <span class="nav-glyph"><Icon name={t.icon} /></span>
-                        <span class="nav-label">{t.label}</span>
-                    </button>
-                ))}
-            </nav>
+            {settingsOpen.value && <Settings />}
             <SheetHost />
             <Snackbar />
-        </div>
+        </>
     );
 }
 
-/** Loads the connection, wires the platform's back button, app lifecycle, shortcuts and notification actions. */
+/**
+ * Loads the connection, reopens the ritual that was on screen, and wires the platform's back
+ * button, app lifecycle, shortcuts and notification actions.
+ */
 async function boot() {
     connection.value = await loadConnection();
     if (connection.value) {
         void refreshToday();
+        const stored = readStoredChats().ritual;
+        if (stored && stored.kind !== "ask") {
+            openRitual(stored.kind, stored.date, stored.noteId);
+        }
     }
 
     if (!Capacitor.isNativePlatform()) {
@@ -115,21 +143,32 @@ async function boot() {
     }
 
     await setUpNotifications(onNotificationAction).catch(() => undefined);
+    startChatNotifications();
     await CapApp.addListener("backButton", () => {
         if (sheet.value) {
             closeSheet();
         } else if (settingsOpen.value) {
             settingsOpen.value = false;
-        } else if (ritual.value) {
-            ritual.value = null;
+        } else if (ritual.value && !ritual.value.minimized) {
+            // A running turn goes on behind the mini bar instead of being dropped.
+            if (chatActivity.value.ritual?.working) {
+                minimizeRitual();
+            } else {
+                closeRitual();
+            }
         } else if (tab.value !== "today") {
             tab.value = "today";
         } else {
             void CapApp.minimizeApp();
         }
     });
-    await CapApp.addListener("pause", () => void flushHeld());
+    await CapApp.addListener("pause", () => {
+        appVisible.value = false;
+        void flushHeld();
+    });
     await CapApp.addListener("resume", () => {
+        appVisible.value = true;
+        resumed.value++;
         if (connection.value) {
             void refreshToday();
         }
@@ -161,8 +200,17 @@ function applyLaunchUrl(url: string) {
     }
 }
 
-/** What a tap on a notification or one of its buttons does: the same thing as the button in the app. */
-function onNotificationAction({ actionId, notification }: ActionPerformed) {
+/**
+ * What a tap on a notification or one of its buttons does: the same thing as the button in the app.
+ * Caius's reply opens its chat, and an inline reply is sent there as their next message.
+ */
+function onNotificationAction(action: ActionPerformed) {
+    const target = chatTarget(action);
+    if (target) {
+        openChat(target);
+        return;
+    }
+    const { actionId, notification } = action;
     const extra = (notification.extra ?? {}) as { nudge?: string; reminderId?: number };
     const day = today.value?.key;
     if (extra.reminderId !== undefined) {
