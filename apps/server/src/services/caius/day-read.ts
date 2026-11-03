@@ -120,9 +120,11 @@ export async function readDays(deps: DaysDeps, from: string, count: number, now:
         const weekPlan = await readPlan(deps.store, "week", key, now);
         const days: DaysRead["days"] = [];
         for (const [ index, date ] of dates.entries()) {
+            const frame = frames[index];
+            if (!frame) throw new Error(`no frame for ${date}`);
             const plan = await readPlan(deps.store, "day", date, now);
             const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-            days.push({ date, workday: weekday !== 0 && weekday !== 6, day: await readDay(deps.store, frames[index] as DayFrame, plan, { date, now }) });
+            days.push({ date, workday: weekday !== 0 && weekday !== 6, day: await readDay(deps.store, frame, plan, { date, now }) });
         }
         const minutes = weekPlan.capacity.areas.foundation.minutes + days.reduce((sum, { day }) => sum + day.plan.capacity.areas.foundation.minutes, 0);
         return { from, days, week: { key, tasks: mainTasks(weekPlan), foundation: { minutes, target: weekPlan.capacity.target } } };

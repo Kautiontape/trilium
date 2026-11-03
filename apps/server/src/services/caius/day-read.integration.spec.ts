@@ -179,6 +179,10 @@ describe("the day read", () => {
 });
 
 describe("several days", () => {
+    afterEach(() => {
+        delete calendars[THU];
+    });
+
     it("reads Monday to Friday with an empty future Thursday, the Week row less what is on a day, and the week's Foundation total", async () => {
         const { service } = countedService();
         vi.stubEnv("CAIUS_NOW", `${MON}T17:30`);
@@ -209,7 +213,6 @@ describe("several days", () => {
         expect(read.week.foundation.minutes).toBe(120 + onDays);
         expect(read.week.foundation.target).toEqual({ min: 720, max: 900 });
         expect(JSON.parse(JSON.stringify(read))).toEqual(read);
-        delete calendars[THU];
 
         expect((await run(() => readDays(deps, "2032-03-06", 3, now))).days.map((d) => d.workday)).toEqual([ false, false, true ]);
     });
