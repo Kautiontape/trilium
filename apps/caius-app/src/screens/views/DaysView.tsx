@@ -94,7 +94,7 @@ function DaysGrid({ days, after, cell, onCell }: {
                             {AREAS.map((area) => (
                                 <td key={area}>
                                     <GridCell cell={cells[area]} selected={cell?.date === day.date && cell.area === area}
-                                        label={`${day.dateLabel} ${AREA_NAMES[area]}`} onClick={() => onCell(day.date, area)} />
+                                        label={cellName(day.dateLabel, area, cells[area])} onClick={() => onCell(day.date, area)} />
                                 </td>
                             ))}
                         </tr>
@@ -126,6 +126,16 @@ function CellRows({ day, area, answers, open }: {
         return <p class="step-note ink-2">Nothing in {AREA_NAMES[area]}.</p>;
     }
     return <ViewRows tasks={tasks} answers={answers} open={open} />;
+}
+
+/** A grid cell's accessible name with its figure in words: `Tue 3 Nov Foundation 4 h 30 m, over, was 3 h`, `Tue 3 Nov Recharge none`. */
+function cellName(dateLabel: string, area: Area, cell: DaysCell) {
+    const words = (figure: string) => {
+        const bare = figure.replace(/^▲ /, "");
+        return area === "recharge" ? (bare === "○" ? "none" : String([ ...bare ].length)) : bare;
+    };
+    return [ `${dateLabel} ${AREA_NAMES[area]} ${words(cell.figure)}`, cell.over && "over", cell.was && `was ${words(cell.was)}` ]
+        .filter(Boolean).join(", ");
 }
 
 /** `2 h of meetings`, `No meetings`, `Day off`, or that the calendar couldn't be read. */

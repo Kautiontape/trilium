@@ -99,7 +99,8 @@ export function viewOf(call: ToolCall): ShownView | null {
 
 /**
  * The view's taps as one sentence in the step cards' form: each row's words in quotes, then what
- * happens to it; a row with a fate and an estimate gives a clause for each. No taps, no sentence.
+ * happens to it; a row with a fate and an estimate gives a clause for each. A day, week or month
+ * carries its key in brackets after its label, so Caius passes the key as given. No taps, no sentence.
  */
 export function viewReply(view: ShownView, answers: ViewAnswers): string[] {
     const clauses = [
@@ -500,9 +501,9 @@ function fatePhrase(fate: Exclude<ViewFate, { kind: "drop" }>): string {
         case "block": return `goes in the ${fate.block}`;
         case "onDeck": return "goes On deck";
         case "list": return "goes on the list";
-        case "day": return `goes on ${fate.label}'s ${fate.onDeck ? "On deck" : "list"}`;
-        case "week": return choicePhrase({ kind: "period", label: fate.label }, null);
-        case "park": return choicePhrase({ kind: "period", label: fate.label }, null);
+        case "day": return `goes on ${fate.label}'s ${fate.onDeck ? "On deck" : "list"} (${fate.date})`;
+        case "week": return `${choicePhrase({ kind: "period", label: fate.label }, null)} (${fate.week})`;
+        case "park": return `${choicePhrase({ kind: "period", label: fate.label }, null)} (${fate.month})`;
         case "done": return choicePhrase({ kind: "done" }, null);
     }
 }
@@ -511,7 +512,7 @@ function ticketPhrase(key: string, answer: TicketAnswer) {
     if (answer.kind === "finished") {
         return `${key} is finished`;
     }
-    return isDayKey(answer.to) ? `Take ${key} to ${answer.label}'s ${answer.onDeck ? "On deck" : "list"}` : `Take ${key} to ${answer.label}`;
+    return isDayKey(answer.to) ? `Take ${key} to ${answer.label}'s ${answer.onDeck ? "On deck" : "list"} (${answer.to})` : `Take ${key} to ${answer.label} (${answer.to})`;
 }
 
 function ticketLabel(answer: TicketAnswer) {

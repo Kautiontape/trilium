@@ -87,10 +87,10 @@ describe("viewReply and viewPicks", () => {
             [ tap({ [key("a1")]: { fate: { kind: "block", block: "afternoon" } } }), `"Garage shelf" goes in the afternoon`, "Garage shelf", "Afternoon" ],
             [ tap({ [key("a2")]: { fate: { kind: "onDeck" } } }), `"The ballot" goes On deck`, "The ballot", "On deck" ],
             [ tap({ [key("d")]: { fate: { kind: "list" } } }), `"Deck thing" goes on the list`, "Deck thing", "On the list" ],
-            [ tap({ [key("a1")]: { fate: { kind: "day", date: "2026-11-09", label: "Mon 9 Nov", onDeck: true } } }), `"Garage shelf" goes on Mon 9 Nov's On deck`, "Garage shelf", "Mon · On deck" ],
-            [ tap({ [key("a1")]: { fate: { kind: "day", date: "2026-11-09", label: "Mon 9 Nov", onDeck: false } } }), `"Garage shelf" goes on Mon 9 Nov's list`, "Garage shelf", "Mon · list" ],
-            [ tap({ [key("a1")]: { fate: { kind: "week", week: "2026-W46", label: "Week 46" } } }), `"Garage shelf" goes to Week 46`, "Garage shelf", "Week 46" ],
-            [ tap({ [key("a1")]: { fate: { kind: "park", month: "2026-11", label: "November" } } }), `"Garage shelf" goes to November`, "Garage shelf", "Park · November" ],
+            [ tap({ [key("a1")]: { fate: { kind: "day", date: "2026-11-09", label: "Mon 9 Nov", onDeck: true } } }), `"Garage shelf" goes on Mon 9 Nov's On deck (2026-11-09)`, "Garage shelf", "Mon · On deck" ],
+            [ tap({ [key("a1")]: { fate: { kind: "day", date: "2026-11-09", label: "Mon 9 Nov", onDeck: false } } }), `"Garage shelf" goes on Mon 9 Nov's list (2026-11-09)`, "Garage shelf", "Mon · list" ],
+            [ tap({ [key("a1")]: { fate: { kind: "week", week: "2026-W46", label: "Week 46" } } }), `"Garage shelf" goes to Week 46 (2026-W46)`, "Garage shelf", "Week 46" ],
+            [ tap({ [key("a1")]: { fate: { kind: "park", month: "2026-11", label: "November" } } }), `"Garage shelf" goes to November (2026-11)`, "Garage shelf", "Park · November" ],
             [ tap({ [key("a2")]: { fate: { kind: "done" } } }), `"The ballot" is done`, "The ballot", "Done" ],
             [ tap({ [key("a2")]: { fate: { kind: "drop", reason: "not needed" } } }), `"The ballot": drop it: not needed`, "The ballot", "Drop: not needed" ],
             [ tap({ [key("a3")]: { estimate: 30 } }), `"ZAP-2611 review" is 30 minutes`, "ZAP-2611 review", "~30m" ],
@@ -122,9 +122,9 @@ describe("viewReply and viewPicks", () => {
         };
         const view: ShownView = { view: "item", title: "ZAP-2640", sentence: "", data: item };
         const take = (answer: NonNullable<ViewAnswers["tickets"]>[string]) => one({ tickets: { "ZAP-2640": answer } }, view);
-        expect(take({ kind: "take", to: "2026-11-03", label: "today", onDeck: true }).reply).toEqual([ "From the item view: Take ZAP-2640 to today's On deck." ]);
-        expect(take({ kind: "take", to: "2026-11-04", label: "Wed 4 Nov", onDeck: false }).reply).toEqual([ "From the item view: Take ZAP-2640 to Wed 4 Nov's list." ]);
-        expect(take({ kind: "take", to: "2026-W45", label: "Week 45", onDeck: true }).reply).toEqual([ "From the item view: Take ZAP-2640 to Week 45." ]);
+        expect(take({ kind: "take", to: "2026-11-03", label: "today", onDeck: true }).reply).toEqual([ "From the item view: Take ZAP-2640 to today's On deck (2026-11-03)." ]);
+        expect(take({ kind: "take", to: "2026-11-04", label: "Wed 4 Nov", onDeck: false }).reply).toEqual([ "From the item view: Take ZAP-2640 to Wed 4 Nov's list (2026-11-04)." ]);
+        expect(take({ kind: "take", to: "2026-W45", label: "Week 45", onDeck: true }).reply).toEqual([ "From the item view: Take ZAP-2640 to Week 45 (2026-W45)." ]);
         const finished = take({ kind: "finished" });
         expect(finished.reply).toEqual([ "From the item view: ZAP-2640 is finished." ]);
         expect(finished.picks.map(({ what, choice }) => ({ what, choice }))).toEqual([ { what: "ZAP-2640", choice: "Finished" } ]);
@@ -392,7 +392,7 @@ describe("the new views' sentences", () => {
         expect(choice?.fate).toBeDefined();
         const answers = tap({ [key("a2")]: { fate: choice?.fate }, [rowKey({ noteId: "week", listItemId: "w1" })]: { fate: { kind: "day", date: "2026-11-03", label: "Tue 3 Nov", onDeck: true } } });
         expect(one(DAYS_VIEW, answers)).toEqual({
-            reply: [ `From the days view: "The ballot" goes on Wed 4 Nov's On deck; "Week thing" goes on Tue 3 Nov's On deck.` ],
+            reply: [ `From the days view: "The ballot" goes on Wed 4 Nov's On deck (2026-11-04); "Week thing" goes on Tue 3 Nov's On deck (2026-11-03).` ],
             picks: [ { what: "The ballot", choice: "Wed · On deck" }, { what: "Week thing", choice: "Tue · On deck" } ]
         });
     });
@@ -403,7 +403,7 @@ describe("the new views' sentences", () => {
         expect(park?.detail).toBe("December 2026");
         const view: ShownView = { view: "slipping", title: "", sentence: "", data };
         expect(one(view, tap({ [key("a1")]: { fate: park?.fate } }))).toEqual({
-            reply: [ `From the slipping view: "Garage shelf" goes to December 2026.` ],
+            reply: [ `From the slipping view: "Garage shelf" goes to December 2026 (2026-12).` ],
             picks: [ { what: "Garage shelf", choice: "Park · December 2026" } ]
         });
     });
@@ -418,12 +418,12 @@ describe("the new views' sentences", () => {
         expect(takes.map((t) => t.chip)).toEqual([ "Today", "Wed 4 Nov", "Week 45" ]);
         const say = (answer: NonNullable<ViewAnswers["tickets"]>[string]) => one(view, { tickets: { "ZAP-2640": answer } });
         expect(takes.map((t) => say(t.answer).reply[0])).toEqual([
-            "From the item view: Take ZAP-2640 to today's On deck.",
-            "From the item view: Take ZAP-2640 to Wed 4 Nov's On deck.",
-            "From the item view: Take ZAP-2640 to Week 45."
+            "From the item view: Take ZAP-2640 to today's On deck (2026-11-03).",
+            "From the item view: Take ZAP-2640 to Wed 4 Nov's On deck (2026-11-04).",
+            "From the item view: Take ZAP-2640 to Week 45 (2026-W45)."
         ]);
         expect(say(takeTicket(item, "2026-11-10", false))).toEqual({
-            reply: [ "From the item view: Take ZAP-2640 to Tue 10 Nov's list." ],
+            reply: [ "From the item view: Take ZAP-2640 to Tue 10 Nov's list (2026-11-10)." ],
             picks: [ { what: "ZAP-2640", choice: "Take: Tue 10 Nov · list" } ]
         });
         expect(takeTicket(item, "2026-11-03", false)).toEqual({ kind: "take", to: "2026-11-03", label: "today", onDeck: false });
