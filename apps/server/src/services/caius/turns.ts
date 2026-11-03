@@ -81,11 +81,22 @@ export function startTurn(start: TurnStart): Turn | "running" {
     // The timers in this module never hold the process open.
     state.capTimer = setTimeout(() => end(state, OUT_OF_TIME), MAX_TURN_MS);
     state.capTimer.unref();
-    run(state, messages, config).catch((e: unknown) => {
+    // `runChat` gets a context of its own, so its writes after the request closed (the chat title)
+    // never land in the request's.
+    cls.init(() => run(state, messages, config)).catch((e: unknown) => {
         getLog().error(`The Caius chat turn for note ${noteId} failed: ${e}`);
         end(state);
     });
     return state;
+}
+
+/**
+ * The chat note `noteId` names, when it is one the phone app may use and a turn may save to: an
+ * unprotected `llmChat` note under `_llmChat`, where the sidebar and `createChatNote` create them.
+ */
+export function phoneChatNoteOf(noteId: unknown) {
+    const note = typeof noteId === "string" ? becca.getNote(noteId) : null;
+    return note && note.type === "llmChat" && !note.isProtected && note.hasAncestor("_llmChat") ? note : null;
 }
 
 /** The note's turn, running or finished and still retained. */
@@ -221,8 +232,8 @@ function scheduleSave(state: TurnState) {
 }
 
 /**
- * Writes the transcript and the reply so far to the chat note, when the note is still an
- * unprotected chat note under `_llmChat` and the JSON fits in `MAX_CHAT_CONTENT_LENGTH`.
+ * Writes the transcript and the reply so far to the chat note, when `phoneChatNoteOf` still names
+ * it and the JSON fits in `MAX_CHAT_CONTENT_LENGTH`.
  */
 function save(state: TurnState, partial: boolean) {
     const { transcript, noteId } = state;
@@ -232,9 +243,8 @@ function save(state: TurnState, partial: boolean) {
     state.lastSaveAt = Date.now();
     try {
         cls.init(() => {
-            const note = becca.getNote(noteId);
-            if (!note || note.type !== "llmChat" || note.isProtected
-                || !note.hasAncestor("_llmChat")) {
+            const note = phoneChatNoteOf(noteId);
+            if (!note) {
                 skipSave(state, "it is no longer an unprotected chat note");
                 return;
             }

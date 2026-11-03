@@ -1,10 +1,10 @@
 import { caiusConversationOfMessages, isCaiusEffort, type LlmChatContent, type LlmMessage } from "@triliumnext/commons";
-import { becca, options as optionService, special_notes as specialNotesService } from "@triliumnext/core";
+import { options as optionService, special_notes as specialNotesService } from "@triliumnext/core";
 import type { LlmProviderSetup } from "@triliumnext/core/src/services/llm/index.js";
 import type { LlmProviderConfig } from "@triliumnext/core/src/services/llm/types.js";
 import type { Request, Response } from "express";
 
-import { MAX_CHAT_CONTENT_LENGTH } from "../../services/caius/turns.js";
+import { MAX_CHAT_CONTENT_LENGTH, phoneChatNoteOf } from "../../services/caius/turns.js";
 import llmChatRoute from "./llm_chat.js";
 
 /**
@@ -37,7 +37,7 @@ export default {
      * written to a chat note only, so the sidebar shows the conversation.
      */
     saveChatContent: (req: Request<{ noteId: string }>) => {
-        const note = chatNoteOf(req.params.noteId);
+        const note = phoneChatNoteOf(req.params.noteId);
         if (!note) {
             return [ 400, { error: "chat_note_invalid" } ];
         }
@@ -61,7 +61,7 @@ export type CaiusChatCheck =
  * Checks a token client's chat request and builds the config it runs with. Only `chatNoteId`,
  * `model` and `reasoningEffort` (one of `CAIUS_EFFORTS`) are read from the client's config: the
  * provider, the note tools on and web search off are set here. `chatNoteId` must name a chat note
- * (`chatNoteOf`), since the first turn renames it.
+ * (`phoneChatNoteOf`), since the first turn renames it.
  */
 export function checkCaiusChat(body: unknown): CaiusChatCheck {
     const { messages, config } = (body ?? {}) as { messages?: unknown; config?: Partial<LlmProviderConfig> };
@@ -80,7 +80,7 @@ export function checkCaiusChat(body: unknown): CaiusChatCheck {
         return { status: 400, error: "not_a_caius_opener" };
     }
 
-    const chatNote = chatNoteOf(config?.chatNoteId);
+    const chatNote = phoneChatNoteOf(config?.chatNoteId);
     if (!chatNote) {
         return { status: 400, error: "chat_note_invalid" };
     }
@@ -109,15 +109,6 @@ export function checkCaiusChat(body: unknown): CaiusChatCheck {
             ...(effort !== undefined ? { reasoningEffort: effort } : {})
         }
     };
-}
-
-/**
- * The chat note `noteId` names, when it is one a token client may use: an unprotected `llmChat`
- * note under `_llmChat`, where the sidebar and `createChatNote` create them.
- */
-function chatNoteOf(noteId: unknown) {
-    const note = typeof noteId === "string" ? becca.getNote(noteId) : null;
-    return note && note.type === "llmChat" && !note.isProtected && note.hasAncestor("_llmChat") ? note : null;
 }
 
 /**

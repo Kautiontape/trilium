@@ -5,6 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
     MAX_TURN_CHUNKS,
     MAX_TURN_MS,
+    phoneChatNoteOf,
     RETAIN_MS,
     SAVE_INTERVAL_MS,
     startTurn,
@@ -152,6 +153,26 @@ describe("startTurn", () => {
         await second.finished;
     });
 
+    it("runs `runChat` in a context of its own, apart from the caller's", async () => {
+        const noteId = newChatNote();
+        llm.script = async function* () {
+            cls.set("probe", "turn");
+            yield { type: "done" };
+        };
+
+        const bare = started({ noteId, messages: OPENER, config: {} });
+        await bare.finished;
+        expect(bare.chunks).toEqual([ { type: "done" } ]);
+
+        await cls.init(async () => {
+            cls.set("probe", "request");
+            const turn = started({ noteId, messages: OPENER, config: {} });
+            await turn.finished;
+            expect(turn.chunks).toEqual([ { type: "done" } ]);
+            expect(cls.get("probe")).toBe("request");
+        });
+    });
+
     it("ends a turn that stops early with an error chunk, and writes no other note", async () => {
         const before = cls.init(() => becca.getNoteOrThrow("root").getContent());
         llm.script = async function* () {
@@ -278,6 +299,16 @@ describe("bounds", () => {
         expect(turnOf(noteId)).toBe(third);
         await vi.advanceTimersByTimeAsync(RETAIN_MS / 2);
         expect(turnOf(noteId)).toBeUndefined();
+    });
+});
+
+describe("phoneChatNoteOf", () => {
+    it("names an unprotected chat note under _llmChat, and nothing else", () => {
+        const noteId = newChatNote();
+        expect(phoneChatNoteOf(noteId)?.noteId).toBe(noteId);
+        for (const other of [ undefined, 42, "nonexistent00", "root", "_llmChat" ]) {
+            expect(phoneChatNoteOf(other)).toBeNull();
+        }
     });
 });
 
