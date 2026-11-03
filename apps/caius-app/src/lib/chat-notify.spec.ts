@@ -6,6 +6,7 @@ import { appVisible, chatActivity, type ChatActivity, minimizeRitual, openRitual
 import { chatNotice, type ChatScene, chatTarget, openChat, repliedNotice, startChatNotifications } from "./chat-notify.js";
 import { storeChat } from "./chats.js";
 import { CHAT_IDS } from "./notify.js";
+import { snack } from "./store.js";
 
 const working = (line: string) => ({ kind: "winddown" as const, working: true, streaming: true, line });
 const replied = (line: string) => ({ kind: "winddown" as const, working: false, streaming: false, line });
@@ -194,7 +195,7 @@ describe("a chat notification's tap or button", () => {
         expect(pendingReply.value).toEqual({ slot: "ritual", noteId: "n2", text: "Go on." });
     });
 
-    it("shows Ask from under the ritual, and queues a reply only for a chat it can show", () => {
+    it("shows Ask from under the ritual, and queues the reply for Ask with or without a stored chat", () => {
         storeChat("ask", { noteId: "a1", kind: "ask", date: "2026-11-03", effort: "medium" });
         openRitual("plan", "2026-11-03");
         openChat({ slot: "ask", reply: "Thanks." });
@@ -202,12 +203,20 @@ describe("a chat notification's tap or button", () => {
         expect(ritual.value?.minimized).toBe(true);
         expect(pendingReply.value).toEqual({ slot: "ask", noteId: "a1", text: "Thanks." });
 
-        pendingReply.value = null;
         storeChat("ask", null);
-        ritual.value = null;
         openChat({ slot: "ask", reply: "Hello?" });
+        expect(pendingReply.value).toEqual({ slot: "ask", noteId: null, text: "Hello?" });
+    });
+
+    it("says a reply to a closed ritual wasn't sent, and queues nothing", () => {
+        snack.value = null;
         openChat({ slot: "ritual", reply: "Hello?" });
-        expect(pendingReply.value).toBeNull();
         expect(ritual.value).toBeNull();
+        expect(pendingReply.value).toBeNull();
+        expect(snack.value).toEqual({ text: "Your reply wasn't sent: that chat is closed.", tone: "error" });
+
+        snack.value = null;
+        openChat({ slot: "ritual" });
+        expect(snack.value).toBeNull();
     });
 });

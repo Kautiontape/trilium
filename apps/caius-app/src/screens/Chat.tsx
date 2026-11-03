@@ -12,7 +12,7 @@ import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/ca
 import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
 import { useSwipeDown } from "../components/MiniChat.js";
 import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, turnText, workingLine } from "../lib/chat.js";
-import { afterStreamError, askedFate, type FollowedTurn, followTurn, readStoredChats, resync, storeChat, type SyncedChat } from "../lib/chats.js";
+import { afterStreamError, askedFate, type FollowedTurn, followTurn, pendingReplyAction, readStoredChats, resync, storeChat, type SyncedChat } from "../lib/chats.js";
 import { dayLabel } from "../lib/day.js";
 import { HttpError } from "../lib/http.js";
 import { appVersion, shareText } from "../lib/share.js";
@@ -282,14 +282,23 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         }
     }, [ restore ]);
 
-    // A reply typed into the notification waits until the chat has reopened its note and no turn runs.
+    // A reply typed into the notification waits until the chat has reopened its note and no turn runs;
+    // a chat that settles anywhere else takes it into the box.
     const queued = pendingReply.value;
     useEffect(() => {
-        if (queued?.slot === slot && queued.noteId === noteId.current && state === "ready") {
-            pendingReply.value = null;
-            void send(queued.text);
+        const action = pendingReplyAction(queued, {
+            slot, date, noteId: noteId.current, busy: state === "starting" || state === "streaming", ready: state === "ready"
+        });
+        if (!queued || action === "wait") {
+            return;
         }
-    }, [ queued, state ]);
+        pendingReply.value = null;
+        if (action === "send") {
+            void send(queued.text);
+        } else {
+            setDraft((typed) => typed.trim() ? `${typed}\n${queued.text}` : queued.text);
+        }
+    }, [ queued, state, date ]);
 
     const turn = async (text: string, answers?: PendingAnswers) => {
         const conn = connection.value;

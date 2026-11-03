@@ -1,7 +1,7 @@
 import { effect, signal } from "@preact/signals";
 
 import type { ChatKind } from "./lib/chat.js";
-import { type ChatSlot, storeChat } from "./lib/chats.js";
+import { type ChatSlot, type PendingReply, storeChat } from "./lib/chats.js";
 
 /** Where the app is: one of the four bottom-bar destinations, with a ritual or Settings over it. */
 export type Tab = "today" | "plan" | "ask" | "reminders";
@@ -21,8 +21,8 @@ export const quickAddRequested = signal(0);
 export const resumed = signal(0);
 /** False while the app is in the background, between Capacitor's `pause` and `resume`. */
 export const appVisible = signal(true);
-/** A reply typed into a chat notification, sent by the `useChat` of that slot and note once it is ready. */
-export const pendingReply = signal<{ slot: ChatSlot; noteId: string; text: string } | null>(null);
+/** A reply typed into a chat notification, for the `useChat` of that slot to send or take into its box (`pendingReplyAction`). */
+export const pendingReply = signal<PendingReply | null>(null);
 
 /**
  * Runs `action` with the server's today, now or as soon as Today has been read. A shortcut or a

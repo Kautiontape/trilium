@@ -127,6 +127,27 @@ export function storeChat(slot: ChatSlot, chat: StoredChat | null) {
     writeLocal("chats", { ...readStoredChats(), [slot]: chat });
 }
 
+/** A reply typed into a chat notification, for the chat in `slot`; `noteId` is the stored chat it was meant for. */
+export interface PendingReply {
+    slot: ChatSlot;
+    noteId: string | null;
+    text: string;
+}
+
+/**
+ * What the chat in `slot` does with a queued notification reply: `"send"` once it is ready on the
+ * note the reply was meant for; `"draft"`, into the box, once it settles on another note, on none,
+ * or after a reopen that failed; `"wait"` while a turn runs, before its day is known, or for a
+ * reply to the other slot.
+ */
+export function pendingReplyAction(queued: PendingReply | null,
+    chat: { slot: ChatSlot; date: string; noteId: string | null; busy: boolean; ready: boolean }): "wait" | "send" | "draft" {
+    if (queued?.slot !== chat.slot || !chat.date || chat.busy) {
+        return "wait";
+    }
+    return chat.ready && queued.noteId !== null && queued.noteId === chat.noteId ? "send" : "draft";
+}
+
 function savedOrLost(content: LlmChatContent | null, replyId: string): FollowedTurn {
     const reply = (content?.messages as CaiusStoredMessage[] | undefined)?.find((m) => m.id === replyId);
     return reply && !reply.partial ? { kind: "saved", messages: restoredMessages(content) } : { kind: "lost" };

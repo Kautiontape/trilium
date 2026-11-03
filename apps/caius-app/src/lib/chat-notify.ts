@@ -5,6 +5,7 @@ import { effect } from "@preact/signals";
 import { appVisible, type ChatActivity, chatActivity, chatOnScreen, minimizeRitual, openRitual, pendingReply, restoreRitual, ritual, settingsOpen, tab } from "../app-state.js";
 import { type ChatSlot, readStoredChats } from "./chats.js";
 import { CHAT_IDS } from "./notify.js";
+import { snack } from "./store.js";
 
 /**
  * A Caius chat turn's notifications. While a turn runs, an Android foreground service keeps the app
@@ -108,7 +109,8 @@ export function chatTarget({ actionId, inputValue, notification }: ActionPerform
 
 /**
  * Shows the target's chat: the ritual restored, or reopened from its stored chat after a cold start;
- * Ask on its tab. A reply waits in `pendingReply` for the stored chat note, so it reaches no other chat.
+ * Ask on its tab. A reply waits in `pendingReply` for the stored chat note, so it is sent to no other
+ * chat; a chat that can't take it puts it in its box. A reply to a ritual that is closed shows a snack.
  */
 export function openChat({ slot, reply }: ChatTarget) {
     const stored = readStoredChats()[slot];
@@ -121,9 +123,14 @@ export function openChat({ slot, reply }: ChatTarget) {
     } else if (stored && stored.kind !== "ask") {
         openRitual(stored.kind, stored.date, stored.noteId);
     }
-    if (reply && stored) {
-        pendingReply.value = { slot, noteId: stored.noteId, text: reply };
+    if (!reply) {
+        return;
     }
+    if (slot === "ritual" && !ritual.value) {
+        snack.value = { text: "Your reply wasn't sent: that chat is closed.", tone: "error" };
+        return;
+    }
+    pendingReply.value = { slot, noteId: stored?.noteId ?? null, text: reply };
 }
 
 const SLOTS: ChatSlot[] = [ "ritual", "ask" ];

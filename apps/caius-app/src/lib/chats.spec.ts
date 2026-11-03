@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyChunk, type AssistantTurn, type ChatApi, type ChatChunk, type LlmChatContent, NeedsServerUpdateError, NoTurnError, type StoredMessage, StreamBrokenError, TurnRunningError, type TurnState } from "./chat.js";
-import { afterStreamError, askedFate, followTurn, readStoredChats, restoredMessages, resync, storeChat } from "./chats.js";
+import { afterStreamError, askedFate, followTurn, pendingReplyAction, readStoredChats, restoredMessages, resync, storeChat } from "./chats.js";
 import { HttpError, UnreachableError } from "./http.js";
 
 const AT = "2026-11-04T09:00:00.000Z";
@@ -78,6 +78,25 @@ describe("askedFate", () => {
         expect(askedFate({ messages: [ ...asked, ...finishedReply ], replyId: null }, "u1")).toBe("held");
         expect(askedFate({ messages: asked, replyId: "r1" }, "u1")).toBe("held");
         expect(askedFate({ messages: asked, replyId: null }, "u1")).toBe("unanswered");
+    });
+});
+
+describe("pendingReplyAction", () => {
+    const queued = { slot: "ask" as const, noteId: "a1", text: "Thanks." };
+    const chat = { slot: "ask" as const, date: "2026-11-03", noteId: "a1", busy: false, ready: true };
+
+    it("sends a reply on its own note once the chat is ready, and waits while a turn runs or the day is unknown", () => {
+        expect(pendingReplyAction(queued, chat)).toBe("send");
+        expect(pendingReplyAction(queued, { ...chat, busy: true, ready: false })).toBe("wait");
+        expect(pendingReplyAction(queued, { ...chat, date: "", noteId: null, ready: false })).toBe("wait");
+        expect(pendingReplyAction(null, chat)).toBe("wait");
+        expect(pendingReplyAction({ ...queued, slot: "ritual" }, chat)).toBe("wait");
+    });
+
+    it("takes a reply into the box when the chat settles on another note, on none, or without reopening", () => {
+        expect(pendingReplyAction(queued, { ...chat, noteId: "a2" })).toBe("draft");
+        expect(pendingReplyAction({ ...queued, noteId: null }, { ...chat, noteId: null, ready: false })).toBe("draft");
+        expect(pendingReplyAction(queued, { ...chat, noteId: null, ready: false })).toBe("draft");
     });
 });
 
