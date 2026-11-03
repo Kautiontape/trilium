@@ -2,6 +2,8 @@ import type { LlmMessage } from "@triliumnext/commons";
 import type { LlmProviderConfig } from "@triliumnext/core/src/services/llm/types.js";
 import type { Request, Response } from "express";
 
+import { turnOf } from "../../services/caius/turns.js";
+
 interface ChatRequest {
     messages: LlmMessage[];
     config?: LlmProviderConfig;
@@ -24,6 +26,9 @@ export const SSE_HEARTBEAT_FRAME = ":\n\n";
  * On error:
  * data: {"type":"error","error":"Error message"}
  *
+ * Answers 409 `{ error: "turn_running" }` before any SSE header when `config.chatNoteId` names a
+ * note whose phone turn is running, since both would save a transcript into that note.
+ *
  * nginx/ALB drop an idle response at 60s. After 30s without a chunk the handler
  * writes an SSE comment (`:\n\n`) that the client ignores.
  */
@@ -32,6 +37,12 @@ async function streamChat(req: Request, res: Response) {
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
         res.status(400).json({ error: "messages array is required" });
+        return;
+    }
+
+    const { chatNoteId } = config;
+    if (chatNoteId && turnOf(chatNoteId)?.running) {
+        res.status(409).json({ error: "turn_running" });
         return;
     }
 
