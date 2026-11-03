@@ -278,7 +278,7 @@ export function stepOf(call: ToolCall): RitualStep | null {
 }
 
 /** A tool result: its JSON, or the JSON in an MCP `content[0].text` envelope. */
-function parseResult(result: string): unknown {
+export function parseResult(result: string): unknown {
     try {
         const parsed = JSON.parse(result) as unknown;
         const nested = (parsed as { content?: { text?: string }[] })?.content?.[0]?.text;

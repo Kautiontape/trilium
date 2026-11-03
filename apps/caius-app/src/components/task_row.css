@@ -127,3 +127,34 @@
 .swipe-under.tone-clay { background: var(--clay); }
 .swipe-under.tone-berry { background: var(--berry); }
 
+
+.important-mark {
+    margin-right: var(--s2);
+    color: var(--clay);
+    font-weight: 700;
+}
+
+.row-clock {
+    margin-right: var(--s2);
+    color: var(--ink-2);
+}
+
+.slip-count {
+    margin-left: var(--s2);
+    color: var(--ochre);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.ticket-chip {
+    display: inline-block;
+    margin-left: var(--s2);
+    padding: 0 var(--s2);
+    border-radius: var(--r-chip);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: 13px;
+    line-height: 20px;
+    white-space: nowrap;
+    vertical-align: 1px;
+}

@@ -5,6 +5,7 @@ import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import type { Area } from "@triliumnext/caius/src/trilium/areas.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
+import { FateMenu } from "../components/FateMenu.js";
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
@@ -788,16 +789,11 @@ function FateList({ items, options, answers, update, disabled }: { items: StepIt
     };
     const choose = (i: number) => {
         const labels = options.map((o) => chipLabel(o, items[i].fate));
-        const now = chipLabel(choiceOf(i), items[i].fate);
+        // A fate that reads the same as the proposal is left out; the proposal itself stands for it.
+        const shown = options.flatMap((option, at) => at > 0 && labels[at] === labels[0] ? [] : [ { option, label: labels[at], detail: at === 0 ? "proposed" : undefined } ]);
         openSheet(
-            <>
-                <SheetTitle title="Fate" sub={displayText(items[i].text).text} />
-                {options.map((option, at) => (
-                    // A fate that reads the same as the proposal is left out; the proposal itself stands for it.
-                    at > 0 && labels[at] === labels[0] ? null
-                        : <SheetAction key={labels[at]} glyph={labels[at] === now ? "check" : "·"} label={labels[at]} detail={at === 0 ? "proposed" : undefined} onClick={() => pick(i, option)} />
-                ))}
-            </>
+            <FateMenu sub={displayText(items[i].text).text} current={chipLabel(choiceOf(i), items[i].fate)}
+                options={shown.map(({ label, detail }) => ({ label, detail }))} onPick={(at) => pick(i, shown[at].option)} />
         );
     };
     return (

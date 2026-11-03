@@ -246,7 +246,7 @@ function validKey(key: string) {
 
 // ---- Drop --------------------------------------------------------------------------------------
 
-const DROP_REASONS = [ "Not needed", "Someone else has it", "Won't get to it" ];
+export const DROP_REASONS = [ "Not needed", "Someone else has it", "Won't get to it" ];
 
 /** Drop asks why, and goes at once: it is never on a swipe and needs no Undo. */
 export function DropSheet({ task }: { task: PlanTask }) {

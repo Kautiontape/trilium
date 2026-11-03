@@ -1,5 +1,6 @@
 import "./task_row.css";
 
+import type { ViewTask } from "@triliumnext/caius/src/daily/views.js";
 import { type Area, bareText, markedArea } from "@triliumnext/caius/src/trilium/areas.js";
 import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
@@ -11,10 +12,11 @@ import { Est, haptic, StateGlyph } from "./ui.js";
 /**
  * A task row: its state glyph, words, estimate and a line of detail. Swipe right and left run the
  * row's two quick actions (Done and Forward on a task, Accept and Dismiss on a suggestion); the
- * threshold ticks once. A tap opens the task sheet. Rows of finished tasks don't swipe.
+ * threshold ticks once. A tap opens the task sheet. Rows of finished tasks don't swipe. A view's
+ * row (`ViewTask`) also shows the Important mark, its clock, its slip count and its ticket.
  */
 export function TaskRow({ task, variant = "list", detail, top, onOpen, right, left, trailing }: {
-    task: PlanTask;
+    task: PlanTask | ViewTask;
     variant?: "list" | "critical" | "onDeck" | "suggested";
     detail?: ComponentChildren;
     /** Its place in the Top 3, if it has one. */
@@ -81,6 +83,8 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
     const shownState = heldState === "dismissed" ? "cancelled" : task.state;
     const { text, forwardedTo, area: marked } = displayText(task.text);
     const area = task.area && task.area !== "foundation" ? task.area : marked;
+    const view = isViewTask(task) ? task : null;
+    const slips = view ? slipLabel(view.slips) : null;
     return (
         <div class={`task-row-wrap${dx ? " dragging" : ""}`}>
             {dx > 0 && right && <div class={`swipe-under swipe-right tone-${right.tone}`} aria-hidden="true">{right.label}</div>}
@@ -107,8 +111,12 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
                 <div class="task-row-body">
                     <div class="task-row-text">
                         {top !== undefined && <span class="top-mark mono">{top}</span>}
+                        {view?.critical && <span class="important-mark" role="img" aria-label="Important">!</span>}
+                        {view?.at && <span class="row-clock mono">{view.at}</span>}
                         {area && <span class={`area-dot area-${area}`} role="img" aria-label={area === "growth" ? "Growth" : "Recharge"} />}
                         {text}
+                        {slips && <span class="slip-count mono" title={`Moved ${view?.slips} times`}>{slips}</span>}
+                        {view?.ticket && <span class="ticket-chip mono">{view.ticket.key}{view.ticket.status && ` · ${view.ticket.status}`}</span>}
                     </div>
                     {forwardedTo ? <div class="task-row-detail">Forwarded → {forwardedTo}</div> : detail && <div class="task-row-detail">{detail}</div>}
                 </div>
@@ -139,8 +147,17 @@ export function displayText(raw: string): { text: string; forwardedTo: string | 
     return { text: plain.trim(), forwardedTo: marker ? marker[1] : null, area };
 }
 
+function isViewTask(task: PlanTask | ViewTask): task is ViewTask {
+    return "slips" in task;
+}
+
 export interface SwipeAction {
     label: string;
     tone: "moss" | "dusk" | "clay" | "berry";
     run: () => void;
+}
+
+/** A row's slip count, `↻3`: shown from 2 moves off day notes, since one move is just a day forwarded. */
+export function slipLabel(slips: number): string | null {
+    return slips >= 2 ? `↻${slips}` : null;
 }

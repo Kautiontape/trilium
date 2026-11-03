@@ -1,0 +1,11 @@
+.fate-ask {
+    margin-top: var(--s2);
+}
+
+.fate-extra {
+    margin-top: var(--s3);
+    padding-top: var(--s3);
+    border-top: 1px solid var(--line);
+
+    & .chip-row { margin-bottom: 0; }
+}

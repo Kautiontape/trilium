@@ -108,64 +108,6 @@
     cursor: pointer;
 }
 
-.capacity-line {
-    display: flex;
-    align-items: baseline;
-    gap: var(--s2);
-
-    & span:nth-child(2) { flex: 1; }
-}
-
-.capacity-row + .capacity-row,
-.capacity-note + .capacity-row { margin-top: var(--s3); }
-
-.capacity-name {
-    flex: none;
-    min-width: 84px;
-    color: var(--ink-2);
-}
-
-.capacity-row.thin .capacity-bar { height: 4px; border-radius: 2px; }
-.capacity-row.thin .capacity-fill { border-radius: 2px; background: var(--ink-3); }
-
-.capacity-over {
-    color: var(--ochre);
-    font-weight: 600;
-}
-
-.capacity-bar {
-    position: relative;
-    height: 8px;
-    margin: var(--s3) 0 var(--s2);
-    border-radius: 4px;
-    background: var(--surface-2);
-    overflow: hidden;
-}
-
-.capacity-target {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background: var(--line);
-}
-
-.capacity-fill {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    border-radius: 4px;
-    background: var(--ink-2);
-
-    &.over { background: var(--ochre); }
-}
-
-.capacity-note {
-    margin: 0;
-    font-size: 14px;
-    line-height: 20px;
-}
-
 .list-group {
     & h2 {
         margin: 0 0 var(--s2) var(--s1);
