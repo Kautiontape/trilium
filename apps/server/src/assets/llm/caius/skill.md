@@ -285,7 +285,7 @@ The phone draws a view in the chat when you call `caius_show`: a day, a few days
 | A day, the week, Park | `caius_forward`; a day takes it On deck (`onDeck: true`) unless the sentence says the list (`onDeck: false`) |
 | Drop | `caius_set_state` with `cancelled`, and the sentence's reason |
 | Area | `caius_set_area` |
-| Take a ticket | `caius_add` to that day, On deck unless the sentence says the list |
+| Take a ticket | `caius_add` to that day, On deck unless the sentence says the list; to the week (`week`) when it names the week |
 | Finished | `caius_finished` |
 | Morning, Afternoon, Evening; On deck or the list, on the same day | `caius_place` |
 | Estimate | `caius_set_estimate` |
