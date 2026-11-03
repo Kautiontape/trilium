@@ -44,6 +44,8 @@ export type { ContextLine } from './trilium/until.js';
 export { renderDayTerrain, weatherIcon, weatherOfSvg } from './draw/terrain.js';
 export { meetingLines, overlapPairs } from './daily/meetings.js';
 export type { MeetingEvent } from './daily/meetings.js';
+export { dayLoad, liveMinutes } from './daily/load.js';
+export type { DayLoad } from './daily/load.js';
 export { formatEstimate, formatHours } from './daily/format.js';
 export { readRhythm, sectionOf } from './daily/standing.js';
 export { layoutGroups, layoutWork } from './daily/blocks.js';

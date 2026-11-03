@@ -10,6 +10,7 @@ import { TRILIUM_CONFIG } from './config.js';
 import { headingStacks, headingsByLine, isSuggestedName, normName, sectionKind, type SectionKind } from './sections.js';
 import { AREAS, blockOf, clockOf, headingArea, markedArea, type Area, type Block } from './areas.js';
 import { parentItemId } from './open.js';
+import { DEFAULT_ESTIMATE, liveMinutes } from '../daily/load.js';
 import { parseContext, periodSpan, type ContextLine } from './until.js';
 
 export type PeriodKind = 'day' | 'week' | 'month';
@@ -48,8 +49,7 @@ export function isoWeekKey(date: Date): string {
 }
 
 export const DISMISSED_LABEL = 'caiusDismissed';
-/** Minutes assumed for a live task with no `~est` token. */
-export const DEFAULT_ESTIMATE = 30;
+export { DEFAULT_ESTIMATE };
 
 export interface PlanTask {
   noteId: string;
@@ -263,7 +263,7 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   const apart = (t: { area: Area }) => period === 'day' && t.area !== 'foundation';
   const evening = leaves.filter(apart);
   const counted = leaves.filter((t) => !apart(t));
-  const minutesOf = (area: Area) => leaves.filter((t) => t.area === area).reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0);
+  const minutesOf = (area: Area) => liveMinutes(main, area);
   const estimated = counted.filter((t) => t.estMinutes !== null);
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;
