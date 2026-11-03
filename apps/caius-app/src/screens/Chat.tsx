@@ -10,7 +10,7 @@ import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
 import { ritual } from "../app-state.js";
-import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
+import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, turnMessages, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
 import { appVersion, shareText } from "../lib/share.js";
 import { chatTranscript } from "../lib/transcript.js";
@@ -265,14 +265,8 @@ function useChat(kind: ChatKind, date: string): Chat {
         }
 
         // A failed turn is kept as an error message (the sidebar shows it as one) and its words go back in the box.
-        const reply: StoredMessage = assembled.error
-            ? { id: assembled.id, role: "assistant", content: assembled.error, createdAt: new Date().toISOString(), type: "error" }
-            : { id: assembled.id, role: "assistant", content: assembled.blocks, createdAt: new Date().toISOString() };
-        // A reply's notes go just before it as a thinking message, which the sidebar shows as its thought process.
-        const notes: StoredMessage[] = !assembled.error && assembled.notes?.length
-            ? [ { id: `${assembled.id}-notes`, role: "assistant", content: assembled.notes.join("\n\n"), createdAt: reply.createdAt, type: "thinking" } ]
-            : [];
-        history.current = [ ...history.current, ...notes, reply ];
+        const stored = turnMessages(assembled, new Date().toISOString());
+        history.current = [ ...history.current, ...stored ];
         setMessages(history.current);
         setStreaming(null);
         setError(assembled.error ?? null);

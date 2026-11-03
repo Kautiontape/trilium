@@ -1,4 +1,5 @@
 import { type CaiusConversation, type CaiusEffort, caiusOpener } from "@triliumnext/commons/src/lib/caius_openers.js";
+import { applyChunk, type AssistantTurn, turnMessages } from "@triliumnext/commons/src/lib/caius_turn.js";
 import type { ContentBlock, LlmChatContent, StoredMessage, ToolCall } from "@triliumnext/commons/src/lib/llm/chat_content.js";
 
 import type { Connection } from "./connection.js";
@@ -110,6 +111,7 @@ export function chatApi(conn: Connection) {
 export type ChatApi = ReturnType<typeof chatApi>;
 
 export type ChatKind = CaiusConversation;
+export { applyChunk, type AssistantTurn, turnMessages };
 export type { ContentBlock, LlmChatContent, StoredMessage, ToolCall };
 
 /** The first message of a Caius conversation, in the words the server's opener check reads. */
@@ -149,79 +151,6 @@ export function sseParser(onData: (data: string) => void) {
             }
         }
     };
-}
-
-/** An assistant turn being assembled from chunks. */
-export interface AssistantTurn {
-    id: string;
-    blocks: ContentBlock[];
-    /**
-     * What Caius worked through on the way to the reply, in order: each stretch of thinking, and
-     * each text the server took back (narration before a tool call). Shown folded away.
-     */
-    notes?: string[];
-    /** Whether the last chunk was thinking, so the next thinking carries on the same note. */
-    noting?: boolean;
-    error?: string;
-    done: boolean;
-}
-
-/**
- * Applies one chunk to the turn being assembled. Text joins the last text block; a tool call gets
- * its own block; thinking and taken-back text go to the notes.
- */
-export function applyChunk(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn {
-    const next = assemble(turn, chunk);
-    return chunk.type === "thinking" || !next.noting ? next : { ...next, noting: false };
-}
-
-function assemble(turn: AssistantTurn, chunk: ChatChunk): AssistantTurn {
-    const notes = turn.notes ?? [];
-    switch (chunk.type) {
-        case "text": {
-            const last = turn.blocks[turn.blocks.length - 1];
-            if (last?.type === "text") {
-                return { ...turn, blocks: [ ...turn.blocks.slice(0, -1), { type: "text", content: last.content + chunk.content } ] };
-            }
-            return { ...turn, blocks: [ ...turn.blocks, { type: "text", content: chunk.content } ] };
-        }
-        case "text_retract": {
-            const last = turn.blocks[turn.blocks.length - 1];
-            if (last?.type !== "text") {
-                return turn;
-            }
-            const taken = last.content.trim();
-            return { ...turn, blocks: turn.blocks.slice(0, -1), notes: taken ? [ ...notes, taken ] : notes };
-        }
-        case "thinking": {
-            if (turn.noting && notes.length) {
-                return { ...turn, notes: [ ...notes.slice(0, -1), notes[notes.length - 1] + chunk.content ] };
-            }
-            return { ...turn, notes: [ ...notes, chunk.content ], noting: true };
-        }
-        case "tool_use": {
-            if (turn.blocks.some((b) => b.type === "tool_call" && b.toolCall.id === chunk.toolCallId)) {
-                return turn;
-            }
-            const toolCall: ToolCall = { id: chunk.toolCallId, toolName: chunk.toolName, input: chunk.toolInput };
-            return { ...turn, blocks: [ ...turn.blocks, { type: "tool_call", toolCall } ] };
-        }
-        case "tool_result": {
-            const existing = turn.blocks.some((b) => b.type === "tool_call" && b.toolCall.id === chunk.toolCallId);
-            const blocks: ContentBlock[] = existing
-                ? turn.blocks.map((b) => b.type === "tool_call" && b.toolCall.id === chunk.toolCallId
-                    ? { type: "tool_call", toolCall: { ...b.toolCall, result: chunk.result, isError: chunk.isError } }
-                    : b)
-                : [ ...turn.blocks, { type: "tool_call", toolCall: { id: chunk.toolCallId, toolName: chunk.toolName, input: {}, result: chunk.result, isError: chunk.isError } } ];
-            return { ...turn, blocks };
-        }
-        case "error":
-            return { ...turn, error: chunk.error, done: true };
-        case "done":
-            return { ...turn, done: true };
-        default:
-            return turn;
-    }
 }
 
 /**

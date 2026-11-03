@@ -68,49 +68,4 @@ describe("historyForServer", () => {
             { role: "user", content: "Laundry is done." }
         ]);
     });
-
-    it("leaves a turn without its done chunk unfinished, which the chat shows as cut off", () => {
-        const feed: ChatChunk[] = [ { type: "text", content: "Here's what's" } ];
-        const turn = feed.reduce(applyChunk, { id: "t", blocks: [], done: false } as AssistantTurn);
-        expect(turn.done).toBe(false);
-        expect(applyChunk(turn, { type: "done" }).done).toBe(true);
-    });
-});
-
-describe("applyChunk", () => {
-    it("takes back narration streamed before a tool call and keeps it in the notes", () => {
-        let turn: AssistantTurn = { id: "t", blocks: [], done: false };
-        for (const chunk of [
-            { type: "text", content: "Let me " },
-            { type: "text", content: "check." },
-            { type: "text_retract" },
-            { type: "tool_use", toolCallId: "a", toolName: "caius_planday", toolInput: {} },
-            { type: "tool_result", toolCallId: "a", toolName: "caius_planday", result: "{}" },
-            { type: "text", content: "Here's your day." },
-            { type: "done" }
-        ] as ChatChunk[]) {
-            turn = applyChunk(turn, chunk);
-        }
-        expect(turnText(turn.blocks)).toBe("Here's your day.");
-        expect(turn.notes).toEqual([ "Let me check." ]);
-        expect(turn.blocks.map((b) => b.type)).toEqual([ "tool_call", "text" ]);
-    });
-
-    it("keeps each stretch of thinking as one note, in order with the taken-back text", () => {
-        let turn: AssistantTurn = { id: "t", blocks: [], done: false };
-        for (const chunk of [
-            { type: "thinking", content: "He asked for " },
-            { type: "thinking", content: "today." },
-            { type: "text", content: "Let me look." },
-            { type: "text_retract" },
-            { type: "tool_result", toolCallId: "a", toolName: "caius_planday", result: "{}" },
-            { type: "thinking", content: "Three meetings." },
-            { type: "text", content: "Here's your day." },
-            { type: "done" }
-        ] as ChatChunk[]) {
-            turn = applyChunk(turn, chunk);
-        }
-        expect(turn.notes).toEqual([ "He asked for today.", "Let me look.", "Three meetings." ]);
-        expect(turnText(turn.blocks)).toBe("Here's your day.");
-    });
 });
