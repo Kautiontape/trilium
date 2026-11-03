@@ -358,6 +358,29 @@ export class NoTurnError extends Error {
     }
 }
 
+/** The line the transcript shows while Caius works and the turn has no text yet. */
+export function workingLine(turn: AssistantTurn | null): string {
+    return turn?.blocks.some((b) => b.type === "tool_call") ? "Caius is writing…" : "Caius is reading the Journal…";
+}
+
+/**
+ * The mini bar's line for a chat: while Caius works, the streaming text's last line or the working
+ * line; once done, the error or the first line of the last reply. Null before the chat has a reply.
+ */
+export function activityLine(working: boolean, streaming: AssistantTurn | null, messages: StoredMessage[], error: string | null): string | null {
+    if (working) {
+        return (streaming && latestLine(turnText(streaming.blocks))) || workingLine(streaming);
+    }
+    if (error) {
+        return firstLine(error);
+    }
+    const reply = messages.findLast((m) => m.role === "assistant" && m.type !== "thinking");
+    if (!reply) {
+        return null;
+    }
+    return firstLine(typeof reply.content === "string" ? reply.content : turnText(reply.content));
+}
+
 /** The last non-blank line of `text`, as plain words for the mini bar and the notification. */
 export function latestLine(text: string): string {
     return plainLine(text.split("\n").reverse());

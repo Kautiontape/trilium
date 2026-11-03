@@ -9,8 +9,9 @@ import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
-import { closeRitual, resumed } from "../app-state.js";
-import { applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, type TurnState, turnText } from "../lib/chat.js";
+import { CHAT_TITLES, closeRitual, minimizeRitual, publishActivity, resumed } from "../app-state.js";
+import { useSwipeDown } from "../components/MiniChat.js";
+import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, type TurnState, turnText, workingLine } from "../lib/chat.js";
 import { type FollowedTurn, followTurn, readStoredChats, restoredMessages, storeChat } from "../lib/chats.js";
 import { dayLabel } from "../lib/day.js";
 import { HttpError } from "../lib/http.js";
@@ -23,30 +24,35 @@ import { appNow, connection, messageOf, refreshToday, revision, serverStatus, se
 
 /**
  * A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while
- * it runs. With `noteId` it reopens that chat note; without, it starts a new one.
+ * it shows. With `noteId` it reopens that chat note; without, it starts a new one. Minimize, or a
+ * swipe down on the header, hides it behind the mini bar.
  */
-export function Ritual({ kind, date, noteId }: { kind: "plan" | "winddown"; date: string; noteId?: string }) {
+export function Ritual({ kind, date, noteId, minimized }: { kind: "plan" | "winddown"; date: string; noteId?: string; minimized?: boolean }) {
     const chat = useChat(kind, date, noteId);
+    const swipe = useSwipeDown(minimizeRitual);
     useEffect(() => {
+        if (minimized) {
+            return;
+        }
         KeepAwake.keepAwake().catch(() => undefined);
         return () => {
             KeepAwake.allowSleep().catch(() => undefined);
         };
-    }, []);
+    }, [ minimized ]);
     useEffect(() => {
         if (chat.state === "idle" && !noteId) {
             void chat.start();
         }
     }, []);
-    const title = kind === "plan" ? "Plan my day" : "Wind down";
     return (
         <div class={`chat-screen ritual ritual-${kind}`}>
-            <header class="chat-head">
+            <header class="chat-head" {...swipe}>
                 <div>
-                    <h1>{title}</h1>
+                    <h1>{CHAT_TITLES[kind]}</h1>
                     <p class="ink-2">{dayLabel(date)}</p>
                 </div>
                 <button type="button" class="icon-btn" aria-label="Chat menu" onClick={() => openSheet(<ChatMenu chat={chat} />)}><Icon name="more_vert" /></button>
+                <button type="button" class="icon-btn" aria-label="Minimize" onClick={minimizeRitual}><Icon name="keyboard_arrow_down" /></button>
                 <button type="button" class="icon-btn" aria-label="Close" onClick={() => {
                     closeRitual();
                     void refreshToday();
@@ -237,7 +243,14 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
     useEffect(() => () => {
         generation.current++;
         controller.current?.abort();
+        publishActivity(slot, null);
     }, []);
+
+    useEffect(() => {
+        const working = state === "starting" || state === "streaming";
+        const line = activityLine(working, streaming, messages, error);
+        publishActivity(slot, line === null ? null : { kind, working, streaming: state === "streaming", line });
+    }, [ state, streaming, messages, error ]);
 
     // A paused WebView can leave the reader hanging, so a resume drops it and follows the server's turn.
     const woke = resumed.value;
@@ -574,7 +587,7 @@ function Transcript({ chat }: { chat: Chat }) {
     // finish, so the turn reads from Caius's question down.
     const streaming = chat.streaming;
     const streamingText = !!streaming && turnText(streaming.blocks).trim() !== "";
-    const working = streaming?.blocks.some((b) => b.type === "tool_call") ? "Caius is writing…" : "Caius is reading the Journal…";
+    const working = workingLine(streaming);
     const notesOf = (i: number) => {
         const before = chat.messages[i - 1];
         return notesFor(chat.messages[i].id, before?.type === "thinking" && typeof before.content === "string" ? before.content : undefined);

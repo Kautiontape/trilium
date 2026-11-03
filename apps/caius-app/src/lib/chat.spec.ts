@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { applyChunk, type AssistantTurn, type ChatChunk, chatApi, firstLine, historyForServer, latestLine, NeedsServerUpdateError, NoTurnError, sseParser, type StoredMessage, stepOf, turnText, TurnRunningError } from "./chat.js";
+import { activityLine, applyChunk, type AssistantTurn, type ChatChunk, chatApi, type ContentBlock, firstLine, historyForServer, latestLine, NeedsServerUpdateError, NoTurnError, sseParser, type StoredMessage, stepOf, turnText, TurnRunningError, workingLine } from "./chat.js";
 import { HttpError, request } from "./http.js";
 
 vi.mock("./http.js", async (importOriginal) => ({ ...await importOriginal<typeof import("./http.js")>(), request: vi.fn() }));
@@ -138,5 +138,31 @@ describe("latestLine and firstLine", () => {
         const long = "x".repeat(300);
         expect(firstLine(long)).toBe(`${"x".repeat(119)}…`);
         expect(firstLine("y".repeat(120))).toBe("y".repeat(120));
+    });
+});
+
+describe("activityLine", () => {
+    const tool: ContentBlock = { type: "tool_call", toolCall: { id: "c1", toolName: "caius_plan", input: {} } };
+    const reply = (id: string, content: StoredMessage["content"], type?: StoredMessage["type"]): StoredMessage => ({ id, role: "assistant", content, createdAt: "", ...(type ? { type } : {}) });
+
+    it("shows the streaming text's last line while Caius works, else the transcript's working line", () => {
+        const turn: AssistantTurn = { id: "t", blocks: [ { type: "text", content: "Here is the plan.\n\n- **Ship** the fix" } ], done: false };
+        expect(activityLine(true, turn, [], null)).toBe("Ship the fix");
+        expect(activityLine(true, null, [], null)).toBe("Caius is reading the Journal…");
+        expect(activityLine(true, { id: "t", blocks: [ tool ], done: false }, [], null)).toBe("Caius is writing…");
+        expect(workingLine({ id: "t", blocks: [ tool ], done: false })).toBe("Caius is writing…");
+        expect(workingLine(null)).toBe("Caius is reading the Journal…");
+    });
+
+    it("shows the last reply's first line once Caius is done, or the error, and nothing before a reply", () => {
+        const messages = [
+            { id: "u", role: "user" as const, content: "Plan my day", createdAt: "" },
+            reply("a", [ { type: "text", content: "\n## Three things today\nThen more." } ]),
+            reply("n", "Weighing the calendar", "thinking")
+        ];
+        expect(activityLine(false, null, messages, null)).toBe("Three things today");
+        expect(activityLine(false, null, [ ...messages, reply("e", "The server went away.", "error") ], null)).toBe("The server went away.");
+        expect(activityLine(false, null, messages, "Not connected.\nTry again.")).toBe("Not connected.");
+        expect(activityLine(false, null, messages.slice(0, 1), null)).toBeNull();
     });
 });

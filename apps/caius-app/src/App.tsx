@@ -3,9 +3,10 @@ import "./app.css";
 import { App as CapApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import type { ActionPerformed } from "@capacitor/local-notifications";
-import { useEffect } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 
-import { closeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
+import { chatActivity, closeRitual, minimizeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
+import { MiniChat } from "./components/MiniChat.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
 import { readStoredChats } from "./lib/chats.js";
@@ -30,7 +31,13 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 
 let booted: Promise<void> | null = null;
 
+/**
+ * The tabs, with the ritual and Settings over them. The ritual and Ask stay mounted while hidden, so
+ * a turn keeps streaming and the answers gathered in a step card's pill stay.
+ */
 export function App() {
+    // Ask mounts on its first visit, since `useChat` reads `serverStatus` as it mounts, and stays mounted after.
+    const askVisited = useRef(false);
     useEffect(() => {
         booted ??= boot();
     }, []);
@@ -70,36 +77,41 @@ export function App() {
     if (!connection.value || onboarding.value) {
         return <><Connect /><Snackbar /></>;
     }
-    if (settingsOpen.value) {
-        return <><Settings /><Snackbar /></>;
-    }
-    if (ritual.value) {
-        return <><Ritual kind={ritual.value.kind} date={ritual.value.date} noteId={ritual.value.noteId} /><SheetHost /><Snackbar /></>;
-    }
+    const open = ritual.value;
+    askVisited.current ||= tab.value === "ask";
 
     return (
-        <div class="shell">
-            <main class="shell-main">
-                {tab.value === "today" && <Today />}
-                {tab.value === "plan" && <Plan />}
-                {tab.value === "ask" && <Ask />}
-                {tab.value === "reminders" && <Reminders />}
-            </main>
-            {(tab.value === "today" || tab.value === "plan") && (
-                <button type="button" class="fab" aria-label="Add a task" onClick={() => openSheet(<QuickAdd />)}><Icon name="add" size={28} /></button>
+        <>
+            <div class="shell" hidden={settingsOpen.value || (!!open && !open.minimized)}>
+                <main class="shell-main">
+                    {tab.value === "today" && <Today />}
+                    {tab.value === "plan" && <Plan />}
+                    {askVisited.current && <div class="ask-host" hidden={tab.value !== "ask"}><Ask /></div>}
+                    {tab.value === "reminders" && <Reminders />}
+                </main>
+                <MiniChat />
+                {(tab.value === "today" || tab.value === "plan") && (
+                    <button type="button" class="fab" aria-label="Add a task" onClick={() => openSheet(<QuickAdd />)}><Icon name="add" size={28} /></button>
+                )}
+                <nav class="nav">
+                    {TABS.map((t) => (
+                        <button key={t.id} type="button" class={`nav-item${tab.value === t.id ? " active" : ""}`}
+                            aria-current={tab.value === t.id ? "page" : undefined} onClick={() => { tab.value = t.id; }}>
+                            <span class="nav-glyph"><Icon name={t.icon} /></span>
+                            <span class="nav-label">{t.label}</span>
+                        </button>
+                    ))}
+                </nav>
+            </div>
+            {open && (
+                <div key={`${open.kind}:${open.date}`} class="ritual-host" hidden={settingsOpen.value || open.minimized}>
+                    <Ritual kind={open.kind} date={open.date} noteId={open.noteId} minimized={!!open.minimized} />
+                </div>
             )}
-            <nav class="nav">
-                {TABS.map((t) => (
-                    <button key={t.id} type="button" class={`nav-item${tab.value === t.id ? " active" : ""}`}
-                        aria-current={tab.value === t.id ? "page" : undefined} onClick={() => { tab.value = t.id; }}>
-                        <span class="nav-glyph"><Icon name={t.icon} /></span>
-                        <span class="nav-label">{t.label}</span>
-                    </button>
-                ))}
-            </nav>
+            {settingsOpen.value && <Settings />}
             <SheetHost />
             <Snackbar />
-        </div>
+        </>
     );
 }
 
@@ -128,8 +140,13 @@ async function boot() {
             closeSheet();
         } else if (settingsOpen.value) {
             settingsOpen.value = false;
-        } else if (ritual.value) {
-            closeRitual();
+        } else if (ritual.value && !ritual.value.minimized) {
+            // A running turn goes on behind the mini bar instead of being dropped.
+            if (chatActivity.value.ritual?.working) {
+                minimizeRitual();
+            } else {
+                closeRitual();
+            }
         } else if (tab.value !== "today") {
             tab.value = "today";
         } else {
