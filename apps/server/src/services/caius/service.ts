@@ -17,6 +17,7 @@ import {
     caiusClock,
     clockOverride,
     closedKeys,
+    dayCapacity,
     daysLate,
     DEFAULT_WORK_END,
     diffSummary,
@@ -96,9 +97,11 @@ import {
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { blockFor } from "./filing.js";
 import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, dayLabels, dayPeriods, drawnTitle, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
+import { catchupOf, type DayFrame, type DayRead, dayLabels, dayPeriods, drawnTitle, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
+import { readCalendar } from "./inputs/calendar.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
+import type { CalendarEvent, InputError } from "./inputs/types.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
@@ -111,6 +114,9 @@ export const INPUTS_TTL_MS = 15 * 60_000;
 export type InputsReader = (input: InputsInput) => Promise<CaiusInputs>;
 
 export type TicketReader = (key: string) => Promise<TicketCard | TicketError>;
+
+/** The calendar half of `caius_inputs` alone, for one day. */
+export type CalendarReader = (date: string) => Promise<{ events: CalendarEvent[]; errors: InputError[] }>;
 
 /** The label of the standing note, "How I work". */
 const STANDING_LABEL = "assistantContext";
@@ -126,11 +132,13 @@ export function createCaiusService(
     weatherOf: (latitude: number, longitude: number, date: string) => Promise<DayWeather | undefined> = fetchDayWeather,
     inputsOf: InputsReader = (input) => readInputs(input),
     clockMs: () => number = Date.now,
-    ticketOf: TicketReader = (key) => readTicket({ fetch: globalThis.fetch, env: process.env, now: () => new Date() }, key)
+    ticketOf: TicketReader = (key) => readTicket({ fetch: globalThis.fetch, env: process.env, now: () => new Date() }, key),
+    calendarOf: CalendarReader = (date) => readCalendar({ fetch: globalThis.fetch, env: process.env }, date)
 ) {
     const store = withListItemIds(baseStore);
     const inputsCache = new Map<string, { at: number; inputs: CaiusInputs }>();
     const ticketCache = new Map<string, { at: number; card: TicketCard }>();
+    const calendarCache = new Map<string, { at: number; calendar: Awaited<ReturnType<CalendarReader>> }>();
 
     /** The standing note (`#assistantContext`) as markdown. The caller holds the lock. */
     async function readStanding(): Promise<Standing> {
@@ -196,6 +204,47 @@ export function createCaiusService(
     }
 
     /**
+     * The frame of a day (`DayFrame`): the Rhythm, the Context in force and the calendar less the
+     * meetings they declined, with its capacity. Jira is never read for it. The notes are read under
+     * the lock, the calendar outside it.
+     */
+    async function dayFrame(date: string): Promise<DayFrame> {
+        const { context, standing, declined } = await withCaiusLock("caius_day_frame", async () => ({
+            context: (await gatherContext(store, date)).context,
+            standing: await readStanding(),
+            declined: await dayLabels(store, date, DECLINED_LABEL)
+        }));
+        const rhythm = readRhythm(standing.markdown);
+        const { events, errors } = await cachedCalendar(date);
+        const capacity = dayCapacity(events, { workStart: rhythm.start, workEnd: rhythm.workEnd });
+        return { inputs: withTaken({ calendar: events, capacity, errors }, declined, rhythm), context, rhythm };
+    }
+
+    /**
+     * The calendar of `date`: a fresh `caius_inputs` answer's for that day, else `calendarOf`'s,
+     * reused for `INPUTS_TTL_MS` unless a feed failed. A reader that throws reads as `unexpected`.
+     */
+    async function cachedCalendar(date: string): Promise<Awaited<ReturnType<CalendarReader>>> {
+        const fresh = (at: number) => clockMs() - at < INPUTS_TTL_MS;
+        const answered = [ ...inputsCache.values() ].filter((entry) => entry.inputs.date === date && fresh(entry.at)).sort((a, b) => b.at - a.at)[0];
+        if (answered) {
+            return { events: answered.inputs.calendar, errors: answered.inputs.errors.filter((e) => e.source === "calendar") };
+        }
+        const hit = calendarCache.get(date);
+        if (hit && fresh(hit.at)) return hit.calendar;
+        const calendar = await calendarOf(date).catch((): Awaited<ReturnType<CalendarReader>> => ({ events: [], errors: [ { source: "calendar", error: "unexpected" } ] }));
+        for (const [ old, entry ] of calendarCache) {
+            if (!fresh(entry.at)) calendarCache.delete(old);
+        }
+        if (calendar.errors.every((e) => isInputWarning(e.error))) {
+            calendarCache.set(date, { at: clockMs(), calendar });
+        } else {
+            calendarCache.delete(date);
+        }
+        return calendar;
+    }
+
+    /**
      * Where the weather is read for: the standing note's Rhythm coordinates, else `given`, else
      * none. Reads the standing note under its own lock, so the forecast is fetched outside it.
      */
@@ -250,6 +299,8 @@ export function createCaiusService(
     });
 
     return {
+        dayFrame,
+
         /** One Jira ticket by key, reused for `INPUTS_TTL_MS`. It reads no notes, so it takes no lock; an error is not kept. */
         ticket: async (rawKey: string): Promise<TicketCard | TicketError> => {
             const key = rawKey.trim().toUpperCase();
