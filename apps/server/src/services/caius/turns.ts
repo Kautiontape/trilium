@@ -96,7 +96,9 @@ export function startTurn(start: TurnStart): Turn | "running" {
  */
 export function phoneChatNoteOf(noteId: unknown) {
     const note = typeof noteId === "string" ? becca.getNote(noteId) : null;
-    return note && note.type === "llmChat" && !note.isProtected && note.hasAncestor("_llmChat") ? note : null;
+    return note && note.type === "llmChat" && !note.isProtected && note.hasAncestor("_llmChat")
+        ? note
+        : null;
 }
 
 /** The note's turn, running or finished and still retained. */

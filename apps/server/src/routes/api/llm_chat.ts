@@ -87,7 +87,8 @@ async function streamChat(req: Request, res: Response) {
     }
 }
 
-function startSseHeartbeat(send: () => void) {
+/** Calls `send` after each `SSE_HEARTBEAT_MS` without a `reset()`, until `stop()`. */
+export function startSseHeartbeat(send: () => void) {
     let timer: ReturnType<typeof setInterval> | undefined;
     const arm = () => {
         if (timer !== undefined) {

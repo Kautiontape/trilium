@@ -1,22 +1,42 @@
 import { becca, cls, options as optionService } from "@triliumnext/core";
 import type { Application } from "express";
+import http from "http";
+import type { AddressInfo } from "net";
 import supertest from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import config from "../../src/services/config.js";
 import { login } from "./utils.js";
 
-const chat = vi.hoisted(() => ({ calls: [] as { messages: unknown; config: Record<string, unknown> }[] }));
+const chat = vi.hoisted(() => ({
+    calls: [] as { messages: unknown; config: Record<string, unknown>; signal?: AbortSignal }[],
+    hold: undefined as Promise<void> | undefined,
+    release: () => {}
+}));
 
 // The completion is core's and the agent's; what the token routes add is auth, the guards and the
-// config they force, so only the chunk source is faked.
+// config they force, so only the chunk source is faked. While `chat.hold` is set, a turn waits
+// after its first chunk until the test releases it or the turn is aborted.
 vi.mock("@triliumnext/core/src/services/llm/chat.js", () => ({
-    async *runChat(messages: unknown, config: Record<string, unknown>) {
-        chat.calls.push({ messages, config });
+    async *runChat(messages: unknown, config: Record<string, unknown>, signal?: AbortSignal) {
+        chat.calls.push({ messages, config, signal });
+        const hold = chat.hold;
         yield { type: "text", content: "Here's what's left." };
+        if (hold) {
+            const aborted = new Promise<void>((resolve) => {
+                signal?.addEventListener("abort", () => resolve());
+            });
+            await Promise.race([ hold, aborted ]);
+            if (signal?.aborted) {
+                return;
+            }
+        }
         yield { type: "done" };
     }
 }));
+
+const USER = { id: "u1", role: "user", content: "Wind down 2026-11-04", createdAt: "2026-11-04T21:00:00.000Z" };
+const REPLY = [ { type: "text", content: "Here's what's left." } ];
 
 let app: Application;
 let token: string;
@@ -45,6 +65,77 @@ function strayChatNote(): Promise<string> {
 function stream(body: object, auth = true) {
     const request = supertest(app).post("/etapi/llm-chat/stream").set("Content-Type", "application/json");
     return (auth ? request.set("Authorization", token) : request).send(body);
+}
+
+/** A first turn for `noteId` that the server saves, as the phone app sends it. */
+function turnBody(noteId: string, replyId: string) {
+    return {
+        messages: [ { role: "user", content: USER.content } ],
+        config: { chatNoteId: noteId },
+        turn: { replyId, transcript: [ USER ] }
+    };
+}
+
+function turnState(noteId: string) {
+    return supertest(app).get(`/etapi/llm-chat/${noteId}/turn`).set("Authorization", token).expect(200)
+        .then((res) => res.body as { content: { messages: Record<string, unknown>[] } | null; running: boolean; replyId: string | null; chunks: number });
+}
+
+/** The note's turn state once its turn has ended. */
+function settled(noteId: string) {
+    return vi.waitFor(async () => {
+        const state = await turnState(noteId);
+        expect(state.running).toBe(false);
+        return state;
+    });
+}
+
+function reattach(noteId: string, from?: number) {
+    const query = from === undefined ? "" : `?from=${from}`;
+    return supertest(app).get(`/etapi/llm-chat/${noteId}/stream${query}`).set("Authorization", token);
+}
+
+function chunksOf(text: string): unknown[] {
+    return text.split("\n\n").filter((frame) => frame.startsWith("data: ")).map((frame) => JSON.parse(frame.slice(6)));
+}
+
+/** Holds each turn started from here on after its first chunk, until `chat.release()`. */
+function holdTurns() {
+    chat.hold = new Promise<void>((resolve) => {
+        chat.release = resolve;
+    });
+}
+
+/** Posts `body` over a socket of its own, reads the first chunk of the answer, then drops the socket. */
+async function dropAfterFirstChunk(body: object): Promise<string> {
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => {
+        server.once("listening", () => resolve());
+    });
+    const { port } = server.address() as AddressInfo;
+    try {
+        return await new Promise<string>((resolve, reject) => {
+            const req = http.request({
+                port,
+                method: "POST",
+                path: "/etapi/llm-chat/stream",
+                agent: false,
+                headers: { Authorization: token, "Content-Type": "application/json" }
+            }, (res) => {
+                res.once("data", (data: Buffer) => {
+                    resolve(data.toString());
+                    req.destroy();
+                });
+            });
+            req.on("error", reject);
+            req.end(JSON.stringify(body));
+        });
+    } finally {
+        // Resolves once the server has seen the socket close, so the drop lands before the turn ends.
+        await new Promise<void>((resolve) => {
+            server.close(() => resolve());
+        });
+    }
 }
 
 describe("Caius phone token routes", () => {
@@ -253,6 +344,130 @@ describe("Caius phone token routes", () => {
 
             await stream(opener, false).expect(401);
             expect(chat.calls).toHaveLength(0);
+        });
+    });
+
+    describe("server-owned turn", () => {
+        beforeEach(() => {
+            chat.calls = [];
+            setOption("aiEnabled", "true");
+            setOption("llmProviders", JSON.stringify(PROVIDERS));
+        });
+
+        afterEach(() => {
+            chat.release();
+            chat.hold = undefined;
+        });
+
+        it("runs a turn to its end and saves it when the client drops mid-stream", async () => {
+            holdTurns();
+            const noteId = await newChatNote();
+
+            const first = await dropAfterFirstChunk(turnBody(noteId, "r-drop"));
+            expect(chunksOf(first)).toEqual([ { type: "text", content: "Here's what's left." } ]);
+            expect((await turnState(noteId)).running).toBe(true);
+            chat.release();
+
+            const state = await settled(noteId);
+            expect(chat.calls.at(-1)?.signal?.aborted).toBe(false);
+            expect(state).toMatchObject({ running: false, replyId: "r-drop", chunks: 2 });
+            expect(state.content).toEqual({
+                version: 1,
+                messages: [ USER, { id: "r-drop", role: "assistant", content: REPLY, createdAt: expect.any(String) } ],
+                enableNoteTools: true,
+                enableWebSearch: false
+            });
+        });
+
+        it("reads a running turn back, refuses a second on its note, and reads it once ended", async () => {
+            const noteId = await newChatNote();
+            expect(await turnState(noteId)).toEqual({ content: { version: 1, messages: [] }, running: false, replyId: null, chunks: 0 });
+
+            holdTurns();
+            const post = stream(turnBody(noteId, "r-read")).then((res) => res);
+            const running = await vi.waitFor(async () => {
+                const state = await turnState(noteId);
+                expect(state.chunks).toBeGreaterThan(0);
+                return state;
+            });
+            expect(running).toMatchObject({ running: true, replyId: "r-read" });
+            expect(running.content?.messages).toEqual([ USER, expect.objectContaining({ id: "r-read", partial: true }) ]);
+
+            const second = await stream(turnBody(noteId, "r-second")).expect(409);
+            expect(second.body).toEqual({ error: "turn_running" });
+            expect(chat.calls).toHaveLength(1);
+
+            chat.release();
+            const res = await post;
+            expect(res.status).toBe(200);
+            expect(chunksOf(res.text)).toEqual([ ...REPLY, { type: "done" } ]);
+            const ended = await settled(noteId);
+            expect(ended).toMatchObject({ running: false, replyId: "r-read", chunks: 2 });
+            expect(ended.content?.messages[1]).toEqual({ id: "r-read", role: "assistant", content: REPLY, createdAt: expect.any(String) });
+        });
+
+        it("replays a turn from the start or an offset, and follows one that still runs", async () => {
+            const noteId = await newChatNote();
+            await stream(turnBody(noteId, "r-replay")).expect(200);
+
+            const all = await reattach(noteId).expect(200);
+            expect(all.headers["content-type"]).toContain("text/event-stream");
+            expect(chunksOf(all.text)).toEqual([ ...REPLY, { type: "done" } ]);
+            expect(chunksOf((await reattach(noteId, 0).expect(200)).text)).toEqual([ ...REPLY, { type: "done" } ]);
+            expect(chunksOf((await reattach(noteId, 1).expect(200)).text)).toEqual([ { type: "done" } ]);
+
+            holdTurns();
+            const live = await newChatNote();
+            const post = stream(turnBody(live, "r-live")).then((res) => res);
+            await vi.waitFor(async () => expect((await turnState(live)).chunks).toBe(1));
+            const follow = reattach(live, 1).then((res) => res);
+            chat.release();
+            expect(chunksOf((await follow).text)).toEqual([ { type: "done" } ]);
+            expect((await post).status).toBe(200);
+        });
+
+        it("answers 401 without a token, 400 for a note that is not a chat note, and 404 with no turn", async () => {
+            const noteId = await newChatNote();
+            await supertest(app).get(`/etapi/llm-chat/${noteId}/turn`).expect(401);
+            await supertest(app).get(`/etapi/llm-chat/${noteId}/stream`).expect(401);
+
+            for (const id of [ "root", "nonexistent00", await strayChatNote() ]) {
+                for (const path of [ "turn", "stream" ]) {
+                    const res = await supertest(app).get(`/etapi/llm-chat/${id}/${path}`).set("Authorization", token).expect(400);
+                    expect(res.body.error).toBe("chat_note_invalid");
+                }
+            }
+
+            const none = await reattach(noteId).expect(404);
+            expect(none.body).toEqual({ error: "no_turn" });
+        });
+
+        it("rejects a malformed turn without running it, and saves nothing for a body without one", async () => {
+            const noteId = await newChatNote();
+            const { messages, config } = turnBody(noteId, "r1");
+            for (const turn of [
+                "r1",
+                null,
+                { transcript: [ USER ] },
+                { replyId: "", transcript: [ USER ] },
+                { replyId: "a".repeat(65), transcript: [ USER ] },
+                { replyId: "r 1", transcript: [ USER ] },
+                { replyId: "r1", transcript: [] },
+                { replyId: "r1", transcript: [ { role: "user", content: "x" } ] },
+                { replyId: "r1", transcript: USER }
+            ]) {
+                const res = await stream({ messages, config, turn }).expect(400);
+                expect(res.body.error).toBe("turn_invalid");
+            }
+            const huge = { ...USER, content: "x".repeat(2 * 1024 * 1024) };
+            const tooLarge = await stream({ messages, config, turn: { replyId: "r1", transcript: [ huge ] } }).expect(413);
+            expect(tooLarge.body.error).toBe("content_too_large");
+            expect(chat.calls).toHaveLength(0);
+
+            await stream({ messages, config }).expect(200);
+            const state = await settled(noteId);
+            expect(state).toMatchObject({ chunks: 2, content: { version: 1, messages: [] } });
+            expect(state.replyId).toMatch(/\S/);
         });
     });
 });

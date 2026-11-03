@@ -219,6 +219,9 @@ function register(app: express.Application) {
     route(PST, "/etapi/special-notes/llm-chat", [auth.checkEtapiToken], caiusChatRoute.createChatNote, apiResultHandler);
     route(PUT, "/etapi/llm-chat/:noteId/content", [auth.checkEtapiToken], caiusChatRoute.saveChatContent, apiResultHandler);
     asyncRoute(PST, "/etapi/llm-chat/stream", [auth.checkEtapiToken, createCaiusChatRateLimiter()], caiusChatRoute.streamCaiusChat, null);
+    // Reading a turn back starts no agent work, so these sit outside the turn budget.
+    route(GET, "/etapi/llm-chat/:noteId/turn", [auth.checkEtapiToken], caiusChatRoute.turnState, apiResultHandler);
+    asyncRoute(GET, "/etapi/llm-chat/:noteId/stream", [auth.checkEtapiToken], caiusChatRoute.reattachTurn, null);
 
     // OCR API
     asyncApiRoute(PST, "/api/ocr/process-note/:noteId", ocrRoute.processNoteOCR);
