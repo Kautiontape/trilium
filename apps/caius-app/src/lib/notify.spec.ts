@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_SETTINGS } from "./local.js";
-import { CHAT_IDS, NUDGE_IDS, plannedNudges, SNOOZE_IDS, staleSnoozes } from "./notify.js";
+import { ACTION_TYPES, CHAT_IDS, NUDGE_IDS, plannedNudges, SNOOZE_IDS, staleSnoozes } from "./notify.js";
 import type { TodayData } from "./store.js";
 
 function today(overrides: Partial<TodayData> = {}, state: "unplanned" | "planned" | "wound_down" = "unplanned"): TodayData {
@@ -52,7 +52,15 @@ describe("plannedNudges", () => {
 
 describe("CHAT_IDS", () => {
     it("stays clear of the nudges, their snoozes and the test notification", () => {
-        const taken = new Set<number>([ ...Object.values(NUDGE_IDS), ...Object.values(SNOOZE_IDS), 99 ]);
+        const taken = new Set([ ...Object.values(NUDGE_IDS), ...Object.values(SNOOZE_IDS), 99 ]);
         expect(Object.values(CHAT_IDS).filter((id) => taken.has(id))).toEqual([]);
+    });
+
+    it("lets the replied notification take an inline reply, or open the chat", () => {
+        const reply = ACTION_TYPES.find((t) => t.id === "caius-reply");
+        expect(reply?.actions).toEqual([
+            { id: "reply", title: "Reply", input: true, inputButtonTitle: "Send", inputPlaceholder: "Reply to Caius" },
+            { id: "open", title: "Open" }
+        ]);
     });
 });

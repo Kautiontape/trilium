@@ -21,6 +21,8 @@ export const quickAddRequested = signal(0);
 export const resumed = signal(0);
 /** False while the app is in the background, between Capacitor's `pause` and `resume`. */
 export const appVisible = signal(true);
+/** A reply typed into a chat notification, sent by the `useChat` of that slot and note once it is ready. */
+export const pendingReply = signal<{ slot: ChatSlot; noteId: string; text: string } | null>(null);
 
 /**
  * Runs `action` with the server's today, now or as soon as Today has been read. A shortcut or a

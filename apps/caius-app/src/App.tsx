@@ -9,7 +9,7 @@ import { appVisible, chatActivity, closeRitual, minimizeRitual, onboarding, open
 import { MiniChat } from "./components/MiniChat.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
-import { startChatNotifications } from "./lib/chat-notify.js";
+import { chatTarget, openChat, startChatNotifications } from "./lib/chat-notify.js";
 import { readStoredChats } from "./lib/chats.js";
 import { loadConnection } from "./lib/connection.js";
 import type { Reminder } from "./lib/local.js";
@@ -194,8 +194,17 @@ function applyLaunchUrl(url: string) {
     }
 }
 
-/** What a tap on a notification or one of its buttons does: the same thing as the button in the app. */
-function onNotificationAction({ actionId, notification }: ActionPerformed) {
+/**
+ * What a tap on a notification or one of its buttons does: the same thing as the button in the app.
+ * Caius's reply opens its chat, and an inline reply is sent there as their next message.
+ */
+function onNotificationAction(action: ActionPerformed) {
+    const target = chatTarget(action);
+    if (target) {
+        openChat(target);
+        return;
+    }
+    const { actionId, notification } = action;
     const extra = (notification.extra ?? {}) as { nudge?: string; reminderId?: number };
     const day = today.value?.key;
     if (extra.reminderId !== undefined) {

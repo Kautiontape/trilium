@@ -9,7 +9,7 @@ import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
-import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, publishActivity, resumed } from "../app-state.js";
+import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
 import { useSwipeDown } from "../components/MiniChat.js";
 import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, type TurnState, turnText, workingLine } from "../lib/chat.js";
 import { type FollowedTurn, followTurn, readStoredChats, restoredMessages, storeChat } from "../lib/chats.js";
@@ -267,6 +267,15 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
             void reopen(restore);
         }
     }, [ restore ]);
+
+    // A reply typed into the notification waits until the chat has reopened its note and no turn runs.
+    const queued = pendingReply.value;
+    useEffect(() => {
+        if (queued?.slot === slot && queued.noteId === noteId.current && state === "ready") {
+            pendingReply.value = null;
+            void send(queued.text);
+        }
+    }, [ queued, state ]);
 
     const turn = async (text: string, answers?: PendingAnswers) => {
         const conn = connection.value;

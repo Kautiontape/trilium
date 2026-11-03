@@ -1,13 +1,15 @@
+import { type ActionPerformed, LocalNotifications, type LocalNotificationSchema, type LocalNotificationsPlugin } from "@capacitor/local-notifications";
 import { type ForegroundServicePlugin, ForegroundService, type ServiceType } from "@capawesome-team/capacitor-android-foreground-service";
 import { effect } from "@preact/signals";
 
-import { appVisible, type ChatActivity, chatActivity, chatOnScreen } from "../app-state.js";
-import type { ChatSlot } from "./chats.js";
+import { appVisible, type ChatActivity, chatActivity, chatOnScreen, minimizeRitual, openRitual, pendingReply, restoreRitual, ritual, settingsOpen, tab } from "../app-state.js";
+import { type ChatSlot, readStoredChats } from "./chats.js";
 import { CHAT_IDS } from "./notify.js";
 
 /**
- * A Caius chat turn's notification. While a turn runs, an Android foreground service keeps the app
- * alive to stream while hidden, and its ongoing notification shows the turn's latest line.
+ * A Caius chat turn's notifications. While a turn runs, an Android foreground service keeps the app
+ * alive to stream while hidden, and its ongoing notification shows the turn's latest line. A reply
+ * that lands out of sight posts "Caius replied", with an inline reply that starts the next turn.
  */
 
 /** What the notifications are decided from: each chat's activity, which chats are on screen, and whether the app is. */
@@ -25,6 +27,13 @@ export interface ChatNotice {
 /** The plugin calls the notifications make, so the spec can stand in for them. */
 export interface ChatNotifyPlugins {
     service: Pick<ForegroundServicePlugin, "startForegroundService" | "updateForegroundService" | "stopForegroundService">;
+    notifications: Pick<LocalNotificationsPlugin, "schedule" | "cancel">;
+}
+
+/** The chat a notification's tap or button shows, and the words typed into its inline reply. */
+export interface ChatTarget {
+    slot: ChatSlot;
+    reply?: string;
 }
 
 /**
@@ -37,18 +46,84 @@ export function chatNotice(scene: ChatScene): ChatNotice | null {
 }
 
 /**
- * Follows `chatActivity` and `appVisible` with the foreground service: started with a turn, updated
- * at most once a second as its line changes, stopped once no chat works. Returns the stop function.
+ * The "Caius replied" notification for a turn that ended between `prev` and `scene` while the app
+ * was hidden or its chat off screen. Only a turn that streamed ends one, as in `publishActivity`, so
+ * reopening a finished chat posts nothing.
  */
-export function startChatNotifications(plugins: ChatNotifyPlugins = { service: ForegroundService }): () => void {
+export function repliedNotice(prev: ChatScene["activity"], scene: ChatScene): { slot: ChatSlot; notification: LocalNotificationSchema } | null {
+    for (const slot of SLOTS) {
+        const next = scene.activity[slot];
+        if (!prev[slot]?.streaming || !next || next.working || (scene.visible && scene.onScreen[slot])) {
+            continue;
+        }
+        return {
+            slot,
+            notification: {
+                id: CHAT_IDS.replied, title: "Caius replied", body: next.line, channelId: "caius",
+                actionTypeId: "caius-reply", smallIcon: "ic_stat_caius", extra: { chat: slot }
+            }
+        };
+    }
+    return null;
+}
+
+/**
+ * Follows `chatActivity` and `appVisible` with the notifications: the foreground service started with
+ * a turn, updated at most once a second as its line changes, and stopped once no chat works; the
+ * replied notification posted as a turn ends out of sight, and cancelled once its chat shows with
+ * the app visible. Returns the stop function.
+ */
+export function startChatNotifications(plugins: ChatNotifyPlugins = { service: ForegroundService, notifications: LocalNotifications }): () => void {
     const ongoing = ongoingNotice(plugins.service);
+    let prev: ChatScene["activity"] = {};
+    let posted: ChatSlot | null = null;
     const dispose = effect(() => {
-        ongoing.show(chatNotice(currentScene()));
+        const scene = currentScene();
+        ongoing.show(chatNotice(scene));
+        const replied = repliedNotice(prev, scene);
+        prev = scene.activity;
+        if (replied) {
+            posted = replied.slot;
+            plugins.notifications.schedule({ notifications: [ replied.notification ] }).catch(() => undefined);
+        } else if (posted && scene.visible && scene.onScreen[posted]) {
+            posted = null;
+            plugins.notifications.cancel({ notifications: [ { id: CHAT_IDS.replied } ] }).catch(() => undefined);
+        }
     });
     return () => {
         dispose();
         ongoing.show(null);
     };
+}
+
+/** The chat a tap or button on a chat notification is for, or null for any other notification. */
+export function chatTarget({ actionId, inputValue, notification }: ActionPerformed): ChatTarget | null {
+    const chat = (notification.extra as { chat?: unknown } | undefined)?.chat;
+    if (chat !== "ritual" && chat !== "ask") {
+        return null;
+    }
+    const reply = actionId === "reply" ? inputValue?.trim() : undefined;
+    return reply ? { slot: chat, reply } : { slot: chat };
+}
+
+/**
+ * Shows the target's chat: the ritual restored, or reopened from its stored chat after a cold start;
+ * Ask on its tab. A reply waits in `pendingReply` for the stored chat note, so it reaches no other chat.
+ */
+export function openChat({ slot, reply }: ChatTarget) {
+    const stored = readStoredChats()[slot];
+    settingsOpen.value = false;
+    if (slot === "ask") {
+        minimizeRitual();
+        tab.value = "ask";
+    } else if (ritual.value) {
+        restoreRitual();
+    } else if (stored && stored.kind !== "ask") {
+        openRitual(stored.kind, stored.date, stored.noteId);
+    }
+    if (reply && stored) {
+        pendingReply.value = { slot, noteId: stored.noteId, text: reply };
+    }
 }
 
 const SLOTS: ChatSlot[] = [ "ritual", "ask" ];
