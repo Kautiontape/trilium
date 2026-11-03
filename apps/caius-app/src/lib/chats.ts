@@ -1,8 +1,8 @@
 import type { CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
 import type { CaiusStoredMessage } from "@triliumnext/commons/src/lib/caius_turn.js";
 
-import { applyChunk, type AssistantTurn, type ChatApi, type ChatKind, type LlmChatContent, NoTurnError, type StoredMessage, StreamBrokenError } from "./chat.js";
-import { UnreachableError } from "./http.js";
+import { applyChunk, type AssistantTurn, type ChatApi, type ChatKind, type LlmChatContent, NeedsServerUpdateError, NoTurnError, type StoredMessage, StreamBrokenError } from "./chat.js";
+import { HttpError, UnreachableError } from "./http.js";
 import { readLocal, writeLocal } from "./local.js";
 
 /**
@@ -58,6 +58,53 @@ export function restoredMessages(content: LlmChatContent | null): StoredMessage[
     const messages = (content?.messages ?? []) as CaiusStoredMessage[];
     const partial = new Set(messages.filter((m) => m.partial).map((m) => m.id));
     return messages.filter((m) => !partial.has(m.id) && !(m.type === "thinking" && partial.has(m.id.replace(/-notes$/, ""))));
+}
+
+/**
+ * What a turn does after `stream` throws, or after a resume detached it (`detached`):
+ * - `"follow"`: the server took the turn, so the phone follows it (a broken body, a detach).
+ * - `"refused"`: the server answered a status that refuses the turn (`HttpError`, including 429,
+ *   or `NeedsServerUpdateError`), so the phone keeps the error and saves the transcript itself.
+ * - `"resync"`: the server might hold the turn or be writing another one (`TurnRunningError`,
+ *   `UnreachableError`, anything else), so the phone reads the chat back with `resync` before it
+ *   saves or sends anything.
+ */
+export function afterStreamError(error: unknown, detached = false): "follow" | "refused" | "resync" {
+    if (detached || error instanceof StreamBrokenError) {
+        return "follow";
+    }
+    if (error instanceof HttpError || error instanceof NeedsServerUpdateError) {
+        return "refused";
+    }
+    return "resync";
+}
+
+/**
+ * The chat as the server saved it, for a phone whose transcript might have drifted from it: the
+ * restored messages, and the reply still being written while a turn runs. Rejects as `turnState` does.
+ */
+export async function resync(api: Pick<ChatApi, "turnState">, noteId: string): Promise<SyncedChat> {
+    const state = await api.turnState(noteId);
+    return { messages: restoredMessages(state.content), replyId: state.running ? state.replyId : null };
+}
+
+export interface SyncedChat {
+    messages: StoredMessage[];
+    /** The reply a running turn writes, to follow; null when no turn runs. */
+    replyId: string | null;
+}
+
+/**
+ * What the server made of the message `askedId`, sent before the phone's transcript drifted:
+ * `"missed"` when the server never got it, `"unanswered"` when it is the last saved message and no
+ * turn runs (the turn ended without a reply, as on a server restart), and `"held"` otherwise.
+ */
+export function askedFate(synced: SyncedChat, askedId: string): "held" | "missed" | "unanswered" {
+    const index = synced.messages.findIndex((m) => m.id === askedId);
+    if (index < 0) {
+        return "missed";
+    }
+    return !synced.replyId && index === synced.messages.length - 1 ? "unanswered" : "held";
 }
 
 /** A chat to reopen after a pause or a restart: the ritual on screen, or the Ask conversation. */

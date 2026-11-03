@@ -11,8 +11,8 @@ import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTi
 import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
 import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
 import { useSwipeDown } from "../components/MiniChat.js";
-import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, type TurnState, turnText, workingLine } from "../lib/chat.js";
-import { type FollowedTurn, followTurn, readStoredChats, restoredMessages, storeChat } from "../lib/chats.js";
+import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, turnText, workingLine } from "../lib/chat.js";
+import { afterStreamError, askedFate, type FollowedTurn, followTurn, readStoredChats, resync, storeChat, type SyncedChat } from "../lib/chats.js";
 import { dayLabel } from "../lib/day.js";
 import { HttpError } from "../lib/http.js";
 import { appVersion, shareText } from "../lib/share.js";
@@ -236,6 +236,12 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
     };
     const noteId = useRef<string | null>(null);
     const history = useRef<ChatMessage[]>([]);
+    /**
+     * Set while the transcript might differ from the server's, after a stream the server might have
+     * taken; `asked` is the message it might not hold, with the way to put its words back. `catchUp`
+     * reads the chat back from the server and clears it.
+     */
+    const stale = useRef<{ asked?: { id: string; putBack: () => void } } | null>(null);
     /** Bumped by New conversation and on close; a turn from an older conversation drops its reply. */
     const generation = useRef(0);
     const controller = useRef<AbortController | null>(null);
@@ -254,11 +260,18 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         publishActivity(slot, line === null ? null : { kind, working, streaming: state === "streaming", line });
     }, [ state, streaming, messages, error ]);
 
-    // A paused WebView can leave the reader hanging, so a resume drops it and follows the server's turn.
+    // A paused WebView can leave the reader hanging, so a resume drops it and follows the server's
+    // turn; a stale chat reads the server's side again.
     const woke = resumed.value;
     useEffect(() => {
-        if (woke) {
-            controller.current?.abort(DETACH);
+        if (!woke) {
+            return;
+        }
+        controller.current?.abort(DETACH);
+        const conn = connection.value;
+        const id = noteId.current;
+        if (stale.current && state === "failed" && conn && id) {
+            void catchUp(chatApi(conn), id, generation.current).then((caught) => caught?.missed?.());
         }
     }, [ woke ]);
 
@@ -285,6 +298,20 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         }
         const chats = chatApi(conn);
         const mine = generation.current;
+        let missed: (() => void) | null = null;
+        if (stale.current) {
+            // The transcript sent with a turn starts from what the server saved.
+            const caught = await catchUp(chats, chatNoteId, mine);
+            if (generation.current !== mine) {
+                return;
+            }
+            if (!caught || caught.running || stale.current) {
+                setDraft(text);
+                caught?.missed?.();
+                return;
+            }
+            missed = caught.missed;
+        }
         const abort = new AbortController();
         controller.current = abort;
         const said = [ answers?.sentences.join(" "), text ].filter(Boolean).join("\n\n");
@@ -300,10 +327,12 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         cards.current.clear();
         setPending(null);
         setDraft("");
+        missed?.();
 
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
-        let refused: { error: unknown } | null = null;
+        let outcome: "follow" | "refused" | "resync" = "follow";
+        let failure: unknown = null;
         try {
             await chats.stream(historyForServer(history.current), chatNoteId, effort, { replyId: assembled.id, transcript: history.current }, (chunk) => {
                 if (generation.current === mine) {
@@ -312,25 +341,24 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
                 }
             }, abort.signal);
         } catch (e) {
-            // A broken body or a detach leaves the turn running on the server; anything else came before it took the turn.
-            if (!(e instanceof StreamBrokenError) && abort.signal.reason !== DETACH) {
-                refused = { error: e };
-            }
+            outcome = afterStreamError(e, abort.signal.reason === DETACH);
+            failure = e;
         }
         if (generation.current !== mine) {
             return;
         }
+        // Words typed since stay in the box.
         const putBack = () => {
-            setDraft(text);
-            if (answers) {
+            setDraft((typed) => typed.trim() ? typed : text);
+            if (answers && !cards.current.size) {
                 cards.current = sent;
                 gather();
             }
         };
 
-        if (refused) {
-            // The server never saw this turn, so the phone saves the transcript with the error.
-            const failed = { ...assembled, error: messageOf(refused.error), done: true };
+        if (outcome === "refused") {
+            // The server refused this turn, so the phone saves the transcript with the error.
+            const failed = { ...assembled, error: messageOf(failure), done: true };
             land([ ...history.current, ...turnMessages(failed, new Date().toISOString()) ], failed.id, putBack);
             const content: LlmChatContent = { version: 1, messages: history.current, enableNoteTools: true, enableWebSearch: false };
             await chats.save(chatNoteId, content).catch((e) => {
@@ -338,16 +366,19 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
             });
             return;
         }
-        const followed: FollowedTurn | null = assembled.done ? { kind: "finished", turn: assembled } : await follow(chats, chatNoteId, assembled.id, mine);
+        const followed: FollowedTurn | null = outcome === "resync" ? { kind: "lost" }
+            : assembled.done ? { kind: "finished", turn: assembled } : await follow(chats, chatNoteId, assembled.id, mine);
         if (!followed) {
             return;
         }
-        if (followed.kind === "saved") {
-            land(followed.messages, assembled.id, putBack);
+        if (followed.kind === "lost") {
+            // The server might still finish and save the reply, so the phone reads the chat back instead of saving its own.
+            stale.current = { asked: { id: user.id, putBack } };
+            const caught = await catchUp(chats, chatNoteId, mine);
+            caught?.missed?.();
             return;
         }
-        const ended = followed.kind === "finished" ? followed.turn : { ...assembled, error: `${new StreamBrokenError().message} ${PUT_BACK}`, done: true };
-        land([ ...history.current, ...turnMessages(ended, new Date().toISOString()) ], ended.id, putBack);
+        land(followed.kind === "saved" ? followed.messages : [ ...history.current, ...turnMessages(followed.turn, new Date().toISOString()) ], assembled.id, putBack);
     };
 
     /**
@@ -418,9 +449,9 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
             setEffort(stored.effort);
         }
         setState("starting");
-        let held: TurnState;
+        let synced: SyncedChat;
         try {
-            held = await chats.turnState(id);
+            synced = await resync(chats, id);
         } catch (e) {
             if (generation.current !== mine) {
                 return;
@@ -442,10 +473,20 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         if (generation.current !== mine) {
             return;
         }
-        history.current = restoredMessages(held.content);
+        await show(chats, id, synced, mine);
+    };
+
+    /**
+     * Shows the chat as the server saved it, and follows the turn still running there to its end. A
+     * followed turn that gets lost leaves the chat stale, with the error, for the next resume or turn.
+     */
+    const show = async (chats: ChatApi, id: string, synced: SyncedChat, mine: number) => {
+        history.current = synced.messages;
         setMessages(history.current);
-        const replyId = held.replyId;
-        if (!held.running || !replyId) {
+        setError(null);
+        const replyId = synced.replyId;
+        if (!replyId) {
+            setStreaming(null);
             setState("ready");
             return;
         }
@@ -455,12 +496,50 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         if (!followed) {
             return;
         }
-        if (followed.kind === "saved") {
-            land(followed.messages, replyId);
+        if (followed.kind === "lost") {
+            stale.current = {};
+            setStreaming(null);
+            setError(`${new StreamBrokenError().message} ${OUT_OF_SYNC}`);
+            setState("failed");
             return;
         }
-        const ended = followed.kind === "finished" ? followed.turn : { id: replyId, blocks: [], error: new StreamBrokenError().message, done: true };
-        land([ ...history.current, ...turnMessages(ended, new Date().toISOString()) ], replyId);
+        land(followed.kind === "saved" ? followed.messages : [ ...history.current, ...turnMessages(followed.turn, new Date().toISOString()) ], replyId);
+    };
+
+    /**
+     * Reads a stale chat back from the server and shows it, following a turn that still runs there.
+     * Null while the server can't be read, which keeps the chat stale and shows the error. `missed`
+     * puts back the words of the stale message when the server never got it, or when its turn ended
+     * without a reply; that message then leaves the transcript.
+     */
+    const catchUp = async (chats: ChatApi, id: string, mine: number): Promise<{ running: boolean; missed: (() => void) | null } | null> => {
+        setState("starting");
+        setStreaming(null);
+        let synced: SyncedChat;
+        try {
+            synced = await resync(chats, id);
+        } catch (e) {
+            if (generation.current === mine) {
+                setError(`${messageOf(e)} ${OUT_OF_SYNC}`);
+                setState("failed");
+            }
+            return null;
+        }
+        if (generation.current !== mine) {
+            return null;
+        }
+        const asked = stale.current?.asked;
+        stale.current = null;
+        const fate = asked ? askedFate(synced, asked.id) : "held";
+        if (fate === "unanswered") {
+            synced = { ...synced, messages: synced.messages.filter((m) => m.id !== asked?.id) };
+        }
+        await show(chats, id, synced, mine);
+        if (fate === "unanswered" && generation.current === mine) {
+            setError(`${NO_REPLY} ${PUT_BACK}`);
+            setState("failed");
+        }
+        return { running: !!synced.replyId, missed: fate === "held" ? null : asked?.putBack ?? null };
     };
 
     /**
@@ -520,6 +599,7 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         generation.current++;
         controller.current?.abort();
         noteId.current = null;
+        stale.current = null;
         storeChat(slot, null);
         history.current = [];
         setMessages([]);
@@ -548,6 +628,8 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
 /** The abort reason of a reader dropped on resume, so the turn follows the server instead of ending. */
 const DETACH = "detach";
 const PUT_BACK = "Your message is back in the box: send it again.";
+const OUT_OF_SYNC = "The chat reloads from the server when you reopen the app or send again.";
+const NO_REPLY = "No reply came back from the server.";
 
 function newId() {
     return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyChunk, type AssistantTurn, type ChatApi, type ChatChunk, type LlmChatContent, NoTurnError, type StoredMessage, StreamBrokenError, type TurnState } from "./chat.js";
-import { followTurn, readStoredChats, restoredMessages, storeChat } from "./chats.js";
+import { applyChunk, type AssistantTurn, type ChatApi, type ChatChunk, type LlmChatContent, NeedsServerUpdateError, NoTurnError, type StoredMessage, StreamBrokenError, TurnRunningError, type TurnState } from "./chat.js";
+import { afterStreamError, askedFate, followTurn, readStoredChats, restoredMessages, resync, storeChat } from "./chats.js";
+import { HttpError, UnreachableError } from "./http.js";
 
 const AT = "2026-11-04T09:00:00.000Z";
 
@@ -28,6 +29,55 @@ describe("restoredMessages", () => {
         expect(restoredMessages(content([ ...asked, ...partialReply ]))).toEqual(asked);
         expect(restoredMessages(content([ ...asked, ...finishedReply ]))).toEqual([ ...asked, ...finishedReply ]);
         expect(restoredMessages(null)).toEqual([]);
+    });
+});
+
+describe("afterStreamError", () => {
+    it("takes a refusal only from a status the server answered, and follows a broken or detached stream", () => {
+        expect(afterStreamError(new HttpError(500, ""))).toBe("refused");
+        expect(afterStreamError(new HttpError(429, "{\"error\":\"too_many_turns\"}"))).toBe("refused");
+        expect(afterStreamError(new NeedsServerUpdateError())).toBe("refused");
+        expect(afterStreamError(new StreamBrokenError())).toBe("follow");
+        expect(afterStreamError(new DOMException("Aborted", "AbortError"), true)).toBe("follow");
+    });
+
+    it("resyncs when the server might hold the turn or another one runs", () => {
+        expect(afterStreamError(new TurnRunningError())).toBe("resync");
+        expect(afterStreamError(new UnreachableError("https://caius.example", new TypeError("Failed to fetch")))).toBe("resync");
+        expect(afterStreamError(new Error("Something else"))).toBe("resync");
+    });
+});
+
+describe("resync", () => {
+    const api = (state: TurnState) => ({ turnState: vi.fn(async () => state) }) as unknown as ChatApi;
+
+    it("keeps the reply the server saved, so the next transcript starts from it", async () => {
+        const local = [ ...asked, { id: "e1", role: "assistant", content: "Lost the connection.", createdAt: AT, type: "error" } ] as StoredMessage[];
+        const synced = await resync(api({ content: content([ ...asked, ...finishedReply ]), running: false, replyId: "r1", chunks: 4 }), "n1");
+        expect(synced).toEqual({ messages: [ ...asked, ...finishedReply ], replyId: null });
+        expect(synced.messages).not.toEqual(local);
+    });
+
+    it("drops a reply still being written and names it to follow", async () => {
+        const synced = await resync(api({ content: content([ ...asked, ...partialReply ]), running: true, replyId: "r1", chunks: 2 }), "n1");
+        expect(synced).toEqual({ messages: asked, replyId: "r1" });
+    });
+
+    it("passes on an unreachable server", async () => {
+        const unreachable = { turnState: vi.fn(async () => {
+            throw new UnreachableError("https://caius.example");
+        }) } as unknown as ChatApi;
+        await expect(resync(unreachable, "n1")).rejects.toBeInstanceOf(UnreachableError);
+    });
+});
+
+describe("askedFate", () => {
+    it("tells a message the server never got from one it answered, is answering, or dropped", () => {
+        const before = asked.slice(0, 2);
+        expect(askedFate({ messages: before, replyId: null }, "u1")).toBe("missed");
+        expect(askedFate({ messages: [ ...asked, ...finishedReply ], replyId: null }, "u1")).toBe("held");
+        expect(askedFate({ messages: asked, replyId: "r1" }, "u1")).toBe("held");
+        expect(askedFate({ messages: asked, replyId: null }, "u1")).toBe("unanswered");
     });
 });
 
