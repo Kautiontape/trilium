@@ -23,6 +23,7 @@
 import type { Options as AgentOptions, query as queryFn, SDKAssistantMessage, SDKMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { clockOverride } from "@triliumnext/caius/src/clock.js";
+import { dayLabel } from "@triliumnext/caius/src/trilium/forward-html.js";
 import { CAIUS_DEFAULT_EFFORT, type CaiusConversation, caiusConversationOfMessages, caiusOpenerOfMessages, isCaiusEffort, type LlmMessage, type LlmMessagePart, type LlmStreamChunk } from "@triliumnext/commons";
 import { getLog } from "@triliumnext/core";
 import { resolveAttachmentPart } from "@triliumnext/core/src/services/llm/attachment_content.js";
@@ -733,7 +734,7 @@ export class ClaudeAgentProvider implements LlmProvider {
         const kind = caiusConversationOfMessages(messages);
         if (!kind) return prompt;
         // A Caius conversation is Caius's: the skill sheet says who he is, how the rituals go and how he answers questions.
-        const caius = `${prompt}\n\n${CAIUS_PROMPTS[kind]}`;
+        const caius = `${prompt}\n\n${CAIUS_PROMPTS[kind]}${ritualDay(messages)}`;
         // The CLI tells the agent the real date; in dev the Caius clock can be elsewhere, so a
         // Caius conversation is told the clock's date too.
         const clock = clockOverride();
@@ -823,6 +824,19 @@ const CAIUS_PROMPTS: Record<CaiusConversation, string> = {
 
 /** The Caius tools that answer `not_today` for a day that hasn't started, unless told `early`. */
 const EARLY_TOOLS = new Set([ "caius_planday", "caius_plan_apply", "caius_brief_write", "caius_meetings" ]);
+
+/**
+ * For a ritual, the day it is about in his words: a Wind down after midnight is still about the day
+ * it closes, so "today" is that day, not the calendar's.
+ */
+function ritualDay(messages: readonly LlmMessage[]): string {
+    const opener = caiusOpenerOfMessages(messages);
+    if (opener?.kind !== "plan" && opener?.kind !== "winddown") return "";
+    const day = dayLabel(opener.date);
+    return opener.kind === "winddown"
+        ? `\n\nThis conversation winds down ${day}. When he says "today" he means ${day}, even after midnight, and every task he calls today's is that day's.`
+        : `\n\nThis conversation plans ${day}. When he says "today" he means ${day}.`;
+}
 
 /** The day a `Plan my day <date>` conversation opens on, or undefined for any other chat. */
 function plannedDay(messages: readonly LlmMessage[]): string | undefined {
