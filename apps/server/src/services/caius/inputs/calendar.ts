@@ -21,6 +21,8 @@ export interface CalendarDeps {
 export interface FeedCache {
     /** The text of `url`: a download still running or younger than the TTL, else `download()`'s. */
     text(url: string, download: () => Promise<string>): Promise<string>;
+    /** Drops `url`'s entry when it is still `text`, so the next read downloads the feed again. */
+    evict(url: string, text: Promise<string>): void;
 }
 
 type Ical = typeof ICALType;
@@ -53,9 +55,10 @@ export async function readCalendar(deps: CalendarDeps, date: string): Promise<{ 
     const errors: InputError[] = [];
     const events: CalendarEvent[] = [];
     for (const [ index, url ] of urls.entries()) {
+        const pending = deps.feeds ? deps.feeds.text(url, () => fetchFeed(deps.fetch, url)) : fetchFeed(deps.fetch, url);
         let text: string;
         try {
-            text = await (deps.feeds ? deps.feeds.text(url, () => fetchFeed(deps.fetch, url)) : fetchFeed(deps.fetch, url));
+            text = await pending;
         } catch (e) {
             errors.push({ source: "calendar", error: `feed_${index}_${e instanceof Error ? e.message : "network"}` });
             continue;
@@ -67,6 +70,8 @@ export async function readCalendar(deps: CalendarDeps, date: string): Promise<{ 
                 errors.push({ source: "calendar", error: `feed_${index}_unknown_tz` });
             }
         } catch {
+            // A login page or a cut-off body answers 200, so it is dropped here rather than kept for the TTL.
+            deps.feeds?.evict(url, pending);
             errors.push({ source: "calendar", error: `feed_${index}_parse` });
         }
     }
@@ -76,21 +81,23 @@ export async function readCalendar(deps: CalendarDeps, date: string): Promise<{ 
 
 /**
  * A `FeedCache` that keeps a downloaded text for `ttlMs` on `clockMs`. Reads that run at once share
- * one download; a failed download is dropped, so the next read tries the feed again.
+ * one download; a failed download, or a text `evict` drops, is downloaded again on the next read.
  */
 export function createFeedCache(clockMs: () => number, ttlMs: number): FeedCache {
     const texts = new Map<string, { at: number; text: Promise<string> }>();
+    const evict = (url: string, text: Promise<string>) => {
+        if (texts.get(url)?.text === text) texts.delete(url);
+    };
     return {
         text(url, download) {
             const hit = texts.get(url);
             if (hit && clockMs() - hit.at < ttlMs) return hit.text;
             const text = download();
             texts.set(url, { at: clockMs(), text });
-            text.catch(() => {
-                if (texts.get(url)?.text === text) texts.delete(url);
-            });
+            text.catch(() => evict(url, text));
             return text;
-        }
+        },
+        evict
     };
 }
 

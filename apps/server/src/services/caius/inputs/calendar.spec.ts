@@ -201,4 +201,22 @@ describe("the feed cache", () => {
         expect((await read("2026-10-27")).errors).toEqual([]);
         expect(fetched).toEqual([ ...FEEDS, ...FEEDS, ...FEEDS ]);
     });
+
+    it("drops a feed text that fails to parse, so the next read downloads it again", async () => {
+        const fetched: string[] = [];
+        let garbage = true;
+        const counted = (async (input: URL | string) => {
+            fetched.push(String(input));
+            return garbage && String(input) === FEEDS[0] ? new Response("<html>Sign in to continue</html>") : fakeNetwork()(input);
+        }) as unknown as typeof fetch;
+        const feeds = createFeedCache(() => 0, 15 * 60_000);
+        const read = (date: string) => readCalendar({ fetch: counted, env: ENV, feeds }, date);
+
+        expect((await read("2026-10-27")).errors).toEqual([ { source: "calendar", error: "feed_0_parse" } ]);
+        garbage = false;
+        const again = await read("2026-10-27");
+        expect(again.errors).toEqual([]);
+        expect(summary(again.events)).toContain("13:00-14:00 Architecture Review");
+        expect(fetched).toEqual([ ...FEEDS, FEEDS[0] ]);
+    });
 });
