@@ -4,6 +4,7 @@ import type { LlmProviderSetup } from "@triliumnext/core/src/services/llm/index.
 import type { LlmProviderConfig } from "@triliumnext/core/src/services/llm/types.js";
 import type { Request, Response } from "express";
 
+import { MAX_CHAT_CONTENT_LENGTH } from "../../services/caius/turns.js";
 import llmChatRoute from "./llm_chat.js";
 
 /**
@@ -118,9 +119,6 @@ function chatNoteOf(noteId: unknown) {
     const note = typeof noteId === "string" ? becca.getNote(noteId) : null;
     return note && note.type === "llmChat" && !note.isProtected && note.hasAncestor("_llmChat") ? note : null;
 }
-
-/** The largest transcript `saveChatContent` writes, in characters of JSON: 2 MB of text. */
-const MAX_CHAT_CONTENT_LENGTH = 2 * 1024 * 1024;
 
 /**
  * Whether `value` has the shape the chat views read (`LlmChatContent`): version 1, and messages
