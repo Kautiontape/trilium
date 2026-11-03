@@ -725,11 +725,9 @@ async function contextOnly(deps: ApplyDeps, asked: PlanApplyInput) {
     });
 }
 
-/** The brief's "Get done today": the first Foundation tasks of his list, in order, each with its candidate's reason when it had one. */
+/** The brief's "Get done today": the first tasks of his list, in order and whatever their area, leaving out the Evening block (the Evening act names those), each with its candidate's reason when it had one. */
 function picksFor(plan: Awaited<ReturnType<typeof readPlan>>, reasons: Map<string, Candidate>): BriefPick[] {
-    // The picks are Foundation: a Growth or Recharge task is no pick of the day's work.
-    const day = listOf(plan).filter((task) => task.work);
-    return day.slice(0, MAX_PICKS).map((task) => {
+    return dayPicks(plan).slice(0, MAX_PICKS).map((task) => {
         const reason = task.keys.map((key) => reasons.get(key)).find((candidate) => candidate && candidate.kind !== "week");
         return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
     });
@@ -744,9 +742,14 @@ function orderHeadline(header: ReturnType<typeof headerOf>): string | undefined 
     return t("caius.brief.order_headline", { first, rest: rest.length > 1 ? t("caius.daily.list_and", { head: rest.slice(0, -1).join(", "), last: tail }) : tail });
 }
 
-/** The brief's picks of a plan as they read, in order: the first work tasks of his list. */
+/** The tasks of his list that can be picks, in order: any area, but not the Evening block, which the Evening act names. */
+function dayPicks(plan: Awaited<ReturnType<typeof readPlan>>) {
+    return listOf(plan).filter((task) => task.block !== "evening");
+}
+
+/** The brief's picks of a plan as they read, in order: the first tasks of his list outside the Evening, whatever their area. */
 function picksOf(plan: Awaited<ReturnType<typeof readPlan>>): string {
-    return listOf(plan).filter((task) => task.work).slice(0, MAX_PICKS).map((task) => task.text).join("\n");
+    return dayPicks(plan).slice(0, MAX_PICKS).map((task) => task.text).join("\n");
 }
 
 /**

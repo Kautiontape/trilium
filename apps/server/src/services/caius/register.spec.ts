@@ -204,7 +204,7 @@ it("parks a stale item only on his word, and keeps a personal errand out of the 
     const sheet = sheetOnce();
     expect(sheet).toContain("An item with `park` has been carried on three workdays or more, and the `open` question asks to park it in that month. Only his word parks it: pass its fate with `to` set to `park.month`. Without it, the item goes on as proposed.");
     expect(sheet).toContain("His yes to the park question (\"yes\", \"park it\", \"sure\") is that fate: pass it. The tool parks nothing from his words alone: a bare yes without the month fate is a `check`, and a call that answers otherwise leaves the item on its proposed fate.");
-    expect(sheet).toContain("The headline names his first work task: never a Growth or Recharge task when work is on his list. The tool writes your headline as you send it");
+    expect(sheet).toContain("The headline names the first task on his list, whatever its area. The tool writes your headline as you send it");
 });
 
 it("maps his yes onto asOffered or the fields, since the tool writes nothing from his words alone", () => {
