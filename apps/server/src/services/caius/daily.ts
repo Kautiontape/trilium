@@ -70,6 +70,7 @@ import { overriddenKeys } from "./inputs/jira.js";
 import type { CaiusInputs } from "./inputs/types.js";
 import { numbered, refOf, resolveName, withRefs } from "./refs.js";
 import { heldQuestion } from "./say.js";
+import { slipsOf, trails } from "./trail.js";
 
 /** The standing note as markdown, or null with the one-line reason. */
 export interface Standing {
@@ -188,34 +189,13 @@ const STALE_FORWARDS = 3;
  * times, and the month the wind-down offers to park each in, `targetDay`'s. The caller holds the lock.
  */
 export async function staleItems(store: NoteStore, now: Date, items: { listItemId: string | null; noteId: string; text: string }[], targetDay: string) {
-    const forwards = await timesForwarded(store, now);
+    const all = await trails(store, now);
     const stale = new Map<string, { forwarded: number; month: string }>();
     for (const item of items) {
-        const forwarded = forwards.get(copyKey(fromOf(item.text) ?? item.noteId, plainText(withoutMoveLinks(item.text)))) ?? 0;
+        const forwarded = slipsOf(all, item);
         if (item.listItemId && forwarded >= STALE_FORWARDS) stale.set(item.listItemId, { forwarded, month: targetDay.slice(0, 7) });
     }
     return stale;
-}
-
-/**
- * How many times each item was forwarded from a day note, by `copyKey`: its copies moved on from a
- * day note, each told by the note its "from" link points at (where it started, which every copy
- * keeps) or, for the first copy, its own note, and by its words. Missed days between two forwards
- * don't reset the count. The caller holds the lock.
- */
-async function timesForwarded(store: NoteStore, now: Date): Promise<Map<string, number>> {
-    const { docs } = await loadJournal(store);
-    const byPath = new Map(docs.map((doc) => [ doc.path, doc ]));
-    const counts = new Map<string, number>();
-    for (const task of scanDocs(docs, TRILIUM_CONFIG, now).tasks) {
-        const doc = byPath.get(task.file);
-        const period = /^Journal\/Daily\/(\d{4}-\d{2}-\d{2})(?:\.md|\/)/.exec(task.file)?.[1];
-        const moved = task.state === "tombstone" || SCHEDULED.test(task.text);
-        if (!doc || !period || !moved) continue;
-        const key = copyKey(fromOf(task.text) ?? doc.noteId, plainText(withoutMoveLinks(task.text)));
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
 }
 
 /** The note a task's "from" link points at, where a forwarded task started; null for one never moved. */
@@ -223,7 +203,7 @@ export function fromOf(text: string): string | null {
     return /\[from [^\]]*\]\(#root\/([^)]+)\)/.exec(text)?.[1] ?? null;
 }
 
-const SCHEDULED = /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/;
+export const SCHEDULED = /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/;
 
 /**
  * A copy's key: the note it came from and its words without an estimate, which a moved source keeps
