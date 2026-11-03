@@ -1,6 +1,7 @@
 import type { CaiusStoredMessage, LlmMessage, LlmStreamChunk } from "@triliumnext/commons";
 import { becca, cls, hidden_subtree, special_notes, sql_init } from "@triliumnext/core";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import i18next from "i18next";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
     MAX_RUNNING_TURNS,
@@ -43,11 +44,31 @@ const USER: CaiusStoredMessage = {
 const FAKE_TIMERS: Parameters<typeof vi.useFakeTimers>[0] = {
     toFake: [ "setTimeout", "clearTimeout", "Date" ]
 };
+/** Text for the `caius.turn.*` keys that differs from the catalogue's, so a spec sees `t()` run. */
+const MESSAGES = {
+    stopped: "Stopped (spec)",
+    out_of_time: "Out of time (spec)",
+    too_long: "Too long (spec)"
+};
+const catalogue = new Map<string, unknown>();
 
 beforeAll(async () => {
     await sql_init.dbReady;
     if (!becca.getNote("_llmChat")) {
         cls.init(() => hidden_subtree.checkHiddenSubtree());
+    }
+    for (const [ name, text ] of Object.entries(MESSAGES)) {
+        const key = `caius.turn.${name}`;
+        catalogue.set(key, i18next.getResource(i18next.language, "server", key));
+        i18next.addResource(i18next.language, "server", key, text);
+    }
+});
+
+afterAll(() => {
+    for (const [ key, text ] of catalogue) {
+        if (typeof text === "string") {
+            i18next.addResource(i18next.language, "server", key, text);
+        }
     }
 });
 
@@ -230,7 +251,7 @@ describe("startTurn", () => {
 
         expect(turn.chunks).toEqual([
             text("Half a"),
-            { type: "error", error: "The reply stopped before it finished." }
+            { type: "error", error: MESSAGES.stopped }
         ]);
         expect(cls.init(() => becca.getNoteOrThrow("root").getContent())).toBe(before);
     });
@@ -292,7 +313,7 @@ describe("bounds", () => {
         expect(turn.running).toBe(true);
         await vi.advanceTimersByTimeAsync(1);
 
-        const error = "Caius ran out of time on this reply.";
+        const error = MESSAGES.out_of_time;
         expect(turn.running).toBe(false);
         expect(llm.calls.at(-1)?.signal?.aborted).toBe(true);
         expect(turn.chunks).toEqual([ text("Hel"), { type: "error", error } ]);
@@ -318,7 +339,7 @@ describe("bounds", () => {
         await turn.finished;
 
         expect(turn.chunks).toHaveLength(MAX_TURN_CHUNKS + 1);
-        expect(turn.chunks.at(-1)).toEqual({ type: "error", error: "The reply grew too long." });
+        expect(turn.chunks.at(-1)).toEqual({ type: "error", error: MESSAGES.too_long });
         expect(llm.calls.at(-1)?.signal?.aborted).toBe(true);
     });
 

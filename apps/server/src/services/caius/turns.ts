@@ -9,6 +9,7 @@ import {
 } from "@triliumnext/commons";
 import { becca, cls, getLog, utils } from "@triliumnext/core";
 import type { LlmProviderConfig } from "@triliumnext/core/src/services/llm/types.js";
+import { t } from "i18next";
 
 /** The largest transcript written to a chat note, in characters of JSON: 2 MB of text. */
 export const MAX_CHAT_CONTENT_LENGTH = 2 * 1024 * 1024;
@@ -88,7 +89,7 @@ export function startTurn(start: TurnStart): Turn | "running" | "busy" {
 
     save(state, true);
     // The timers in this module never hold the process open.
-    state.capTimer = setTimeout(() => end(state, OUT_OF_TIME), MAX_TURN_MS);
+    state.capTimer = setTimeout(() => end(state, t("caius.turn.out_of_time")), MAX_TURN_MS);
     state.capTimer.unref();
     // `runChat` gets a context of its own, so its writes after the request closed (the chat title)
     // never land in the request's.
@@ -157,10 +158,6 @@ interface TurnState extends Turn {
     saveSkipLogged: boolean;
 }
 
-const STOPPED = "The reply stopped before it finished.";
-const OUT_OF_TIME = "Caius ran out of time on this reply.";
-const TOO_LONG = "The reply grew too long.";
-
 /**
  * The chunks that stream a tool call's input as it is written. `applyChunk` builds the call from
  * `tool_use` alone, so the turn neither logs nor sends these.
@@ -183,7 +180,7 @@ async function run(state: TurnState, messages: LlmMessage[], config: LlmProvider
         if (chunk.type === "done" || chunk.type === "error") {
             end(state);
         } else if (state.chunks.length >= MAX_TURN_CHUNKS) {
-            end(state, TOO_LONG);
+            end(state, t("caius.turn.too_long"));
         } else {
             scheduleSave(state);
         }
@@ -193,9 +190,10 @@ async function run(state: TurnState, messages: LlmMessage[], config: LlmProvider
 
 /**
  * Ends the turn once. When the log has no terminal chunk, aborts `runChat` and adds an `error`
- * chunk saying `error`. Then saves the final transcript and calls each listener's `onEnd`.
+ * chunk saying `error`, or `caius.turn.stopped` without one. Then saves the final transcript and
+ * calls each listener's `onEnd`.
  */
-function end(state: TurnState, error = STOPPED) {
+function end(state: TurnState, error?: string) {
     if (!state.running) {
         return;
     }
@@ -204,7 +202,7 @@ function end(state: TurnState, error = STOPPED) {
     const last = state.chunks[state.chunks.length - 1];
     if (last?.type !== "done" && last?.type !== "error") {
         state.controller.abort();
-        push(state, { type: "error", error });
+        push(state, { type: "error", error: error ?? t("caius.turn.stopped") });
     }
     state.running = false;
     save(state, false);
