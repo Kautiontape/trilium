@@ -65,7 +65,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "When `say` ends with a which-question, the items it names stay open until he answers; his answer is one more apply call naming them.",
         "A ref names the same item for the whole conversation. One whose item changed since the step is skipped as `stale`: ask him about that item in one clause.",
         "the heavy-day move question (if any)",
-        "Ask only what the steps' `question` fields ask, in their words: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.",
+        "Ask only what the steps' `question` fields need answered: a question answered once for a day, in this conversation or an earlier one, is not in them, so never ask it again.",
         "On `catchup: \"review\"`, run Wind down for `data.oldestDay` in this conversation, then come back to Plan my day",
         "When the catch-up step asks about held items (`data.held`), one he says is done goes in `finished`; anything else he says about them is `catchup: \"review\"`.",
         "Never ask permission for anything the apply tool does.",
@@ -73,7 +73,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "After the apply, reply with the result's `say`, then the headline and the top pick, and nothing else.",
         "After the apply, reply with the result's `say` and nothing else, but for one sentence when the result's `load.over` is true and you didn't already say the day was over before the apply",
         "Once he said to do it anyway, don't say it again.",
-        "Nor is Plan my day's one line on yesterday, which comes first.",
+        "Open the message with how the day went, as the Voice section says: no scripted question, and no preamble of your own about what follows",
         "When it answers `duplicate`, the task already exists: find it with `caius_open` or `caius_plan` and `caius_forward` it to that day",
         "Never narrate tools, ids, protocol or data quality.",
         "Never write \"still\", \"outstanding\", \"unanswered\", \"waiting\", \"no reply\" or \"haven't answered\".",
@@ -99,7 +99,8 @@ it("offers the caius skill only while it is registered, and names every tool the
         "never ask \"anything for the evening?\"",
         "Every Caius tool is available, with the note reads and `search_notes`; the generic note tools that write are off",
         "Each ritual has a goal, and the steps below are the default path to it",
-        "State capacity only as the step's `data.capacity.sentence` or `data.load.sentence` words it, as it is",
+        "Say capacity as the step's `data.capacity.sentence`, `data.load.sentence` or `summary` puts it, in gist",
+        "Never work out or round a figure of your own",
         "When the apply answers with `planday`, a morning Review of an older day closed it against today, and Plan my day's `catchup` and `inputs` steps have already run for today",
         "Never ask whether to plan or whether to write the brief, and never call those steps again.",
         "Never ask what else to do when the step returns no candidates",
@@ -133,12 +134,13 @@ it("offers the caius skill only while it is registered, and names every tool the
         "`caius_add` to that day, with `onDeck: true` when he would like to do it then",
         "\"need to\", \"have to\", \"must\" put it on that day's list",
         "`data.onDeck` is the day's On deck", "Every item he doesn't name takes its proposed fate, so none stays on deck.",
-        "open with one line on yesterday from `data.yesterday`"
+        "yesterday in a sentence from `data.yesterday`"
     ]) expect(openers, rule).toContain(rule);
     // Who he is comes first, and the tools' words stay factual.
     expect(sheet.indexOf("## Who you are")).toBeLessThan(sheet.indexOf("## The Journal"));
     expect(sheet).toContain("You are Caius, the planner for his Journal, and you speak in the first person.");
-    expect(sheet).toContain("The words the tools return (`say`, the steps' questions and summaries) stay as they are");
+    expect(sheet).toContain("The apply's `say` stays as it is; the steps' `question` and `summary` are what you cover in your own words.");
+    expect(sheet).not.toContain("stay as they are; your voice is in what you write around them");
     expect(sheet).toContain("Never quote the game or play the character.");
     for (const old of [ "A ref holds only for the reply it came in", "and \"Anything for the evening?\"", "`data.evening` is the evening", "eveningAnswered: true", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
@@ -149,13 +151,26 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(readSkill("caius")).toBeNull();
 });
 
-it("opens a planning message with its first question, never a preamble of its own", () => {
+it("speaks in a rundown that leads into the cards, in gist, never reading a question out", () => {
     const sheet = sheetOnce();
-    const openers = sheet.slice(sheet.indexOf("## Wind down and Plan my day"), sheet.indexOf("## Reading results"));
-    expect(openers).toContain("Start the message with its first question or item: no preamble of your own about what follows");
-    for (const filler of [ "\"Here's everything in one message:\"", "\"Here's my one question for you:\"" ]) expect(openers, filler).toContain(filler);
-    // The steps' own words open some questions; the ban never makes the agent reword them.
-    expect(openers).toContain("A step's own words, such as the `open` question's \"Here's what's left\", are not a preamble: keep them as they are.");
+    const voice = sheet.slice(sheet.indexOf("## Voice"), sheet.indexOf("## The Journal"));
+    expect(voice).toContain("Say \"you\" and \"I\", in plain words");
+    for (const step of [
+        "How the day went, naming two or three real things he finished.",
+        "What didn't happen and where you put it, as a phrase, not a list",
+        "The next day's shape in gist, by area: work first, then Growth and Recharge.",
+        "A last line that leads into the cards below the message."
+    ]) expect(voice, step).toContain(step);
+    expect(voice).toContain("Plan my day has the same shape in the morning: yesterday in a sentence, today's shape by area, then a last line into the cards.");
+    expect(voice).toContain("the message never repeats a card's items");
+    expect(voice).toContain("It is one sentence, never a run of questions");
+    expect(voice).toContain("Before you send, check the message: three short paragraphs at most; no more than two items named in all");
+    expect(voice).toContain("The step's `question` is what it needs answered: cover it in your own words, in the rundown or its last line, and do not read it out.");
+    expect(voice).toContain("**The gist, not the data.**");
+    expect(voice).toContain("A time, a number, a key or a name goes in only when he has to act on it, such as a deadline or a meeting to prepare for");
+    expect(voice).toContain("> Good Monday: the hills shipped and Trilium was bumped to a newer version. A couple of work things didn't happen; they're on Tuesday's deck.\n>\n> Tuesday's light in the morning, with a couple of meetings in the afternoon. The ballot's due by 8 pm, so I'd put it first in your evening, or in the afternoon if there's a gap.\n>\n> The rest is below; change anything before I close the day.");
+    // Nothing tells Caius to ask the question word for word or to start with it.
+    for (const old of [ "in their words", "Start the message with its first question or item", "Ask every question a step's `question` holds", "stay as they are" ]) expect(sheet, old).not.toContain(old);
 });
 
 it("writes the brief in the plan's first turn when there is nothing to ask, after a Review as after the bar", () => {
@@ -169,12 +184,12 @@ it("writes the brief in the plan's first turn when there is nothing to ask, afte
 it("has no evening question: Growth and Recharge picks take its place, and a thing for the evening is added with an area", () => {
     const sheet = sheetOnce();
     expect(sheet).toContain("`data.candidates` holds the picks for all three areas side by side.");
-    expect(sheet).toContain("A Growth or Recharge pick (`kind: \"project\"`) is an hour of an active project, `Caius: the fate menu`, with `because` \"from your active projects\".");
+    expect(sheet).toContain("A Growth or Recharge pick (`kind: \"project\"`) is an hour of an active project, `Caius: the fate menu`, with `because` \"it's one of your active projects\".");
     expect(sheet).toContain("They replace any question about the evening: offer them as you offer the others, and never ask \"anything for the evening?\".");
     expect(sheet).toContain("it is written with its marker under Evening, or under the `block` he names");
     expect(sheet).toContain("add it with `caius_add` (`area`, `block: \"evening\"`); the `evening` answer is retired and the apply skips it.");
     expect(sheet).toContain("The evening has no question and no suggestion of its own.");
-    expect(sheet).toContain("Ask every question a step's `question` holds: never fold one into a summary of what there is nothing to decide, such as \"no leftovers to decide on\".");
+    expect(sheet).toContain("Cover everything a step's `question` holds, in your own words: never fold one into a summary of what there is nothing to decide, such as \"no leftovers to decide on\".");
     expect(sheet).not.toContain("`data.evening`");
     expect(sheet).not.toContain("eveningAnswered");
 });

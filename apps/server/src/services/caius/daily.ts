@@ -105,7 +105,7 @@ const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 export async function windDown(deps: StepDeps, { date, step, refresh, older }: { date: string; step: WindDownStep; refresh?: boolean; older?: boolean }) {
     const targetDay = windDownTarget(date, deps.now);
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: WindDownStep | null) => fitted({
-        ...withDateLabels({ step, date, targetDay, targetDayName: weekdayName(targetDay), data, question, next }),
+        ...withDateLabels({ step, title: t(`caius.daily.title_winddown_${step}`, { day: weekdayName(targetDay) }), date, targetDay, targetDayName: weekdayName(targetDay), data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
 
@@ -361,12 +361,12 @@ export function notToday(date: string, today: string, early?: boolean) {
 
 export async function planDay(deps: StepDeps, { date, step, refresh, answered, early }: { date: string; step: PlanDayStep; refresh?: boolean; answered?: { evening?: string[]; keep?: string[] }; early?: boolean }) {
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: PlanDayStep | null) => fitted({
-        ...withDateLabels({ step, date, data, question, next }),
+        ...withDateLabels({ step, title: t(`caius.daily.title_planday_${step}`), date, data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
     // A later day is planned once he says so; a missed earlier one can always be planned.
     const later = notToday(date, dayKey(deps.now), early);
-    if (later) return { step, ...later };
+    if (later) return { step, title: t("caius.daily.title_not_today", { day: weekdayName(date) }), ...later };
 
     if (step === "catchup") {
         const { standing, catchup: { lastWorkday: last, days, skipped, tasks, held } } = await deps.locked("caius_planday", async () => ({
