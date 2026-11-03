@@ -1,7 +1,10 @@
 import { readFileSync } from "fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { applyChunk, type AssistantTurn, type ChatChunk, historyForServer, sseParser, stepOf, turnText } from "./chat.js";
+import { applyChunk, type AssistantTurn, type ChatChunk, chatApi, firstLine, historyForServer, latestLine, NeedsServerUpdateError, NoTurnError, sseParser, type StoredMessage, stepOf, turnText, TurnRunningError } from "./chat.js";
+import { HttpError, request } from "./http.js";
+
+vi.mock("./http.js", async (importOriginal) => ({ ...await importOriginal<typeof import("./http.js")>(), request: vi.fn() }));
 
 /** A real Wind down, two turns, as `POST /etapi/llm-chat/stream` sent it from a seeded test Journal. */
 const FIXTURE = readFileSync(new URL("./fixtures/chat-winddown.sse", import.meta.url), "utf-8");
@@ -67,5 +70,73 @@ describe("historyForServer", () => {
             { role: "assistant", content: "Which are done?" },
             { role: "user", content: "Laundry is done." }
         ]);
+    });
+});
+
+describe("the turn routes", () => {
+    const api = chatApi({ url: "https://caius.example", token: "tok" } as Parameters<typeof chatApi>[0]);
+    const sse = (frames: string) => new Response(frames, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    const json = (status: number, body?: unknown) => new Response(body === undefined ? "" : JSON.stringify(body), { status });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.mocked(request).mockReset();
+    });
+
+    it("sends the reply id and transcript with a turn, and a 409 means a turn is running", async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(sse("data: {\"type\":\"done\"}\n\n")).mockResolvedValueOnce(json(409, { error: "turn_running" }));
+        vi.stubGlobal("fetch", fetchMock);
+        const transcript = [ { id: "u1", role: "user", content: "hi", createdAt: "2026-01-01" } ] as StoredMessage[];
+        const chunks: ChatChunk[] = [];
+
+        await api.stream([ { role: "user", content: "hi" } ], "note1", "low", { replyId: "r1", transcript }, (c) => chunks.push(c));
+        expect(chunks).toEqual([ { type: "done" } ]);
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+        expect(body.turn).toEqual({ replyId: "r1", transcript });
+        expect(body.config).toEqual({ chatNoteId: "note1", reasoningEffort: "low" });
+
+        await expect(api.stream([], "note1", "low", { replyId: "r2", transcript }, () => {})).rejects.toBeInstanceOf(TurnRunningError);
+    });
+
+    it("reads a turn's state", async () => {
+        const state = { content: null, running: true, replyId: "r1", chunks: 4 };
+        vi.mocked(request).mockResolvedValueOnce({ status: 200, text: JSON.stringify(state) }).mockResolvedValueOnce({ status: 404, text: "" }).mockResolvedValueOnce({ status: 500, text: "x" });
+
+        await expect(api.turnState("n 1")).resolves.toEqual(state);
+        expect(vi.mocked(request).mock.calls[0][0]).toMatchObject({ method: "GET", url: "https://caius.example/etapi/llm-chat/n%201/turn" });
+        await expect(api.turnState("n1")).rejects.toBeInstanceOf(NeedsServerUpdateError);
+        await expect(api.turnState("n1")).rejects.toBeInstanceOf(HttpError);
+    });
+
+    it("reattaches from a chunk index, and tells no turn from an older server", async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(sse(": hb\n\ndata: {\"type\":\"text\",\"content\":\"a\"}\n\ndata: {\"type\":\"done\"}\n\n"))
+            .mockResolvedValueOnce(json(404, { error: "no_turn" }))
+            .mockResolvedValueOnce(json(404));
+        vi.stubGlobal("fetch", fetchMock);
+        const chunks: ChatChunk[] = [];
+
+        await api.reattach("n1", 7, (c) => chunks.push(c));
+        expect(String(fetchMock.mock.calls[0][0])).toBe("https://caius.example/etapi/llm-chat/n1/stream?from=7");
+        expect(chunks).toEqual([ { type: "text", content: "a" }, { type: "done" } ]);
+        await expect(api.reattach("n1", 0, () => {})).rejects.toBeInstanceOf(NoTurnError);
+        await expect(api.reattach("n1", 0, () => {})).rejects.toBeInstanceOf(NeedsServerUpdateError);
+    });
+});
+
+describe("latestLine and firstLine", () => {
+    it("pick the last and first non-blank line, stripped of markdown", () => {
+        const text = "\n# Plan for **today**\n\n> *quoted* note\n- _first_ bullet\n2. last step\n  \n";
+        expect(firstLine(text)).toBe("Plan for today");
+        expect(latestLine(text)).toBe("last step");
+        expect(latestLine("a\n* b")).toBe("b");
+        expect(firstLine("   \n\n")).toBe("");
+        expect(latestLine("")).toBe("");
+    });
+
+    it("clip to 120 characters with an ellipsis", () => {
+        const long = "x".repeat(300);
+        expect(firstLine(long)).toBe(`${"x".repeat(119)}…`);
+        expect(firstLine("y".repeat(120))).toBe("y".repeat(120));
     });
 });

@@ -47,12 +47,13 @@ export function chatApi(conn: Connection) {
         },
 
         /**
-         * Runs one turn at `effort`: sends the whole history and calls `onChunk` for each chunk as it arrives.
-         * This is the one call made with the WebView's own `fetch`, because the native HTTP plugin
-         * hands back a body only once it is complete. The server answers it with CORS for the app.
+         * Runs one turn at `effort`: sends the whole history and the `turn` the server saves, and calls
+         * `onChunk` for each chunk as it arrives. This is one of the two calls made with the WebView's
+         * own `fetch`, because the native HTTP plugin hands back a body only once it is complete. The
+         * server answers it with CORS for the app. A turn already running for the note is a `TurnRunningError`.
          */
         stream: async (messages: { role: "user" | "assistant"; content: string }[], chatNoteId: string, effort: CaiusEffort,
-            onChunk: (chunk: ChatChunk) => void, signal?: AbortSignal) => {
+            turn: { replyId: string; transcript: StoredMessage[] }, onChunk: (chunk: ChatChunk) => void, signal?: AbortSignal) => {
             let res: Response;
             try {
                 res = await fetch(`${conn.url}/etapi/llm-chat/stream`, {
@@ -62,7 +63,7 @@ export function chatApi(conn: Connection) {
                         "Content-Type": "application/json",
                         Accept: "text/event-stream"
                     },
-                    body: JSON.stringify({ messages, config: { chatNoteId, reasoningEffort: effort } }),
+                    body: JSON.stringify({ messages, config: { chatNoteId, reasoningEffort: effort }, turn }),
                     redirect: "error",
                     signal
                 });
@@ -75,40 +76,111 @@ export function chatApi(conn: Connection) {
             if (res.status === 404) {
                 throw new NeedsServerUpdateError();
             }
+            if (res.status === 409) {
+                throw new TurnRunningError();
+            }
             if (!res.ok || !res.body) {
                 throw new HttpError(res.status, await res.text().catch(() => ""));
             }
+            await readChunks(res.body, onChunk, signal);
+        },
 
-            const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-            const feed = sseParser((data) => {
-                try {
-                    onChunk(JSON.parse(data) as ChatChunk);
-                } catch {
-                    // A line that isn't JSON is not a chunk.
-                }
+        /** What the server holds of the note's latest turn: the saved transcript, whether it still runs, and how many chunks it has. */
+        turnState: async (noteId: string): Promise<TurnState> => {
+            const res = await request({
+                method: "GET",
+                url: `${conn.url}/etapi/llm-chat/${encodeURIComponent(noteId)}/turn`,
+                headers: { Authorization: `Bearer ${conn.token}` }
             });
-            for (;;) {
-                let read: ReadableStreamReadResult<string>;
-                try {
-                    read = await reader.read();
-                } catch (e) {
-                    if (signal?.aborted) {
-                        throw e;
-                    }
-                    // The body broke off: the phone lost its network, or the server restarted (a deploy).
-                    throw new Error("Lost the connection to the server partway through the reply. Your message is back in the box: send it again.");
-                }
-                if (read.done) {
-                    break;
-                }
-                feed(read.value);
+            if (res.status === 404) {
+                throw new NeedsServerUpdateError();
             }
-            feed("\n\n");
+            if (res.status < 200 || res.status >= 300) {
+                throw new HttpError(res.status, res.text);
+            }
+            return JSON.parse(res.text) as TurnState;
+        },
+
+        /**
+         * Rejoins the note's turn: replays its chunks from index `from`, then follows it live until it
+         * ends. Made with the WebView's `fetch` like `stream`. No turn on the server is a `NoTurnError`.
+         */
+        reattach: async (noteId: string, from: number, onChunk: (chunk: ChatChunk) => void, signal?: AbortSignal) => {
+            let res: Response;
+            try {
+                res = await fetch(`${conn.url}/etapi/llm-chat/${encodeURIComponent(noteId)}/stream?from=${from}`, {
+                    method: "GET",
+                    headers: { Authorization: `Bearer ${conn.token}`, Accept: "text/event-stream" },
+                    redirect: "error",
+                    signal
+                });
+            } catch (e) {
+                if (signal?.aborted) {
+                    throw e;
+                }
+                throw new UnreachableError(conn.url, e);
+            }
+            if (res.status === 404) {
+                const body = await res.text().catch(() => "");
+                if (errorOf(body) === "no_turn") {
+                    throw new NoTurnError();
+                }
+                throw new NeedsServerUpdateError();
+            }
+            if (!res.ok || !res.body) {
+                throw new HttpError(res.status, await res.text().catch(() => ""));
+            }
+            await readChunks(res.body, onChunk, signal);
         }
     };
 }
 
 export type ChatApi = ReturnType<typeof chatApi>;
+
+/** The body of `GET /etapi/llm-chat/{id}/turn`. */
+export interface TurnState {
+    content: LlmChatContent | null;
+    running: boolean;
+    replyId: string | null;
+    chunks: number;
+}
+
+/** Reads an SSE body to its end, calling `onChunk` for each chunk. */
+async function readChunks(body: ReadableStream<Uint8Array>, onChunk: (chunk: ChatChunk) => void, signal?: AbortSignal) {
+    const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+    const feed = sseParser((data) => {
+        try {
+            onChunk(JSON.parse(data) as ChatChunk);
+        } catch {
+            // A line that isn't JSON is not a chunk.
+        }
+    });
+    for (;;) {
+        let read: ReadableStreamReadResult<string>;
+        try {
+            read = await reader.read();
+        } catch (e) {
+            if (signal?.aborted) {
+                throw e;
+            }
+            // The body broke off: the phone lost its network, or the server restarted (a deploy).
+            throw new Error("Lost the connection to the server partway through the reply. Your message is back in the box: send it again.");
+        }
+        if (read.done) {
+            break;
+        }
+        feed(read.value);
+    }
+    feed("\n\n");
+}
+
+function errorOf(body: string): string | undefined {
+    try {
+        return (JSON.parse(body) as { error?: string }).error;
+    } catch {
+        return undefined;
+    }
+}
 
 export type ChatKind = CaiusConversation;
 export { applyChunk, type AssistantTurn, turnMessages };
@@ -261,4 +333,43 @@ export class NeedsServerUpdateError extends Error {
         super("Needs the Caius server update.");
         this.name = "NeedsServerUpdateError";
     }
+}
+
+/** Another turn is still running for the chat note; the server takes one at a time. */
+export class TurnRunningError extends Error {
+    constructor() {
+        super("Caius is still answering the last message.");
+        this.name = "TurnRunningError";
+    }
+}
+
+/** The server has no turn for the chat note to rejoin. */
+export class NoTurnError extends Error {
+    constructor() {
+        super("The server has no running turn for this chat.");
+        this.name = "NoTurnError";
+    }
+}
+
+/** The last non-blank line of `text`, as plain words for the mini bar and the notification. */
+export function latestLine(text: string): string {
+    return plainLine(text.split("\n").reverse());
+}
+
+/** The first non-blank line of `text`, as plain words for the mini bar and the notification. */
+export function firstLine(text: string): string {
+    return plainLine(text.split("\n"));
+}
+
+function plainLine(lines: string[]): string {
+    for (const line of lines) {
+        const plain = line
+            .replace(/^\s*(?:#{1,6}\s+|>\s?|[-*•]\s+|\d+[.)]\s+)/, "")
+            .replace(/\*\*|[*_]/g, "")
+            .trim();
+        if (plain) {
+            return plain.length > 120 ? `${plain.slice(0, 119)}…` : plain;
+        }
+    }
+    return "";
 }

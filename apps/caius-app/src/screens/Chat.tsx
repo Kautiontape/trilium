@@ -248,7 +248,7 @@ function useChat(kind: ChatKind, date: string): Chat {
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
         try {
-            await chats.stream(historyForServer(history.current), chatNoteId, effort, (chunk) => {
+            await chats.stream(historyForServer(history.current), chatNoteId, effort, { replyId: assembled.id, transcript: history.current }, (chunk) => {
                 if (generation.current === mine) {
                     assembled = applyChunk(assembled, chunk);
                     setStreaming(assembled);
