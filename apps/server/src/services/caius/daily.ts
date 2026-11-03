@@ -9,6 +9,7 @@ import {
     type Area,
     areaOfTask,
     bareText,
+    withArea,
     blockOf,
     type BriefAct,
     type Candidate,
@@ -1302,10 +1303,15 @@ export async function dayFacts(store: NoteStore, date: string, now: Date) {
     const closed = await closedKeys(store, docs, now);
     const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)), ...closed ];
     const projects = await projectCandidates(store);
-    // A pick whose words are already a task of the day (done ones too) is taken, as a ticket on a list is.
+    // A pick whose words are already a task of the day (done ones too) is taken, as a ticket on a list is,
+    // and one still open on another day is live there: it is that day's leftover, not a new pick.
     const planned = new Set([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ]
         .filter((task) => task.state !== "cancelled" && task.state !== "tombstone").map((task) => sameText(bareText(plainText(withoutMoveLinks(task.text))))));
-    for (const pick of projects) if (planned.has(sameText(pick.text))) live.set(pick.candidateId, [ "today" ]);
+    for (const pick of projects) {
+        const elsewhere = keysOf(withArea(pick.text, pick.area)).flatMap((key) => live.get(key) ?? []);
+        if (planned.has(sameText(pick.text))) live.set(pick.candidateId, [ "today" ]);
+        else if (elsewhere.length) live.set(pick.candidateId, elsewhere);
+    }
     const notToday = new Set(await dayLabels(store, date, NOT_TODAY_LABEL));
     const putOffBefore = new Set(await dayLabels(store, dayKey(lastWorkday(localDay(date))), NOT_TODAY_LABEL));
     return {

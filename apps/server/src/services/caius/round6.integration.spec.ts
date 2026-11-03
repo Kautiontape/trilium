@@ -206,7 +206,8 @@ describe("Growth and Recharge picks", () => {
             expect(refresh.data.candidates).toEqual([]);
             at(`${DAY}T17:30`);
             const night = await call("caius_winddown", { date: DAY, step: "next" });
-            expect(night.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${caius}`, `project:${printing}` ]);
+            // The Caius hour still open tonight is a leftover the open step gives its fate, so it isn't offered again as a pick.
+            expect(night.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${printing}` ]);
             // Thursday's Growth is tonight's leftover hour, which stays on the list in its block.
             expect(night.data.growth).toMatchObject({ minutes: 60 });
             expect(night.data.load.incomingMinutes).toBe(30);
@@ -243,14 +244,15 @@ describe("Growth and Recharge picks", () => {
             const NEXT = "2030-07-12";
             at(`${NEXT}T09:40`);
             const next = await call("caius_planday", { date: NEXT, step: "inputs", refresh: true });
-            expect(next.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${garden}`, `project:${games}` ]);
+            // The garden hour is still open on the day before, so it is that day's leftover, not a pick.
+            expect(next.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${games}` ]);
             const dismissed = await call("caius_plan_apply", { date: NEXT, said: "drop the ttrpg prep", dismiss: [ { candidateId: `project:${games}` } ], brief });
             expect(dismissed.check).toBeUndefined();
             expect(dismissed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: `project:${games}`, status: "written" }) ]));
-            // Dismissed, it is off the offers of the days after, the wind-down's included.
+            // Dismissed, it is off the offers of the days after, the wind-down's included (the garden hour is still a leftover).
             at(`${NEXT}T17:30`);
             const night = await call("caius_winddown", { date: NEXT, step: "next" });
-            expect(night.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${garden}` ]);
+            expect(night.data.candidates).toEqual([]);
         } finally {
             await retire(garden);
             await retire(games);
