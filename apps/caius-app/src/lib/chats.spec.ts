@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyChunk, type AssistantTurn, type ChatApi, type ChatChunk, type LlmChatContent, NeedsServerUpdateError, NoTurnError, type StoredMessage, StreamBrokenError, TurnRunningError, type TurnState } from "./chat.js";
-import { afterStreamError, askedFate, followTurn, pendingReplyAction, readStoredChats, restoredMessages, resync, storeChat } from "./chats.js";
+import { afterStreamError, askedFate, followTurn, pendingReplyAction, putBackInto, readStoredChats, restoredMessages, resync, staleSendAction, storeChat } from "./chats.js";
 import { HttpError, UnreachableError } from "./http.js";
 
 const AT = "2026-11-04T09:00:00.000Z";
@@ -78,6 +78,28 @@ describe("askedFate", () => {
         expect(askedFate({ messages: [ ...asked, ...finishedReply ], replyId: null }, "u1")).toBe("held");
         expect(askedFate({ messages: asked, replyId: "r1" }, "u1")).toBe("held");
         expect(askedFate({ messages: asked, replyId: null }, "u1")).toBe("unanswered");
+    });
+});
+
+describe("staleSendAction", () => {
+    it("sends once the read-back leaves the chat in step and puts nothing back", () => {
+        expect(staleSendAction({ stale: false, missed: false })).toBe("send");
+    });
+
+    it("keeps the words while the server can't be read or a followed turn is lost, and joins an earlier message put back", () => {
+        expect(staleSendAction(null)).toBe("back");
+        expect(staleSendAction({ stale: true, missed: false })).toBe("back");
+        expect(staleSendAction({ stale: false, missed: true })).toBe("with-missed");
+        expect(staleSendAction({ stale: true, missed: true })).toBe("with-missed");
+    });
+});
+
+describe("putBackInto", () => {
+    it("fills an empty box, and adds after anything typed since, a blank line apart", () => {
+        expect(putBackInto("", "Laundry is done.")).toBe("Laundry is done.");
+        expect(putBackInto("  \n", "Laundry is done.", "And the dishes.")).toBe("Laundry is done.\n\nAnd the dishes.");
+        expect(putBackInto("Also the bins.", "Laundry is done.", "And the dishes.")).toBe("Also the bins.\n\nLaundry is done.\n\nAnd the dishes.");
+        expect(putBackInto("Also the bins.", "", " ", "And the dishes.")).toBe("Also the bins.\n\nAnd the dishes.");
     });
 });
 

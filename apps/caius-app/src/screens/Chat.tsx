@@ -12,7 +12,7 @@ import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, turnText, workingLine } from "../lib/chat.js";
-import { afterStreamError, askedFate, type FollowedTurn, followTurn, pendingReplyAction, readStoredChats, resync, storeChat, type SyncedChat } from "../lib/chats.js";
+import { afterStreamError, askedFate, type FollowedTurn, followTurn, pendingReplyAction, putBackInto, readStoredChats, resync, staleSendAction, storeChat, type SyncedChat } from "../lib/chats.js";
 import { dayLabel } from "../lib/day.js";
 import { HttpError } from "../lib/http.js";
 import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
@@ -242,7 +242,7 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
      * taken; `asked` is the message it might not hold, with the way to put its words back. `catchUp`
      * reads the chat back from the server and clears it.
      */
-    const stale = useRef<{ asked?: { id: string; putBack: () => void } } | null>(null);
+    const stale = useRef<{ asked?: { id: string; putBack: (after?: string) => void } } | null>(null);
     /** Bumped by New conversation and on close; a turn from an older conversation drops its reply. */
     const generation = useRef(0);
     const controller = useRef<AbortController | null>(null);
@@ -308,19 +308,21 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         }
         const chats = chatApi(conn);
         const mine = generation.current;
-        let missed: (() => void) | null = null;
         if (stale.current) {
             // The transcript sent with a turn starts from what the server saved.
             const caught = await catchUp(chats, chatNoteId, mine);
             if (generation.current !== mine) {
                 return;
             }
-            if (!caught || caught.running || stale.current) {
-                setDraft(text);
-                caught?.missed?.();
+            const action = staleSendAction(caught && { stale: !!stale.current, missed: !!caught.missed });
+            if (action === "with-missed") {
+                caught?.missed?.(text);
                 return;
             }
-            missed = caught.missed;
+            if (action === "back") {
+                setDraft((typed) => putBackInto(typed, text));
+                return;
+            }
         }
         const abort = new AbortController();
         controller.current = abort;
@@ -336,8 +338,6 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         const sent = new Map(cards.current);
         cards.current.clear();
         setPending(null);
-        setDraft("");
-        missed?.();
 
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
@@ -357,9 +357,9 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         if (generation.current !== mine) {
             return;
         }
-        // Words typed since stay in the box.
-        const putBack = () => {
-            setDraft((typed) => typed.trim() ? typed : text);
+        // `putBack` returns `text`, then `after`, to the box after anything typed since.
+        const putBack = (after?: string) => {
+            setDraft((typed) => putBackInto(typed, text, after ?? ""));
             if (answers && !cards.current.size) {
                 cards.current = sent;
                 gather();
@@ -520,10 +520,10 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
     /**
      * Reads a stale chat back from the server and shows it, following a turn that still runs there.
      * Null while the server can't be read, which keeps the chat stale and shows the error. `missed`
-     * puts back the words of the stale message when the server never got it, or when its turn ended
-     * without a reply; that message then leaves the transcript.
+     * puts back the words of the stale message, then `after`, when the server never got it, or when
+     * its turn ended without a reply; that message then leaves the transcript.
      */
-    const catchUp = async (chats: ChatApi, id: string, mine: number): Promise<{ running: boolean; missed: (() => void) | null } | null> => {
+    const catchUp = async (chats: ChatApi, id: string, mine: number): Promise<{ missed: ((after?: string) => void) | null } | null> => {
         setState("starting");
         setStreaming(null);
         let synced: SyncedChat;
@@ -550,9 +550,11 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
             setError(`${NO_REPLY} ${PUT_BACK}`);
             setState("failed");
         } else if (fate === "missed" && generation.current === mine) {
-            setError(`${NOT_RECEIVED} ${PUT_BACK}`);
+            // A followed turn lost in `show` sets `stale` again, so the error ends with `OUT_OF_SYNC`.
+            setError(`${NOT_RECEIVED} ${PUT_BACK}${stale.current ? ` ${OUT_OF_SYNC}` : ""}`);
+            setState("failed");
         }
-        return { running: !!synced.replyId, missed: fate === "held" ? null : asked?.putBack ?? null };
+        return { missed: fate === "held" ? null : asked?.putBack ?? null };
     };
 
     /**

@@ -107,6 +107,24 @@ export function askedFate(synced: SyncedChat, askedId: string): "held" | "missed
     return !synced.replyId && index === synced.messages.length - 1 ? "unanswered" : "held";
 }
 
+/**
+ * What a message sent on a stale chat does once `catchUp` has read the chat back (`caught`, null
+ * while the server can't be read): `"send"` once the chat is in step with the server and holds every
+ * earlier message, `"with-missed"` when an earlier message's words came back to the box, so the new
+ * words join them there, and `"back"` while the chat is still stale.
+ */
+export function staleSendAction(caught: { stale: boolean; missed: boolean } | null): "send" | "with-missed" | "back" {
+    if (caught?.missed) {
+        return "with-missed";
+    }
+    return !caught || caught.stale ? "back" : "send";
+}
+
+/** The box once words come back to it: `typed` since, then each of `words`, blank ones skipped, a blank line apart. */
+export function putBackInto(typed: string, ...words: string[]): string {
+    return [ typed.trimEnd(), ...words ].filter((part) => part.trim()).join("\n\n");
+}
+
 /** A chat to reopen after a pause or a restart: the ritual on screen, or the Ask conversation. */
 export interface StoredChat {
     noteId: string;
