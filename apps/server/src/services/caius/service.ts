@@ -94,6 +94,7 @@ import {
     type SetAreaInput,
     type SetEstimateInput,
     type SetStateInput,
+    type ShowInput,
     type SkipCatchupInput,
     type WindDownApplyInput,
     type WindDownInput
@@ -108,6 +109,7 @@ import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js"
 import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
 import type { CalendarEvent, InputError } from "./inputs/types.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
+import { showView } from "./views.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
 
@@ -316,6 +318,21 @@ export function createCaiusService(
         return { ...warned, capacity, ...(drawn ? { drawn } : {}) };
     }
 
+    /** One Jira ticket by key, reused for `INPUTS_TTL_MS`. It reads no notes, so it takes no lock; an error is not kept. */
+    async function ticket(rawKey: string): Promise<TicketCard | TicketError> {
+        const key = rawKey.trim().toUpperCase();
+        if (!/^[A-Z][A-Z0-9]+-\d+$/.test(key)) return { error: "bad_request" };
+        const hit = ticketCache.get(key);
+        if (hit && clockMs() - hit.at < INPUTS_TTL_MS) return hit.card;
+        const card = await ticketOf(key);
+        if ("error" in card) {
+            ticketCache.delete(key);
+            return card;
+        }
+        ticketCache.set(key, { at: clockMs(), card });
+        return card;
+    }
+
     const stepDeps = async (): Promise<StepDeps> => ({ store, now: await today(), locked: withCaiusLock, dayRead, standing: readStanding });
     const applyDeps = async (): Promise<ApplyDeps> => ({
         ...await stepDeps(), place: () => placeOf(), weatherOf,
@@ -326,20 +343,7 @@ export function createCaiusService(
     return {
         dayFrame,
 
-        /** One Jira ticket by key, reused for `INPUTS_TTL_MS`. It reads no notes, so it takes no lock; an error is not kept. */
-        ticket: async (rawKey: string): Promise<TicketCard | TicketError> => {
-            const key = rawKey.trim().toUpperCase();
-            if (!/^[A-Z][A-Z0-9]+-\d+$/.test(key)) return { error: "bad_request" };
-            const hit = ticketCache.get(key);
-            if (hit && clockMs() - hit.at < INPUTS_TTL_MS) return hit.card;
-            const card = await ticketOf(key);
-            if ("error" in card) {
-                ticketCache.delete(key);
-                return card;
-            }
-            ticketCache.set(key, { at: clockMs(), card });
-            return card;
-        },
+        ticket,
 
         /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. A read, so it takes no lock and the status never waits on a write. */
         rollover: async () => readRhythm((await readStanding()).markdown).rollover,
@@ -357,6 +361,12 @@ export function createCaiusService(
             const frame = period === "day" ? await dayFrame(key) : null;
             return withCaiusLock("caius_plan", () => planOf(period, key, now, frame));
         },
+
+        /**
+         * A view for the phone to draw (`showView`). Today and the frames are read before the lock,
+         * the notes under it, and a ticket after it.
+         */
+        show: async (input: ShowInput) => showView({ store, dayFrame, locked: withCaiusLock, ticket, origin: originOf }, input, await today()),
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
             const now = await todayHeld();

@@ -762,6 +762,47 @@
       "on_deck_of": "{{- day}}'s On deck",
       "next_planday": "Now today's plan."
     },
+    "views": {
+      "day": {
+        "title": "{{- weekday}} {{day}} {{- month}}",
+        "foundation": "{{- day}}: {{- minutes}} of work against {{- focus}}",
+        "foundation_over": "{{- day}}: {{- minutes}} of work against {{- focus}}, {{- over}} over",
+        "foundation_empty": "{{- day}}: no work on the list against {{- focus}}",
+        "deck": "On deck would add {{- deck}}",
+        "growth": "Growth: {{- growth}} of {{- target}}",
+        "growth_over": "Growth: {{- growth}}, over its {{- target}}",
+        "growth_empty": "Growth: none of {{- target}}",
+        "recharge_one": "Recharge: {{count}} thing",
+        "recharge_other": "Recharge: {{count}} things",
+        "recharge_none": "Recharge: none",
+        "calendar_failed": "the calendar couldn't be read, so the focus is a guess"
+      },
+      "days": {
+        "title": "{{- first}} to {{- last}}",
+        "week": "Week {{week}}",
+        "fits": "{{- day}} {{- minutes}} of {{- focus}}",
+        "over": "{{- day}} over by {{- over}}",
+        "empty": "{{- day}} nothing on the list",
+        "week_total": "{{- week}}: {{- minutes}} of {{- target}}"
+      },
+      "item": {
+        "on": "{{- task}}: on {{- now}}.",
+        "moved": "{{- task}}: moved on from {{- from}}; on {{- now}} now.",
+        "ticket": "{{key}}: {{- status}}",
+        "ticket_days_one": "{{key}}: {{- status}} for {{count}} day",
+        "ticket_days_other": "{{key}}: {{- status}} for {{count}} days",
+        "last_comment": "last comment from {{- author}}",
+        "ticket_unread": "{{key}}: Jira couldn't be read."
+      },
+      "slipping": {
+        "title": "What keeps slipping",
+        "slipping_one": "{{count}} task keeps slipping; it has moved {{moves}} times.",
+        "slipping_other": "{{count}} tasks keep slipping; the longest has moved {{moves}} times.",
+        "none": "Nothing keeps slipping.",
+        "overdue": "{{count}} overdue.",
+        "overdue_none": "Nothing is overdue."
+      }
+    },
     "short": {
       "weekdays": {
         "monday": "Mon",

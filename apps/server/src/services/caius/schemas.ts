@@ -369,6 +369,17 @@ const reads = {
     })
 };
 
+const show = z.object({
+    view: z.enum([ "day", "days", "item", "slipping" ]).describe("day: one day; days: 2 to 7 days from from; item: one task or ticket; slipping: what keeps slipping"),
+    date: periodKey("day").optional().describe("day: the day to show, YYYY-MM-DD. Defaults to today."),
+    from: periodKey("day").optional().describe("days: the first day, YYYY-MM-DD. Defaults to today."),
+    count: z.number().int().optional().describe("days: how many days, 2 to 7. Defaults to 5."),
+    item: z.object(taskRef).optional().describe("item: the task, by its noteId and listItemId"),
+    key: z.string().optional().describe("item: a ticket key such as ZAP-101, with or without a task that names it"),
+    area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).optional().describe("day: the area to open the view on. Defaults to the area that is over."),
+    period: z.string().optional().describe("slipping: only tasks that moved on from a day in this day, week or month, such as 2026-W45")
+});
+
 const inputsClock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Must be HH:MM, from 00:00 to 24:00");
 
 const inputs = z.object({
@@ -456,6 +467,7 @@ export const toolInputs = {
     setArea: writes(areaItem),
     place: writes(placeItem),
     setEstimate: writes(estimateItem),
+    show,
     forward: writes(forwardItem),
     header
 };
@@ -500,6 +512,7 @@ export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;
 export type ContextInput = z.infer<typeof reads.context>;
 export type AssignIdsInput = z.infer<typeof reads.assignIds>;
+export type ShowInput = z.infer<typeof toolInputs.show>;
 export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;

@@ -70,7 +70,8 @@ export function slipsOf(all: Trails, item: TrailItem): number {
     return trailOf(all, item)?.slips ?? 0;
 }
 
-function periodOf(file: string): { kind: TrailPeriodKind; period: string } | null {
+/** The period of a Journal note's path, such as `Journal/Daily/2026-11-03.md`; null outside the Journal. */
+export function periodOf(file: string): { kind: TrailPeriodKind; period: string } | null {
     const found = /^Journal\/(Daily|Weekly|Monthly)\/(\d{4}-(?:\d{2}-\d{2}|W\d{2}|\d{2}))(?:\.md|\/)/.exec(file);
     const kind = { Daily: "day", Weekly: "week", Monthly: "month" }[found?.[1] ?? ""] as TrailPeriodKind | undefined;
     return found && kind ? { kind, period: found[2] ?? "" } : null;
