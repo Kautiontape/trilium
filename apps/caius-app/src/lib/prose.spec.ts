@@ -29,4 +29,11 @@ describe("proseBlocks", () => {
             { kind: "p", text: [ { text: "plain again" } ] }
         ]);
     });
+
+    it("marks *italic* and _italic_, but not the underscores inside a word or a lone asterisk", () => {
+        expect(proseBlocks("It's *probably* fine, _really_. Use snake_case_name and 2 * 3.")).toEqual([
+            { kind: "p", text: [ { text: "It's " }, { text: "probably", italic: true }, { text: " fine, " }, { text: "really", italic: true }, { text: ". Use snake_case_name and 2 * 3." } ] }
+        ]);
+        expect(proseBlocks("***both***")).toEqual([ { kind: "p", text: [ { text: "both", bold: true, italic: true } ] } ]);
+    });
 });

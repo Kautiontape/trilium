@@ -1,9 +1,10 @@
 // Caius's prose as blocks to render: paragraphs, bullets, numbered steps, quotes and headings, with
-// bold and code inline. Only the Markdown Caius writes; anything else reads as plain text.
+// bold, italic and code inline. Only the Markdown Caius writes; anything else reads as plain text.
 
 export interface Span {
     text: string;
     bold?: true;
+    italic?: true;
     code?: true;
 }
 
@@ -52,15 +53,23 @@ export function proseBlocks(text: string): ProseBlock[] {
     return blocks;
 }
 
-/** A line's words with `**bold**` and `` `code` `` marked, and a `[label](url)` read as its label. */
+/**
+ * A line's words with `***both***`, `**bold**`, `*italic*` or `_italic_`, and `` `code` `` marked, and a
+ * `[label](url)` read as its label. An underscore inside a word (`snake_case`) or an asterisk with
+ * space after it (`2 * 3`) is only a character.
+ */
 function spans(line: string): Span[] {
     const out: Span[] = [];
-    const pattern = /\*\*(.+?)\*\*|`([^`]+)`/g;
+    const pattern = /\*\*\*(\S.*?)\*\*\*|\*\*(\S.*?)\*\*|\*(\S[^*]*?)\*|(?<![\p{L}\p{N}_])_(\S[^_]*?)_(?![\p{L}\p{N}_])|`([^`]+)`/gu;
     const plain = (words: string) => words && out.push({ text: words.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") });
     let at = 0;
     for (const match of line.matchAll(pattern)) {
         plain(line.slice(at, match.index));
-        out.push(match[1] !== undefined ? { text: match[1], bold: true } : { text: match[2]!, code: true });
+        const [ , both, bold, star, underscore, code ] = match;
+        out.push(both !== undefined ? { text: both, bold: true, italic: true }
+            : bold !== undefined ? { text: bold, bold: true }
+            : code !== undefined ? { text: code, code: true }
+            : { text: (star ?? underscore)!, italic: true });
         at = match.index! + match[0].length;
     }
     plain(line.slice(at));

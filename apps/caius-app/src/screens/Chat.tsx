@@ -544,7 +544,15 @@ function Blocks({ blocks, withoutLists }: { blocks: ProseBlock[]; withoutLists?:
 }
 
 function Spans({ spans }: { spans: Span[] }) {
-    return <>{spans.map((span, i) => span.bold ? <strong key={i}>{span.text}</strong> : span.code ? <code key={i}>{span.text}</code> : span.text)}</>;
+    return (
+        <>
+            {spans.map((span, i) => {
+                if (span.code) return <code key={i}>{span.text}</code>;
+                const text = span.italic ? <em>{span.text}</em> : span.text;
+                return span.bold ? <strong key={i}>{text}</strong> : span.italic ? <em key={i}>{span.text}</em> : span.text;
+            })}
+        </>
+    );
 }
 
 /**

@@ -123,7 +123,8 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
  * in its text, `_scheduled [Thu 5 Nov](#root/…)_`; the row shows the day it went to instead, and
  * links as their labels. A copy's "from …" link to where it came from is left out: on a narrow row
  * it only cuts the task off, and the task tray's From block carries it. A leading area marker and
- * clock are left out too; the marker comes back as `area` for the row to draw as a dot.
+ * clock are left out too; the marker comes back as `area` for the row to draw as a dot. Bold and
+ * italic marks are dropped, their words kept.
  */
 export function displayText(raw: string): { text: string; forwardedTo: string | null; area?: Area } {
     const area = markedArea(raw) ?? undefined;
@@ -131,7 +132,11 @@ export function displayText(raw: string): { text: string; forwardedTo: string | 
     const marker = /\s*_?(?:re)?scheduled\s+\[([^\]]+)\]\([^)]*\)_?/i.exec(raw);
     const kept = raw.replace(/\s*\[from\s[^\]]*\]\(#root\/[^)]*\)/i, "");
     const rest = marker ? kept.replace(marker[0], "").replace(/\s~\d+(?:h\d+m|h|m)\b/g, "") : kept;
-    return { text: rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim(), forwardedTo: marker ? marker[1] : null, area };
+    const plain = rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+        // A row is plain text: emphasis keeps its words and loses its marks; an underscore inside a word stays.
+        .replace(/\*{1,3}(\S[^*]*?)\*{1,3}/g, "$1")
+        .replace(/(?<![\p{L}\p{N}_])_(\S[^_]*?)_(?![\p{L}\p{N}_])/gu, "$1");
+    return { text: plain.trim(), forwardedTo: marker ? marker[1] : null, area };
 }
 
 export interface SwipeAction {
