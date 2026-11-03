@@ -381,18 +381,46 @@ function viewTicket(key: string, card: TicketCard | TicketError): ViewTicket | {
 
 /**
  * `reply` with rows taken off the end of its longest lists until its JSON is at most
- * `MAX_REPLY_CHARS`, and `data.omitted` counting what each list lost, with `omitted` given.
+ * `MAX_REPLY_CHARS`, and `data.omitted` counting what each list lost, with `omitted` given. A
+ * sub-item goes with its parent and the parent's other sub-items (`familyOf`), so no row a list
+ * keeps has lost a sub-item.
  */
 function capped<R extends ShownView>(reply: R, lists: { name: string; rows: ViewTask[] }[], omitted: Record<string, number> = {}): R {
     let size = JSON.stringify(reply).length + OMITTED_ROOM;
     while (size > MAX_REPLY_CHARS) {
         const longest = lists.reduce<(typeof lists)[number] | undefined>((a, b) => b.rows.length > (a?.rows.length ?? 0) ? b : a, undefined);
-        const row = longest?.rows.pop();
-        if (!longest || !row) break;
-        size -= JSON.stringify(row).length + 1;
-        omitted[longest.name] = (omitted[longest.name] ?? 0) + 1;
+        const last = longest?.rows.at(-1);
+        if (!longest || !last) break;
+        const cut = familyOf(longest.rows, last);
+        longest.rows.splice(0, longest.rows.length, ...longest.rows.filter((row) => !cut.has(row)));
+        for (const row of cut) size -= JSON.stringify(row).length + 1;
+        omitted[longest.name] = (omitted[longest.name] ?? 0) + cut.size;
     }
     return Object.keys(omitted).length ? { ...reply, data: { ...reply.data, omitted } } : reply;
+}
+
+/** `row`'s topmost ancestor among `rows` and every row under that ancestor, `row` included. */
+function familyOf(rows: ViewTask[], row: ViewTask): Set<ViewTask> {
+    const byId = new Map(rows.map((r) => [ r.listItemId, r ]));
+    let top = row;
+    const climbed = new Set([ row ]);
+    for (let up = byId.get(row.parentListItemId ?? ""); up && !climbed.has(up); up = byId.get(up.parentListItemId ?? "")) {
+        climbed.add(up);
+        top = up;
+    }
+    const family = new Set([ top ]);
+    const ids = new Set([ top.listItemId ]);
+    for (let grew = true; grew;) {
+        grew = false;
+        for (const r of rows) {
+            if (!family.has(r) && r.parentListItemId && ids.has(r.parentListItemId)) {
+                family.add(r);
+                ids.add(r.listItemId);
+                grew = true;
+            }
+        }
+    }
+    return family;
 }
 
 /** "Tuesday 3 Nov". */

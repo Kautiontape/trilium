@@ -342,6 +342,19 @@ describe("the size of a reply", () => {
         expect((view.data as { omitted?: Record<string, number> }).omitted).toBeDefined();
     });
 
+    it("cuts a parent together with its sub-items, never a sub-item alone", async () => {
+        const DATE = "2034-04-03";
+        const subs = Array.from({ length: 30 }, (_, n) => li(`cap-sub-${n}`, `${words(n)} ~10m`));
+        await dayWith(DATE, `<h3>Work</h3>${ul(...Array.from({ length: 25 }, (_, n) => li(`cap-${n}`, `${words(n)} ~15m`)), li("cap-parent", "Plan the move", ul(...subs)))}`);
+        const view = await shown("day", { date: DATE });
+        const ids = view.data.tasks.map((task) => task.listItemId);
+        expect(JSON.stringify(view).length).toBeLessThanOrEqual(MAX_REPLY_CHARS);
+        expect(ids).toContain("cap-0");
+        expect(ids).not.toContain("cap-parent");
+        expect(view.data.tasks.filter((task) => task.parentListItemId === "cap-parent")).toEqual([]);
+        expect(ids.length + ((view.data as { omitted?: Record<string, number> }).omitted?.tasks ?? 0)).toBe(56);
+    });
+
     it("keeps a Slipping reply within MAX_REPLY_CHARS, with its rows capped", async () => {
         const first = await dayWith("2034-03-27", `<h3>Work</h3>${ul(...Array.from({ length: 40 }, (_, n) => li(`slip-${n}`, words(n))))}`);
         await forward(first, Array.from({ length: 40 }, (_, n) => `slip-${n}`), "2034-03-28");
