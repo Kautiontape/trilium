@@ -71,6 +71,27 @@ describe("a task forwarded Monday, Tuesday and Wednesday", () => {
     });
 });
 
+describe("a task given an area between two forwards", () => {
+    it("keeps one trail of three copies and two slips", async () => {
+        const [ mon2, tue2, wed2 ] = [ "2031-03-10", "2031-03-11", "2031-03-12" ];
+        const idIn = async (noteId: string) => /data-list-item-id="([^"]+)"/.exec(await cls.init(() => store.content(noteId)))?.[1] ?? "";
+        const mon = await dayId(mon2);
+        await cls.init(() => store.putContent(mon, `<h3>Work</h3>${ul(li("a-mon", "Sort the tax receipts"))}`));
+        await call("caius_forward", { items: [ { noteId: mon, listItemId: "a-mon", to: tue2 } ] });
+        const tue = await dayId(tue2);
+        const tueId = await idIn(tue);
+        const grown = await call("caius_set_area", { items: [ { noteId: tue, listItemId: tueId, area: "growth" } ] });
+        expect(grown.results[0].status).toBe("updated");
+        await call("caius_forward", { items: [ { noteId: tue, listItemId: tueId, to: wed2 } ] });
+
+        const all = await trailsNow();
+        const wed = await dayId(wed2);
+        const live = { noteId: wed, listItemId: await idIn(wed), text: `🌱 Sort the tax receipts [from Monday 10](#root/${mon})` };
+        expect(trailOf(all, live)?.copies.map((copy) => [ copy.period, copy.movedOn ])).toEqual([ [ mon2, true ], [ tue2, true ], [ wed2, false ] ]);
+        expect(slipsOf(all, live)).toBe(2);
+    });
+});
+
 describe("a task moved from week to week", () => {
     it("counts no slip for the week hop", async () => {
         const w10 = await cls.init(async () => (await store.calendarWeek("2031-W10")).noteId);

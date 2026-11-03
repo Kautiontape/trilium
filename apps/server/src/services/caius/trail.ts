@@ -4,7 +4,7 @@
  * they count the same moves.
  */
 
-import { loadJournal, type NoteStore, scanDocs, TRILIUM_CONFIG } from "@triliumnext/caius";
+import { bareText, loadJournal, type NoteStore, scanDocs, TRILIUM_CONFIG } from "@triliumnext/caius";
 
 import { copyKey, fromOf, plainText, SCHEDULED, withoutMoveLinks } from "./daily.js";
 
@@ -23,7 +23,7 @@ export interface TrailCopy {
 }
 
 export interface Trail {
-    /** The `copyKey` every copy shares. */
+    /** The `trailKey` every copy shares. */
     key: string;
     /** Oldest period first; a moved copy comes before the live one in the same period. */
     copies: TrailCopy[];
@@ -40,7 +40,7 @@ export interface TrailItem {
     text: string;
 }
 
-/** The trail of every task in the journal, by `copyKey`. The caller holds the lock. */
+/** The trail of every task in the journal, by `trailKey`. The caller holds the lock. */
 export async function trails(store: NoteStore, now: Date): Promise<Trails> {
     const { docs } = await loadJournal(store);
     const byPath = new Map(docs.map((doc) => [ doc.path, doc ]));
@@ -49,7 +49,7 @@ export async function trails(store: NoteStore, now: Date): Promise<Trails> {
         const doc = byPath.get(task.file);
         const where = doc && periodOf(task.file);
         if (!doc || !where) continue;
-        const key = copyKey(fromOf(task.text) ?? doc.noteId, plainText(withoutMoveLinks(task.text)));
+        const key = trailKey(task.text, doc.noteId);
         const movedOn = task.state === "tombstone" || SCHEDULED.test(task.text);
         const trail = result.get(key) ?? { key, copies: [], slips: 0 };
         trail.copies.push({ ...where, noteId: doc.noteId, listItemId: doc.itemIds.get(task.line) ?? null, state: task.state, movedOn });
@@ -62,7 +62,7 @@ export async function trails(store: NoteStore, now: Date): Promise<Trails> {
 
 /** The trail `item` belongs to; undefined when no copy of it is in the journal. */
 export function trailOf(all: Trails, item: TrailItem): Trail | undefined {
-    return all.get(copyKey(fromOf(item.text) ?? item.noteId, plainText(withoutMoveLinks(item.text))));
+    return all.get(trailKey(item.text, item.noteId));
 }
 
 /** How many times `item` moved on from a day note; a move off a week or month note isn't one. */
@@ -75,6 +75,14 @@ export function periodOf(file: string): { kind: TrailPeriodKind; period: string 
     const found = /^Journal\/(Daily|Weekly|Monthly)\/(\d{4}-(?:\d{2}-\d{2}|W\d{2}|\d{2}))(?:\.md|\/)/.exec(file);
     const kind = { Daily: "day", Weekly: "week", Monthly: "month" }[found?.[1] ?? ""] as TrailPeriodKind | undefined;
     return found && kind ? { kind, period: found[2] ?? "" } : null;
+}
+
+/**
+ * The key every copy of a task shares: `copyKey` of the note its "from" link names (else `noteId`)
+ * and its bare words, so an area marker or clock written into one copy keeps it on the trail.
+ */
+function trailKey(text: string, noteId: string): string {
+    return copyKey(fromOf(text) ?? noteId, bareText(plainText(withoutMoveLinks(text))));
 }
 
 /** The first day of a period, as `YYYY-MM-DD`: a week starts on its Monday, a month on the 1st. */
