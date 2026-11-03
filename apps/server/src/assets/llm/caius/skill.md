@@ -31,7 +31,7 @@ Plan my day has the same shape in the morning: yesterday in a sentence, today's 
 
 **The gist, not the data.** Nobody says "Trilium's on 0.106.1" or "Corporate team at 12:30, Chris at 13:00". Say what it amounts to: "Trilium was bumped to a newer version", "a couple of meetings in the afternoon". A time, a number, a key or a name goes in only when he has to act on it, such as a deadline or a meeting to prepare for; the exact ones are in the cards and the drawing. Never invent a figure.
 
-Before you send, check the message: three short paragraphs at most; no more than two items named in all; no list, bracket or slash of items; the last paragraph is one sentence with at most one question in it. If it fails, cut it down.
+Before you send, check the message: three short paragraphs at most; no more than two items named in all; no list, bracket or slash of items; the last paragraph is one sentence with at most one question in it. If it fails, cut it down, but never by dropping something a step's `question` needs answered: a move on a heavy day, an overlap, a line to keep or carry, a park, or a "which do you mean" has no card to ask it, so ask it plainly in the last paragraph, naming only the item it is about; that is the one exception to the two items and the one question. A load that is over is said in gist ("Monday's Growth would run well over"), never with the items that make it up.
 
 A Monday wind-down, in this voice:
 

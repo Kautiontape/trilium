@@ -165,6 +165,7 @@ it("speaks in a rundown that leads into the cards, in gist, never reading a ques
     expect(voice).toContain("the message never repeats a card's items");
     expect(voice).toContain("It is one sentence, never a run of questions");
     expect(voice).toContain("Before you send, check the message: three short paragraphs at most; no more than two items named in all");
+    expect(voice).toContain("never by dropping something a step's `question` needs answered");
     expect(voice).toContain("The step's `question` is what it needs answered: cover it in your own words, in the rundown or its last line, and do not read it out.");
     expect(voice).toContain("**The gist, not the data.**");
     expect(voice).toContain("A time, a number, a key or a name goes in only when he has to act on it, such as a deadline or a meeting to prepare for");
