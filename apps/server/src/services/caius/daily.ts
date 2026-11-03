@@ -64,7 +64,7 @@ import { createHash } from "crypto";
 import { t } from "i18next";
 
 import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, DECLINED_LABEL, type DrawnNames, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
-import { capacityFigures, growthFigures, readDay } from "./day-read.js";
+import { capacityFigures, dayLoadOf, growthFigures, readDay } from "./day-read.js";
 import { flagOverlaps } from "./inputs/calendar.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
@@ -150,8 +150,10 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
             incoming: (await stillOpen(deps.store, date, targetDay)).items.filter((item) => "forward" in item.fate && item.fate.forward === targetDay)
         }));
         const { plannedMinutes, candidateMinutes, over, overlaps } = asks;
-        // Only Foundation counts toward the workday; a Growth leftover counts toward Growth.
-        const incomingMinutes = (area: Area) => incoming.filter((item) => item.area === area).reduce((sum, item) => sum + item.minutes, 0);
+        // Only Foundation counts toward the workday, and a leftover bound for On deck only toward what On deck would add; a Growth leftover counts toward Growth.
+        const minutesOf = (items: typeof incoming) => items.reduce((sum, item) => sum + item.minutes, 0);
+        const work = incoming.filter((item) => item.area === "foundation");
+        const toDeck = (item: (typeof incoming)[number]) => "onDeck" in item.fate;
         const sized = withBooked(read, facts.plan);
         const calendarFailed = failedCalendar(read);
         const questions = [
@@ -169,8 +171,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
             meetings: meetingsOf(read),
             candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId),
             capacity: capacityOf(read, facts.plan),
-            load: loadOf(read, facts.plan, targetDay, incomingMinutes("foundation")),
-            growth: growthOf(read, facts.plan, incomingMinutes("growth")),
+            load: loadOf(read, facts.plan, targetDay, { list: minutesOf(work.filter((item) => !toDeck(item))), onDeck: minutesOf(work.filter(toDeck)) }),
+            growth: growthOf(read, facts.plan, minutesOf(incoming.filter((item) => item.area === "growth"))),
             overlaps, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
     }
@@ -233,7 +235,7 @@ export async function nextOffer(store: NoteStore, targetDay: string, now: Date, 
 
 /**
  * The questions the wind-down asks about `targetDay`, each only while `asked` (its `#caiusAsked`
- * values) doesn't hold it: how far the day is over the focus target (as `heavy`) and its overlaps.
+ * values) doesn't hold it: how far the day is over the top of its focus figure (as `heavy`) and its overlaps.
  * Only Foundation counts: the plan's work total and the Foundation candidates, so a Growth or
  * Recharge pick never makes the workday over.
  */
@@ -241,7 +243,7 @@ function nextAsks(read: DayRead, facts: { plan: PlanView }, candidates: { minute
     const plannedMinutes = workMinutes(facts);
     const candidateMinutes = candidates.filter((c) => c.area === "foundation").reduce((sum, c) => sum + c.minutes, 0);
     // Without the calendar, the target is that of a day with no meetings, so the day is not weighed.
-    const over = failedCalendar(read) || asked.has(HEAVY_ID) ? 0 : plannedMinutes + candidateMinutes - read.inputs.capacity.targetMinutes;
+    const over = failedCalendar(read) || asked.has(HEAVY_ID) ? 0 : plannedMinutes + candidateMinutes - focusFor(read).max;
     const overlaps = overlapPairs(read.inputs.calendar).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) })).filter((pair) => !asked.has(pair.overlapId));
     return { plannedMinutes, candidateMinutes, over, overlaps };
 }
@@ -471,7 +473,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     // An overlap or the heavy day's move is asked once for its day: a refresh asks only what's new.
     const askedToday = new Set(await dayLabels(store, date, ASKED_LABEL));
     const overlaps = overlapPairs(read.inputs.calendar).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) })).filter((pair) => !askedToday.has(pair.overlapId));
-    // On a heavy day the work is weighed against the focus target: over it, the last work task is
+    // On a heavy day the work is weighed against the top of the focus figure: over it, the last work task is
     // offered to move, to the next workday and never into the evening; within it, the day is said to
     // fit. Neither asks for more work. Only Foundation is work; a Growth task laid in the morning or
     // afternoon books its time (`withBooked`).
@@ -480,7 +482,7 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const work = mainTasks(day.plan).filter((task) => task.area === "foundation");
     const last = work.filter((task) => !task.critical).at(-1);
     const heavy = sized.inputs.capacity.bookedRatio >= HEAVY_RATIO;
-    const over = workMinutes(day) > sized.inputs.capacity.targetMinutes;
+    const over = workMinutes(day) > focusFor(sized).max;
     const forwardSuggestion = heavy && over && last?.listItemId && !askedToday.has(HEAVY_ID)
         ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: dayKey(nextWorkday(localDay(date))) }
         : null;
@@ -505,13 +507,13 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
 
 /**
  * The day's On deck as Plan my day offers it, first: each live item with the fate the plan proposes,
- * `{ list: true }` while the committed work and the items before it stay within the focus target,
+ * `{ list: true }` while the committed work and the items before it stay within the focus figure,
  * `{ forward: <week> }` (back up to the week) once one doesn't. Every item gets a fate, so nothing
  * stays on deck past planning.
  */
 export function deckOffer(plan: PlanView, date: string, read: DayRead) {
     const week = isoWeekKey(utcDay(date));
-    let room = read.inputs.capacity.targetMinutes - plan.capacity.totalMinutes;
+    let room = focusFor(read).max - plan.capacity.totalMinutes;
     return deckItems(plan).map((item) => {
         // Growth and Recharge on deck are weighed against nothing here: only Foundation uses the room.
         const fits = item.area !== "foundation" || item.minutes <= room;
@@ -1339,32 +1341,26 @@ export function meetingsOf(read: DayFrame): { start: string; end: string; title:
 }
 
 /**
- * A day's load against its focus target: the meetings' booked time, the committed list's work, On
- * deck and `incoming` (what a wind-down's proposed fates would add), with `over` when the list, On
- * deck and the incoming work together pass the target. Advice for the agent to push back with,
- * never a block. Null when the calendar couldn't be read, since the target is then a guess.
+ * A day's load as the steps word it: the meetings' booked time and the one over figure
+ * (`dayLoadOf`), the list's Foundation work with `incoming.list` (the leftovers a wind-down sends to
+ * the list) against the focus figure, and On deck with `incoming.onDeck` as what it would add, never
+ * counted. Advice for the agent to push back with, never a block. Null when the calendar couldn't be
+ * read, since the focus is then a guess.
  */
-export function loadOf(read: DayRead, plan: PlanView, day: string, incoming = 0) {
+export function loadOf(read: DayFrame, plan: PlanView, day: string, incoming = { list: 0, onDeck: 0 }) {
     if (failedCalendar(read)) return null;
-    // Foundation only: the list's total and On deck leave Growth and Recharge out, and a Growth task pinned in the day books its time.
-    const sized = withBooked(read, plan);
+    const { foundation, onDeck } = dayLoadOf(read, plan, { incoming });
     const meetings = read.inputs.capacity.bookedMinutes;
-    const listMinutes = plan.capacity.totalMinutes;
-    // On deck's Foundation leaves, counted as the plan counts it: a parent counts through its sub-items.
-    const deck = plan.onDeck.filter((task) => isLive(task) && task.text.trim() !== "");
-    const deckParents = new Set(deck.filter((task) => task.parent !== null).map((task) => task.parent));
-    const onDeckMinutes = deck.filter((task) => !deckParents.has(task.text) && task.area === "foundation")
-        .reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
-    const targetMinutes = sized.inputs.capacity.targetMinutes;
-    const overMinutes = Math.max(0, listMinutes + onDeckMinutes + incoming - targetMinutes);
+    const listMinutes = plan.capacity.areas.foundation.minutes;
     const words = {
-        day: weekdayName(day), meetings: formatHours(meetings), list: formatHours(listMinutes), deck: formatHours(onDeckMinutes),
-        incoming: formatHours(incoming), focus: focusText(focusFor(sized)), over: formatHours(overMinutes)
+        day: weekdayName(day), meetings: formatHours(meetings), list: formatHours(listMinutes), deck: formatHours(onDeck.minutes),
+        incoming: formatHours(incoming.list), focus: focusText(foundation.focus), over: formatHours(foundation.overMinutes)
     };
-    const key = `caius.daily.${overMinutes > 0 ? "load_over" : "load_line"}${incoming > 0 ? "_incoming" : ""}`;
+    const key = `caius.daily.${foundation.over ? "load_over" : "load_line"}${incoming.list > 0 ? "_incoming" : ""}`;
     return {
-        meetingMinutes: meetings, listMinutes, onDeckMinutes, incomingMinutes: incoming, targetMinutes,
-        over: overMinutes > 0, overMinutes, sentence: t(key, words)
+        meetingMinutes: meetings, listMinutes, incomingMinutes: incoming.list, onDeckMinutes: onDeck.minutes - incoming.onDeck, incomingOnDeckMinutes: incoming.onDeck,
+        focus: foundation.focus, over: foundation.over, overMinutes: foundation.overMinutes, overWithOnDeck: onDeck.overWith,
+        sentence: [ t(key, words), ...(onDeck.minutes > 0 ? [ t("caius.daily.load_deck", words) ] : []) ].join(" ")
     };
 }
 

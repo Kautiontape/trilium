@@ -42,6 +42,26 @@ describe("plannedNudges", () => {
         expect(plannedNudges(today({ offline: true }), DEFAULT_SETTINGS, new Date(2026, 10, 4, 8, 0))).toEqual([]);
     });
 
+    it("warns of over capacity from capacity.load, never counting On deck, and from the Foundation target on an older server", () => {
+        const base = today();
+        const withCapacity = (capacity: Partial<TodayData["plan"]["capacity"]>) => today({ plan: { ...base.plan, capacity: { ...base.plan.capacity, ...capacity } } });
+        const overcap = (data: TodayData) => plannedNudges(data, DEFAULT_SETTINGS, new Date(2026, 10, 4, 8, 0)).find((n) => n.id === NUDGE_IDS.overcap)?.body ?? null;
+        const load = (minutes: number, focus: { min: number; max: number }, onDeck = 0) => ({
+            foundation: { minutes, focus, over: minutes > focus.max, overMinutes: Math.max(0, minutes - focus.max) },
+            onDeck: { minutes: onDeck, overWith: Math.max(0, minutes + onDeck - focus.max) },
+            growth: { minutes: 0, target: { min: 60, max: 120 }, over: false },
+            recharge: { count: 0 }
+        });
+        const areas = (minutes: number) => ({ ...base.plan.capacity.areas, foundation: { minutes, target: { min: 180, max: 240 } } });
+
+        // The meetings leave 2 to 3 h: the load is over though the plan's own target isn't.
+        expect(overcap(withCapacity({ areas: areas(210), load: load(210, { min: 120, max: 180 }) }))).toBe("Today is 30 m over 2–3 h.");
+        expect(overcap(withCapacity({ areas: areas(195), load: load(195, { min: 180, max: 180 }) }))).toBe("Today is 15 m over 3 h.");
+        // On deck would take the day over, but only the list counts.
+        expect(overcap(withCapacity({ areas: areas(230), load: load(230, { min: 180, max: 240 }, 120) }))).toBeNull();
+        expect(overcap(withCapacity({ areas: areas(270) }))).toBe("Today is 30 m over 3–4 h.");
+    });
+
     it("cancels a snoozed morning nudge once the day is planned, and both once it is wound down", () => {
         expect(staleSnoozes("unplanned")).toEqual([]);
         expect(staleSnoozes("planned")).toEqual([ SNOOZE_IDS.plan ]);

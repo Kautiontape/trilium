@@ -210,7 +210,8 @@ describe("Growth and Recharge picks", () => {
             expect(night.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${printing}` ]);
             // Thursday's Growth is tonight's leftover hour, which stays on the list in its block.
             expect(night.data.growth).toMatchObject({ minutes: 60 });
-            expect(night.data.load.incomingMinutes).toBe(30);
+            // The runbook, an open Foundation leftover, goes to Thursday's On deck, so it is shown apart, not counted.
+            expect(night.data.load).toMatchObject({ incomingMinutes: 0, incomingOnDeckMinutes: 30 });
             at(`${DAY}T09:41`);
         } finally {
             await retire(caius);

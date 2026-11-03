@@ -65,7 +65,7 @@ Keys: a day is `YYYY-MM-DD`, a week is `YYYY-Www` (ISO), a month is `YYYY-MM`.
   - Drop it with a reason (`caius_set_state` with `cancelled`).
   - Pushing it to a project note is not available yet. Ask the user to do that one by hand.
 - **Would like or need.** "I'd like to do this Thursday" goes on Thursday's On deck (`caius_add` or `caius_forward` with `onDeck: true`). "I need to do this Thursday" goes on Thursday's list proper (a `section`, or `onDeck: false` on a forward), or its Important block when he says it is critical.
-- **Capacity.** Day: 180 to 240 minutes of planned Foundation work; Growth and Recharge are not work. Growth has its own target of 60 to 120 minutes, Recharge none, and a Growth or Recharge task pinned to a clock in the morning or afternoon books its time like a meeting. Week: 720 to 900 (12 to 15 hours). Month: no target; it is a committed set, not a schedule. A live task with no `~30m` style estimate counts as 30 minutes. A task with live sub-items counts through them, not twice.
+- **Capacity.** Day: the list's Foundation work against the day's focus figure (the Rhythm's Foundation target, 3 to 4 hours unless it says otherwise, or less when the meetings leave less), which `caius_plan`'s `capacity.load` gives; On deck is not counted, only shown as what it would add. Growth and Recharge are not work. Growth has its own target of 60 to 120 minutes, Recharge none, and a Growth or Recharge task pinned to a clock in the morning or afternoon books its time like a meeting. Week: 720 to 900 (12 to 15 hours). Month: no target; it is a committed set, not a schedule. A live task with no `~30m` style estimate counts as 30 minutes. A task with live sub-items counts through them, not twice.
 
 ## Tools
 
@@ -103,7 +103,7 @@ Forwarding works between any two periods: day to week, week to day, day to month
 
 ## Daily planning
 
-1. `caius_plan` for today. Note the critical block, the order and the capacity total against 180 to 240 minutes, and the On deck items: each needs his decision first, onto the list or not.
+1. `caius_plan` for today. Note the critical block, the order and the capacity (`capacity.load`: over or not, against the focus figure), and the On deck items: each needs his decision first, onto the list or not.
 2. `caius_open` with `lane: "overdue"`. These slipped. Each one needs the user's decision: pull it in, park it, or drop it.
 3. Go through the Suggested items for today (`caius_open` with `lane: "suggested"`). Ask the user, then `caius_accept` the ones he wants and `caius_dismiss` the rest.
 4. `caius_open` with `lane: "week"` for what the week note holds. Show the user what fits the day's capacity, and pull down into today with `caius_forward` only the tasks he names. Don't go over the top of the range.

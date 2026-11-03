@@ -215,7 +215,8 @@ describe("caius tools under concurrent calls", () => {
                 () => caiusSet.caius_add.execute?.({ items: [{ date: "2032-02-03", section: "Work", text: "From caller c" }] }, callOptions))
         ]);
 
-        expect(events.filter((e, i) => e !== events[i - 1])).toEqual(["caller-a", "caller-b", "caller-c"]);
+        // A day plan reads its frame under its own lock before the plan's, so caller c's add runs between them.
+        expect(events.filter((e, i) => e !== events[i - 1])).toEqual(["caller-a", "caller-b", "caller-c", "caller-b"]);
         expect(b.key).toBe("2032-02-02");
         const lastComponent = (noteId: string) =>
             sql.getValue("SELECT componentId FROM entity_changes WHERE entityName = 'notes' AND entityId = ? ORDER BY id DESC LIMIT 1", [noteId]);

@@ -178,6 +178,78 @@ describe("the day read", () => {
     });
 });
 
+describe("the one over figure", () => {
+    const TUE2 = "2032-03-09";
+    const WED2 = "2032-03-10";
+    const THU2 = "2032-03-11";
+    const FRI2 = "2032-03-12";
+    const failed = { events: [], errors: [ { source: "calendar" as const, error: "feed_0_timeout" } ] };
+    /** A step or plan answer as plain data, failing on an error answer. */
+    const dataOf = (answer: unknown) => {
+        if (!answer || typeof answer !== "object" || "error" in answer) throw new Error(`answered ${JSON.stringify(answer)}`);
+        return JSON.parse(JSON.stringify(answer));
+    };
+
+    afterEach(() => {
+        delete calendars[WED2];
+    });
+
+    it("puts the list's Foundation against the focus figure, not the meetings' target, and gives On deck apart", async () => {
+        // 2 h 50 m of meetings leave 5 h 10 m open: a target of 202 min, between the Rhythm's 180 and 240.
+        calendars[WED2] = [ event("11:00", "13:50", "Workshop") ];
+        const { service } = countedService();
+        vi.stubEnv("CAIUS_NOW", `${TUE2}T17:30`);
+        const wed = await dayWith(WED2, `<h3>Work</h3>${ul(li("o-a", "Ship the export ~2h"), li("o-b", "Review the PR ~1h"), li("o-c", "Answer the vendor ~50m"))}`
+            + `<h2>On deck</h2>${ul(li("o-d", "Tidy the backlog ~1h"))}`);
+        // A stale stated focus: with the calendar read, the fresh figure wins over it.
+        await run(() => store.addLabel(wed, "caiusFocus", "120-120"));
+
+        const next = dataOf(await run(() => service.winddown({ date: TUE2, step: "next" })));
+        expect(next.targetDay).toBe(WED2);
+        expect(next.data.load).toMatchObject({ listMinutes: 230, onDeckMinutes: 60, focus: { min: 180, max: 240 }, over: false, overMinutes: 0 });
+        expect(next.data.load.sentence).toBe("Wednesday: 2 h 50 m of meetings and 3 h 50 m on the list, against 3–4 h of focus time. On deck would add 1 h.");
+        expect(next.question ?? "").not.toMatch(/over by/);
+
+        const frame = await run(() => service.dayFrame(WED2));
+        expect(frame.inputs.capacity.targetMinutes).toBe(202);
+        const now = new Date(`${TUE2}T17:30:00`);
+        const day = await run(() => withCaiusLock("spec_day_read", async () => readDay(store, frame, await readPlan(store, "day", WED2, now), { date: WED2, now })));
+        expect(day.load).toEqual({
+            foundation: { minutes: 230, focus: { min: 180, max: 240 }, over: false, overMinutes: 0 },
+            onDeck: { minutes: 60, overWith: 50 },
+            growth: { minutes: 0, target: frame.rhythm.targets.growth, over: false },
+            recharge: { count: 0 }
+        });
+
+        const plan = dataOf(await run(() => service.plan({ period: "day", date: WED2 })));
+        expect(plan.capacity.load).toEqual(day.load);
+        expect(plan.capacity).toMatchObject({
+            target: { min: 180, max: 240 }, calendarFailed: false,
+            areas: { foundation: { minutes: 230, target: { min: 180, max: 240 } }, growth: { target: frame.rhythm.targets.growth } }
+        });
+
+    });
+
+    it("with a failed calendar, caius_plan reads the stated focus, else the Rhythm's Foundation target", async () => {
+        const { service } = countedService({ feeds: { [THU2]: failed, [FRI2]: failed } });
+        vi.stubEnv("CAIUS_NOW", `${TUE2}T17:30`);
+        const thu = await dayWith(THU2, `<h3>Work</h3>${ul(li("f-a", "Write the summary ~2h30m"))}`);
+        await run(() => store.addLabel(thu, "caiusFocus", "120-150"));
+        await dayWith(FRI2, `<h3>Work</h3>${ul(li("f-b", "Plan the sprint ~4h10m"))}`);
+
+        const stated = dataOf(await run(() => service.plan({ period: "day", date: THU2 })));
+        expect(stated.capacity).toMatchObject({
+            target: { min: 120, max: 150 }, calendarFailed: true, areas: { foundation: { target: { min: 120, max: 150 } } },
+            load: { foundation: { minutes: 150, focus: { min: 120, max: 150 }, over: false, overMinutes: 0 } }
+        });
+        const rhythm = dataOf(await run(() => service.plan({ period: "day", date: FRI2 })));
+        expect(rhythm.capacity).toMatchObject({
+            target: { min: 180, max: 240 }, calendarFailed: true,
+            load: { foundation: { minutes: 250, focus: { min: 180, max: 240 }, over: true, overMinutes: 10 } }
+        });
+    });
+});
+
 describe("several days", () => {
     afterEach(() => {
         delete calendars[THU];

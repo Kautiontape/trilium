@@ -96,8 +96,9 @@ import {
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { blockFor } from "./filing.js";
-import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayFrame, type DayRead, dayLabels, dayPeriods, drawnTitle, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
+import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { catchupOf, type DayFrame, type DayRead, dayLabels, dayPeriods, drawnTitle, failedCalendar, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
+import { dayCapacityOf, statedFocus } from "./day-read.js";
 import { readCalendar } from "./inputs/calendar.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
@@ -291,6 +292,26 @@ export function createCaiusService(
         return mainTasks(await readPlan(store, "week", week, now));
     }
 
+    /**
+     * The plan of `period` `key` as `caius_plan` answers it. A day's capacity is `dayCapacityOf` its
+     * `frame`: the focus the meetings leave, or with a failed calendar the stated one. The caller holds the lock.
+     */
+    async function planOf(period: PeriodKind, key: string, now: Date, frame: DayFrame | null) {
+        const plan = await readPlan(store, period, key, now);
+        // A second, newer note for the period is named, and its live tasks listed with their own
+        // noteId, so a task on it can still be found and moved.
+        const warnings = await duplicateWarnings(store, [ { period, key } ]);
+        const duplicates = warnings.length
+            ? (await readDuplicatePlans(store, period, key, now)).map((other) => ({ noteId: other.noteId, tasks: mainTasks(other) }))
+            : [];
+        const warned = warnings.length ? { ...plan, warnings, duplicates } : plan;
+        if (!frame) return warned;
+        // A day's brief keeps the groups and meeting names its drawing uses, which the phone draws with too.
+        const drawn = await drawnNamesOf(store, key);
+        const capacity = dayCapacityOf(frame, plan, failedCalendar(frame) ? await statedFocus(store, key) : null);
+        return { ...warned, capacity, ...(drawn ? { drawn } : {}) };
+    }
+
     const stepDeps = async (): Promise<StepDeps> => ({ store, now: await today(), locked: withCaiusLock, dayRead, standing: readStanding });
     const applyDeps = async (): Promise<ApplyDeps> => ({
         ...await stepDeps(), place: () => placeOf(), weatherOf,
@@ -319,30 +340,19 @@ export function createCaiusService(
         /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. A read, so it takes no lock and the status never waits on a write. */
         rollover: async () => readRhythm((await readStanding()).markdown).rollover,
 
-        plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
-            const now = await todayHeld();
+        /**
+         * A period's plan. A day's capacity carries the one over figure (`dayCapacityOf`), from its
+         * frame, which reads its own notes and so is read before the lock.
+         */
+        plan: async ({ period, date }: PlanInput) => {
+            const now = await today();
             const key = date ?? currentKey(period, now);
             if (!isPeriodKey(period, key)) {
                 return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
             }
-            const plan = await readPlan(store, period, key, now);
-            // A second, newer note for the period is named, and its live tasks listed with their own
-            // noteId, so a task on it can still be found and moved.
-            const warnings = await duplicateWarnings(store, [ { period, key } ]);
-            const duplicates = warnings.length
-                ? (await readDuplicatePlans(store, period, key, now)).map((other) => ({ noteId: other.noteId, tasks: mainTasks(other) }))
-                : [];
-            const warned = warnings.length ? { ...plan, warnings, duplicates } : plan;
-            // A day's target is the focus the steps stated for it, when they did.
-            const [ focus ] = period === "day" ? await dayLabels(store, key, FOCUS_LABEL) : [];
-            const [ min, max ] = (focus ?? "").split("-").map(Number);
-            // A day's brief keeps the groups and meeting names its drawing uses, which the phone draws with too.
-            const drawn = period === "day" ? await drawnNamesOf(store, key) : null;
-            const shown = drawn ? { ...warned, drawn } : warned;
-            return min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && focus
-                ? { ...shown, capacity: { ...plan.capacity, target: { min, max } } }
-                : shown;
-        }),
+            const frame = period === "day" ? await dayFrame(key) : null;
+            return withCaiusLock("caius_plan", () => planOf(period, key, now, frame));
+        },
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
             const now = await todayHeld();

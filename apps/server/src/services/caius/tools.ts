@@ -21,7 +21,7 @@ export function createCaiusTools(
 
     return defineTools({
         caius_plan: {
-            description: "Read the plan of one day, week or month note: its sections, tasks (each with its area, time block and pinned clock), estimates and capacity (a day's total is Foundation's; capacity.areas has Growth and Recharge apart), plus its Meetings bullets and the Context lines in force (expired ones apart), and for a day with a brief the groups and meeting names its drawing uses (drawn). Use it to see what is planned for a period.",
+            description: "Read the plan of one day, week or month note: its sections, tasks (each with its area, time block and pinned clock), estimates and capacity (a day's total is Foundation's; capacity.areas has Growth and Recharge apart; a day's capacity.load is the one over figure, the list's Foundation against the focus figure, with On deck apart as what it would add), plus its Meetings bullets and the Context lines in force (expired ones apart), and for a day with a brief the groups and meeting names its drawing uses (drawn). Use it to see what is planned for a period.",
             inputSchema: toolInputs.plan,
             async: true,
             execute: parsed(toolInputs.plan, service.plan)

@@ -3,10 +3,10 @@
  * steps' capacity and Growth sentences and the views take their figures from it, so they agree.
  */
 
-import { isoWeekKey, type ContextEntry, type NoteStore, type PlanTask, type PlanView, readPlan, type Rhythm } from "@triliumnext/caius";
+import { type ContextEntry, dayLoad, type DayLoad, isoWeekKey, liveMinutes, type NoteStore, type PlanTask, type PlanView, readPlan, type Rhythm } from "@triliumnext/caius";
 
-import { drawnNamesOf } from "./brief.js";
-import { type DayFrame, deckTasks, drawnEvents, failedCalendar, focusFor, mainTasks, meetingsOf, rolloverOf, withBooked, workBlocks } from "./daily.js";
+import { drawnNamesOf, FOCUS_LABEL } from "./brief.js";
+import { type DayFrame, dayLabels, deckTasks, drawnEvents, failedCalendar, focusFor, mainTasks, meetingsOf, rolloverOf, withBooked, workBlocks } from "./daily.js";
 import type { InputError } from "./inputs/types.js";
 import { slipsOf, trails } from "./trail.js";
 
@@ -17,6 +17,8 @@ export interface DayView {
     meetings: ReturnType<typeof meetingsOf>;
     capacity: CapacityFigures;
     growth: GrowthFigures;
+    /** The day's one over figure (`dayLoadOf`), which `caius_plan` and the steps give too. */
+    load: DayLoad;
     /** The drawing's events and the list laid out between them (`workBlocks`), with the brief's names. */
     layout: {
         events: ReturnType<typeof drawnEvents>;
@@ -61,8 +63,9 @@ export async function readDay(store: NoteStore, frame: DayFrame, plan: PlanView,
     const { groups, unplaced } = workBlocks(plan, { start, end, workEnd, noon }, events, date, now, rolloverOf(frame.rhythm), names);
     const slips: Record<string, number> = Object.fromEntries([ ...mainTasks(plan), ...deckTasks(plan) ].flatMap(({ noteId, listItemId, text }): [string, number][] =>
         listItemId ? [ [ listItemId, slipsOf(all, { noteId, listItemId, text }) ] ] : []));
+    const stated = failedCalendar(frame) ? await statedFocus(store, date) : null;
     return {
-        date, plan, meetings: meetingsOf(frame), capacity: capacityFigures(frame, plan), growth: growthFigures(frame, plan),
+        date, plan, meetings: meetingsOf(frame), capacity: capacityFigures(frame, plan), growth: growthFigures(frame, plan), load: dayLoadOf(frame, plan, { stated }),
         layout: { events, groups, unplaced }, slips, context: frame.context, calendarFailed: failedCalendar(frame), errors: frame.inputs.errors
     };
 }
@@ -78,6 +81,46 @@ export function capacityFigures(frame: DayFrame, plan: PlanView): CapacityFigure
     const { windowMinutes, openMinutes, targetMinutes, bookedRatio } = sized.inputs.capacity;
     const { bookedMinutes } = frame.inputs.capacity;
     return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes: plan.capacity.totalMinutes, bookedRatio, focus: focusFor(sized) };
+}
+
+/**
+ * The day's one over figure (`dayLoad`): the list's Foundation minutes, with `incoming.list` added,
+ * against the focus figure, and On deck's Foundation minutes, with `incoming.onDeck`, apart. The
+ * focus is `focusFor` the day with its pinned tasks booked (`withBooked`); with a failed calendar it
+ * is `stated`, the day's `#caiusFocus`, else the Rhythm's Foundation target.
+ */
+export function dayLoadOf(frame: DayFrame, plan: PlanView, { stated = null, incoming = { list: 0, onDeck: 0 } }: { stated?: Range | null; incoming?: { list: number; onDeck: number } } = {}): DayLoad {
+    const focus = failedCalendar(frame) ? stated ?? frame.rhythm.targets.foundation : focusFor(withBooked(frame, plan));
+    return dayLoad({
+        foundation: plan.capacity.areas.foundation.minutes + incoming.list,
+        // The whole On deck, so a parent counts through its live sub-items as plan-read counts it.
+        onDeck: liveMinutes(plan.onDeck, "foundation") + incoming.onDeck,
+        growth: plan.capacity.areas.growth.minutes,
+        recharge: mainTasks(plan).filter((task) => task.area === "recharge" && task.text.trim() !== "").length
+    }, { focus, growthTarget: frame.rhythm.targets.growth });
+}
+
+/**
+ * A day plan's capacity as `caius_plan` gives it: the target and Foundation's target are the focus
+ * figure, Growth's the Rhythm's Growth target, `load` the one over figure (`dayLoadOf`) and
+ * `calendarFailed` whether the focus is the stated or the Rhythm's one rather than the meetings'.
+ */
+export function dayCapacityOf(frame: DayFrame, plan: PlanView, stated: Range | null) {
+    const load = dayLoadOf(frame, plan, { stated });
+    const { focus } = load.foundation;
+    const { areas } = plan.capacity;
+    return {
+        ...plan.capacity, target: focus,
+        areas: { ...areas, foundation: { ...areas.foundation, target: focus }, growth: { ...areas.growth, target: frame.rhythm.targets.growth } },
+        load, calendarFailed: failedCalendar(frame)
+    };
+}
+
+/** The focus the steps stated for `date` (`#caiusFocus`, `min-max` in minutes), or null. The caller holds the lock. */
+export async function statedFocus(store: NoteStore, date: string): Promise<Range | null> {
+    const [ value ] = await dayLabels(store, date, FOCUS_LABEL);
+    const [ min, max ] = (value ?? "").split("-").map(Number);
+    return value && min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
 }
 
 /** The live minutes of Growth tasks on the list, with `incoming` added, against the Rhythm's Growth target. */
@@ -130,6 +173,8 @@ export async function readDays(deps: DaysDeps, from: string, count: number, now:
         return { from, days, week: { key, tasks: mainTasks(weekPlan), foundation: { minutes, target: weekPlan.capacity.target } } };
     });
 }
+
+type Range = { min: number; max: number };
 
 function addDays(date: string, days: number): string {
     return new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
