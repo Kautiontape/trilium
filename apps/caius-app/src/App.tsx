@@ -12,8 +12,8 @@ import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar 
 import { chatTarget, openChat, startChatNotifications } from "./lib/chat-notify.js";
 import { readStoredChats } from "./lib/chats.js";
 import { loadConnection } from "./lib/connection.js";
-import type { Reminder } from "./lib/local.js";
 import { nextWorkdayKey } from "./lib/day.js";
+import type { Reminder } from "./lib/local.js";
 import { scheduleNudges, scheduleReminder, setUpNotifications, snoozeNudge } from "./lib/notify.js";
 import { api, appNow, connection, flushHeld, refreshToday, reminders, runWrite, saveReminders, settings, today } from "./lib/store.js";
 import { Ask, Ritual } from "./screens/Chat.js";

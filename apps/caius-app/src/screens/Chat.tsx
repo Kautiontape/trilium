@@ -3,24 +3,24 @@ import "./chat.css";
 import { KeepAwake } from "@capacitor-community/keep-awake";
 import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import type { Area } from "@triliumnext/caius/src/trilium/areas.js";
+import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
+import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
+import { useSwipeDown } from "../components/MiniChat.js";
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
-import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
-import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
-import { useSwipeDown } from "../components/MiniChat.js";
 import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, turnText, workingLine } from "../lib/chat.js";
 import { afterStreamError, askedFate, type FollowedTurn, followTurn, pendingReplyAction, readStoredChats, resync, storeChat, type SyncedChat } from "../lib/chats.js";
 import { dayLabel } from "../lib/day.js";
 import { HttpError } from "../lib/http.js";
-import { appVersion, shareText } from "../lib/share.js";
-import { chatTranscript } from "../lib/transcript.js";
 import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
+import { appVersion, shareText } from "../lib/share.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack } from "../lib/store.js";
+import { chatTranscript } from "../lib/transcript.js";
 
 /**
  * A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while

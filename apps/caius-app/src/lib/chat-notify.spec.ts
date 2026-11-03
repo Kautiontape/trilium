@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import type { ActionPerformed } from "@capacitor/local-notifications";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { appVisible, chatActivity, type ChatActivity, minimizeRitual, openRitual, pendingReply, publishActivity, restoreRitual, ritual, settingsOpen, tab } from "../app-state.js";
 import { chatNotice, type ChatScene, chatTarget, openChat, repliedNotice, startChatNotifications } from "./chat-notify.js";
@@ -82,13 +81,24 @@ describe("repliedNotice", () => {
         expect(repliedNotice(streaming, scene({ activity: {}, visible: false }))).toBeNull();
         expect(repliedNotice(ended, scene({ activity: ended, visible: false }))).toBeNull();
     });
+
+    it("says to open the chat when the reply has no text, only tool calls", () => {
+        expect(repliedNotice(streaming, scene({ activity: { ritual: activity("winddown", { line: "" }) }, visible: false })))
+            .toEqual({ slot: "ritual", notification: { ...posted, body: "Open the chat to see it." } });
+    });
 });
 
 describe("startChatNotifications", () => {
+    const removeTapped = vi.fn(() => Promise.resolve());
+    let tapped: (event: { notificationId: number }) => void = () => undefined;
     const service = {
         startForegroundService: vi.fn(() => Promise.resolve()),
         updateForegroundService: vi.fn(() => Promise.resolve()),
-        stopForegroundService: vi.fn(() => Promise.resolve())
+        stopForegroundService: vi.fn(() => Promise.resolve()),
+        addListener: vi.fn((_event: "notificationTapped", listener: (event: { notificationId: number }) => void) => {
+            tapped = listener;
+            return Promise.resolve({ remove: removeTapped });
+        })
     };
     const notifications = {
         schedule: vi.fn(() => Promise.resolve({ notifications: [] })),
@@ -160,6 +170,31 @@ describe("startChatNotifications", () => {
         expect(notifications.cancel).toHaveBeenCalledTimes(1);
         appVisible.value = true;
         expect(notifications.cancel).toHaveBeenCalledTimes(2);
+    });
+
+    it("opens the working chat, the ritual first, when the ongoing notification is tapped", async () => {
+        expect(service.addListener).toHaveBeenCalledWith("notificationTapped", expect.any(Function));
+        openRitual("winddown", "2026-11-03");
+        minimizeRitual();
+        settingsOpen.value = true;
+        publishActivity("ask", { kind: "ask", working: true, streaming: true, line: "Reading" });
+        publishActivity("ritual", working("Reading"));
+        tapped({ notificationId: CHAT_IDS.working });
+        expect(ritual.value?.minimized).toBe(false);
+        expect(settingsOpen.value).toBe(false);
+
+        publishActivity("ritual", null);
+        tapped({ notificationId: CHAT_IDS.working });
+        expect(tab.value).toBe("ask");
+        expect(ritual.value?.minimized).toBe(true);
+
+        tab.value = "today";
+        tapped({ notificationId: 99 });
+        expect(tab.value).toBe("today");
+
+        stop();
+        await vi.waitFor(() => expect(removeTapped).toHaveBeenCalledTimes(1));
+        stop = () => undefined;
     });
 });
 

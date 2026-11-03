@@ -1,5 +1,6 @@
+import type { PluginListenerHandle } from "@capacitor/core";
 import { type ActionPerformed, LocalNotifications, type LocalNotificationSchema, type LocalNotificationsPlugin } from "@capacitor/local-notifications";
-import { type ForegroundServicePlugin, ForegroundService, type ServiceType } from "@capawesome-team/capacitor-android-foreground-service";
+import { ForegroundService, type ForegroundServicePlugin, type NotificationTappedEventListener, type ServiceType } from "@capawesome-team/capacitor-android-foreground-service";
 import { effect } from "@preact/signals";
 
 import { appVisible, type ChatActivity, chatActivity, chatOnScreen, minimizeRitual, openRitual, pendingReply, restoreRitual, ritual, settingsOpen, tab } from "../app-state.js";
@@ -27,7 +28,9 @@ export interface ChatNotice {
 
 /** The plugin calls the notifications make, so the spec can stand in for them. */
 export interface ChatNotifyPlugins {
-    service: Pick<ForegroundServicePlugin, "startForegroundService" | "updateForegroundService" | "stopForegroundService">;
+    service: Pick<ForegroundServicePlugin, "startForegroundService" | "updateForegroundService" | "stopForegroundService"> & {
+        addListener(eventName: "notificationTapped", listener: NotificationTappedEventListener): Promise<PluginListenerHandle>;
+    };
     notifications: Pick<LocalNotificationsPlugin, "schedule" | "cancel">;
 }
 
@@ -60,7 +63,7 @@ export function repliedNotice(prev: ChatScene["activity"], scene: ChatScene): { 
         return {
             slot,
             notification: {
-                id: CHAT_IDS.replied, title: "Caius replied", body: next.line, channelId: "caius",
+                id: CHAT_IDS.replied, title: "Caius replied", body: next.line || "Open the chat to see it.", channelId: "caius",
                 actionTypeId: "caius-reply", smallIcon: "ic_stat_caius", extra: { chat: slot }
             }
         };
@@ -72,7 +75,8 @@ export function repliedNotice(prev: ChatScene["activity"], scene: ChatScene): { 
  * Follows `chatActivity` and `appVisible` with the notifications: the foreground service started with
  * a turn, updated at most once a second as its line changes, and stopped once no chat works; the
  * replied notification posted as a turn ends out of sight, and cancelled once its chat shows with
- * the app visible. Returns the stop function.
+ * the app visible. A tap on the ongoing notification opens the working chat, the ritual first.
+ * Returns the stop function.
  */
 export function startChatNotifications(plugins: ChatNotifyPlugins = { service: ForegroundService, notifications: LocalNotifications }): () => void {
     const ongoing = ongoingNotice(plugins.service);
@@ -91,9 +95,17 @@ export function startChatNotifications(plugins: ChatNotifyPlugins = { service: F
             plugins.notifications.cancel({ notifications: [ { id: CHAT_IDS.replied } ] }).catch(() => undefined);
         }
     });
+    const tapped = plugins.service.addListener("notificationTapped", ({ notificationId }) => {
+        const all = chatActivity.value;
+        const slot = SLOTS.find((s) => all[s]?.working);
+        if (notificationId === CHAT_IDS.working && slot) {
+            openChat({ slot });
+        }
+    }).catch(() => null);
     return () => {
         dispose();
         ongoing.show(null);
+        void tapped.then((handle) => handle?.remove());
     };
 }
 
