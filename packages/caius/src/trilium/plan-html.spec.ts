@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { moveInMainList, placeForwarded, placeInDay, placeInMainList, placeTask, setTaskArea, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
+import { moveInMainList, placeForwarded, placeInDay, placeInMainList, placeTask, setTaskArea, setTaskEstimate, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
 import { critical, li, STATES, TEMPLATE, ul } from './helpers.js';
 
 const item = itemMarkup('enew', 'New thing');
@@ -272,6 +272,49 @@ describe('setTaskArea', () => {
   it('fails for an unknown item, or one in Meetings', () => {
     expect(setTaskArea(note, 'zz', 'growth')).toEqual({ ok: false, reason: 'not_found' });
     expect(setTaskArea(note, 'p1', 'growth')).toMatchObject({ ok: false });
+  });
+});
+
+describe('setTaskEstimate', () => {
+  const note = '<h2>☑️ Tasks</h2>' + ul(
+    li('t1', 'Write the spec'),
+    li('t2', 'Draft &amp; send ~1h !'),
+    li('t3', 'Call back <em>from <a href="#root/srcnote">Mon 26 Oct</a></em> !'),
+    li('t4', 'Plan', { sub: ul(li('t4a', 'Part one')) }),
+    li('t5', 'Old part', { sub: ul(li('t5a', 'Closed', { checked: true })) }),
+    li('t6', 'Done', { checked: true }),
+    li('t7', 'Keep 30 min&nbsp;~30m'),
+  ) + '<h2>Meetings</h2>' + ul(li('p1', 'Standup'));
+  const text = (html: string, id: string) => parse(html).querySelectorAll('li').find((l) => l.getAttribute('data-list-item-id') === id)!.querySelector('span.todo-list__label__description')!.innerHTML;
+
+  it('adds a token, and replaces one in place, ahead of a trailing marker', () => {
+    const added = setTaskEstimate(note, 't1', 30);
+    expect(added).toMatchObject({ ok: true, unchanged: false });
+    expect(added.ok && text(added.html, 't1')).toBe('Write the spec ~30m');
+    const replaced = setTaskEstimate(note, 't2', 90);
+    expect(replaced.ok && text(replaced.html, 't2')).toBe('Draft &amp; send ~1h30m !');
+    const marked = setTaskEstimate(note, 't3', 120);
+    expect(marked.ok && text(marked.html, 't3')).toBe('Call back <em>from <a href="#root/srcnote">Mon 26 Oct</a></em> ~2h !');
+    expect(replaced.ok && replaced.html.replace('~1h30m', '~1h')).toBe(note.replace('~1h !', '~1h !'));
+  });
+  it('writes minutes below an hour, whole hours and hours with minutes', () => {
+    const at = (minutes: number) => { const r = setTaskEstimate(note, 't1', minutes); return r.ok && text(r.html, 't1'); };
+    expect([at(15), at(60), at(600), at(75)]).toEqual(['Write the spec ~15m', 'Write the spec ~1h', 'Write the spec ~10h', 'Write the spec ~1h15m']);
+  });
+  it('reads a token after a non-breaking space, and is unchanged for an equal one in another form', () => {
+    expect(setTaskEstimate(note, 't7', 30)).toEqual({ ok: true, html: note, unchanged: true });
+    expect(setTaskEstimate(note, 't2', 60)).toEqual({ ok: true, html: note, unchanged: true });
+    const r = setTaskEstimate(note, 't7', 45);
+    expect(r.ok && text(r.html, 't7')).toBe('Keep 30 min&nbsp;~45m');
+  });
+  it('skips a parent with live sub-items, but not one whose sub-items are closed', () => {
+    expect(setTaskEstimate(note, 't4', 30, STATES)).toEqual({ ok: false, reason: 'has_subitems' });
+    expect(setTaskEstimate(note, 't5', 30, STATES)).toMatchObject({ ok: true, unchanged: false });
+  });
+  it('fails for an unknown, closed or Meetings item', () => {
+    expect(setTaskEstimate(note, 'zz', 30)).toEqual({ ok: false, reason: 'not_found' });
+    expect(setTaskEstimate(note, 't6', 30)).toEqual({ ok: false, reason: 'not_live' });
+    expect(setTaskEstimate(note, 'p1', 30)).toMatchObject({ ok: false });
   });
 });
 

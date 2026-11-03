@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, placeTasks, setAreas, setStates } from './plan.js';
+import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, placeTasks, setAreas, setEstimates, setStates } from './plan.js';
 import { parseSource, taskKeys, textHash } from './keys.js';
 import { readPlan } from './plan-read.js';
 import { fakeTrilium, li, periodNote, STATES, TEMPLATE, ul } from './helpers.js';
@@ -440,6 +440,61 @@ describe('setAreas', () => {
     expect((await setAreas(f.api, [{ noteId: 'd', listItemId: 'e1', area: 'growth' }], base))[0]).toMatchObject({ reason: 'edited' });
     const g = fakeTrilium(seed(html), { failPut: 'd' });
     expect((await setAreas(g.api, [{ noteId: 'd', listItemId: 'e1', area: 'growth' }], base))[0].status).toBe('failed');
+  });
+});
+
+describe('setEstimates', () => {
+  const html = '<h2>☑️ Tasks</h2>' + ul(
+    li('e1', 'One ~30m'),
+    li('e2', 'Two <em>from <a href="#root/srcnote">Mon 26 Oct</a></em> !'),
+    li('e3', 'Three', { sub: ul(li('e3a', 'Part')) }),
+  );
+  const estimate = async (f: ReturnType<typeof fakeTrilium>, text: string) => {
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    return plan.sections.flatMap((s) => s.tasks).find((t) => t.text.startsWith(text))?.estMinutes;
+  };
+
+  it('sets the estimates of one note in a single write, and the day load follows', async () => {
+    const f = fakeTrilium(seed(html));
+    const before = (await readPlan(f.api, 'day', DAY, now)).capacity.areas.foundation.minutes;
+    const out = await setEstimates(f.api, [
+      { noteId: 'd', listItemId: 'e1', minutes: 90 },
+      { noteId: 'd', listItemId: 'e2', minutes: 45 },
+      { noteId: 'd', listItemId: 'e1', minutes: 90 },
+    ], base);
+    expect(out.map((r) => r.status)).toEqual(['updated', 'updated', 'unchanged']);
+    expect(puts(f.log)).toEqual(['put d']);
+    expect(await estimate(f, 'One')).toBe(90);
+    expect(await estimate(f, 'Two')).toBe(45);
+    const plan = await readPlan(f.api, 'day', DAY, now);
+    expect(plan.sections.flatMap((s) => s.tasks).find((t) => t.text.startsWith('Two'))?.text).toBe('Two _from [Mon 26 Oct](#root/srcnote)_');
+    expect(plan.capacity.areas.foundation.minutes).toBe(before + 60 + 15);
+  });
+  it('skips a parent with live sub-items, an unknown item and a bad request, keeping the order', async () => {
+    const f = fakeTrilium(seed(html));
+    const out = await setEstimates(f.api, [
+      { noteId: 'd', listItemId: 'e3', minutes: 30 },
+      { noteId: 'd', listItemId: 'zz', minutes: 30 },
+      { noteId: 'd', listItemId: 'e1', minutes: 4 },
+      { noteId: 'd', listItemId: 'e1', minutes: 601 },
+      { noteId: 'd', listItemId: 'e1', minutes: 7.5 },
+      { noteId: 'd', listItemId: 'e1', minutes: 15 },
+    ], base);
+    expect(out.map((r) => [r.status, 'reason' in r ? r.reason : undefined])).toEqual([
+      ['skipped', 'has_subitems'], ['skipped', 'not_found'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['updated', undefined],
+    ]);
+    expect(out[0]).toMatchObject({ detail: 'set the estimates of its sub-items' });
+  });
+  it('dry run writes nothing; the guard drops a changed note; a failed put is reported', async () => {
+    const f = fakeTrilium(seed(html));
+    const [r] = await setEstimates(f.api, [{ noteId: 'd', listItemId: 'e1', minutes: 15 }], { ...base, dryRun: true });
+    expect(r).toMatchObject({ status: 'updated', dryRun: true });
+    expect(puts(f.log)).toEqual([]);
+    const put = f.api.putContent;
+    f.api.putContent = async (id, body, expected) => { f.html.d += '<p>x</p>'; return put(id, body, expected); };
+    expect((await setEstimates(f.api, [{ noteId: 'd', listItemId: 'e1', minutes: 15 }], base))[0]).toMatchObject({ reason: 'edited', detail: 'note changed meanwhile; nothing written' });
+    const g = fakeTrilium(seed(html), { failPut: 'd' });
+    expect((await setEstimates(g.api, [{ noteId: 'd', listItemId: 'e1', minutes: 15 }], base))[0].status).toBe('failed');
   });
 });
 

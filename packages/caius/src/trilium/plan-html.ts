@@ -18,6 +18,7 @@ import {
   inProseSection,
   isHeading,
   isIncludeNote,
+  isLive,
   isPlaceholder,
   isTask,
   isTodoList,
@@ -27,6 +28,7 @@ import {
   rewriteOpenTag,
   sectionOf,
   spanEnd,
+  tokenZoneStartInHtml,
   type Edit,
   type ItemState,
 } from './html-util.js';
@@ -643,6 +645,47 @@ export function setTaskArea(
   const text = withArea(spaced, area);
   if (text === run) return { ok: true, html, unchanged: true };
   return { ok: true, html: apply(html, [{ start, end: start + run.length, text }]), unchanged: false };
+}
+
+export type EstimateProblem = 'not_found' | 'not_live' | 'has_subitems';
+
+/**
+ * The task `id` with its `~` estimate token set to `minutes` (`~15m`, `~1h`, `~1h30m`), replacing
+ * the one it has or put where the trailing tokens start, so it stays ahead of a `!` and reads as a
+ * token after a link or a `from …` italic. A task with live sub-items counts through them and has
+ * no estimate of its own. `unchanged` when it carries that many minutes already.
+ */
+export function setTaskEstimate(
+  html: string,
+  id: string,
+  minutes: number,
+  states: StateSymbols = new Map(),
+): { ok: true; html: string; unchanged: boolean } | { ok: false; reason: EstimateProblem } {
+  const root = parse(html, { comment: true });
+  const li = findItem(root, id);
+  if (!li || !isTask(li)) return { ok: false, reason: 'not_found' };
+  if (inProseSection(root, li) || !isLive(li, states)) return { ok: false, reason: 'not_live' };
+  const span = descriptionOf(li);
+  if (!span) return { ok: false, reason: 'not_found' };
+  if (liveDescendants(li, states).length) return { ok: false, reason: 'has_subitems' };
+  const start = html.indexOf('>', span.range[0] + 5 + span.rawAttrs.length) + 1;
+  const inner = html.slice(start, spanEnd(html, span));
+  // Masked to the same length, so a `&nbsp;` before a token reads as the space it is.
+  const masked = inner.replace(/&nbsp;/g, '      ');
+  const zone = tokenZoneStartInHtml(masked);
+  const found = /~(?:(\d+)h(\d+)m|(\d+)h|(\d+)m)(?=\s|$)/.exec(masked.slice(zone));
+  const token = estimateToken(minutes);
+  if (!found) return { ok: true, html: apply(html, [{ start: start + zone, end: start + zone, text: ` ${token}` }]), unchanged: false };
+  const have = found[1] ? Number(found[1]) * 60 + Number(found[2]) : found[3] ? Number(found[3]) * 60 : Number(found[4]);
+  if (have === minutes) return { ok: true, html, unchanged: true };
+  const at = start + zone + found.index;
+  return { ok: true, html: apply(html, [{ start: at, end: at + found[0].length, text: token }]), unchanged: false };
+}
+
+function estimateToken(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `~${hours}h${rest ? `${rest}m` : ''}` : `~${rest}m`;
 }
 
 /** Every task under the Suggested heading that is still open (for same-note duplicate checks). */
