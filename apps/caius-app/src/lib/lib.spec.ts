@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { applyChunk, type AssistantTurn, type ChatChunk, opener, type RitualStep, sseParser, stepHasBody, stepOf, turnText } from "./chat.js";
 import { normalizeServerUrl } from "./connection.js";
-import { addMonths, addWeeks, dayLabel, mondayOf, nextWorkdayKey, parseMeeting, periodLabel, relativePeriod, weekLabel, weekOf } from "./day.js";
+import { addMonths, addWeeks, dayLabel, dayMinutes, mondayOf, nextWorkdayKey, parseMeeting, periodLabel, relativePeriod, weekLabel, weekOf } from "./day.js";
 import { McpError, parseToolReply } from "./mcp.js";
 import { originView, type TaskOrigin } from "./origin.js";
 import { parseRemindMe, parseWhen, whenLabel } from "./remind.js";
@@ -217,5 +217,15 @@ describe("originView", () => {
         expect(originView(undefined, "day")).toBeNull();
         expect(originView(null, "day")).toBeNull();
         expect(originView(origin({ noteId: "day" }), "day")).toBeNull();
+    });
+});
+
+describe("dayMinutes", () => {
+    it("reads the time as the workday does: after midnight and before the rollover it counts on from 24:00", () => {
+        const at = (clock: string) => new Date(`2026-11-03T${clock}:00`);
+        expect(dayMinutes(at("00:10"), { rollover: "04:00" })).toBe(24 * 60 + 10);
+        expect(dayMinutes(at("03:59"), {})).toBe(27 * 60 + 59);
+        expect(dayMinutes(at("04:00"), { rollover: "04:00" })).toBe(4 * 60);
+        expect(dayMinutes(at("18:30"), { rollover: "01:00" })).toBe(18 * 60 + 30);
     });
 });

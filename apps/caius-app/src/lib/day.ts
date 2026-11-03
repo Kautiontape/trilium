@@ -1,4 +1,4 @@
-import { nextWorkday } from "@triliumnext/caius/src/workday.js";
+import { DEFAULT_ROLLOVER, nextWorkday, workdayMinutes } from "@triliumnext/caius/src/workday.js";
 
 /**
  * Dates as keys (`YYYY-MM-DD`, `YYYY-Www`, `YYYY-MM`) and the labels the app shows for them. Which
@@ -115,6 +115,14 @@ export function relativePeriod(key: string, base: string): { name: string; detai
 export function clockMinutes(clock: string): number | null {
     const match = /^(\d{1,2}):(\d{2})$/.exec(clock.trim());
     return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/**
+ * Minutes into the workday at `now`: after midnight and before the rhythm's rollover the workday is
+ * still the day before, so 00:10 reads 24:10. Compare these, never `getHours()`, with work end or 15:00.
+ */
+export function dayMinutes(now: Date, rhythm: { rollover?: string }): number {
+    return workdayMinutes(now, clockMinutes(rhythm.rollover ?? "") ?? DEFAULT_ROLLOVER);
 }
 
 export function hhmm(minutes: number) {
