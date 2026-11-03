@@ -60,3 +60,4 @@ export type { Candidate, CandidateReason, JiraLike, TicketLike, WeekTaskLike } f
 export { briefBodyHtml, headerHtml, includeNote, leadingInclude, readHeader, withInclude, withListUnder, withoutImages } from './trilium/brief-html.js';
 export type { BriefAct } from './trilium/brief-html.js';
 export type { TerrainInput, TerrainEvent, TerrainGroup, WeatherIcon } from './draw/terrain.js';
+export type { ViewName, ShownView, ViewTask, ViewMeeting, ViewContextLine, ViewSpan, DayViewData, DaysViewData, DaysViewDay, ViewTrailStep, ViewTicket, ItemViewData, SlippingViewData } from './daily/views.js';
