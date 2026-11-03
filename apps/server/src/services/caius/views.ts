@@ -205,21 +205,22 @@ async function slippingView(deps: ViewsDeps, period: string | null, now: Date): 
                 return trail && trail.slips >= MIN_SLIPS && (!within || movedWithin(trail, within)) ? [ { task, trail } ] : [];
             })
             .sort((a, b) => b.trail.slips - a.trail.slips);
-        const shown: ViewTask[] = [];
+        // Only a task on its period's list or On deck can be a row, so only those are counted.
+        const placedRows: ViewTask[] = [];
         const plans = new Map<string, PlanView>();
-        for (const { task, trail } of slipping.slice(0, SLIPPING_ROWS)) {
+        for (const { task, trail } of slipping) {
             const where = periodOf(task.path);
             if (!where || !task.listItemId) continue;
             const planKey = `${where.kind}:${where.period}`;
             const plan = plans.get(planKey) ?? await readPlan(deps.store, where.kind, where.period, now);
             plans.set(planKey, plan);
             const placed = placedIn(plan, task.listItemId);
-            if (placed) shown.push(viewTask(placed.task, task.listItemId, { kind: where.kind, key: where.period }, placed.place, trail.slips));
+            if (placed) placedRows.push(viewTask(placed.task, task.listItemId, { kind: where.kind, key: where.period }, placed.place, trail.slips));
         }
         const ages = open.filter((task) => task.horizon === "overdue").map((task) => daysLate(task.period, now) ?? 0);
         return {
-            rows: shown,
-            total: slipping.length,
+            rows: placedRows.slice(0, SLIPPING_ROWS),
+            total: placedRows.length,
             overdue: {
                 underWeek: ages.filter((age) => age < 7).length,
                 oneToTwoWeeks: ages.filter((age) => age >= 7 && age < 14).length,

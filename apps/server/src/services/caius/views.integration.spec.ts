@@ -325,6 +325,26 @@ describe("the slipping view", () => {
     });
 });
 
+describe("a slipping task off its period's list", () => {
+    it("is neither shown nor counted", async () => {
+        const [ mon, tue, wed ] = [ "2034-04-10", "2034-04-11", "2034-04-12" ];
+        const first = await dayWith(mon, `<h3>Work</h3>${ul(li("p-shed", "Clear the shed ~30m"))}`);
+        await forward(first, [ "p-shed" ], tue);
+        await forward(await dayId(tue), [ await idOn(tue, "Clear the shed") ], wed);
+        const wedId = await dayId(wed);
+        const html = await run(() => store.content(wedId));
+        await run(async () => {
+            await store.putContent(wedId, "<h3>Work</h3>");
+            createChildNote(wedId, "Errands", html);
+        });
+
+        const view = await shown("slipping", { period: "2034-W15" });
+        expect(view.data.tasks).toEqual([]);
+        expect(view.sentence.startsWith("Nothing keeps slipping.")).toBe(true);
+        expect((view.data as { omitted?: Record<string, number> }).omitted).toBeUndefined();
+    });
+});
+
 describe("the size of a reply", () => {
     const words = (n: number) => `Task number ${n} with a long description that goes on about what it is for and why`;
 
