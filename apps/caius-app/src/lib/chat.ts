@@ -147,7 +147,7 @@ export interface TurnState {
 }
 
 /** Reads an SSE body to its end, calling `onChunk` for each chunk. */
-async function readChunks(body: ReadableStream<Uint8Array>, onChunk: (chunk: ChatChunk) => void, signal?: AbortSignal) {
+async function readChunks(body: ReadableStream<Uint8Array<ArrayBuffer>>, onChunk: (chunk: ChatChunk) => void, signal?: AbortSignal) {
     const reader = body.pipeThrough(new TextDecoderStream()).getReader();
     const feed = sseParser((data) => {
         try {
