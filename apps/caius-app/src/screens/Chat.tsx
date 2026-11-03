@@ -456,7 +456,9 @@ function findLastStep(messages: StoredMessage[]) {
         }
         // A view is answered by writes, not an `…_apply`, so it stays live only until Caius replies; a failed send leaves it live.
         if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && viewOf(b.toolCall))) {
-            return messages.slice(i + 1).every((later) => later.role === "user" || later.type === "error") ? i : -1;
+            if (messages.slice(i + 1).every((later) => later.role === "user" || later.type === "error")) {
+                return i;
+            }
         }
     }
     return -1;
@@ -506,7 +508,7 @@ function AssistantBlocks({ blocks, chat, live, pending, notes, working }: {
             {!pending && steps.map(({ id, step }) => (
                 <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} />
             ))}
-            {!pending && views.map(({ id, view }) => (
+            {!pending && views.slice(-1).map(({ id, view }) => (
                 <ViewCard key={id} id={id} view={view} live={live && !pending} report={chat.report} />
             ))}
         </div>
