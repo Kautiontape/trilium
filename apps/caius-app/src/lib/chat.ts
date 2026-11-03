@@ -163,8 +163,7 @@ async function readChunks(body: ReadableStream<Uint8Array>, onChunk: (chunk: Cha
             if (signal?.aborted) {
                 throw e;
             }
-            // The body broke off: the phone lost its network, or the server restarted (a deploy).
-            throw new Error("Lost the connection to the server partway through the reply. Your message is back in the box: send it again.");
+            throw new StreamBrokenError();
         }
         if (read.done) {
             break;
@@ -340,6 +339,14 @@ export class TurnRunningError extends Error {
     constructor() {
         super("Caius is still answering the last message.");
         this.name = "TurnRunningError";
+    }
+}
+
+/** The body broke off after the server took the turn: the phone lost its network, or the server restarted (a deploy). */
+export class StreamBrokenError extends Error {
+    constructor() {
+        super("Lost the connection to the server partway through the reply.");
+        this.name = "StreamBrokenError";
     }
 }
 

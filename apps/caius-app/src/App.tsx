@@ -5,9 +5,10 @@ import { Capacitor } from "@capacitor/core";
 import type { ActionPerformed } from "@capacitor/local-notifications";
 import { useEffect } from "preact/hooks";
 
-import { onboarding, openRitual, quickAddRequested, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
+import { closeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
+import { readStoredChats } from "./lib/chats.js";
 import { loadConnection } from "./lib/connection.js";
 import type { Reminder } from "./lib/local.js";
 import { nextWorkdayKey } from "./lib/day.js";
@@ -73,7 +74,7 @@ export function App() {
         return <><Settings /><Snackbar /></>;
     }
     if (ritual.value) {
-        return <><Ritual kind={ritual.value.kind} date={ritual.value.date} /><SheetHost /><Snackbar /></>;
+        return <><Ritual kind={ritual.value.kind} date={ritual.value.date} noteId={ritual.value.noteId} /><SheetHost /><Snackbar /></>;
     }
 
     return (
@@ -102,11 +103,18 @@ export function App() {
     );
 }
 
-/** Loads the connection, wires the platform's back button, app lifecycle, shortcuts and notification actions. */
+/**
+ * Loads the connection, reopens the ritual that was on screen, and wires the platform's back
+ * button, app lifecycle, shortcuts and notification actions.
+ */
 async function boot() {
     connection.value = await loadConnection();
     if (connection.value) {
         void refreshToday();
+        const stored = readStoredChats().ritual;
+        if (stored && stored.kind !== "ask") {
+            openRitual(stored.kind, stored.date, stored.noteId);
+        }
     }
 
     if (!Capacitor.isNativePlatform()) {
@@ -121,7 +129,7 @@ async function boot() {
         } else if (settingsOpen.value) {
             settingsOpen.value = false;
         } else if (ritual.value) {
-            ritual.value = null;
+            closeRitual();
         } else if (tab.value !== "today") {
             tab.value = "today";
         } else {
@@ -130,6 +138,7 @@ async function boot() {
     });
     await CapApp.addListener("pause", () => void flushHeld());
     await CapApp.addListener("resume", () => {
+        resumed.value++;
         if (connection.value) {
             void refreshToday();
         }

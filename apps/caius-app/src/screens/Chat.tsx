@@ -9,9 +9,11 @@ import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
-import { ritual } from "../app-state.js";
-import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, turnMessages, turnText } from "../lib/chat.js";
+import { closeRitual, resumed } from "../app-state.js";
+import { applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, type TurnState, turnText } from "../lib/chat.js";
+import { type FollowedTurn, followTurn, readStoredChats, restoredMessages, storeChat } from "../lib/chats.js";
 import { dayLabel } from "../lib/day.js";
+import { HttpError } from "../lib/http.js";
 import { appVersion, shareText } from "../lib/share.js";
 import { chatTranscript } from "../lib/transcript.js";
 import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
@@ -19,9 +21,12 @@ import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack, today } from "../lib/store.js";
 
-/** A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while it runs. */
-export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string }) {
-    const chat = useChat(kind, date);
+/**
+ * A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while
+ * it runs. With `noteId` it reopens that chat note; without, it starts a new one.
+ */
+export function Ritual({ kind, date, noteId }: { kind: "plan" | "winddown"; date: string; noteId?: string }) {
+    const chat = useChat(kind, date, noteId);
     useEffect(() => {
         KeepAwake.keepAwake().catch(() => undefined);
         return () => {
@@ -29,7 +34,7 @@ export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string
         };
     }, []);
     useEffect(() => {
-        if (chat.state === "idle") {
+        if (chat.state === "idle" && !noteId) {
             void chat.start();
         }
     }, []);
@@ -43,7 +48,7 @@ export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string
                 </div>
                 <button type="button" class="icon-btn" aria-label="Chat menu" onClick={() => openSheet(<ChatMenu chat={chat} />)}><Icon name="more_vert" /></button>
                 <button type="button" class="icon-btn" aria-label="Close" onClick={() => {
-                    ritual.value = null;
+                    closeRitual();
                     void refreshToday();
                 }}><Icon name="close" /></button>
             </header>
@@ -55,10 +60,19 @@ export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string
 
 const STARTERS = [ "What should I work on now?", "What's left today?", "What's on tomorrow?" ];
 
-/** Ask: the server's Caius chat with the notes. A "remind me…" is read on the phone into a reminder chip, and only a tap sets it. */
+/**
+ * Ask: the server's Caius chat with the notes. A "remind me…" is read on the phone into a reminder
+ * chip, and only a tap sets it. Today's conversation reopens where it was left; an older one is forgotten.
+ */
 export function Ask() {
     const key = today.value?.key;
-    const chat = useChat("ask", key ?? "");
+    const [ stored ] = useState(() => readStoredChats().ask);
+    const chat = useChat("ask", key ?? "", stored && stored.date === key ? stored.noteId : undefined);
+    useEffect(() => {
+        if (key && stored && stored.date !== key) {
+            storeChat("ask", null);
+        }
+    }, [ key ]);
     const [ reminders, setReminders ] = useState<{ id: string; at: Date; text: string; set?: boolean }[]>([]);
     if (!key) {
         return <div class="chat-screen"><p class="ink-2">Asking Caius what today is…</p></div>;
@@ -185,10 +199,12 @@ function ChatMenu({ chat }: { chat: Chat }) {
 
 /**
  * One Caius conversation: a chat note made on the server, the opener as the first message, each
- * turn streamed, and the transcript saved to the note after each turn as the sidebar saves it.
+ * turn streamed. The server runs a turn to its end and saves the transcript to the note; when the
+ * stream breaks or the app comes back to the front, the chat follows the server's turn. `restore`
+ * opens an existing chat note instead of making one.
  */
-function useChat(kind: ChatKind, date: string): Chat {
-    const [ state, setState ] = useState<ChatState>(serverStatus.value === null ? "needs-update" : "idle");
+function useChat(kind: ChatKind, date: string, restore?: string): Chat {
+    const [ state, setState ] = useState<ChatState>(serverStatus.value === null ? "needs-update" : restore ? "starting" : "idle");
     const [ messages, setMessages ] = useState<ChatMessage[]>([]);
     const [ streaming, setStreaming ] = useState<AssistantTurn | null>(null);
     const [ error, setError ] = useState<string | null>(null);
@@ -215,11 +231,27 @@ function useChat(kind: ChatKind, date: string): Chat {
     /** Bumped by New conversation and on close; a turn from an older conversation drops its reply. */
     const generation = useRef(0);
     const controller = useRef<AbortController | null>(null);
+    const slot = kind === "ask" ? "ask" : "ritual";
+    const remember = (id: string, at: CaiusEffort) => storeChat(slot, { noteId: id, kind, date, effort: at });
 
     useEffect(() => () => {
         generation.current++;
         controller.current?.abort();
     }, []);
+
+    // A paused WebView can leave the reader hanging, so a resume drops it and follows the server's turn.
+    const woke = resumed.value;
+    useEffect(() => {
+        if (woke) {
+            controller.current?.abort(DETACH);
+        }
+    }, [ woke ]);
+
+    useEffect(() => {
+        if (restore && noteId.current === null) {
+            void reopen(restore);
+        }
+    }, [ restore ]);
 
     const turn = async (text: string, answers?: PendingAnswers) => {
         const conn = connection.value;
@@ -247,6 +279,7 @@ function useChat(kind: ChatKind, date: string): Chat {
 
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
+        let refused: { error: unknown } | null = null;
         try {
             await chats.stream(historyForServer(history.current), chatNoteId, effort, { replyId: assembled.id, transcript: history.current }, (chunk) => {
                 if (generation.current === mine) {
@@ -255,38 +288,155 @@ function useChat(kind: ChatKind, date: string): Chat {
                 }
             }, abort.signal);
         } catch (e) {
-            assembled = { ...assembled, error: messageOf(e), done: true };
+            // A broken body or a detach leaves the turn running on the server; anything else came before it took the turn.
+            if (!(e instanceof StreamBrokenError) && abort.signal.reason !== DETACH) {
+                refused = { error: e };
+            }
         }
         if (generation.current !== mine) {
             return;
         }
-        if (!assembled.done && !assembled.error) {
-            assembled = { ...assembled, error: "The reply was cut off. Your message is back in the box: send it again." };
-        }
-
-        // A failed turn is kept as an error message (the sidebar shows it as one) and its words go back in the box.
-        const stored = turnMessages(assembled, new Date().toISOString());
-        history.current = [ ...history.current, ...stored ];
-        setMessages(history.current);
-        setStreaming(null);
-        setError(assembled.error ?? null);
-        if (assembled.error) {
+        const putBack = () => {
             setDraft(text);
             if (answers) {
                 cards.current = sent;
                 gather();
             }
+        };
+
+        if (refused) {
+            // The server never saw this turn, so the phone saves the transcript with the error.
+            const failed = { ...assembled, error: messageOf(refused.error), done: true };
+            land([ ...history.current, ...turnMessages(failed, new Date().toISOString()) ], failed.id, putBack);
+            const content: LlmChatContent = { version: 1, messages: history.current, enableNoteTools: true, enableWebSearch: false };
+            await chats.save(chatNoteId, content).catch((e) => {
+                snack.value = { text: `The transcript wasn't saved: ${messageOf(e)}`, tone: "error" };
+            });
+            return;
+        }
+        const followed: FollowedTurn | null = assembled.done ? { kind: "finished", turn: assembled } : await follow(chats, chatNoteId, assembled.id, mine);
+        if (!followed) {
+            return;
+        }
+        if (followed.kind === "saved") {
+            land(followed.messages, assembled.id, putBack);
+            return;
+        }
+        const ended = followed.kind === "finished" ? followed.turn : { ...assembled, error: `${new StreamBrokenError().message} ${PUT_BACK}`, done: true };
+        land([ ...history.current, ...turnMessages(ended, new Date().toISOString()) ], ended.id, putBack);
+    };
+
+    /**
+     * Shows a turn's end: `next` is the whole conversation, with `replyId` as the reply. A failed
+     * reply is kept as an error message (the sidebar shows it as one) and `putBack` returns their words to the box.
+     */
+    const land = (next: ChatMessage[], replyId: string, putBack?: () => void) => {
+        const reply = next.find((m) => m.id === replyId);
+        const failure = reply?.type === "error" && typeof reply.content === "string" ? reply.content : null;
+        history.current = next;
+        setMessages(next);
+        setStreaming(null);
+        setError(failure);
+        if (failure) {
+            putBack?.();
         }
         setState("ready");
-        if (assembled.blocks.some((b) => b.type === "tool_call" && /apply|set_state|forward|add|accept|dismiss|skip/.test(b.toolCall.toolName))) {
+        const blocks = reply?.content;
+        if (Array.isArray(blocks) && blocks.some((b) => b.type === "tool_call" && /apply|set_state|forward|add|accept|dismiss|skip/.test(b.toolCall.toolName))) {
             revision.value++;
             void refreshToday();
         }
+    };
 
-        const content: LlmChatContent = { version: 1, messages: history.current, enableNoteTools: true, enableWebSearch: false };
-        await chats.save(chatNoteId, content).catch((e) => {
-            snack.value = { text: `The transcript wasn't saved: ${messageOf(e)}`, tone: "error" };
-        });
+    /**
+     * Follows the server's turn once the phone's reader is gone, showing the reply as it rebuilds,
+     * and starts over when a resume detaches it again. Null when a newer conversation took over.
+     */
+    const follow = async (chats: ChatApi, chatNoteId: string, replyId: string, mine: number): Promise<FollowedTurn | null> => {
+        for (;;) {
+            const abort = new AbortController();
+            controller.current = abort;
+            try {
+                return await followTurn(chats, chatNoteId, replyId, (turn) => {
+                    if (generation.current === mine) {
+                        setStreaming(turn);
+                    }
+                }, abort.signal);
+            } catch {
+                if (generation.current !== mine) {
+                    return null;
+                }
+                if (abort.signal.reason !== DETACH) {
+                    return { kind: "lost" };
+                }
+            }
+        }
+    };
+
+    /**
+     * Opens an existing chat note: its saved transcript, and the reply still being written streaming
+     * in again while the server's turn runs. A note it can't reopen is forgotten, and a ritual starts over.
+     */
+    const reopen = async (id: string) => {
+        const conn = connection.value;
+        if (!conn) {
+            return;
+        }
+        if (serverStatus.value === null) {
+            setState("needs-update");
+            return;
+        }
+        const chats = chatApi(conn);
+        const mine = generation.current;
+        noteId.current = id;
+        const stored = readStoredChats()[slot];
+        if (stored?.noteId === id) {
+            setEffort(stored.effort);
+        }
+        setState("starting");
+        let held: TurnState;
+        try {
+            held = await chats.turnState(id);
+        } catch (e) {
+            if (generation.current !== mine) {
+                return;
+            }
+            noteId.current = null;
+            // A gone note (400) and a server without the turn routes (404) both leave nothing to reopen.
+            if ((e instanceof HttpError && e.status === 400) || e instanceof NeedsServerUpdateError) {
+                storeChat(slot, null);
+                setState("idle");
+                if (kind !== "ask") {
+                    await start();
+                }
+            } else {
+                setError(messageOf(e));
+                setState("failed");
+            }
+            return;
+        }
+        if (generation.current !== mine) {
+            return;
+        }
+        history.current = restoredMessages(held.content);
+        setMessages(history.current);
+        const replyId = held.replyId;
+        if (!held.running || !replyId) {
+            setState("ready");
+            return;
+        }
+        setState("streaming");
+        setStreaming({ id: replyId, blocks: [], done: false });
+        const followed = await follow(chats, id, replyId, mine);
+        if (!followed) {
+            return;
+        }
+        if (followed.kind === "saved") {
+            land(followed.messages, replyId);
+            return;
+        }
+        const ended = followed.kind === "finished" ? followed.turn : { id: replyId, blocks: [], error: new StreamBrokenError().message, done: true };
+        land([ ...history.current, ...turnMessages(ended, new Date().toISOString()) ], replyId);
     };
 
     /**
@@ -310,6 +460,7 @@ function useChat(kind: ChatKind, date: string): Chat {
                 return;
             }
             noteId.current = created;
+            remember(created, effort);
         } catch (e) {
             if (generation.current !== mine) {
                 return;
@@ -345,6 +496,7 @@ function useChat(kind: ChatKind, date: string): Chat {
         generation.current++;
         controller.current?.abort();
         noteId.current = null;
+        storeChat(slot, null);
         history.current = [];
         setMessages([]);
         setStreaming(null);
@@ -359,8 +511,19 @@ function useChat(kind: ChatKind, date: string): Chat {
         kind, date, effort, appVersion: await appVersion(), exportedAt: new Date(), messages: history.current
     });
 
-    return { state, messages, streaming, error, draft, setDraft, report, pending, leaveOut, start, send, reset, effort, setEffort, exportText };
+    const changeEffort = (next: CaiusEffort) => {
+        setEffort(next);
+        if (noteId.current) {
+            remember(noteId.current, next);
+        }
+    };
+
+    return { state, messages, streaming, error, draft, setDraft, report, pending, leaveOut, start, send, reset, effort, setEffort: changeEffort, exportText };
 }
+
+/** The abort reason of a reader dropped on resume, so the turn follows the server instead of ending. */
+const DETACH = "detach";
+const PUT_BACK = "Your message is back in the box: send it again.";
 
 function newId() {
     return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
