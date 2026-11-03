@@ -322,7 +322,7 @@ describe("dayTerrain", () => {
 
     it("leaves no hill under the heading a block tap moved the only row out of", () => {
         const bare: DayViewData = {
-            ...data, drawn: undefined,
+            ...data, drawn: null,
             tasks: [ row("w", "Write notes", { section: "Morning", block: "morning" }), row("e", "Email", { section: "Tasks" }) ]
         };
         const names = (answers: ViewAnswers) => laid(answers, bare).input.groups.map((g) => g.name);
