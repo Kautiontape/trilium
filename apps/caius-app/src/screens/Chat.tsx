@@ -8,9 +8,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
+import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
 import { ritual } from "../app-state.js";
 import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
+import { appVersion, shareText } from "../lib/share.js";
+import { chatTranscript } from "../lib/transcript.js";
 import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
@@ -38,6 +41,7 @@ export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string
                     <h1>{title}</h1>
                     <p class="ink-2">{dayLabel(date)}</p>
                 </div>
+                <button type="button" class="icon-btn" aria-label="Chat menu" onClick={() => openSheet(<ChatMenu chat={chat} />)}><Icon name="more_vert" /></button>
                 <button type="button" class="icon-btn" aria-label="Close" onClick={() => {
                     ritual.value = null;
                     void refreshToday();
@@ -76,6 +80,7 @@ export function Ask() {
                     <h1>Ask</h1>
                     <p class="ink-2">Caius · reads your Journal</p>
                 </div>
+                <button type="button" class="icon-btn" aria-label="Chat menu" onClick={() => openSheet(<ChatMenu chat={chat} />)}><Icon name="more_vert" /></button>
                 {chat.messages.length > 0 && <button type="button" class="icon-btn" aria-label="New conversation"
                     disabled={chat.state === "streaming" || chat.state === "starting"} onClick={chat.reset}><Icon name="edit_square" /></button>}
             </header>
@@ -148,6 +153,34 @@ interface Chat {
     start: (first?: string, answers?: PendingAnswers) => Promise<void>;
     send: (text: string, answers?: PendingAnswers) => Promise<void>;
     reset: () => void;
+    /** How long Caius thinks on this chat's next turn: the Settings default until it is changed here. */
+    effort: CaiusEffort;
+    setEffort: (effort: CaiusEffort) => void;
+    /** The conversation so far as plain text, for sharing. */
+    exportText: () => Promise<string>;
+}
+
+/** The chat's menu: how hard Caius thinks from here on, and sending the conversation off for review. */
+function ChatMenu({ chat }: { chat: Chat }) {
+    const [ effort, setEffort ] = useState(chat.effort);
+    return (
+        <>
+            <SheetTitle title="Chat" />
+            <div class="label-caps">Caius's thinking</div>
+            <div class="chip-row">
+                {CAIUS_EFFORTS.map((e) => (
+                    <Chip key={e} selected={effort === e} onClick={() => {
+                        setEffort(e);
+                        chat.setEffort(e);
+                    }}>{e === "low" ? "Low" : e === "medium" ? "Medium" : "High"}</Chip>
+                ))}
+            </div>
+            <SheetAction glyph="open_in_new" label="Submit chat for feedback" onClick={() => {
+                closeSheet();
+                void chat.exportText().then((text) => shareText("Caius chat", text, "caius-chat.txt"));
+            }} />
+        </>
+    );
 }
 
 /**
@@ -160,6 +193,7 @@ function useChat(kind: ChatKind, date: string): Chat {
     const [ streaming, setStreaming ] = useState<AssistantTurn | null>(null);
     const [ error, setError ] = useState<string | null>(null);
     const [ draft, setDraft ] = useState("");
+    const [ effort, setEffort ] = useState(settings.value.caiusEffort);
     const cards = useRef(new Map<string, CardAnswer>());
     const [ pending, setPending ] = useState<PendingAnswers | null>(null);
     const gather = () => {
@@ -214,7 +248,7 @@ function useChat(kind: ChatKind, date: string): Chat {
         let assembled: AssistantTurn = { id: newId(), blocks: [], done: false };
         setStreaming(assembled);
         try {
-            await chats.stream(historyForServer(history.current), chatNoteId, settings.value.caiusEffort, (chunk) => {
+            await chats.stream(historyForServer(history.current), chatNoteId, effort, (chunk) => {
                 if (generation.current === mine) {
                     assembled = applyChunk(assembled, chunk);
                     setStreaming(assembled);
@@ -323,10 +357,15 @@ function useChat(kind: ChatKind, date: string): Chat {
         setError(null);
         leaveOut();
         setDraft("");
+        setEffort(settings.value.caiusEffort);
         setState(serverStatus.value === null ? "needs-update" : "idle");
     };
 
-    return { state, messages, streaming, error, draft, setDraft, report, pending, leaveOut, start, send, reset };
+    const exportText = async () => chatTranscript({
+        kind, date, effort, appVersion: await appVersion(), exportedAt: new Date(), messages: history.current
+    });
+
+    return { state, messages, streaming, error, draft, setDraft, report, pending, leaveOut, start, send, reset, effort, setEffort, exportText };
 }
 
 function newId() {
