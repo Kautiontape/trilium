@@ -232,7 +232,7 @@ async function slippingView(deps: ViewsDeps, period: string | null, now: Date): 
         total ? t("caius.views.slipping.slipping", { count: total, moves: rows[0]?.slips ?? MIN_SLIPS }) : t("caius.views.slipping.none"),
         overdueCount ? t("caius.views.slipping.overdue", { count: overdueCount }) : t("caius.views.slipping.overdue_none")
     ].join(" ");
-    const omitted = total > rows.length ? { tasks: total - rows.length } : {};
+    const omitted: Record<string, number> | undefined = total > rows.length ? { tasks: total - rows.length } : undefined;
     return capped({ view: "slipping", title: t("caius.views.slipping.title"), sentence, data }, [ { name: "tasks", rows: data.tasks } ], omitted);
 }
 
