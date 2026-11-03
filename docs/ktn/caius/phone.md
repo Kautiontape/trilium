@@ -24,9 +24,23 @@ The token is kept in Android's Keystore-backed storage (`capacitor-secure-storag
 | **Plan** | Day, week or month with ‹ › and Today, the period's list, and the Pull in lanes: Overdue, This week, This month, 20 rows at a time. ⋯ on a row pulls it in to the period you're viewing, or marks it Done or drops it. |
 | **Plan my day / Wind down** | The server's Caius conversation, full screen, on a clay or dusk ground, with the screen kept awake. Caius runs the ritual's steps and asks once; each step's data shows as a card under its question, with the proposed fate on each item as a chip. Taps on the cards build your reply in the text box (edit it or type your own), and Caius does the judgment and the one write. The transcript is saved to the chat note, so the desktop sidebar can open it. |
 | **Ask** | The same chat with an `Ask` opener and starter prompts ("What should I work on now?"). "Remind me at 3 to call the pharmacy" is read on the phone into a reminder chip; only a tap on **Set** schedules it, and it never goes to the server. |
+| **Views** | In Ask and in the rituals, Caius can show a day, several days, one item or what keeps slipping as a card; see [Views in the chat](#views-in-the-chat). |
 | **Reminders** | Your own reminders, then Caius's nudges as switches with their times from the standing note's Rhythm (each can be overridden on the phone), then quiet hours. |
 
 App shortcuts on a long-press of the icon: Add task, Plan my day, Wind down, Ask.
+
+## Views in the chat
+
+When you ask to see something ("why is Tuesday over?", "what keeps slipping?"), Caius can answer with a card under its text, drawn from `caius_show` ([README](README.md#the-days-load-and-caius_show)). It shows at most one per reply. The meters use the same over figure as Today: the list's Foundation time against the day's focus figure, with On deck shown apart as what it would add.
+
+| View | Shows |
+|---|---|
+| **Day** | Meters for Foundation, Growth and Recharge, the day's timeline, rows by block (Important, Morning, Afternoon, Evening, the list, On deck) and the Context lines. It opens on the area that is over. |
+| **Days** | Two days side by side, each with its meters and rows. More days become a grid: a row per day with columns for meetings, Foundation, Growth and Recharge (▲ over, ○ no Recharge); a tap on an area cell opens that day's rows in that area. The Week row holds the week's items not yet on a day, against the week's Foundation target. |
+| **Item** | A task's row, its trail in words, where it came from, the ticket card, what was said about it and the Context lines that name it. For a ticket no task names, **Take** (today, the next workday, a day, the week or On deck) and **Finished**. |
+| **Slipping** | The tasks moved twice or more, longest trail first, each with its ↻ count and where it is now, then the overdue tasks by age. The fate menu adds **Park**. |
+
+A tap on a row opens its fate menu: done, a block, On deck or the list, the next workday, a day, the week, Park, drop with a reason, an estimate or an area. Nothing is written by the tap. Each choice goes into the answers pill as a sentence, the meters and timeline redraw as if it were made, and each can be undone on its own until you press **Send**. Send hands the sentences to Caius, who makes the writes with its tools; the card stays live until Caius replies, including after a failed send. A sub-item moves with its parent, so its menu offers no block, On deck or list, and a row with live sub-items offers no estimate. A long list is cut for size; a quiet "N more not shown" line says how many rows are missing.
 
 ## Notifications
 
@@ -36,7 +50,7 @@ All of them are scheduled on the phone from the state it last read, and rebuilt 
 |---|---|---|
 | Plan my day, or the catch-up in its place | 20 minutes before standup on a workday, while the day isn't planned (with the nudge state) or has a catch-up | Rituals |
 | Wind down | At the end of work on a workday, unless the day is wound down | Rituals |
-| Over capacity | At standup, once, when the day's planned work passes its focus target | Warnings |
+| Over capacity | At standup, once, when the list's Foundation work passes the day's focus figure (On deck doesn't count) | Warnings |
 | Your reminders | The exact time you set, with Done (on a task), Snooze 15 min and Tomorrow | Reminders |
 
 The nudges' buttons act like the app's own: Move all to today, Skip, Plan my day, In 30 min / In 1 h (it comes back once).
