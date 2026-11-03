@@ -454,20 +454,32 @@ describe("a stale errand", () => {
         expect((await call("caius_plan", { period: "day", date: "2029-04-09" })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
     });
 
-    it("the plan's top pick is work when his list has work: a Growth or Recharge chore never leads it", async () => {
+    it("the plan's top pick is the first task on his list, whatever its area: a Growth chore above the work leads, and an Evening task is no pick", async () => {
         const DAY = "2029-05-07";
         await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Home</h3>${ul(li("p-dave", "🌱 Message Dave about the lights"))}<h3>Chores</h3>${ul(li("p-bins", "🔋 Take the bins out"))}`
-            + `<h3>Work</h3>${ul(li("p-801", `${zap("ZAP-801", "Verify the export retry")} ~30m`), li("p-802", `${zap("ZAP-802", "Check the invoice export")} ~30m`))}`);
+            + `<h3>Work</h3>${ul(li("p-801", `${zap("ZAP-801", "Verify the export retry")} ~30m`), li("p-802", `${zap("ZAP-802", "Check the invoice export")} ~30m`))}<h3>Evening</h3>${ul(li("p-ev", "Call the plumber"))}`);
         at(`${DAY}T09:40`);
-        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Verify the export retry, then the invoice check.", acts: [
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Message Dave first, then the export retry.", acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
         ] } });
         expect(planned.skipped).toEqual([]);
-        expect(planned.topPick).toContain("ZAP-801");
+        expect(planned.topPick).toContain("Message Dave");
         const brief = await contentOf(planned.briefNoteId);
-        // The picks are Foundation's: the Growth and Recharge chores are not among them.
-        expect(brief).not.toContain("Message Dave");
-        expect(brief).not.toContain("Take the bins out");
+        const picks = /<h2>Get done today<\/h2>(<ul>[\s\S]*?<\/ul>)/.exec(brief)?.[1] ?? "";
+        expect([ ...picks.matchAll(/<li[^>]*>([^<]*)/g) ].map((m) => (m[1] ?? "").slice(0, 12))).toEqual([ "Message Dave", "Take the bin", "ZAP-801 Veri", "ZAP-802 Chec" ]);
+        expect(picks).not.toContain("plumber");
+    });
+
+    it("a Growth task first in Morning, on a day with no Foundation, is the top pick", async () => {
+        const DAY = "2029-05-09";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Morning</h3>${ul(li("g-1", "🌱 Practise the piano piece ~30m"))}<h3>Afternoon</h3>${ul(li("g-2", "🔋 Walk the dog ~20m"))}`);
+        at(`${DAY}T09:40`);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Piano first, then a walk.", acts: [
+            { range: "", text: "x" }, { range: "", text: "y" }
+        ] } });
+        expect(planned.skipped).toEqual([]);
+        expect(planned.topPick).toContain("Practise the piano piece");
+        expect(await contentOf(planned.briefNoteId)).toContain("Walk the dog");
     });
 
     it("a task with a ticket is work under any heading: ZAP-821 under Admin chores stays the top pick", async () => {
