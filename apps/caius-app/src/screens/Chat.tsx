@@ -392,8 +392,9 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
     };
 
     /**
-     * Shows a turn's end: `next` is the whole conversation, with `replyId` as the reply. A failed
-     * reply is kept as an error message (the sidebar shows it as one) and `putBack` returns their words to the box.
+     * Shows a turn's end: `next` is the whole conversation, with `replyId` as the reply. A reply
+     * with no blocks is an error message (the sidebar shows it as one) and `putBack` returns their
+     * words to the box; a turn stopped after it wrote blocks keeps them, its error following as `${replyId}-error`.
      */
     const land = (next: ChatMessage[], replyId: string, putBack?: () => void) => {
         const reply = next.find((m) => m.id === replyId);
@@ -678,7 +679,8 @@ function Transcript({ chat }: { chat: Chat }) {
         }
         scrolled.current = at;
         const last = chat.messages[chat.messages.length - 1];
-        const turns = box.current?.querySelectorAll(".caius-turn, .chat-error");
+        // A stopped turn's error line follows its reply, so the reply is the one to show from its start.
+        const turns = box.current?.querySelectorAll(".caius-turn, .chat-error:not(.caius-turn + .chat-error)");
         if (!chat.streaming && last?.role === "assistant" && turns?.length) {
             turns[turns.length - 1].scrollIntoView({ block: "start", behavior: "smooth" });
         } else {

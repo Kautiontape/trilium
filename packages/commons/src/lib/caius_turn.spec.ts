@@ -72,10 +72,33 @@ describe("turnMessages", () => {
         ]);
     });
 
-    it("stores a failed turn as an error message with no notes", () => {
+    it("stores a failed turn without blocks as an error message with no notes", () => {
         const turn = run([ { type: "thinking", content: "One." }, { type: "error", error: "Boom" } ]);
         expect(turnMessages(turn, AT)).toEqual([
             { id: "t", role: "assistant", content: "Boom", createdAt: AT, type: "error" }
+        ]);
+    });
+
+    it("keeps the notes and the reply of a turn stopped after it wrote blocks, with the error after them", () => {
+        const turn = run([
+            { type: "thinking", content: "One." },
+            { type: "tool_use", toolCallId: "a", toolName: "caius_winddown_apply", toolInput: {} },
+            { type: "tool_result", toolCallId: "a", toolName: "caius_winddown_apply", result: "{}" },
+            { type: "text", content: "Applied." },
+            { type: "error", error: "Out of time" }
+        ]);
+        expect(turnMessages(turn, AT)).toEqual([
+            { id: "t-notes", role: "assistant", content: "One.", createdAt: AT, type: "thinking" },
+            {
+                id: "t",
+                role: "assistant",
+                content: [
+                    { type: "tool_call", toolCall: { id: "a", toolName: "caius_winddown_apply", input: {}, result: "{}", isError: undefined } },
+                    { type: "text", content: "Applied." }
+                ],
+                createdAt: AT
+            },
+            { id: "t-error", role: "assistant", content: "Out of time", createdAt: AT, type: "error" }
         ]);
     });
 

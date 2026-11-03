@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { activityLine, applyChunk, type AssistantTurn, type ChatChunk, chatApi, type ContentBlock, firstLine, historyForServer, latestLine, NeedsServerUpdateError, NoTurnError, sseParser, TooManyTurnsError, type StoredMessage, stepOf, turnText, TurnRunningError, workingLine } from "./chat.js";
+import { activityLine, applyChunk, type AssistantTurn, type ChatChunk, chatApi, type ContentBlock, firstLine, historyForServer, latestLine, NeedsServerUpdateError, NoTurnError, sseParser, TooManyTurnsError, type StoredMessage, stepOf, turnText, TurnRunningError, turnMessages, workingLine } from "./chat.js";
 import { HttpError, request } from "./http.js";
 import { afterStreamError } from "./chats.js";
 import { messageOf } from "./store.js";
@@ -72,6 +72,25 @@ describe("historyForServer", () => {
             { role: "assistant", content: "Which are done?" },
             { role: "user", content: "Laundry is done." }
         ]);
+    });
+
+    it("keeps a stopped turn's message and reply text, and leaves out the error after them", () => {
+        const at = "2026-11-04T09:00:00.000Z";
+        const stopped = [
+            { type: "tool_use", toolCallId: "a", toolName: "caius_winddown_apply", toolInput: {} },
+            { type: "tool_result", toolCallId: "a", toolName: "caius_winddown_apply", result: "{}" },
+            { type: "text", content: "Laundry is marked done." },
+            { type: "error", error: "Out of time" }
+        ] satisfies ChatChunk[];
+        const failed = [ { type: "thinking", content: "Hm." }, { type: "error", error: "Boom" } ] satisfies ChatChunk[];
+        const ask = { id: "1", role: "user", content: "Laundry is done.", createdAt: at } satisfies StoredMessage;
+        const reply = (id: string, chunks: ChatChunk[]) => turnMessages(chunks.reduce(applyChunk, { id, blocks: [], done: false } as AssistantTurn), at);
+
+        expect(historyForServer([ ask, ...reply("2", stopped) ])).toEqual([
+            { role: "user", content: "Laundry is done." },
+            { role: "assistant", content: "Laundry is marked done." }
+        ]);
+        expect(historyForServer([ ask, ...reply("2", failed) ])).toEqual([]);
     });
 });
 

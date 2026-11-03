@@ -40,18 +40,23 @@ export function applyChunk(turn: AssistantTurn, chunk: CaiusTurnChunk): Assistan
 
 /**
  * The messages a turn is stored as: its notes as a thinking message just before the reply, which
- * the sidebar shows as the thought process, then the reply. A failed turn is kept as an error
- * message with no notes. With `partial`, the reply is marked as saved before the turn finished.
+ * the sidebar shows as the thought process, then the reply. A turn that ends in an error after
+ * writing blocks keeps them, with the error as a message of its own (`${id}-error`) after the
+ * reply; one that wrote no blocks is kept as an error message alone. With `partial`, the reply is
+ * marked as saved before the turn finished.
  */
 export function turnMessages(turn: AssistantTurn, createdAt: string, { partial }: { partial?: boolean } = {}): CaiusStoredMessage[] {
-    if (turn.error) {
+    if (turn.error && !turn.blocks.length) {
         return [ { id: turn.id, role: "assistant", content: turn.error, createdAt, type: "error", ...(partial ? { partial } : {}) } ];
     }
     const reply: CaiusStoredMessage = { id: turn.id, role: "assistant", content: turn.blocks, createdAt, ...(partial ? { partial } : {}) };
-    if (!turn.notes?.length) {
-        return [ reply ];
-    }
-    return [ { id: `${turn.id}-notes`, role: "assistant", content: turn.notes.join("\n\n"), createdAt, type: "thinking" }, reply ];
+    const notes: CaiusStoredMessage[] = turn.notes?.length
+        ? [ { id: `${turn.id}-notes`, role: "assistant", content: turn.notes.join("\n\n"), createdAt, type: "thinking" } ]
+        : [];
+    const error: CaiusStoredMessage[] = turn.error
+        ? [ { id: `${turn.id}-error`, role: "assistant", content: turn.error, createdAt, type: "error" } ]
+        : [];
+    return [ ...notes, reply, ...error ];
 }
 
 function assemble(turn: AssistantTurn, chunk: CaiusTurnChunk): AssistantTurn {

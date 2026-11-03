@@ -17,8 +17,12 @@ export const MAX_CHAT_CONTENT_LENGTH = 2 * 1024 * 1024;
 export const SAVE_INTERVAL_MS = 2000;
 /** The longest a turn runs before it is aborted. */
 export const MAX_TURN_MS = 15 * 60 * 1000;
-/** The most chunks a turn's log holds before the turn is aborted. */
-export const MAX_TURN_CHUNKS = 20_000;
+/**
+ * The largest a turn's log grows, in characters of JSON summed over its chunks, before the turn is
+ * aborted: 8 MB of text. It bounds the many small text and thinking deltas of a long turn and a
+ * single large `tool_result` alike.
+ */
+export const MAX_TURN_LOG_LENGTH = 8 * 1024 * 1024;
 /** The most turns that run at once across all chat notes: each one is a Claude Code subprocess. */
 export const MAX_RUNNING_TURNS = 4;
 /** How long a finished turn stays in the registry for a client to reattach to. */
@@ -75,6 +79,7 @@ export function startTurn(start: TurnStart): Turn | "running" | "busy" {
         replyId,
         createdAt: new Date().toISOString(),
         chunks: [],
+        logLength: 0,
         running: true,
         finished,
         resolveFinished,
@@ -146,6 +151,8 @@ interface Listener {
 
 interface TurnState extends Turn {
     chunks: LlmStreamChunk[];
+    /** The characters of JSON in `chunks`, against `MAX_TURN_LOG_LENGTH`. */
+    logLength: number;
     running: boolean;
     resolveFinished: () => void;
     assembled: AssistantTurn;
@@ -179,7 +186,7 @@ async function run(state: TurnState, messages: LlmMessage[], config: LlmProvider
         push(state, chunk);
         if (chunk.type === "done" || chunk.type === "error") {
             end(state);
-        } else if (state.chunks.length >= MAX_TURN_CHUNKS) {
+        } else if (state.logLength >= MAX_TURN_LOG_LENGTH) {
             end(state, t("caius.turn.too_long"));
         } else {
             scheduleSave(state);
@@ -221,6 +228,7 @@ function end(state: TurnState, error?: string) {
 
 function push(state: TurnState, chunk: LlmStreamChunk) {
     const index = state.chunks.push(chunk) - 1;
+    state.logLength += JSON.stringify(chunk).length;
     state.assembled = applyChunk(state.assembled, chunk);
     for (const listener of state.listeners) {
         guarded(() => listener.onChunk(chunk, index));

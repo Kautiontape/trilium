@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 
 import {
     MAX_RUNNING_TURNS,
-    MAX_TURN_CHUNKS,
+    MAX_TURN_LOG_LENGTH,
     MAX_TURN_MS,
     phoneChatNoteOf,
     RETAIN_MS,
@@ -318,29 +318,48 @@ describe("bounds", () => {
         expect(llm.calls.at(-1)?.signal?.aborted).toBe(true);
         expect(turn.chunks).toEqual([ text("Hel"), { type: "error", error } ]);
         await turn.finished;
-        expect(contentOf(noteId).messages[1]).toEqual({
-            id: "r1",
-            role: "assistant",
-            content: error,
-            createdAt: turn.createdAt,
-            type: "error"
-        });
+        expect(contentOf(noteId).messages).toEqual([
+            USER,
+            { id: "r1", role: "assistant", content: [ { type: "text", content: "Hel" } ], createdAt: turn.createdAt },
+            { id: "r1-error", role: "assistant", content: error, createdAt: turn.createdAt, type: "error" }
+        ]);
     });
 
-    it("ends a turn whose log reaches the chunk cap with an error chunk", async () => {
+    it("ends a turn whose log passes the size cap, and keeps the reply it wrote", async () => {
         const noteId = newChatNote();
+        const call = { toolCallId: "a", toolName: "caius_winddown_apply" };
+        // `status` chunks count toward the log but stay out of the saved reply, which keeps it under `MAX_CHAT_CONTENT_LENGTH`.
+        const filler: LlmStreamChunk = { type: "status", status: "x".repeat(64 * 1024) };
         llm.script = async function* () {
-            for (let i = 0; i < MAX_TURN_CHUNKS + 100; i++) {
-                yield text("x");
+            yield { type: "tool_use", ...call, toolInput: {} };
+            yield { type: "tool_result", ...call, result: "{}" };
+            yield text("Applied.");
+            for (let size = 0; size < MAX_TURN_LOG_LENGTH * 2; size += 64 * 1024) {
+                yield filler;
             }
             yield { type: "done" };
         };
-        const turn = started({ noteId, messages: OPENER, config: {} });
+        const turn = started(withTranscript(noteId));
         await turn.finished;
 
-        expect(turn.chunks).toHaveLength(MAX_TURN_CHUNKS + 1);
+        const logged = turn.chunks.slice(0, -1).reduce((size, chunk) => size + JSON.stringify(chunk).length, 0);
+        expect(logged).toBeGreaterThanOrEqual(MAX_TURN_LOG_LENGTH);
+        expect(logged - JSON.stringify(filler).length).toBeLessThan(MAX_TURN_LOG_LENGTH);
         expect(turn.chunks.at(-1)).toEqual({ type: "error", error: MESSAGES.too_long });
         expect(llm.calls.at(-1)?.signal?.aborted).toBe(true);
+        expect(contentOf(noteId).messages).toEqual([
+            USER,
+            {
+                id: "r1",
+                role: "assistant",
+                content: [
+                    { type: "tool_call", toolCall: { id: "a", toolName: "caius_winddown_apply", input: {}, result: "{}" } },
+                    { type: "text", content: "Applied." }
+                ],
+                createdAt: turn.createdAt
+            },
+            { id: "r1-error", role: "assistant", content: MESSAGES.too_long, createdAt: turn.createdAt, type: "error" }
+        ]);
     });
 
     it("drops a finished turn after the retention, unless a newer turn replaced it", async () => {
