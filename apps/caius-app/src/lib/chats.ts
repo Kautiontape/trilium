@@ -108,6 +108,32 @@ export function askedFate(synced: SyncedChat, askedId: string): "held" | "missed
 }
 
 /**
+ * The user message a chat read back from the server ends on when no turn runs to answer it (its
+ * turn ended without a reply, as on a server restart, or `restoredMessages` dropped a partial
+ * reply), or null. `messages` is the chat without it and `words` its text, for the box; the
+ * conversation's opener (the first message) stays in `messages`, with no words, so the next turn
+ * still starts with it.
+ */
+export function unansweredTail(synced: SyncedChat): UnansweredTail | null {
+    const { messages } = synced;
+    const last = messages[messages.length - 1];
+    if (synced.replyId || last?.role !== "user") {
+        return null;
+    }
+    if (messages.length === 1) {
+        return { messages, words: "", opener: true };
+    }
+    return { messages: messages.slice(0, -1), words: typeof last.content === "string" ? last.content : "", opener: false };
+}
+
+export interface UnansweredTail {
+    messages: StoredMessage[];
+    words: string;
+    /** Whether the unanswered message is the opener, which stays in `messages`. */
+    opener: boolean;
+}
+
+/**
  * What a message sent on a stale chat does once `catchUp` has read the chat back (`caught`, null
  * while the server can't be read): `"send"` once the chat is in step with the server and holds every
  * earlier message, `"with-missed"` when an earlier message's words came back to the box, so the new

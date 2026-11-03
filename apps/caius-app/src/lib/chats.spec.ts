@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyChunk, type AssistantTurn, type ChatApi, type ChatChunk, type LlmChatContent, NeedsServerUpdateError, NoTurnError, type StoredMessage, StreamBrokenError, TurnRunningError, type TurnState } from "./chat.js";
-import { afterStreamError, askedFate, followTurn, pendingReplyAction, putBackInto, readStoredChats, restoredMessages, resync, staleSendAction, storeChat } from "./chats.js";
+import { afterStreamError, askedFate, followTurn, pendingReplyAction, putBackInto, readStoredChats, restoredMessages, resync, staleSendAction, storeChat, unansweredTail } from "./chats.js";
 import { HttpError, UnreachableError } from "./http.js";
 
 const AT = "2026-11-04T09:00:00.000Z";
@@ -78,6 +78,28 @@ describe("askedFate", () => {
         expect(askedFate({ messages: [ ...asked, ...finishedReply ], replyId: null }, "u1")).toBe("held");
         expect(askedFate({ messages: asked, replyId: "r1" }, "u1")).toBe("held");
         expect(askedFate({ messages: asked, replyId: null }, "u1")).toBe("unanswered");
+    });
+});
+
+describe("unansweredTail", () => {
+    it("takes back a last user message no turn answered, with its words", () => {
+        expect(unansweredTail({ messages: asked, replyId: null })).toEqual({ messages: asked.slice(0, 2), words: "Laundry is done.", opener: false });
+        expect(unansweredTail({ messages: restoredMessages(content([ ...asked, ...partialReply ])), replyId: null }))
+            .toEqual({ messages: asked.slice(0, 2), words: "Laundry is done.", opener: false });
+    });
+
+    it("leaves a chat with a finished reply or a running turn alone", () => {
+        expect(unansweredTail({ messages: [ ...asked, ...finishedReply ], replyId: null })).toBeNull();
+        expect(unansweredTail({ messages: asked, replyId: "r1" })).toBeNull();
+        expect(unansweredTail({ messages: [], replyId: null })).toBeNull();
+    });
+
+    it("keeps the opener, with no words to put back", () => {
+        const opener = asked.slice(0, 1);
+        expect(unansweredTail({ messages: opener, replyId: null })).toEqual({ messages: opener, words: "", opener: true });
+        const question: StoredMessage = { id: "u1", role: "user", content: "What should I work on now?", createdAt: AT };
+        expect(unansweredTail({ messages: [ ...opener, question ], replyId: null }))
+            .toEqual({ messages: opener, words: "What should I work on now?", opener: false });
     });
 });
 

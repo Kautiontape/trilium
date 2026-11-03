@@ -12,7 +12,7 @@ import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, turnText, workingLine } from "../lib/chat.js";
-import { afterStreamError, askedFate, type FollowedTurn, followTurn, pendingReplyAction, putBackInto, readStoredChats, resync, staleSendAction, storeChat, type SyncedChat } from "../lib/chats.js";
+import { afterStreamError, askedFate, type FollowedTurn, followTurn, pendingReplyAction, putBackInto, readStoredChats, resync, staleSendAction, storeChat, type SyncedChat, unansweredTail } from "../lib/chats.js";
 import { dayLabel } from "../lib/day.js";
 import { HttpError } from "../lib/http.js";
 import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
@@ -491,15 +491,24 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
     /**
      * Shows the chat as the server saved it, and follows the turn still running there to its end. A
      * followed turn that gets lost leaves the chat stale, with the error, for the next resume or turn.
+     * A chat that ends on a message no turn answered (`unansweredTail`) shows the error, with that
+     * message out of the transcript and its words back in the box unless `putBack` is false.
      */
-    const show = async (chats: ChatApi, id: string, synced: SyncedChat, mine: number) => {
-        history.current = synced.messages;
+    const show = async (chats: ChatApi, id: string, synced: SyncedChat, mine: number, putBack = true) => {
+        const tail = unansweredTail(synced);
+        history.current = tail?.messages ?? synced.messages;
         setMessages(history.current);
         setError(null);
         const replyId = synced.replyId;
         if (!replyId) {
             setStreaming(null);
-            setState("ready");
+            if (tail) {
+                setError(tail.opener ? NO_REPLY : `${NO_REPLY} ${PUT_BACK}`);
+                if (putBack && !tail.opener) {
+                    setDraft((typed) => putBackInto(typed, tail.words));
+                }
+            }
+            setState(tail ? "failed" : "ready");
             return;
         }
         setState("streaming");
@@ -546,7 +555,8 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         if (fate === "unanswered") {
             synced = { ...synced, messages: synced.messages.filter((m) => m.id !== asked?.id) };
         }
-        await show(chats, id, synced, mine);
+        // `asked.putBack` returns words that might already hold the tail's, so `show` keeps them out of the box.
+        await show(chats, id, synced, mine, !asked);
         if (fate === "unanswered" && generation.current === mine) {
             setError(`${NO_REPLY} ${PUT_BACK}`);
             setState("failed");
