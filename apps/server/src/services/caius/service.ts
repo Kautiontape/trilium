@@ -98,6 +98,7 @@ import { blockFor } from "./filing.js";
 import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import { catchupOf, type DayRead, dayLabels, dayPeriods, drawnTitle, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
+import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
@@ -108,6 +109,8 @@ export { routeInputs } from "./schemas.js";
 export const INPUTS_TTL_MS = 15 * 60_000;
 
 export type InputsReader = (input: InputsInput) => Promise<CaiusInputs>;
+
+export type TicketReader = (key: string) => Promise<TicketCard | TicketError>;
 
 /** The label of the standing note, "How I work". */
 const STANDING_LABEL = "assistantContext";
@@ -122,10 +125,12 @@ export function createCaiusService(
     baseStore: NoteStore = createBeccaStore(),
     weatherOf: (latitude: number, longitude: number, date: string) => Promise<DayWeather | undefined> = fetchDayWeather,
     inputsOf: InputsReader = (input) => readInputs(input),
-    clockMs: () => number = Date.now
+    clockMs: () => number = Date.now,
+    ticketOf: TicketReader = (key) => readTicket({ fetch: globalThis.fetch, env: process.env, now: () => new Date() }, key)
 ) {
     const store = withListItemIds(baseStore);
     const inputsCache = new Map<string, { at: number; inputs: CaiusInputs }>();
+    const ticketCache = new Map<string, { at: number; card: TicketCard }>();
 
     /** The standing note (`#assistantContext`) as markdown. The caller holds the lock. */
     async function readStanding(): Promise<Standing> {
@@ -245,6 +250,21 @@ export function createCaiusService(
     });
 
     return {
+        /** One Jira ticket by key, reused for `INPUTS_TTL_MS`. It reads no notes, so it takes no lock; an error is not kept. */
+        ticket: async (rawKey: string): Promise<TicketCard | TicketError> => {
+            const key = rawKey.trim().toUpperCase();
+            if (!/^[A-Z][A-Z0-9]+-\d+$/.test(key)) return { error: "bad_request" };
+            const hit = ticketCache.get(key);
+            if (hit && clockMs() - hit.at < INPUTS_TTL_MS) return hit.card;
+            const card = await ticketOf(key);
+            if ("error" in card) {
+                ticketCache.delete(key);
+                return card;
+            }
+            ticketCache.set(key, { at: clockMs(), card });
+            return card;
+        },
+
         /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. A read, so it takes no lock and the status never waits on a write. */
         rollover: async () => readRhythm((await readStanding()).markdown).rollover,
 

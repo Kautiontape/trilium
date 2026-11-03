@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { isInputWarning, readInputs } from "./index.js";
-import { adfToText, asksIn, isHandoffStatus, MAX_KEY_SEARCHES, overriddenKeys } from "./jira.js";
+import { adfToText, asksIn, isHandoffStatus, MAX_KEY_SEARCHES, overriddenKeys, readTicket } from "./jira.js";
 
 const NOW = new Date("2026-10-27T15:00:00Z");
 const TOKEN = "tok-not-a-real-secret";
@@ -297,5 +297,55 @@ describe("Jira helpers", () => {
         expect(asksIn(ticket, comments.slice(0, 1), "me", new Date("2026-10-20T00:00:00Z"))).toHaveLength(1);
         // A comment without an id is told apart by when it was made.
         expect(asksIn(ticket, comments.slice(0, 1), "me", new Date("2026-10-20T00:00:00Z"))[0]?.commentId).toBe("2026-10-26T10:00:00.000Z");
+    });
+});
+
+describe("readTicket", () => {
+    const issue = {
+        key: "ZAP-105",
+        fields: {
+            summary: "Confirm the staging bucket name",
+            status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+            resolution: null,
+            assignee: { displayName: "Sam Example" },
+            updated: "2026-10-25T15:00:00.000-0400",
+            statuscategorychangedate: "2026-10-24T11:00:00.000-0400"
+        }
+    };
+    const withIssue = (found: unknown) => {
+        const base = fakeJira();
+        const doFetch = (async (input: URL, init?: never) => {
+            if (/issue\/ZAP-\d+$/.test(input.pathname)) return found ? json(found) : json({}, 404);
+            if (input.pathname.endsWith("/changelog")) return json({ total: 0, values: [] });
+            return base.doFetch(input, init);
+        }) as unknown as typeof fetch;
+        return { doFetch };
+    };
+    const deps = (doFetch: typeof fetch, env: Record<string, string | undefined> = ENV) => ({ fetch: doFetch, env, now: () => NOW });
+
+    it("reads the ticket with its days in status, assignee, last comment and the asks of the user", async () => {
+        const jira = withIssue(issue);
+        const result = await readTicket(deps(jira.doFetch), "zap-105");
+
+        expect(result).toMatchObject({
+            key: "ZAP-105",
+            summary: "Confirm the staging bucket name",
+            status: "In Progress",
+            assignee: "Sam Example",
+            daysInStatus: 3,
+            done: false,
+            url: "https://example.atlassian.net/browse/ZAP-105",
+            lastComment: { author: "Riley Sample", created: "2026-10-25T19:00:00.000Z" }
+        });
+        if ("error" in result) throw new Error(result.error);
+        expect(result.asks.map((a) => [ a.author, a.commentId ])).toEqual([ [ "Riley Sample", "3" ], [ "Jordan Placeholder", "4" ] ]);
+    });
+
+    it("answers not_found for a missing ticket, not_configured without settings and bad_request for a bad key", async () => {
+        expect(await readTicket(deps(withIssue(undefined).doFetch), "ZAP-999")).toEqual({ error: "not_found" });
+        expect(await readTicket(deps(withIssue(issue).doFetch, { ...ENV, JIRA_TOKEN: undefined }), "ZAP-105")).toEqual({ error: "not_configured" });
+        expect(await readTicket(deps(withIssue(issue).doFetch), "zap 105")).toEqual({ error: "bad_request" });
+        const denied = (async () => json({}, 401)) as unknown as typeof fetch;
+        expect(await readTicket(deps(denied), "ZAP-105")).toEqual({ error: "http_401" });
     });
 });

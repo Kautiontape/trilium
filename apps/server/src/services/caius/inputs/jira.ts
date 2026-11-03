@@ -140,6 +140,49 @@ export async function readJira(deps: JiraDeps, context: string[] = [], keys: str
     };
 }
 
+/** One ticket as the Item view's card shows it. */
+export interface TicketCard extends JiraTicket {
+    /** Days in the current status; null when neither the changelog nor Jira's status date says. */
+    daysInStatus: number | null;
+    done: boolean;
+    lastComment: { author: string; created: string; excerpt: string } | null;
+    /** The comments that ask the user something, as `readJira` finds them. */
+    asks: JiraAsk[];
+}
+
+export interface TicketError {
+    /** `bad_request`, `not_found`, or a `JiraError` code such as `not_configured` or `http_401`. */
+    error: string;
+}
+
+/** Reads one ticket by key with the last comment and the asks of the user in the last `ASK_WINDOW_DAYS` days. */
+export async function readTicket(deps: JiraDeps, rawKey: string): Promise<TicketCard | TicketError> {
+    const key = rawKey.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9]+-\d+$/.test(key)) return { error: "bad_request" };
+    try {
+        const config = readConfig(deps.env);
+        const api = jiraApi(config, deps.fetch, deps.sleep ?? sleep);
+        const now = deps.now();
+        const issue = await api.get<RawIssue>(`/rest/api/3/issue/${encodeURIComponent(key)}`, { fields: TICKET_FIELDS });
+        const ticket = toTicket(config, issue);
+        const comments = await allComments(api, issue.key);
+        const me = await api.get<{ accountId: string }>("/rest/api/3/myself");
+        const last = comments.reduce<RawComment | undefined>((a, b) => !a || timeOf(b.created) >= timeOf(a.created) ? b : a, undefined);
+        return {
+            ...ticket,
+            daysInStatus: await daysInStatus(api, issue, now).catch(() => null),
+            done: isDone(issue),
+            lastComment: last
+                ? { author: last.author?.displayName ?? "unknown", created: new Date(timeOf(last.created)).toISOString(), excerpt: excerpt(adfToText(last.body)) }
+                : null,
+            asks: asksIn(ticket, comments, me.accountId, new Date(now.getTime() - ASK_WINDOW_DAYS * DAY_MS))
+        };
+    } catch (e) {
+        if (!(e instanceof JiraError)) throw e;
+        return { error: e.code === "http_404" ? "not_found" : e.code };
+    }
+}
+
 /**
  * The tickets the user is assigned, watches or commented on, updated in the last 8 days. A Jira that
  * rejects `comment ~ currentUser()` with a 400 is asked once more without it (`involved_narrowed`).
