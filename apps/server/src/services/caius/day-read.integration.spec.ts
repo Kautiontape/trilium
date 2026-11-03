@@ -172,8 +172,8 @@ describe("the day read", () => {
         expect(day.context.map((line) => line.text)).toContain("Sam is out today");
 
         const steps = await run(() => service.planday({ date: TUE, step: "inputs", refresh: true, early: true }));
-        const { sentence: _sentence, ...figures } = (steps as { data: { capacity: Record<string, unknown> } }).data.capacity;
-        expect(day.capacity).toEqual(figures);
+        if (!("data" in steps)) throw new Error(`the inputs step answered ${JSON.stringify(steps)}`);
+        expect(steps.data.capacity).toEqual({ ...day.capacity, sentence: expect.any(String) });
         expect(JSON.parse(JSON.stringify(day))).toEqual(day);
     });
 });
