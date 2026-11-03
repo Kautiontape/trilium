@@ -6,7 +6,7 @@ import {
 import appContext, { type CommandNames } from "../components/app_context.js";
 import type FNote from "../entities/fnote.js";
 import {
-    caiusApi, caiusNow, type CaiusTaskOrigin, type CaiusTaskState, caiusWrite, describeSkip,
+    caiusApi, type CaiusArea, caiusNow, type CaiusTaskOrigin, type CaiusTaskState, caiusWrite, describeSkip,
     type EditableElement, findOpenEditors, flushEditors, forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds,
     startCaiusConversation, wasCaiusEnabled
 } from "../services/caius.js";
@@ -25,6 +25,8 @@ export interface TaskTarget {
     noteId: string;
     listItemId: string;
     state: TaskState;
+    /** The area the task's text marks: Growth (🌱), Recharge (🔋), else Foundation. */
+    area: CaiusArea;
     /** Whether the nearest heading above the item is "Suggested". */
     inSuggested: boolean;
     /** The note's headings, in order, without "Suggested": where Accept can put the item. */
@@ -82,6 +84,17 @@ export function buildTaskActionItems(target: TaskTarget): MenuItem<CommandNames>
                 }
             ]
         });
+        if (!target.inSuggested) {
+            items.push({
+                title: t("caius.area"),
+                uiIcon: "bx bx-category",
+                items: AREAS.map((area): MenuItem<CommandNames> => ({
+                    title: t(`caius.area_${area}`),
+                    checked: area === target.area,
+                    handler: () => void setCaiusArea(target, area)
+                }))
+            });
+        }
         items.push({
             title: t("caius.drop"),
             uiIcon: "bx bx-block",
@@ -254,6 +267,14 @@ const JOURNAL_LABELS = [ "dateNote", "weekNote", "monthNote" ];
 /** Mirrors `TASK_STATE_ATTRIBUTE` in the editor's `todo_list_multistate` plugin. */
 const TASK_STATE_ATTRIBUTE = "taskState";
 
+/** Mirrors `markedArea()` in the library: a leading 🌱 or 🔋, with or without U+FE0F. */
+function markedArea(text: string): CaiusArea {
+    const marker = /^\s*(🌱|🔋)/u.exec(text)?.[1];
+    return marker === "🌱" ? "growth" : marker === "🔋" ? "recharge" : "foundation";
+}
+
+const AREAS: CaiusArea[] = [ "foundation", "growth", "recharge" ];
+
 const STATE_BY_SYMBOL: Record<string, TaskState> = {
     " ": "open",
     "/": "doing",
@@ -289,6 +310,7 @@ export function readTaskTarget(
         noteId,
         listItemId,
         state: readTaskState(editor, first),
+        area: markedArea(textOf(first)),
         inSuggested: nearest !== null && isSuggested(nearest),
         headers: allHeadings(editor).filter((heading) => !isSuggested(heading))
     };
@@ -425,6 +447,14 @@ async function setTaskState(target: TaskTarget, state: CaiusTaskState, reason?: 
             { ...itemOf(target), state, reason, expectedBlobId }
         ]),
         t(`caius.set_${state}`)
+    );
+}
+
+async function setCaiusArea(target: TaskTarget, area: CaiusArea) {
+    await caiusWrite(
+        target.noteId,
+        (expectedBlobId) => caiusApi.setArea([ { ...itemOf(target), area, expectedBlobId } ]),
+        t("caius.set_area", { area: t(`caius.area_${area}`) })
     );
 }
 

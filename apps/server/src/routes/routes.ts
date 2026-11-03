@@ -203,6 +203,7 @@ function register(app: express.Application) {
     asyncApiRoute(PST, "/api/caius/accept", caiusRoute.accept);
     asyncApiRoute(PST, "/api/caius/dismiss", caiusRoute.dismiss);
     asyncApiRoute(PST, "/api/caius/set-state", caiusRoute.setState);
+    asyncApiRoute(PST, "/api/caius/set-area", caiusRoute.setArea);
     asyncApiRoute(PST, "/api/caius/forward", caiusRoute.forward);
     asyncApiRoute(PST, "/api/caius/assign-ids", caiusRoute.assignIds);
     asyncApiRoute(PST, "/api/caius/apply", caiusRoute.apply);

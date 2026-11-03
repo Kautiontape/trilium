@@ -1,5 +1,7 @@
 // The day's groups: the main list cut into the few named runs of work the drawing shows as hills.
 
+import type { Area, Block } from '../trilium/areas.js';
+
 /** The most characters a group's or a meeting's name on the drawing may have. */
 export const NAME_LENGTH = 10;
 
@@ -16,6 +18,9 @@ export interface GroupedTask {
   section: string | null;
   /** In the day note's Important block. */
   critical?: boolean;
+  /** Its time block and area: a group never holds tasks of two blocks or two areas. */
+  block?: Block | null;
+  area?: Area;
 }
 
 export interface TaskGroup<T> {
@@ -25,37 +30,55 @@ export interface TaskGroup<T> {
   important: boolean;
 }
 
+const AREA_NAMES: Record<Area, string> = { foundation: 'Tasks', growth: 'Growth', recharge: 'Recharge' };
+
 /**
  * `tasks`, the main list in order, in the groups `saved` names. A task no group names joins the
  * group of the task just above it, or the first group when it is first; a group none of whose tasks
  * are left is gone. Without saved groups, the tasks under each heading are one group, named by the
  * heading cut to fit at a word. Groups come in the order of their first task on the list, their tasks in list order.
+ *
+ * A group never holds tasks of two time blocks or two areas: a saved group that does is split, one
+ * part per block and area, each with its name, and a task whose neighbour above is in another block
+ * or area joins the first group of its own, or, when there is none yet, a part of the first saved group.
  */
 export function groupTasks<T extends GroupedTask>(tasks: T[], saved: SavedGroup[] | null | undefined): TaskGroup<T>[] {
   const named = (saved ?? []).filter((group) => group.name.trim() !== '');
   const indexOf = new Map<string, number>();
   named.forEach((group, i) => group.items.forEach((id) => indexOf.has(id) || indexOf.set(id, i)));
-  const headings: string[] = [];
-  const groupOf = (task: T, above: number | undefined): number => {
-    if (named.length) return (task.id !== null ? indexOf.get(task.id) : undefined) ?? above ?? 0;
+  const lane = (task: T) => `${task.block ?? ''}|${task.area ?? 'foundation'}`;
+  const headingOf = (task: T) =>
     // A heading's emoji or marks before its first word ("☑️ Tasks") aren't part of its name.
-    const heading = fitName((task.section ?? '').replace(/^[^\p{L}\p{N}]+/u, '')) || (task.critical ? 'Important' : 'Tasks');
-    const at = headings.indexOf(heading);
-    return at >= 0 ? at : headings.push(heading) - 1;
-  };
-  const members = new Map<number, T[]>();
-  let above: number | undefined;
+    fitName((task.section ?? '').replace(/^[^\p{L}\p{N}]+/u, '')) || (task.critical ? 'Important' : AREA_NAMES[task.area ?? 'foundation']);
+
+  const groups: { key: string; lane: string; name: string; tasks: T[] }[] = [];
+  const find = (key: string) => groups.find((g) => g.key === key);
+  let above: { key: string; lane: string } | undefined;
   for (const task of tasks) {
-    const at = groupOf(task, above);
-    members.set(at, [...(members.get(at) ?? []), task]);
-    above = at;
+    const own = lane(task);
+    let key: string;
+    let name: string;
+    const savedAt = named.length && task.id !== null ? indexOf.get(task.id) : undefined;
+    if (savedAt !== undefined) {
+      key = `saved${savedAt}|${own}`;
+      name = shortName(named[savedAt]!.name);
+    } else if (named.length && above && above.lane === own) {
+      key = above.key;
+      name = find(key)!.name;
+    } else if (named.length) {
+      // The first group of its block and area; when there is none yet, the first saved group's name.
+      const first = groups.find((g) => g.lane === own);
+      key = first?.key ?? `saved0|${own}`;
+      name = first?.name ?? shortName(named[0]!.name);
+    } else {
+      name = headingOf(task);
+      key = `heading${name}|${own}`;
+    }
+    const group = find(key) ?? groups[groups.push({ key, lane: own, name, tasks: [] }) - 1]!;
+    group.tasks.push(task);
+    above = { key, lane: own };
   }
-  // A Map keeps the order its keys were first set: the order of each group's first task.
-  return [...members].map(([at, grouped]) => ({
-    name: named.length ? shortName(named[at]?.name ?? '') : (headings[at] ?? ''),
-    tasks: grouped,
-    important: grouped.some((task) => !!task.critical),
-  }));
+  return groups.map((group) => ({ name: group.name, tasks: group.tasks, important: group.tasks.some((task) => !!task.critical) }));
 }
 
 /** `name` trimmed and cut to `NAME_LENGTH` characters. */

@@ -4,7 +4,7 @@
  * that acts on a note of its own.
  */
 
-import { isPeriodKey, NAME_LENGTH, PERIODS } from "@triliumnext/caius";
+import { AREAS, BLOCKS, isPeriodKey, NAME_LENGTH, PERIODS } from "@triliumnext/caius";
 import { z } from "zod";
 
 export const LANES = ["overdue", "today", "week", "orbit", "planning_ahead", "someday", "suggested"] as const;
@@ -36,6 +36,8 @@ const addItem = z.object({
     month: periodKey("month").optional().describe("Month note, YYYY-MM"),
     section: z.string().optional().describe("Heading to add the task under"),
     critical: z.boolean().optional().describe("Add the task to the Important block"),
+    block: z.enum(BLOCKS as [ "morning", "afternoon", "evening" ]).optional().describe("A day only: the time block to file the task under (the Morning, Afternoon or Evening heading, made when missing), instead of a section"),
+    area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).optional().describe("The task's area, written as its marker (🌱 Growth, 🔋 Recharge; Foundation has none). On a day with no section, critical, onDeck or block given, an area files the task by it: Growth and Recharge under Evening, Foundation under Morning when the note has that heading, else in the main list"),
     suggested: z.boolean().optional().describe("Add the task to the Suggested section, from key, title, because and minutes"),
     onDeck: z.boolean().optional().describe("A day only: add the task to the day's On deck section, for something he would like to do that day (\"I'd like to do X Thursday\"). Tracked, but not on his list until Plan my day puts it there. For something he needs to do that day, give a section or critical instead"),
     text: z.string().optional().describe("The task text. Not for a Suggested item, unless already in its \"Get KEY title done: because why (~30m)\" shape."),
@@ -50,8 +52,15 @@ const addItem = z.object({
     (item) => [item.date, item.week, item.month].filter((v) => v !== undefined).length === 1,
     "Give exactly one of date, week or month"
 ).refine(
-    (item) => [item.section !== undefined, item.critical, item.suggested, item.onDeck].filter(Boolean).length === 1,
-    "Give exactly one of section, critical, suggested or onDeck"
+    (item) => [item.section !== undefined, item.critical, item.suggested, item.onDeck, item.block !== undefined].filter(Boolean).length === 1
+        || ([item.section !== undefined, item.critical, item.suggested, item.onDeck, item.block !== undefined].every((given) => !given) && item.area !== undefined && item.date !== undefined),
+    "Give exactly one of section, critical, suggested, onDeck or block (or, on a day, an area alone to file the task by it)"
+).refine(
+    (item) => item.block === undefined || item.date !== undefined,
+    "Only a day note has time blocks: give date with block"
+).refine(
+    (item) => !item.suggested || item.area === undefined,
+    "A Suggested item has no area until it is accepted"
 ).refine(
     (item) => !item.onDeck || item.date !== undefined,
     "Only a day note has an On deck section: give date with onDeck"
@@ -92,6 +101,11 @@ const stateItem = z.object({
     state: z.enum(["done", "doing", "cancelled"]).describe("The state to put the task in"),
     reason: z.string().optional().describe("Why the task was cancelled; required for cancelled")
 }).refine((item) => item.state !== "cancelled" || !!item.reason?.trim(), "A cancelled task needs a reason");
+
+const areaItem = z.object({
+    ...taskRef,
+    area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).describe("The area to give the task: foundation (the day job, no marker), growth (🌱) or recharge (🔋)")
+});
 
 const forwardItem = z.object({
     ...taskRef,
@@ -198,7 +212,17 @@ const placed = (item: { first?: boolean; before?: string; after?: string }) => [
 const dismissRef = candidateRef.extend({
     answered: z.boolean().optional().describe("true when he says he answered it in Chat: its ask never comes back as a Follow up, until a newer comment. Without it a dismissal holds 14 days")
 });
-const acceptRef = candidateRef.extend(place).refine((item) => placed(item) <= 1, "Give at most one of first, before or after");
+/** Where a taken candidate is filed: a time block of the day and an area for its marker. */
+const filing = {
+    block: z.enum(BLOCKS as [ "morning", "afternoon", "evening" ]).optional().describe("The time block to file it under, when he names one. Without it a Growth or Recharge pick goes under Evening and a ticket under Morning when the note has that heading, else at the end of his list"),
+    area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).optional().describe("Give it this area's marker instead of the one it came with (a pick's own area; a ticket's Foundation)")
+};
+const acceptRef = candidateRef.extend({ ...place, ...filing }).refine((item) => placed(item) <= 1, "Give at most one of first, before or after");
+/** The area he gave a task of his list: any ref, id, ticket key or words the step data names it by. */
+const areaAnswers = z.array(z.object({
+    item: z.string().min(1).describe(`A task of his list, such as one of the step's data.unmarked: ${NAMED}`),
+    area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).describe("foundation (the day job, no marker), growth (🌱) or recharge (🔋). Foundation writes nothing, and the task is not asked about again")
+})).default([]).describe("The area he gave each task the inputs step listed as unmarked (a chore, a project task), or any task he named; written as its 🌱 or 🔋 marker, or taken off for foundation");
 const moveRef = z.object({ listItemId: z.string().min(1).describe(`An item of his main list: ${NAMED}`), ...place })
     .refine((item) => placed(item) === 1, "Give exactly one of first, before or after");
 const moves = z.array(moveRef).default([]).describe("Only when the user asks to reorder: items of his main list moved first, before or after another");
@@ -206,8 +230,8 @@ const moves = z.array(moveRef).default([]).describe("Only when the user asks to 
 const said = z.string().describe("His reply this call answers, word for word, such as \"110 is done. 111 later this week\". It never writes anything: when it seems to give an item something the call leaves out, nothing is written and the answer is a `check` to resolve. \"\" only for a call no reply of his asked for, such as a refresh");
 const answerTexts = (what: string) => z.array(z.string().trim().min(1)).default([]).describe(what);
 
-/** His word that the evening holds nothing, which no suggestion then fills. */
-const eveningAnswered = z.boolean().optional().describe("true when he said the evening holds nothing (\"nothing tonight\"), with evening: []: no evening suggestion is written for the day. Leave it out when he didn't answer the evening question");
+/** The evening answer the steps no longer ask: still read, so an older call doesn't fail, and ignored. */
+const eveningAnswered = z.boolean().optional().describe("No longer used: ignored. The evening is planned with Growth and Recharge picks, taken through accept");
 
 /** The agent's word that it checked what the last call's `check` asked about. */
 const checked = z.boolean().optional().describe("true when the last call answered `check` and he didn't mean what his words seemed to say: the call is applied as given, without the check");
@@ -238,13 +262,14 @@ const planApply = z.object({
     asOffered,
     catchup: z.enum([ "move_all", "skip", "review" ]).optional().describe("The answer to the catch-up question, when one was asked"),
     onDeck: onDeckAnswers,
-    accept: z.array(acceptRef).default([]).describe("The candidates the user took, in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after)"),
+    accept: z.array(acceptRef).default([]).describe("The candidates the user took (tickets, week items and the Growth and Recharge picks), in the order the user gave; each goes to the end of the list unless the user names a place (first, before or after). A pick is filed with its marker under Evening, or the block the user names"),
     move: moves,
     keep: z.array(lineRef).default([]).describe("The keep or carry lines the user said yes to"),
     finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off (\"skip\", \"not today\"): a ticket or week item is offered again on the next workday, an ask comes back as a Follow up. Not a dismissal"),
     dismiss: z.array(dismissRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key with answered: true. Each must be named in said (its key, number, author or a word of it), or the call answers a check"),
-    evening: answerTexts("Things the user named for the evening, each written as a task under an Evening heading"),
+    areas: areaAnswers,
+    evening: answerTexts("No longer used: each line is skipped (use_add) and nothing is written. A thing for the evening is added with caius_add (area growth or recharge, block evening) or taken as a pick through accept"),
     eveningAnswered,
     context: answerTexts("What the user said is worth knowing, each written as a Context line"),
     overlaps: overlapAnswers,
@@ -266,18 +291,18 @@ const planApply = z.object({
         .describe("Only with a call that just moves: the headline for the new order. Without it, a move that changes the picks writes a plain one")
 }).refine((input) => input.brief !== undefined || onlyMoves(input) || onlyContext(input), "Give brief, unless the call only moves items of his list or only adds Context lines");
 
-type Answers = { onDeck?: unknown[]; move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; evening: unknown[]; context: unknown[]; overlaps: unknown[]; forward?: unknown[] };
+type Answers = { onDeck?: unknown[]; move: unknown[]; catchup?: unknown; accept: unknown[]; keep: unknown[]; finished: unknown[]; notToday: unknown[]; dismiss: unknown[]; areas: unknown[]; context: unknown[]; overlaps: unknown[]; forward?: unknown[] };
 
 /** Whether a Plan my day answer only reorders his list: `move` and nothing else. */
 export function onlyMoves(input: Answers): boolean {
     return input.move.length > 0 && input.catchup === undefined && !input.forward?.length && !input.onDeck?.length
-        && [ input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.context, input.overlaps ].every((answers) => answers.length === 0);
+        && [ input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.areas, input.context, input.overlaps ].every((answers) => answers.length === 0);
 }
 
 /** Whether a Plan my day answer only adds Context lines, as the retry of a line skipped as third person does. */
 export function onlyContext(input: Answers): boolean {
     return input.context.length > 0 && input.catchup === undefined && !input.forward?.length && !input.onDeck?.length
-        && [ input.move, input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.evening, input.overlaps ].every((answers) => answers.length === 0);
+        && [ input.move, input.accept, input.keep, input.finished, input.notToday, input.dismiss, input.areas, input.overlaps ].every((answers) => answers.length === 0);
 }
 
 const windDownApply = z.object({
@@ -295,14 +320,15 @@ const windDownApply = z.object({
     }).refine((fate) => (fate.to === undefined) !== (fate.drop === undefined), "Give exactly one of to or drop")
         .refine((fate) => !(fate.onDeck && fate.critical), "Give onDeck or critical, not both")).default([])
         .describe("Fates the user named. Every open item not named keeps the fate the open step proposed"),
-    accept: z.array(acceptRef).default([]).describe("Candidates the user took for the next workday, in the user's order; each goes to the end of the list unless the user names a place (first, before or after)"),
+    accept: z.array(acceptRef).default([]).describe("Candidates the user took for the next workday (tickets, week items and the Growth and Recharge picks), in the user's order; each goes to the end of the list unless the user names a place (first, before or after). A pick is filed with its marker under Evening, or the block the user names"),
     move: moves,
     keep: z.array(lineRef).default([]).describe("Keep lines the user said yes to"),
     carry: z.array(lineRef).default([]).describe("Carry lines the user said yes to"),
     finished: finishedAnswers,
     notToday: z.array(candidateRef).default([]).describe("Candidates the user put off for the next workday: a ticket or week item is offered again the workday after, an ask comes back as a Follow up. Not a dismissal"),
     dismiss: z.array(dismissRef).default([]).describe("Only candidates the user says to dismiss, drop or isn't doing, in his words in said: kept off every list for 14 days. A Follow up he says he answered (\"answered Jordan in chat\") goes here by its key with answered: true. Each must be named in said (its key, number, author or a word of it), or the call answers a check"),
-    evening: answerTexts("Things the user named for the next workday's evening, each a task under an Evening heading"),
+    areas: areaAnswers,
+    evening: answerTexts("No longer used: each line is skipped (use_add) and nothing is written. A thing for the next workday's evening is added with caius_add (area growth or recharge, block evening) or taken as a pick through accept"),
     eveningAnswered,
     context: answerTexts("What the user said is worth knowing for the next workday, each a Context line"),
     overlaps: overlapAnswers
@@ -390,7 +416,7 @@ const planday = z.object({
     step: z.enum([ "catchup", "inputs", "brief" ]).describe("catchup, then inputs, then brief"),
     refresh,
     answered: z.object({
-        evening: z.array(z.string()).optional().describe("What he already said about the evening in this conversation, even nothing: the step doesn't ask about it"),
+        evening: z.array(z.string()).optional().describe("No longer used: ignored"),
         keep: z.array(z.string()).optional().describe("The Context lines he already said to keep in this conversation, by their words, lineId or ref: the step doesn't offer them to carry")
     }).optional().describe("inputs: the answers he already gave in this conversation, such as in the wind-down just before")
 });
@@ -414,6 +440,7 @@ export const toolInputs = {
     accept: writes(acceptItem),
     dismiss: writes(dismissItem),
     setState: writes(stateItem),
+    setArea: writes(areaItem),
     forward: writes(forwardItem),
     header
 };
@@ -431,6 +458,7 @@ export const routeInputs = {
     accept: writes(acceptItem.safeExtend(version)),
     dismiss: writes(dismissItem.extend(version)),
     setState: writes(stateItem.safeExtend(version)),
+    setArea: writes(areaItem.safeExtend(version)),
     forward: writes(forwardItem.safeExtend(version)),
     /** The Plan tab's Close: forwards, then state changes, behind one version check. */
     apply: z.object({
@@ -469,5 +497,6 @@ export type AddInput = z.infer<typeof toolInputs.add>;
 export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;
 export type SetStateInput = z.infer<typeof routeInputs.setState>;
+export type SetAreaInput = z.infer<typeof routeInputs.setArea>;
 export type ForwardInput = z.infer<typeof routeInputs.forward>;
 export type ApplyInput = z.infer<typeof routeInputs.apply>;

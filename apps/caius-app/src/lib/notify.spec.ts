@@ -10,11 +10,12 @@ function today(overrides: Partial<TodayData> = {}, state: "unplanned" | "planned
         label: "Wed 4 Nov",
         plan: {
             period: "day", key: "2026-11-04", noteId: "n1", critical: [], sections: [], top3: [], onDeck: [], suggested: [], dismissed: [],
-            capacity: { plannedMinutes: 0, estimatedCount: 0, unestimatedCount: 0, unestimatedMinutes: 0, totalMinutes: 0, eveningMinutes: 0, onDeckMinutes: 0, target: { min: 180, max: 240 }, horizons: {} },
+            capacity: { plannedMinutes: 0, estimatedCount: 0, unestimatedCount: 0, unestimatedMinutes: 0, totalMinutes: 0, eveningMinutes: 0, onDeckMinutes: 0, target: { min: 180, max: 240 }, horizons: {},
+                areas: { foundation: { minutes: 0, target: { min: 180, max: 240 } }, growth: { minutes: 0, target: { min: 30, max: 90 } }, recharge: { minutes: 0, target: null } } },
             meetings: [], context: [], expiredContext: [], pendingContext: []
         },
         catchup: null,
-        rhythm: { start: "09:30", end: "23:00", workEnd: "17:30", rollover: "04:00", from: { start: "rhythm", end: "rhythm", workEnd: "rhythm", rollover: "rhythm" } },
+        rhythm: { start: "09:30", end: "23:00", workEnd: "17:30", rollover: "04:00", noon: "12:00", targets: { foundation: { min: 180, max: 240 }, growth: { min: 60, max: 120 } }, from: { start: "rhythm", end: "rhythm", workEnd: "rhythm", rollover: "rhythm", noon: "default", targets: "default" } },
         nudge: { date: "2026-11-04", lastWorkday: "2026-11-03", state } as TodayData["nudge"],
         asOf: "2026-11-04T08:00:00.000Z",
         offline: false,

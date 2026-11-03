@@ -6,6 +6,11 @@
  */
 
 import {
+    type Area,
+    areaOfTask,
+    bareText,
+    withArea,
+    blockOf,
     type BriefAct,
     type Candidate,
     closedKeys,
@@ -15,7 +20,6 @@ import {
     dayCapacity,
     DEFAULT_ESTIMATE,
     DEFAULT_ROLLOVER,
-    EVENING_REASON,
     findPeriodNote,
     formatHours,
     gatherContext,
@@ -28,6 +32,7 @@ import {
     meetingName,
     liveKeys,
     loadJournal,
+    markedArea,
     meetingLines,
     nextWorkday,
     normName,
@@ -42,12 +47,16 @@ import {
     type PlanView,
     readDuplicatePlans,
     readPlan,
+    readProjectPicks,
     type Rhythm,
     sameContext,
     scanDocs,
     sectionOf,
     shortName,
     type SavedGroup,
+    type TriliumDoc,
+    headingArea,
+    headingStacks,
     TRILIUM_CONFIG,
     workdayMinutes
 } from "@triliumnext/caius";
@@ -90,7 +99,6 @@ export interface StepDeps {
 
 export type WindDownStep = "open" | "next" | "context";
 
-const EVENING_SECTIONS = new Set([ "evening", "recharge" ]);
 const FRIDAY = 5;
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
@@ -134,30 +142,31 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     if (step === "next") {
         const { facts, candidates, jira, asks, incoming } = await deps.locked("caius_winddown", async () => ({
             ...await nextOffer(deps.store, targetDay, deps.now, read),
-            incoming: (await stillOpen(deps.store, date, targetDay)).items.filter((item) => "forward" in item.fate && item.fate.forward === targetDay && !isEveningName(item.section))
+            incoming: (await stillOpen(deps.store, date, targetDay)).items.filter((item) => "forward" in item.fate && item.fate.forward === targetDay)
         }));
-        const { plannedMinutes, candidateMinutes, over, overlaps, askEvening } = asks;
-        const targetMinutes = read.inputs.capacity.targetMinutes;
-        const evening = { hasTask: facts.evening };
+        const { plannedMinutes, candidateMinutes, over, overlaps } = asks;
+        // Only Foundation counts toward the workday; a Growth leftover counts toward Growth.
+        const incomingMinutes = (area: Area) => incoming.filter((item) => item.area === area).reduce((sum, item) => sum + item.minutes, 0);
+        const sized = withBooked(read, facts.plan);
         const calendarFailed = failedCalendar(read);
         const questions = [
             ...(over > 0 ? [ t("caius.daily.over", { day: weekdayName(targetDay), hours: Math.max(0.5, Math.round(over / 30) / 2) }) ] : []),
-            ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at })),
-            ...(askEvening ? [ t("caius.daily.evening") ] : [])
+            ...overlaps.map((pair) => t("caius.daily.overlap", { first: pair.first, second: pair.second, time: pair.at }))
         ];
         const summary = calendarFailed
             ? { summary: t("caius.daily.capacity_unknown", { day: weekdayName(targetDay) }) }
             : questions.length ? {} : {
-                summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), focus: focusText(focusOf(read.inputs.capacity)) })
+                summary: t("caius.daily.fits", { day: weekdayName(targetDay), planned: formatHours(plannedMinutes + candidateMinutes), focus: focusText(focusFor(sized)) })
             };
         return reply(read.standing, {
             list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId),
             onDeck: deckItems(facts.plan),
             meetings: meetingsOf(read),
             candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId),
-            capacity: capacityOf(read, plannedMinutes),
-            load: loadOf(read, facts.plan, targetDay, incoming.reduce((sum, item) => sum + item.minutes, 0)),
-            overlaps, evening, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
+            capacity: capacityOf(read, facts.plan, plannedMinutes),
+            load: loadOf(read, facts.plan, targetDay, incomingMinutes("foundation")),
+            growth: growthOf(read, facts.plan, incomingMinutes("growth")),
+            overlaps, followUps: followUpsOf(jira), errors: read.inputs.errors, ...summary
         }, questions.length ? questions.join(" ") : null, "context");
     }
 
@@ -231,31 +240,32 @@ export const copyKey = (from: string, text: string) => `${from}\n${text.replace(
 export async function nextOffer(store: NoteStore, targetDay: string, now: Date, read: DayRead) {
     const facts = await dayFacts(store, targetDay, now);
     const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, targetDay), facts.live);
-    const candidates = onOffer(dayCandidates({ jira: fresh, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), facts);
+    const candidates = onOffer([ ...dayCandidates({ jira: fresh, week: facts.week, live: facts.live, exclude: facts.exclude }).map(present), ...projectsOffered(facts) ], facts);
     const asked = new Set(await dayLabels(store, targetDay, ASKED_LABEL));
     return {
-        facts, candidates, jira: unraised(followed, facts.raised), asks: nextAsks(read, facts, candidates, asked), offeredAsks: offeredAsks(fresh, candidates)
+        facts, candidates, jira: unraised(followed, facts.raised), asks: nextAsks(withBooked(read, facts.plan), facts, candidates, asked), offeredAsks: offeredAsks(fresh, candidates)
     };
 }
 
 /**
  * The questions the wind-down asks about `targetDay`, each only while `asked` (its `#caiusAsked`
- * values) doesn't hold it: how far the day is over the focus target (as `heavy`), its overlaps and,
- * when its evening has no task, the evening.
+ * values) doesn't hold it: how far the day is over the focus target (as `heavy`) and its overlaps.
+ * Only Foundation counts: the plan's work total and the Foundation candidates, so a Growth or
+ * Recharge pick never makes the workday over.
  */
-function nextAsks(read: DayRead, facts: { plan: PlanView; evening: boolean }, candidates: { minutes: number }[], asked: Set<string>) {
+function nextAsks(read: DayRead, facts: { plan: PlanView }, candidates: { minutes: number; area: Area }[], asked: Set<string>) {
     const plannedMinutes = workMinutes(facts);
-    const candidateMinutes = candidates.reduce((sum, c) => sum + c.minutes, 0);
+    const candidateMinutes = candidates.filter((c) => c.area === "foundation").reduce((sum, c) => sum + c.minutes, 0);
     // Without the calendar, the target is that of a day with no meetings, so the day is not weighed.
     const over = failedCalendar(read) || asked.has(HEAVY_ID) ? 0 : plannedMinutes + candidateMinutes - read.inputs.capacity.targetMinutes;
     const overlaps = overlapPairs(read.inputs.calendar).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) })).filter((pair) => !asked.has(pair.overlapId));
-    return { plannedMinutes, candidateMinutes, over, overlaps, askEvening: !facts.evening && !asked.has(EVENING_ID) };
+    return { plannedMinutes, candidateMinutes, over, overlaps };
 }
 
 /** The `#caiusAsked` values of what the wind-down's `next` step asks, answered once the apply runs. */
 export function nextAsked(asks: ReturnType<typeof nextAsks>): string[] {
     // Recorded as `heavy` on purpose: the next morning doesn't ask about the day's load a second time.
-    return [ ...asks.overlaps.map((pair) => pair.overlapId), ...(asks.over > 0 ? [ HEAVY_ID ] : []), ...(asks.askEvening ? [ EVENING_ID ] : []) ];
+    return [ ...asks.overlaps.map((pair) => pair.overlapId), ...(asks.over > 0 ? [ HEAVY_ID ] : []) ];
 }
 
 /**
@@ -383,12 +393,11 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
             offer: await planOffer(deps.store, date, deps.now, read),
             yesterday: await yesterdayOf(deps.store, date, deps.now)
         }));
-        const { day: facts, plannedAt, candidates, jira, headsUp, overlaps, forwardSuggestion, fits, onDeck } = offer;
+        const { day: facts, plannedAt, candidates, jira, headsUp, overlaps, forwardSuggestion, fits, onDeck, unmarked } = offer;
         // What he already answered in this conversation is not asked again.
         // A kept line can be given by its words, its lineId or its ref.
         const kept = new Set(answered?.keep ?? []);
         const carry = offer.carry.filter((line) => !kept.has(line.lineId) && !kept.has(refOf("x", line.lineId)) && ![ ...kept ].some((said) => lineIdOf(said) === line.lineId));
-        const askEvening = offer.askEvening && answered?.evening === undefined;
         const lines = calendarFailed ? null : meetingLines(read.inputs.calendar);
         const meetings = lines
             ? { lines, current: facts.plan.meetings, changed: lines.join("\n") !== facts.plan.meetings.join("\n") }
@@ -402,14 +411,13 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
             ...(forwardSuggestion ? [ t("caius.daily.heavy", {
                 percent: Math.round(read.inputs.capacity.bookedRatio * 100), task: forwardSuggestion.text, day: weekdayName(nextDay)
             }) ] : []),
-            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : []),
-            ...(askEvening ? [ t("caius.daily.evening") ] : [])
+            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
         ];
         return reply(read.standing, {
             yesterday, plannedAt, onDeck, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, meetingTitles: meetingTitles(read), overlaps,
-            capacity: capacityOf(read, workMinutes(facts)), ...namedDays(date, nextDay),
+            capacity: capacityOf(read, facts.plan, workMinutes(facts)), growth: growthOf(read, facts.plan), unmarked, ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x", (line) => line.lineId),
-            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, evening: offer.evening, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
+            context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
             ...planFromOf(date, deps.now, read.rhythm)
         }, questions.length ? questions.join(" ") : null, "brief");
     }
@@ -424,7 +432,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
     const followUps = followUpsOf(unraised(splitAsks(read.inputs.jira, seen, live).followed, raised));
     const { start, end, workEnd, from } = read.rhythm;
     const events = drawnEvents(read, names);
-    const { groups, unplaced } = workBlocks(plan, { start, end, workEnd }, events, date, deps.now, rolloverOf(read.rhythm), names);
+    const { groups, unplaced } = workBlocks(plan, { start, end, workEnd, noon: read.rhythm.noon }, events, date, deps.now, rolloverOf(read.rhythm), names);
     const header = { start: drawnStart(read), end, workEnd, events, groups };
     const coordinates = read.rhythm.latitude === undefined ? {} : { latitude: read.rhythm.latitude, longitude: read.rhythm.longitude };
     return reply(read.standing, {
@@ -471,23 +479,27 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     const since = plannedAt ? localMoment(plannedAt) : undefined;
     const { fresh, followed } = splitAsks(read.inputs.jira, await seenAsks(store, date), day.live);
     const jira = unraised(followed, day.raised);
-    const candidates = onOffer(dayCandidates({ jira: fresh, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), day);
+    // Growth and Recharge picks are not new news: they come with the first offer of the day, as week items do.
+    const candidates = onOffer([ ...dayCandidates({ jira: fresh, week: day.week, live: day.live, exclude: day.exclude, since }).map(present), ...(since ? [] : projectsOffered(day)) ], day);
     const asked = await askedAbout(store, date);
-    // An overlap, the heavy day's move or the evening is asked once for its day: a refresh asks only what's new.
+    // An overlap or the heavy day's move is asked once for its day: a refresh asks only what's new.
     const askedToday = new Set(await dayLabels(store, date, ASKED_LABEL));
     const overlaps = overlapPairs(read.inputs.calendar).map((pair) => ({ ...pair, overlapId: overlapIdOf(pair) })).filter((pair) => !askedToday.has(pair.overlapId));
     // On a heavy day the work is weighed against the focus target: over it, the last work task is
-    // offered to move; within it, the day is said to fit. Neither asks for more work.
+    // offered to move, to the next workday and never into the evening; within it, the day is said to
+    // fit. Neither asks for more work. Only Foundation is work; a Growth task laid in the morning or
+    // afternoon books its time (`withBooked`).
+    const sized = withBooked(read, day.plan);
     const list = listOf(day.plan);
-    const work = mainTasks(day.plan).filter((_task, i) => !list[i]?.evening);
+    const work = mainTasks(day.plan).filter((task) => task.area === "foundation");
     const last = work.filter((task) => !task.critical).at(-1);
-    const heavy = read.inputs.capacity.bookedRatio >= HEAVY_RATIO;
-    const over = workMinutes(day) > read.inputs.capacity.targetMinutes;
+    const heavy = sized.inputs.capacity.bookedRatio >= HEAVY_RATIO;
+    const over = workMinutes(day) > sized.inputs.capacity.targetMinutes;
     const forwardSuggestion = heavy && over && last?.listItemId && !askedToday.has(HEAVY_ID)
         ? { noteId: last.noteId, listItemId: last.listItemId, text: last.text, to: dayKey(nextWorkday(localDay(date))) }
         : null;
-    const labels = list.filter((task) => !task.evening).map((task) => task.label);
-    const onDeck = deckOffer(day.plan, date, read);
+    const labels = list.filter((task) => task.work).map((task) => task.label);
+    const onDeck = deckOffer(day.plan, date, sized);
     const fits = heavy && !over && labels.length && !onDeck.length
         ? t("caius.daily.heavy_fits", { tasks: labels.length > 1 ? t("caius.daily.list_and", { head: labels.slice(0, -1).join(", "), last: labels.at(-1) }) : labels[0], count: labels.length })
         : null;
@@ -500,8 +512,8 @@ export async function planOffer(store: NoteStore, date: string, now: Date, read:
     ];
     return {
         day, plannedAt, candidates, carry: carryLines(lastContext, date, read.context).filter((line) => !asked.has(line.lineId)), jira, headsUp,
-        overlaps, forwardSuggestion, fits, askEvening: !askedToday.has(EVENING_ID), offeredAsks: offeredAsks(fresh, candidates),
-        evening: eveningOf(day, read, askedToday), onDeck
+        overlaps, forwardSuggestion, fits, offeredAsks: offeredAsks(fresh, candidates), onDeck,
+        unmarked: unmarkedOf(day.plan, asked)
     };
 }
 
@@ -515,8 +527,9 @@ export function deckOffer(plan: PlanView, date: string, read: DayRead) {
     const week = isoWeekKey(utcDay(date));
     let room = read.inputs.capacity.targetMinutes - plan.capacity.totalMinutes;
     return deckItems(plan).map((item) => {
-        const fits = item.minutes <= room;
-        if (fits) room -= item.minutes;
+        // Growth and Recharge on deck are weighed against nothing here: only Foundation uses the room.
+        const fits = item.area !== "foundation" || item.minutes <= room;
+        if (fits && item.area === "foundation") room -= item.minutes;
         return { ...item, fate: fits ? { list: true as const } : { forward: week } };
     });
 }
@@ -562,85 +575,62 @@ export async function yesterdayOf(store: NoteStore, date: string, now: Date) {
 }
 
 /**
- * The day's evening as the steps show it: his evening tasks, the calendar's evening events and
- * `suggestion`, the Suggested line the plan's apply writes while the evening has neither. The line
- * is his standing note's evening rule ("something away from screens, a chore or a Recharge item"),
- * sized by its evening minutes; it is null without a rule, once the day was offered it
- * (`#caiusAsked=evening_suggested`, `asked`), whatever became of it, or when he said the evening
- * holds nothing (`evening_none`).
- */
-function eveningOf(day: Awaited<ReturnType<typeof dayFacts>>, read: DayRead, asked: Set<string>) {
-    const tasks = listOf(day.plan).filter((task) => task.evening).map((task) => task.text);
-    const events = eveningEventTitles(read);
-    const rule = eveningRule(read.standing.markdown);
-    const line = rule ? `${rule.text}: because ${EVENING_REASON} (~${rule.minutes}m)` : null;
-    const taken = new Set([ ...day.plan.dismissed, ...day.plan.suggested.flatMap((task) => keysOf(task.text)) ]);
-    const suggestion = line && !tasks.length && !events.length && !asked.has(EVENING_SUGGESTED_ID) && !asked.has(EVENING_NONE_ID) && !keysOf(line).some((key) => taken.has(key)) ? line : null;
-    return { tasks, events, suggestion };
-}
-
-/** The titles of the day's timed calendar events that start at or after the end of work. */
-export function eveningEventTitles(read: DayRead): string[] {
-    return read.inputs.calendar.filter((e) => !e.allDay && !e.declined && e.start >= read.rhythm.workEnd).map((e) => e.title);
-}
-
-/**
- * The standing note's evening rule, from the Rhythm line "Evening: something away from screens, a
- * chore or a Recharge item.", with its first letter capitalized, and the evening's minutes from
- * "45–60 minutes in the evening" (the lower figure), else the default estimate. Null without the rule.
- */
-export function eveningRule(markdown: string | null): { text: string; minutes: number } | null {
-    const rhythm = sectionOf(markdown, "Rhythm") ?? "";
-    const rule = /\bEvening:\s*([^.\n]+)/i.exec(rhythm)?.[1]?.trim();
-    if (!rule) return null;
-    const minutes = /(\d+)\s*(?:[–-]\s*\d+\s*)?minutes in the evening/i.exec(rhythm)?.[1];
-    return { text: `${rule.charAt(0).toUpperCase()}${rule.slice(1)}`, minutes: minutes ? Number(minutes) : DEFAULT_ESTIMATE };
-}
-
-/**
  * The day's one capacity block, which the steps show and their questions weigh: the work window,
- * what the meetings book of it and leave open, the focus target and the work planned, with `focus`,
+ * what the meetings book of it and leave open (less the time a Growth or Recharge task pinned to a
+ * clock books), the Foundation focus target and the work planned, with `focus`,
  * the figure the Plan tab shows too, and `sentence`, the block in words for the chat.
  */
-function capacityOf(read: DayRead, plannedMinutes: number) {
-    const { windowMinutes, bookedMinutes, openMinutes, targetMinutes, bookedRatio } = read.inputs.capacity;
-    const focus = focusOf(read.inputs.capacity);
+function capacityOf(read: DayRead, plan: PlanView, plannedMinutes: number) {
+    // The meetings are what the figures call booked; a Growth task pinned in the day shrinks the open time and the target, not the meetings.
+    const sized = withBooked(read, plan);
+    const { windowMinutes, openMinutes, targetMinutes, bookedRatio } = sized.inputs.capacity;
+    const { bookedMinutes } = read.inputs.capacity;
+    const focus = focusFor(sized);
     const words = { booked: formatHours(bookedMinutes), open: formatHours(openMinutes), planned: formatHours(plannedMinutes), focus: focusText(focus) };
     const sentence = t(plannedMinutes ? "caius.daily.capacity_line" : "caius.daily.capacity_line_empty", words);
     return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes, bookedRatio, focus, sentence };
 }
 
-/** The day's focus as the Plan tab's day target reads it: 3 to 4 hours, or less when the meetings leave less. */
+/** The day's focus as the Plan tab's day target reads it when no Rhythm gives it: 3 to 4 hours, or less when the meetings leave less. */
 const DAY_FOCUS = { min: 180, max: 240 };
 
 /**
- * The focus figure of a day, which the chat and the Plan tab both show: the method's 3 to 4 hours,
- * or, when the meetings leave less, the day's target rounded to the quarter hour.
+ * The Foundation focus figure of a day, which the chat and the Plan tab both show: the Rhythm's
+ * Foundation target (3 to 4 hours unless it says otherwise), or, when the meetings leave less, the
+ * day's target rounded to the quarter hour.
  */
-export function focusOf(capacity: { targetMinutes: number }): { min: number; max: number } {
-    if (capacity.targetMinutes >= DAY_FOCUS.min) return DAY_FOCUS;
+export function focusOf(capacity: { targetMinutes: number }, target: { min: number; max: number } = DAY_FOCUS): { min: number; max: number } {
+    if (capacity.targetMinutes >= target.min) return target;
     const minutes = Math.round(capacity.targetMinutes / 15) * 15;
     return { min: minutes, max: minutes };
 }
 
-/** A focus figure in words: "3–4 h" or "2 h". */
+/** `focusOf` a day's capacity against its Rhythm's Foundation target. */
+export const focusFor = (read: DayRead) => focusOf(read.inputs.capacity, read.rhythm.targets.foundation);
+
+/** A focus figure in words: "3–4 h", "45–60 min" or "2 h". */
 export function focusText(focus: { min: number; max: number }): string {
-    return focus.min === focus.max ? formatHours(focus.min) : t("caius.daily.focus_range", { min: focus.min / 60, max: focus.max / 60 });
+    if (focus.min === focus.max) return formatHours(focus.min);
+    return focus.min % 60 || focus.max % 60
+        ? t("caius.daily.focus_range_minutes", { min: focus.min, max: focus.max })
+        : t("caius.daily.focus_range", { min: focus.min / 60, max: focus.max / 60 });
 }
 
-/** The minutes of work on a day's list: the plan's capacity total, which leaves the evening out. */
+/** The minutes of work on a day's list: the plan's capacity total, which is Foundation's alone. */
 function workMinutes(facts: { plan: PlanView }): number {
     return facts.plan.capacity.totalMinutes;
 }
 
 /** The `#caiusAsked` value of the heavy day's question. */
 export const HEAVY_ID = "heavy";
-/** The `#caiusAsked` value of the evening question. */
-export const EVENING_ID = "evening";
-/** The `#caiusAsked` value of a day offered the evening suggestion, once. */
-export const EVENING_SUGGESTED_ID = "evening_suggested";
-/** The `#caiusAsked` value of a day whose evening he said holds nothing, which no suggestion fills. */
-export const EVENING_NONE_ID = "evening_none";
+/**
+ * The `#caiusAsked` values that record a task's area question as answered: one for the task's id
+ * and one for its words, so a copy forwarded to the next day (a new id) is not asked again.
+ */
+export function areaAskIds(listItemId: string, text: string): string[] {
+    const words = sameText(bareText(plainText(withoutMoveLinks(text))));
+    return [ `area:${listItemId}`, `area:~${createHash("sha1").update(words).digest("hex").slice(0, 10)}` ];
+}
 
 /** An overlap's id for `#caiusAsked`: a hash of its two meetings and its time. */
 export function overlapIdOf(pair: { first: string; second: string; at: string }): string {
@@ -1043,13 +1033,14 @@ export function carryQuestion(lines: string[], sameWeek: boolean): string {
 /**
  * The day's work laid out between `events` from standup, or from the time now when `date` is
  * today: the main list in the groups `saved` keeps (by heading when it keeps none), group after
- * group, each with its span, count and whether it holds an Important task.
+ * group, each with its span, count and whether it holds an Important task. Each task is laid in its
+ * time block's window, or at its pinned clock.
  */
-export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string }, events: { start: string; end: string }[], date: string, now: Date, rollover: number, saved?: DrawnNames | null) {
+export function workBlocks(plan: PlanView, day: { start: string; end: string; workEnd: string; noon?: string }, events: { start: string; end: string }[], date: string, now: Date, rollover: number, saved?: DrawnNames | null) {
     const notBefore = date === dayKey(now) ? quarterAfter(now, rollover) : undefined;
     const groups = groupTasks(listOf(plan), saved?.groups).map((group) => ({
         name: group.name, important: group.important,
-        tasks: group.tasks.map(({ label: bar, minutes, evening }) => ({ label: bar, minutes, evening }))
+        tasks: group.tasks.map(({ label: bar, minutes, block, area, at }) => ({ label: bar, minutes, block, area, at }))
     }));
     return layoutGroups({ ...day, notBefore }, events, groups);
 }
@@ -1110,36 +1101,41 @@ function wallClock(clock: string): string {
 }
 
 /**
- * The main list as the drawing and the picks read it: each live task's bar label, text, minutes,
- * keys, listItemId, heading, whether it is Important, whether it is an evening task and whether it is work: a task with a ticket, whatever its
- * heading, or one without under neither an evening, a chore nor a personal heading (Home, Personal,
- * Family, Errands).
+ * The main list as the drawing and the picks read it: each live task's bar label, text (without its
+ * area marker or clock), minutes, keys, listItemId, heading, whether it is Important, its area,
+ * its time block, its pinned clock and whether it is work: a Foundation task, whatever its heading.
  */
 export function listOf(plan: PlanView) {
-    const eveningSections = new Set(plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).map((section) => section.name));
     return mainTasks(plan).map((task) => {
         const keys = keysOf(withoutMoveLinks(task.text));
-        const evening = eveningSections.has(task.section);
-        const heading = normName(task.section ?? "");
-        const ticket = keys.some((key) => JIRA_KEY.test(key));
-        const personal = /chore/.test(heading) || PERSONAL_SECTIONS.has(heading);
         return {
-            label: workLabel(withoutMoveLinks(task.text)), text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
-            evening, work: ticket || (!evening && !personal), keys,
+            label: workLabel(bareText(withoutMoveLinks(task.text))), text: bareText(plainText(withoutMoveLinks(task.text))), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
+            area: task.area, block: task.block, at: task.at, work: task.area === "foundation", keys,
             id: task.listItemId, section: task.section, critical: task.critical
         };
     });
 }
 
-/** Headings of his own life, under which a task without a ticket isn't work. */
-const PERSONAL_SECTIONS = new Set([ "home", "personal", "family", "errands", "house", "household" ]);
-
-/** The day's list as the steps show it, for an answer to name by `listItemId`: each live task's id, its plain text and whether it is an evening task. */
+/** The day's list as the steps show it, for an answer to name by `listItemId`: each live task's id, its plain text, area, time block and pinned clock. */
 export function listItems(plan: PlanView) {
-    const evening = listOf(plan);
-    return mainTasks(plan).flatMap((task, i) => task.listItemId
-        ? [ { listItemId: task.listItemId, text: plainText(withoutMoveLinks(task.text)), evening: evening[i]?.evening ?? false } ]
+    return mainTasks(plan).flatMap((task) => task.listItemId
+        ? [ { listItemId: task.listItemId, text: bareText(plainText(withoutMoveLinks(task.text))), area: task.area, block: task.block, at: task.at } ]
         : []);
+}
+
+/**
+ * The live tasks of the main list that carry no area yet: no marker, no area heading, no Jira key
+ * and no answer recorded for them (`asked`, the day's `#caiusAsked` values), each with its `l…` ref.
+ * Plan my day asks which area they belong to, since a chore typed by hand reads as work.
+ */
+export function unmarkedOf(plan: PlanView, asked: Set<string>) {
+    return mainTasks(plan).flatMap((task) => {
+        const id = task.listItemId;
+        const text = withoutMoveLinks(task.text);
+        const unmarked = id && text.trim() !== "" && task.area === "foundation" && markedArea(text) === null && headingArea(task.section) === null
+            && !keysOf(text).some((key) => JIRA_KEY.test(key)) && !areaAskIds(id, text).some((value) => asked.has(value));
+        return unmarked ? [ { ref: refOf("l", id), listItemId: id, text: bareText(plainText(text)) } ] : [];
+    });
 }
 
 /**
@@ -1211,6 +1207,7 @@ const RECENT_WORKDAYS = 3;
  */
 export async function stillOpen(store: NoteStore, date: string, targetDay: string) {
     const docs = (await loadJournal(store)).docs;
+    const areaOf = areaReader(docs);
     const week = isoWeekKey(utcDay(date));
     const targetWeek = isoWeekKey(utcDay(targetDay));
     const recent = new Set(closingPeriods(date).recent);
@@ -1226,10 +1223,11 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
     const items = top
         .filter((task) => group(task) !== "older")
         .sort((a, b) => GROUPS.indexOf(group(a) ?? "") - GROUPS.indexOf(group(b) ?? ""))
-        .map((task) => ({
+        .map((task) => ({ task, area: areaOf(task) }))
+        .map(({ task, area }) => ({
             group: group(task), noteId: task.noteId, listItemId: task.listItemId, text: task.text, period: task.period,
-            section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
-            fate: group(task) !== "week" ? dayFate(task, targetDay) : week === targetWeek ? { stay: week } : { forward: targetWeek }
+            section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: task.estMinutes ?? DEFAULT_ESTIMATE, area,
+            fate: group(task) !== "week" ? dayFate(task, area, targetDay) : week === targetWeek ? { stay: week } : { forward: targetWeek }
         }));
     const oldestDate = older.map((task) => periodStart(task.period)).sort()[0] ?? null;
     return { items, olderCount: older.length, oldestDate };
@@ -1238,12 +1236,31 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
 const GROUPS = [ "today", "recent", "week" ];
 
 /**
- * The fate a wind-down proposes for a day's leftover: the target day's On deck, since he would like
- * to get to it then but hasn't committed to it. An Important task stays important, and an evening
- * task stays in the evening, which has its own time and isn't weighed against the work.
+ * The area of an open task of a journal note, read from the headings above it as the plan reads it:
+ * its marker, else the area heading above it, else Foundation (a task under an Evening heading on
+ * a note with no Morning or Afternoon reads as Recharge, the evening before time blocks).
  */
-function dayFate(task: { critical: boolean; section: string | null }, targetDay: string): { forward: string; onDeck?: true } {
-    return task.critical || isEveningName(task.section) ? { forward: targetDay } : { forward: targetDay, onDeck: true };
+function areaReader(docs: TriliumDoc[]) {
+    const byPath = new Map<string, { stacks: string[][]; timeBlocks: boolean }>();
+    return (task: { path: string; line: number; text: string }): Area => {
+        let read = byPath.get(task.path);
+        if (!read) {
+            const doc = docs.find((candidate) => candidate.path === task.path);
+            const stacks = doc ? headingStacks(doc.fullText) : [];
+            read = { stacks, timeBlocks: stacks.some((stack) => stack.some((h) => blockOf(h) === "morning" || blockOf(h) === "afternoon")) };
+            byPath.set(task.path, read);
+        }
+        return areaOfTask(task.text, read.stacks[task.line] ?? [], read.timeBlocks);
+    };
+}
+
+/**
+ * The fate a wind-down proposes for a day's leftover: the target day's On deck, since he would like
+ * to get to it then but hasn't committed to it. An Important task stays important, and a Growth or
+ * Recharge task stays on the list in its block, since it isn't weighed against the work.
+ */
+function dayFate(task: { critical: boolean }, area: Area, targetDay: string): { forward: string; onDeck?: true } {
+    return task.critical || area !== "foundation" ? { forward: targetDay } : { forward: targetDay, onDeck: true };
 }
 
 /**
@@ -1274,8 +1291,8 @@ function periodStart(key: string): string {
 
 /**
  * What a day's candidates are checked against: its plan, the week's items, the live keys, what is
- * already suggested or dismissed there and what Shawn closed lately (`closedKeys`), plus whether
- * the evening (Evening or Recharge) has a task.
+ * already suggested or dismissed there and what Shawn closed lately (`closedKeys`), plus the
+ * Growth and Recharge picks of his active projects, with those already on the list marked live.
  */
 export async function dayFacts(store: NoteStore, date: string, now: Date) {
     const plan = await readPlan(store, "day", date, now);
@@ -1285,13 +1302,20 @@ export async function dayFacts(store: NoteStore, date: string, now: Date) {
     const live = liveKeys(docs, now);
     const closed = await closedKeys(store, docs, now);
     const exclude = [ ...plan.dismissed, ...plan.suggested.flatMap((task) => keysOf(task.text)), ...closed ];
-    const eveningTasks = plan.sections.filter((section) => EVENING_SECTIONS.has(normName(section.name ?? ""))).flatMap((section) => section.tasks)
-        .filter((task) => isLive(task) && task.text.trim() !== "");
+    const projects = await projectCandidates(store);
+    // A pick whose words are already a task of the day (done ones too) is taken, as a ticket on a list is,
+    // and one still open on another day is live there: it is that day's leftover, not a new pick.
+    const planned = new Set([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ]
+        .filter((task) => task.state !== "cancelled" && task.state !== "tombstone").map((task) => sameText(bareText(plainText(withoutMoveLinks(task.text))))));
+    for (const pick of projects) {
+        const elsewhere = keysOf(withArea(pick.text, pick.area)).flatMap((key) => live.get(key) ?? []);
+        if (planned.has(sameText(pick.text))) live.set(pick.candidateId, [ "today" ]);
+        else if (elsewhere.length) live.set(pick.candidateId, elsewhere);
+    }
     const notToday = new Set(await dayLabels(store, date, NOT_TODAY_LABEL));
     const putOffBefore = new Set(await dayLabels(store, dayKey(lastWorkday(localDay(date))), NOT_TODAY_LABEL));
     return {
-        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, notToday, putOffBefore, raised: await raisedAsks(store, now, date),
-        evening: eveningTasks.length > 0
+        plan, week: { key: weekKey, tasks: mainTasks(weekPlan) }, live, exclude, closed, notToday, putOffBefore, raised: await raisedAsks(store, now, date), projects
     };
 }
 
@@ -1323,7 +1347,7 @@ export function leftovers(plan: PlanView): PlanTask[] {
 /** A day's On deck as the steps show it: each live item's id, plain text and minutes (30 without an estimate), with its ref. */
 export function deckItems(plan: PlanView) {
     return withRefs(deckTasks(plan).flatMap((task) => task.listItemId
-        ? [ { listItemId: task.listItemId, noteId: task.noteId, text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE } ]
+        ? [ { listItemId: task.listItemId, noteId: task.noteId, text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE, area: task.area } ]
         : []), "o", (item) => item.listItemId);
 }
 
@@ -1341,14 +1365,20 @@ export function meetingsOf(read: DayRead): { start: string; end: string; title: 
  */
 export function loadOf(read: DayRead, plan: PlanView, day: string, incoming = 0) {
     if (failedCalendar(read)) return null;
+    // Foundation only: the list's total and On deck leave Growth and Recharge out, and a Growth task pinned in the day books its time.
+    const sized = withBooked(read, plan);
     const meetings = read.inputs.capacity.bookedMinutes;
     const listMinutes = plan.capacity.totalMinutes;
-    const onDeckMinutes = plan.capacity.onDeckMinutes;
-    const targetMinutes = read.inputs.capacity.targetMinutes;
+    // On deck's Foundation leaves, counted as the plan counts it: a parent counts through its sub-items.
+    const deck = plan.onDeck.filter((task) => isLive(task) && task.text.trim() !== "");
+    const deckParents = new Set(deck.filter((task) => task.parent !== null).map((task) => task.parent));
+    const onDeckMinutes = deck.filter((task) => !deckParents.has(task.text) && task.area === "foundation")
+        .reduce((sum, task) => sum + (task.estMinutes ?? DEFAULT_ESTIMATE), 0);
+    const targetMinutes = sized.inputs.capacity.targetMinutes;
     const overMinutes = Math.max(0, listMinutes + onDeckMinutes + incoming - targetMinutes);
     const words = {
         day: weekdayName(day), meetings: formatHours(meetings), list: formatHours(listMinutes), deck: formatHours(onDeckMinutes),
-        incoming: formatHours(incoming), focus: focusText(focusOf(read.inputs.capacity)), over: formatHours(overMinutes)
+        incoming: formatHours(incoming), focus: focusText(focusFor(sized)), over: formatHours(overMinutes)
     };
     const key = `caius.daily.${overMinutes > 0 ? "load_over" : "load_line"}${incoming > 0 ? "_incoming" : ""}`;
     return {
@@ -1359,17 +1389,66 @@ export function loadOf(read: DayRead, plan: PlanView, day: string, incoming = 0)
 
 const isLive = (task: PlanTask) => task.state === "open" || task.state === "in_progress";
 
-/** Whether a heading is the evening, whose tasks are not work. */
-const isEveningName = (name: string | null) => EVENING_SECTIONS.has(normName(name ?? ""));
+/** The size of a Growth or Recharge pick: a timeboxed session of an active project. */
+const PROJECT_MINUTES = 60;
+
+/**
+ * Every Growth and Recharge pick of his active projects (`readProjectPicks`) as the steps present a
+ * candidate: `project:<noteId>`, the session in words ("Caius: the fate menu"), its area and
+ * why it is offered. Growth first.
+ */
+export async function projectCandidates(store: NoteStore) {
+    const picks = [ ...await readProjectPicks(store, "growth"), ...await readProjectPicks(store, "recharge") ];
+    return picks.map((pick): Presented => ({
+        candidateId: `project:${pick.noteId}`, kind: "project", area: pick.area, text: pick.text, because: t("caius.daily.because_project"),
+        minutes: PROJECT_MINUTES, noteId: pick.noteId, project: pick.project
+    }));
+}
+
+/** The project picks of `facts` that are on offer: not already a task of the day and not dismissed. */
+function projectsOffered(facts: { projects: Presented[]; live: Map<string, unknown>; exclude: string[] }): Presented[] {
+    return facts.projects.filter((pick) => !facts.live.has(pick.candidateId) && !facts.exclude.includes(pick.candidateId));
+}
+
+/**
+ * `read` with the time of his Growth and Recharge tasks pinned to a clock added to the meetings, so
+ * the day's capacity (its open time and its focus target) shrinks to fit around them. A task
+ * without a clock is not counted: only the pinned spans are booked.
+ */
+export function withBooked(read: DayRead, plan: PlanView): DayRead {
+    const spans = mainTasks(plan).flatMap((task) => {
+        const from = task.area !== "foundation" && task.at ? parseClock(task.at) : undefined;
+        if (from === undefined) return [];
+        const to = from + (task.estMinutes ?? DEFAULT_ESTIMATE);
+        const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+        return [ { start: clock(from), end: clock(Math.min(to, 29 * 60 + 59)) } ];
+    });
+    if (!spans.length) return read;
+    const capacity = dayCapacity([ ...read.inputs.calendar, ...spans ], { workStart: read.rhythm.start, workEnd: read.rhythm.workEnd });
+    return { ...read, inputs: { ...read.inputs, capacity } };
+}
+
+/**
+ * The day's Growth load beside its Foundation one: the live minutes of Growth tasks on the list
+ * (and `incoming`, what a wind-down's proposed fates would add), the Rhythm's Growth target and a
+ * sentence for the chat. Advice only; Growth over its target is said, never blocked.
+ */
+export function growthOf(read: DayRead, plan: PlanView, incoming = 0) {
+    const minutes = plan.capacity.areas.growth.minutes + incoming;
+    const target = read.rhythm.targets.growth;
+    const words = { planned: formatHours(minutes), target: focusText(target) };
+    const key = minutes > target.max ? "growth_line_over" : minutes ? "growth_line" : "growth_line_empty";
+    return { minutes, target, over: minutes > target.max, sentence: t(`caius.daily.${key}`, words) };
+}
 
 /**
  * A candidate as the step reports it: its `candidateId` (its first key: the ticket, or a hash of a
- * week item's text), its `kind` (`handoff`, `ask` or `week`), `Get X done` (an ask is "Answer
+ * week item's text), its `kind` (`handoff`, `ask` or `week`), its `area` (Foundation), `Get X done` (an ask is "Answer
  * {author}'s question on {KEY}", ~15m; a week item keeps its own text) with its reason in words, and for a ticket the `key` and `title` that
  * `caius_add` takes with `because` and `minutes`. A week item carries the `noteId` and `listItemId`
  * to forward instead.
  */
-export function present(candidate: Candidate) {
+export function present(candidate: Candidate): Presented {
     const { subject, reason, keys, ...rest } = candidate;
     const ticket = reason.kind === "week" ? {} : { key: candidate.source, title: subject.slice(candidate.source.length).trim() || subject };
     const because = reason.kind === "handoff"
@@ -1383,9 +1462,32 @@ export function present(candidate: Candidate) {
         : reason.kind === "ask" ? t("caius.daily.answer_ask", { author: reason.author, key: candidate.source })
             : t("caius.daily.get_done", { subject });
     return {
-        candidateId: keys[0] ?? candidate.source, kind: reason.kind, text, ...ticket, because, ...rest,
+        candidateId: keys[0] ?? candidate.source, kind: reason.kind, area: "foundation", text, ...ticket, because, ...rest,
         ...(reason.kind === "ask" ? { minutes: ASK_MINUTES } : {})
     };
+}
+
+/**
+ * A candidate as the steps present it, of any kind: a ticket's `handoff` or `ask`, a `week` item, or
+ * a `project` session. Every one carries its `area`; only a project's is not Foundation.
+ */
+export interface Presented {
+    candidateId: string;
+    kind: string;
+    area: Area;
+    text: string;
+    because: string;
+    minutes: number;
+    key?: string;
+    title?: string;
+    source?: string;
+    url?: string;
+    overridden?: true;
+    /** A week item: the note and task to forward. A project: the project's note. */
+    noteId?: string;
+    listItemId?: string | null;
+    /** A project's title. */
+    project?: string;
 }
 
 /** The size of answering an ask. */

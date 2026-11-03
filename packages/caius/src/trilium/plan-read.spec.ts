@@ -117,8 +117,13 @@ describe('readPlan (day)', () => {
 
   it('counts capacity from live tasks only, unestimated at 30m, leaving Suggested out', async () => {
     const { capacity } = await readPlan(fakeTrilium(seed).api, 'day', '2026-10-26', now);
-    // critical 60 + First 30 + Underway 15 + Step one 10 (Learn it has a live sub-item) = 115; 1 unestimated
-    expect(capacity).toMatchObject({ plannedMinutes: 115, estimatedCount: 4, unestimatedCount: 1, unestimatedMinutes: 30, totalMinutes: 145 });
+    // Work: critical 60 + First 30 + Underway 15 = 105; 1 unestimated. Step one 10 is under Growth (Learn it has a live sub-item), so not work.
+    expect(capacity).toMatchObject({ plannedMinutes: 105, estimatedCount: 3, unestimatedCount: 1, unestimatedMinutes: 30, totalMinutes: 135, eveningMinutes: 10 });
+    expect(capacity.areas).toEqual({
+      foundation: { minutes: 135, target: { min: 180, max: 240 } },
+      growth: { minutes: 10, target: { min: 60, max: 120 } },
+      recharge: { minutes: 0, target: null },
+    });
     expect(capacity.horizons).toEqual({ today: 6 });
     expect(capacity.target).toEqual({ min: 180, max: 240 });
   });

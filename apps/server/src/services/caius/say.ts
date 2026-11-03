@@ -4,17 +4,18 @@
  * days by their labels, never by an id.
  */
 
+import { AREAS } from "@triliumnext/caius";
 import { t } from "i18next";
 
 import type { Skipped, Written } from "./apply.js";
-import { dateLabel, plainText, weekdayName, withoutMoveLinks } from "./daily.js";
+import { dateLabel, plainText, withoutMoveLinks } from "./daily.js";
 
 /**
- * `say` for an apply's result; `day` is the day its evening tasks and Context lines went to. It ends
+ * `say` for an apply's result. It ends
  * with one plain question when an answer held items for being ambiguous, or `held` holds the texts
  * of items an earlier call held.
  */
-export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { day, held = [], asking = [], already = [] }: { day: string; held?: HeldItem[]; asking?: { intent: string; texts: string[] }[]; already?: { text: string; how: string }[] }): string {
+export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipped[] }, { held = [], asking = [], already = [] }: { day?: string; held?: HeldItem[]; asking?: { intent: string; texts: string[] }[]; already?: { text: string; how: string }[] }): string {
     const made = written.filter((entry) => entry.status === "written");
     const of = (...kinds: string[]) => made.filter((entry) => kinds.includes(entry.kind));
     const labels = (entries: { text?: string; id?: string }[]) => unique(entries.map((entry) => labelOf(entry.text ?? entry.id ?? "")));
@@ -48,7 +49,7 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         ...clause("not_today", of("not_today")),
         ...clause("dismissed", of("dismiss")),
         ...clause("finished", of("finished").filter((entry) => !done.includes(labelOf(entry.id ?? "")))),
-        ...(of("evening").length ? [ t("caius.say.evening", { items: andList(labels(of("evening"))), count: labels(of("evening")).length, weekday: weekdayName(day) }) ] : []),
+        ...AREAS.flatMap((area) => clause(`area_${area}`, of("area").filter((entry) => entry.detail === area))),
         ...clause("noted", of("context", "overlap"), true),
         ...clause("kept", of("keep", "carry"), true),
         ...(of("meetings").length ? [ t("caius.say.meetings") ] : []),
@@ -114,7 +115,6 @@ const UNKNOWN = new Set([ "not_offered", "not_found", "not_on_list", "not_a_list
 /** One skipped answer as a clause about its item, or none for an unnamed one `sayOf` counts. */
 function skipClause(entry: Skipped): string[] {
     const item = entry.text ? labelOf(entry.text) : null;
-    if (entry.reason === "calendar_event" && entry.detail) return [ t("caius.say.calendar_event", { event: entry.detail }) ];
     if (entry.reason === "ambiguous") {
         return [ t("caius.say.ambiguous", { said: entry.text ?? "", matches: orList(unique((entry.detail ?? "").split("; ").map(labelOf))) }) ];
     }
@@ -123,6 +123,7 @@ function skipClause(entry: Skipped): string[] {
     if (entry.reason === "duplicate" && item) return [ t("caius.say.duplicate", { item }) ];
     if (entry.reason === "stale") return [ item ? t("caius.say.stale", { item }) : t("caius.say.stale_unnamed") ];
     if (entry.reason === "review") return [ t("caius.say.review") ];
+    if (entry.reason === "use_add") return [ t("caius.say.use_add", { item: item ?? "" }) ];
     if (entry.reason === "not_a_move") return [ t("caius.say.acts_not_a_move") ];
     if (entry.reason === "third_person") return [ t("caius.say.not_noted", { item: entry.text ?? "" }) ];
     if (entry.reason === "edited") return [ t("caius.say.edited", { item: item ?? t("caius.say.a_task") }) ];

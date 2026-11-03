@@ -609,6 +609,17 @@ describe("caiusApi", () => {
     });
 });
 
+describe("setArea", () => {
+    it("posts the items to set-area", async () => {
+        const results = [ { status: "set" } ];
+        h.post.mockResolvedValueOnce({ results });
+        const item = { noteId: "n1", listItemId: "e1", area: "growth" as const, expectedBlobId: "b1" };
+
+        await expect(caiusApi.setArea([ item ])).resolves.toEqual(results);
+        expect(h.post).toHaveBeenCalledWith("caius/set-area", { items: [ item ], dryRun: false });
+    });
+});
+
 describe("isCaiusEnabled", () => {
     beforeEach(() => {
         forgetCaiusStatus();

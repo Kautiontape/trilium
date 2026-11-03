@@ -64,7 +64,7 @@ const rhythm = { start: '10:00', end: '23:00', workEnd: '18:00' };
  * each task its own group, laid out by `layoutGroups`: Tue 3 Nov, at 09:35 and after the Customer Call moved to 15:00; Thu 5
  * Nov with laundry in the evening; and Mon 9 Nov, four short tickets on an empty calendar.
  */
-export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks: { label: string; minutes: number; evening?: boolean }[] }[] = [
+export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks: { label: string; minutes: number; area?: 'foundation' | 'growth' | 'recharge' }[] }[] = [
   {
     name: 'Tue 3 Nov',
     meetings: [
@@ -91,7 +91,7 @@ export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks:
       { start: '14:00', end: '15:30', title: 'Design Workshop' },
       { start: '16:00', end: '16:30', title: 'Interview Panel' },
     ],
-    tasks: [{ label: 'ZAP-110', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'Laundry', minutes: 45, evening: true }],
+    tasks: [{ label: 'ZAP-110', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'Laundry', minutes: 45, area: 'growth' }],
   },
   {
     name: 'Mon 9 Nov',

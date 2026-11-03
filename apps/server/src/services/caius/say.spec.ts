@@ -47,14 +47,15 @@ describe("sayOf", () => {
                 { kind: "fate", id: "edaveaaaaaaa", text: "Message Dave about the lights", detail: "2026-11-05", status: "written" },
                 { kind: "finished", id: "ZAP-111", status: "written" },
                 { kind: "finished", id: "ZAP-101", status: "written" },
-                { kind: "evening", text: "Laundry", status: "written" },
+                { kind: "area", id: "elaundryaaaa", text: "Laundry", detail: "recharge", status: "written" },
+                { kind: "area", id: "eballotaaaaa", text: "Drop off the ballot", detail: "growth", status: "written" },
                 { kind: "context", text: "Taking Incident Review over Vendor Onboarding at 11:00", status: "written" },
                 { kind: "header", detail: "2026-11-04", status: "written" }
             ],
             skipped: []
         }, { day: "2026-11-05" });
         expect(say).toBe("ZAP-111, ZAP-101 and Pack the climbing gym bag are done, Message Dave about the lights moved to Thu 5 Nov, "
-            + "Laundry is on Thursday evening and 'Taking Incident Review over Vendor Onboarding at 11:00' is noted.");
+            + "Drop off the ballot is marked Growth, Laundry is marked Recharge and 'Taking Incident Review over Vendor Onboarding at 11:00' is noted.");
         expect(say).not.toMatch(ID);
     });
 
@@ -70,13 +71,13 @@ describe("sayOf", () => {
                 { kind: "brief", status: "written" }
             ],
             skipped: [
-                { kind: "evening", text: "just mom", reason: "calendar_event", detail: "Call Mom" },
+                { kind: "evening", text: "just mom", reason: "use_add", detail: "Add it with caius_add" },
                 { kind: "done", text: "the export", reason: "ambiguous", detail: "ZAP-111 Check the export; ZAP-101 Verify the export retry" },
                 { kind: "done", id: "e999aaaaaaaa", reason: "not_offered" }
             ]
         }, { day: "2026-11-02" });
         expect(say).toBe("ZAP-110 and ZAP-101 are on your list, ZAP-101 is first, ZAP-110 is after ZAP-101, ZAP-105 is in Suggested and the brief is written. "
-            + "Call Mom is already on the calendar and one task wasn't found. Which export: ZAP-111 or ZAP-101?");
+            + "'just mom' isn't on your list yet and one task wasn't found. Which export: ZAP-111 or ZAP-101?");
         expect(say).not.toMatch(ID);
     });
 

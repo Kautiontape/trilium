@@ -26,6 +26,7 @@ import {
   placeForwarded,
   placeInMainList,
   placeTask,
+  setTaskArea,
   setTaskState,
   suggestedItems,
   takeOnDeck,
@@ -35,6 +36,7 @@ import {
 } from './plan-html.js';
 import { DISMISSED_LABEL, PERIODS, dismissedKeys, findPeriodNote, isPeriodKey, type PeriodKind } from './plan-read.js';
 import type { StateSymbols } from './markdown.js';
+import { AREAS, type Area } from './areas.js';
 
 export interface AddRequest {
   /** Exactly one of date (YYYY-MM-DD), week (YYYY-Www) or month (YYYY-MM). */
@@ -463,6 +465,59 @@ export async function setStates(
     if (!(await api.putContent(req.noteId, r.html, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
     return { ...req, status: 'updated', state: RESULT_STATE[action] };
   });
+}
+
+// ---- area --------------------------------------------------------------
+
+/** A task to give an area: Foundation (no marker), Growth or Recharge. */
+export interface AreaRequest {
+  noteId: string;
+  listItemId: string;
+  area: Area;
+}
+
+/**
+ * Give each task the marker of its area, or none for Foundation. The tasks of one note are changed
+ * together and written once, as a compare-and-swap against the HTML they were built from; if the
+ * note changed meanwhile, none of them is written and each reports `edited`.
+ */
+export async function setAreas(api: NoteStore, reqs: AreaRequest[], opts: PlanOptions = {}): Promise<Done<AreaRequest>[]> {
+  const out = new Map<AreaRequest, Done<AreaRequest>>();
+  const byNote = new Map<string, AreaRequest[]>();
+  for (const req of reqs) {
+    if (!validItem(req) || !AREAS.includes(req.area)) out.set(req, skip(req, 'bad_request', 'need noteId, listItemId and an area'));
+    else byNote.set(req.noteId, [...(byNote.get(req.noteId) ?? []), req]);
+  }
+  for (const [noteId, group] of byNote) {
+    try {
+      const loaded = await loadNote(api, noteId);
+      if ('problem' in loaded) {
+        for (const req of group) out.set(req, skip(req, 'unreadable', loaded.problem));
+        continue;
+      }
+      const before = await api.content(noteId);
+      let after = before;
+      const changed: AreaRequest[] = [];
+      for (const req of group) {
+        const r = setTaskArea(after, req.listItemId, req.area);
+        if (!r.ok) out.set(req, skip(req, r.reason));
+        else if (r.unchanged) out.set(req, { ...req, status: 'unchanged' });
+        else {
+          after = r.html;
+          changed.push(req);
+        }
+      }
+      if (!changed.length) continue;
+      if (opts.dryRun) {
+        changed.forEach((req, i) => out.set(req, { ...req, status: 'updated', dryRun: true, changes: i ? undefined : [{ noteId, role: 'target', before, after }] }));
+      } else if (!(await api.putContent(noteId, after, before))) {
+        for (const req of changed) out.set(req, skip(req, 'edited', 'note changed meanwhile; nothing written'));
+      } else for (const req of changed) out.set(req, { ...req, status: 'updated' });
+    } catch (e) {
+      for (const req of group) if (!out.has(req)) out.set(req, failed(req, e));
+    }
+  }
+  return reqs.map((req) => out.get(req)!);
 }
 
 export { JIRA_BASE };

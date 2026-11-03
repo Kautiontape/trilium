@@ -27,4 +27,12 @@ describe("displayText", () => {
             .toEqual({ text: "Count the seats ZAP-7", forwardedTo: null });
         expect(displayText("Read [from the top](https://example.com/guide)")).toEqual({ text: "Read from the top", forwardedTo: null });
     });
+
+    it("drops a leading area marker and clock, and hands back the marker's area", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect(displayText("🌱 Read the ballot")).toEqual({ text: "Read the ballot", forwardedTo: null, area: "growth" });
+        expect(displayText("🔋 14:30 Vincent relink ~30m")).toEqual({ text: "Vincent relink ~30m", forwardedTo: null, area: "recharge" });
+        expect(displayText("09:30 Standup prep")).toEqual({ text: "Standup prep", forwardedTo: null });
+        expect(displayText("Plan 10:30 slots").area).toBeUndefined();
+    });
 });

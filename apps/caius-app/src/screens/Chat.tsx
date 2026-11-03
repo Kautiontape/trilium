@@ -2,6 +2,7 @@ import "./chat.css";
 
 import { KeepAwake } from "@capacitor-community/keep-awake";
 import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
+import type { Area } from "@triliumnext/caius/src/trilium/areas.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import { addReminder } from "../components/sheets.js";
@@ -11,7 +12,7 @@ import { ritual } from "../app-state.js";
 import { applyChunk, type AssistantTurn, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepOf, type StoredMessage, turnText } from "../lib/chat.js";
 import { dayLabel } from "../lib/day.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
-import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply } from "../lib/replies.js";
+import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack, today } from "../lib/store.js";
 
 /** A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while it runs. */
@@ -686,7 +687,7 @@ function StepBody({ step, answers, update, disabled, chat }: { step: RitualStep;
                 {d.yesterday?.sentence && <p class="step-note ink-2">{d.yesterday.sentence}</p>}
                 {onDeck.length > 0 && <FateList items={onDeck} options={options} answers={answers} update={update} disabled={disabled} />}
                 <Candidates items={Array.isArray(d.candidates) ? d.candidates : []} answers={answers} update={update} disabled={disabled} />
-                <Evening tasks={d.evening?.tasks ?? []} answers={answers} update={update} disabled={disabled} />
+                <Unmarked items={Array.isArray(d.unmarked) ? d.unmarked : []} answers={answers} update={update} disabled={disabled} />
             </>
         );
     }
@@ -697,7 +698,6 @@ function StepBody({ step, answers, update, disabled, chat }: { step: RitualStep;
                 {d.capacity?.sentence && <p class="step-note">{d.capacity.sentence}</p>}
                 {d.summary && <p class="step-note ink-2">{d.summary}</p>}
                 <Candidates items={Array.isArray(d.candidates) ? d.candidates : []} answers={answers} update={update} disabled={disabled} />
-                <Evening tasks={d.evening?.tasks ?? []} answers={answers} update={update} disabled={disabled} />
             </>
         );
     }
@@ -755,17 +755,30 @@ function FateList({ items, options, answers, update, disabled }: { items: StepIt
     );
 }
 
-/** Candidates with Take / Not today / Dismiss / Finished, and what happens to each if he leaves it alone. */
-function Candidates({ items, answers, update, disabled }: { items: (CandidateData & { minutes?: number; because?: string })[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
-    if (!items.length) {
-        return null;
-    }
+type CandidateItem = CandidateData & { minutes?: number; because?: string; area?: Area };
+
+/** Candidates in up to three lists, Work, Growth and Recharge, each with Take / Not today / Dismiss / Finished. */
+function Candidates({ items, answers, update, disabled }: { items: CandidateItem[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
+    const lists: [ Area, string ][] = [ [ "foundation", "New since yesterday" ], [ "growth", "Growth" ], [ "recharge", "Recharge" ] ];
+    return (
+        <>
+            {lists.map(([ area, heading ]) => {
+                // The index is the candidate's place in the whole step, which is where its answer is kept.
+                const mine = items.flatMap((c, i) => (c.area ?? "foundation") === area ? [ { c, i } ] : []);
+                return mine.length > 0 && <CandidateList key={area} heading={heading} items={mine} answers={answers} update={update} disabled={disabled} />;
+            })}
+        </>
+    );
+}
+
+/** One area's candidates, and what happens to each if he leaves it alone. */
+function CandidateList({ heading, items, answers, update, disabled }: { heading: string; items: { c: CandidateItem; i: number }[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
     const set = (i: number, value: CandidateAnswer) => update({ candidates: { ...answers.candidates, [i]: answers.candidates?.[i] === value ? null : value } });
     const labels: [CandidateAnswer, string][] = [ [ "take", "Take" ], [ "notToday", "Not today" ], [ "dismiss", "Dismiss" ], [ "finished", "Finished" ] ];
     return (
         <div class="candidates">
-            <div class="label-caps">New since yesterday</div>
-            {items.map((c, i) => (
+            <div class="label-caps">{heading}</div>
+            {items.map(({ c, i }) => (
                 <div key={i} class="candidate">
                     <p>{displayText(c.text).text}{c.minutes ? <span class="mono ink-2"> ~{formatEstimate(c.minutes)}</span> : null}</p>
                     {c.because && <p class="ink-2 candidate-why">because {c.because}</p>}
@@ -781,13 +794,26 @@ function Candidates({ items, answers, update, disabled }: { items: (CandidateDat
     );
 }
 
-/** The evening: Nothing tonight, or the tasks already there. */
-function Evening({ tasks, answers, update, disabled }: { tasks: string[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
+/** Tasks with no marker and no Jira key, for him to file: Work, Growth or Recharge. */
+function Unmarked({ items, answers, update, disabled }: { items: UnmarkedData[]; answers: StepAnswers; update: (patch: Partial<StepAnswers>) => void; disabled: boolean }) {
+    if (!items.length) {
+        return null;
+    }
+    const set = (i: number, value: Area) => update({ areas: { ...answers.areas, [i]: answers.areas?.[i] === value ? null : value } });
+    const labels: [Area, string][] = [ [ "foundation", "Work" ], [ "growth", "🌱 Growth" ], [ "recharge", "🔋 Recharge" ] ];
     return (
-        <div class="chip-row replies">
-            <span class="ink-2 evening-label">Evening{tasks.length ? `: ${tasks.join(", ")}` : ""}</span>
-            <Chip disabled={disabled} selected={answers.evening === "nothing tonight"}
-                onClick={() => update({ evening: answers.evening === "nothing tonight" ? null : "nothing tonight" })}>Nothing tonight</Chip>
+        <div class="candidates">
+            <div class="label-caps">Unmarked</div>
+            {items.map((t, i) => (
+                <div key={i} class="candidate">
+                    <p>{displayText(t.text).text}</p>
+                    <div class="chip-row">
+                        {labels.map(([ value, label ]) => (
+                            <Chip key={value} disabled={disabled} selected={answers.areas?.[i] === value} onClick={() => set(i, value)}>{label}</Chip>
+                        ))}
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }

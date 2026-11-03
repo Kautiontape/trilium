@@ -89,8 +89,14 @@ it("offers the caius skill only while it is registered, and names every tool the
         "his whole list as this call leaves it: his own tasks, the catch-up's tasks moved in, On deck items put on it and the candidates taken, cut into 1 to 6 runs of related work",
         "On a day already under way the step gives `data.planFrom`: the drawing lays his work out from there, never in the part of the day already past.",
         "Never mention ids, steps, tools, arrays, fields, permissions or \"the wrong value\"",
-        "An evening calendar event is not a task",
-        "`say` names the skip (\"Call Mom is already on the calendar\")",
+        "Foundation is the day job and has no marker: an unmarked line is Foundation.",
+        "You may suggest a Growth or Recharge task for the afternoon when it fits better there (an errand with a deadline); never suggest work in the Evening.",
+        "Foundation is the only area that counts toward the day's work.",
+        "| `caius_set_area` |",
+        "`asOffered` never takes a pick: only his word does.",
+        "`data.unmarked` lists tasks on his list with no marker, no Jira key and no area heading",
+        "A `foundation` answer writes nothing and the task isn't asked about again.",
+        "never ask \"anything for the evening?\"",
         "Every Caius tool is available, with the note reads and `search_notes`; the generic note tools that write are off",
         "Each ritual has a goal, and the steps below are the default path to it",
         "State capacity only as the step's `data.capacity.sentence` or `data.load.sentence` words it, as it is",
@@ -99,7 +105,7 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Never ask what else to do when the step returns no candidates",
         "say so when the day is half booked or more",
         "The Meetings block is yours: the apply writes it from the calendar. Never ask about updating it",
-        "Lines you write into his notes (Context, evening tasks, drop reasons) are in his voice or neutral",
+        "Lines you write into his notes (Context, drop reasons) are in his voice or neutral",
         "A Context line skipped as `third_person` is not written: reword it in his voice and call the same apply again with `said` and only that line in `context`, no `brief`, then reply.",
         "Use `move` only when he asks for an order",
         "On an `edited` skip, run the same apply call once more with the same answers",
@@ -134,10 +140,10 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(sheet).toContain("You are Caius, the planner for his Journal, and you speak in the first person.");
     expect(sheet).toContain("The words the tools return (`say`, the steps' questions and summaries) stay as they are");
     expect(sheet).toContain("Never quote the game or play the character.");
-    for (const old of [ "A ref holds only for the reply it came in", "and \"Anything for the evening?\"", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
+    for (const old of [ "A ref holds only for the reply it came in", "and \"Anything for the evening?\"", "`data.evening` is the evening", "eveningAnswered: true", "map it to the ids in the step data", "Name the other item by its `listItemId`", "No recap after an apply", "Add one more short line", "one short line that the day is closed", "Dry run first, and wait for a yes", "`caius_brief_write` with `data.shape`", "droppedPicks", "caius_context_keep` and `date: data.keepDate" ]) {
         expect(sheet, old).not.toContain(old);
     }
-    expect(sheet).not.toMatch(/Shawn(?!\")/);
+    expect(sheet).not.toMatch(/Shawn(?!")/);
 
     unregister();
     expect(readSkill("caius")).toBeNull();
@@ -160,24 +166,29 @@ it("writes the brief in the plan's first turn when there is nothing to ask, afte
     expect(sheet).not.toContain("then take his reply to `caius_plan_apply` (its step 3). Never ask whether to plan");
 });
 
-it("says the evening is covered only when the step shows evening items, and never drops the evening question", () => {
+it("has no evening question: Growth and Recharge picks take its place, and a thing for the evening is added with an area", () => {
     const sheet = sheetOnce();
-    expect(sheet).toContain("`data.evening` is the evening: his evening tasks, the calendar's evening events and `suggestion`, the line the apply puts in Suggested while the evening has neither.");
-    expect(sheet).toContain("Say the evening is covered only when `data.evening` has a task or an event. With neither, name the suggestion in one clause; never say no evening ask is needed.");
-    expect(sheet).toContain("When he says the evening holds nothing (\"nothing tonight\"), pass `evening: []` with `eveningAnswered: true`, in either apply: no suggestion is written. Leave `eveningAnswered` out when he didn't answer the evening question.");
-    expect(sheet).toContain("Ask every question a step's `question` holds: never fold one into a summary of what there is nothing to decide, such as \"no evening tasks to decide on\".");
+    expect(sheet).toContain("`data.candidates` holds the picks for all three areas side by side.");
+    expect(sheet).toContain("A Growth or Recharge pick (`kind: \"project\"`) is an hour of an active project, `Caius: the fate menu`, with `because` \"from your active projects\".");
+    expect(sheet).toContain("They replace any question about the evening: offer them as you offer the others, and never ask \"anything for the evening?\".");
+    expect(sheet).toContain("it is written with its marker under Evening, or under the `block` he names");
+    expect(sheet).toContain("add it with `caius_add` (`area`, `block: \"evening\"`); the `evening` answer is retired and the apply skips it.");
+    expect(sheet).toContain("The evening has no question and no suggestion of its own.");
+    expect(sheet).toContain("Ask every question a step's `question` holds: never fold one into a summary of what there is nothing to decide, such as \"no leftovers to decide on\".");
+    expect(sheet).not.toContain("`data.evening`");
+    expect(sheet).not.toContain("eveningAnswered");
 });
 
 it("parks a stale item only on his word, and keeps a personal errand out of the headline", () => {
     const sheet = sheetOnce();
     expect(sheet).toContain("An item with `park` has been carried on three workdays or more, and the `open` question asks to park it in that month. Only his word parks it: pass its fate with `to` set to `park.month`. Without it, the item goes on as proposed.");
     expect(sheet).toContain("His yes to the park question (\"yes\", \"park it\", \"sure\") is that fate: pass it. The tool parks nothing from his words alone: a bare yes without the month fate is a `check`, and a call that answers otherwise leaves the item on its proposed fate.");
-    expect(sheet).toContain("The headline names his first work task: never a personal errand or an evening task when work is on his list. The tool writes your headline as you send it");
+    expect(sheet).toContain("The headline names his first work task: never a Growth or Recharge task when work is on his list. The tool writes your headline as you send it");
 });
 
 it("maps his yes onto asOffered or the fields, since the tool writes nothing from his words alone", () => {
     const sheet = sheetOnce();
-    expect(sheet).toContain("Map his yes or fine onto the call: `asOffered: true` for everything offered (the candidates in the order shown, every keep or carry line), or the specific fields for what it answers. The heavy-day move is a `forward` with the suggestion's `listItemId` and `to`, and a park is the item's month fate: `asOffered` makes neither. The tool writes nothing from his words alone: a bare yes or fine with neither is a `check`. Never read a yes as a skip.");
+    expect(sheet).toContain("Map his yes or fine onto the call: `asOffered: true` for everything offered (the Foundation candidates in the order shown, every keep or carry line, but never a Growth or Recharge pick), or the specific fields for what it answers. The heavy-day move is a `forward` with the suggestion's `listItemId` and `to`, and a park is the item's month fate: `asOffered` makes neither. The tool writes nothing from his words alone: a bare yes or fine with neither is a `check`. Never read a yes as a skip.");
     expect(sheet).not.toContain("accepts the proposals as offered");
     expect(sheet).toContain("A bare yes to a set with one yes/no question in it (the park, the heavy-day move, a keep line) answers that question only: pass its field alone, without `asOffered`.");
 });

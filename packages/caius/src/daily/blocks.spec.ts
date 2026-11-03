@@ -21,7 +21,7 @@ describe('layoutWork', () => {
 
   it('starts evening tasks at the end of work, never draws past bedtime, and names what did not fit', () => {
     const { work, unplaced } = layoutWork({ ...day, end: '19:00' }, [{ start: '09:00', end: '10:30' }], [
-      { label: 'Walk', minutes: 45, evening: true },
+      { label: 'Walk', minutes: 45, area: 'recharge' },
       { label: 'Spec', minutes: 30 },
       { label: 'Big', minutes: 600 },
     ]);
@@ -37,13 +37,13 @@ describe('layoutWork', () => {
   it('starts no block before notBefore, and no evening task before it either', () => {
     const { work } = layoutWork({ ...day, notBefore: '11:15' }, [{ start: '10:00', end: '10:30' }, { start: '15:00', end: '15:30' }], [
       { label: 'ZAP-105', minutes: 30 },
-      { label: 'Laundry', minutes: 30, evening: true },
+      { label: 'Laundry', minutes: 30, block: 'evening' },
     ]);
     expect(work).toEqual([
       { start: '11:15', end: '11:45', label: 'ZAP-105' },
       { start: '18:00', end: '18:30', label: 'Laundry' },
     ]);
-    expect(layoutWork({ ...day, notBefore: '19:00' }, [], [{ label: 'Laundry', minutes: 30, evening: true }]).work)
+    expect(layoutWork({ ...day, notBefore: '19:00' }, [], [{ label: 'Laundry', minutes: 30, block: 'evening' }]).work)
       .toEqual([{ start: '19:00', end: '19:30', label: 'Laundry' }]);
   });
 });

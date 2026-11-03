@@ -1,17 +1,20 @@
 /**
  * The apply tools: `caius_plan_apply` and `caius_winddown_apply` make every write of a Plan my day
  * or a Wind down conversation from his answers, in one call. Each answer names an id from the step data, so nothing here builds text
- * from the agent's words except the evening tasks, the Context lines and the brief's prose. Every
+ * from the agent's words except the Context lines and the brief's prose. Every
  * write is safe to repeat: a second run with the same input changes no note.
  */
 
 import {
     acceptTasks,
+    type Area,
     addTasks,
     commitTasks,
     dayCandidates,
+    BLOCK_NAMES,
+    type Block,
+    DISMISSED_LABEL,
     dismissTasks,
-    EVENING_REASON,
     findPeriodNote,
     forwardTasks,
     keysOf,
@@ -29,12 +32,15 @@ import {
     PERIODS,
     readPlan,
     scanDocs,
+    setAreas,
     setContextLine,
     setMeetings,
     setStates,
+    stripMarker,
     takeSuggested,
     TRILIUM_CONFIG,
     weatherOfSvg,
+    withArea,
     workdayClock
 } from "@triliumnext/caius";
 import { t } from "i18next";
@@ -54,15 +60,12 @@ import {
     proposedForward,
     staleItems,
     dayKey,
+    areaAskIds,
     type DayRead,
-    EVENING_ID,
-    EVENING_NONE_ID,
-    EVENING_SUGGESTED_ID,
-    eveningEventTitles,
     drawnEvents,
     drawnStart,
     failedCalendar,
-    focusOf,
+    focusFor,
     followUpsOf,
     groupCells,
     groupsFrom,
@@ -86,15 +89,18 @@ import {
     planDay,
     planOffer,
     present,
+    type Presented,
     type StepDeps,
     stillOpen,
     notToday,
     windDownTarget,
+    withBooked,
     withTaken,
     withDateLabels,
     withoutMoveLinks,
     workBlocks
 } from "./daily.js";
+import { blockFor } from "./filing.js";
 import { isInputWarning } from "./inputs/index.js";
 import { clausesNaming, isRef, type Named, namesOf, refOf, resolveIn, resolveName, saidCloses, saidNames, saidPlaces, saysPhrase, vagueYes, withRefs } from "./refs.js";
 import { inHisVoice, sayOf } from "./say.js";
@@ -160,7 +166,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // those already in Suggested, and an id he named still resolves after the brief is written.
         const known = new Map([
             ...dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: offer.day.live, exclude: [ ...offer.day.plan.dismissed, ...offer.day.closed ] }).map(present),
-            ...offer.candidates
+            ...offer.day.projects, ...offer.candidates
         ].map((candidate) => [ candidate.candidateId, candidate ]));
 
         // A forward may name only a task the steps showed, and only a day, week or month they listed.
@@ -184,12 +190,12 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         ]);
         const answers: PlanApplyInput = asked.asOffered ? {
             ...asked,
-            accept: asked.accept.length ? asked.accept : offer.candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
+            accept: asked.accept.length ? asked.accept : offer.candidates.filter((c) => !put.has(c.candidateId) && c.kind !== "project").map((c) => ({ candidateId: c.candidateId })),
             keep: asked.keep.length ? asked.keep : offer.carry.map((line) => ({ lineId: line.lineId }))
         } : asked;
         const input = planAnswers(answers, pools, skipped, table, copies, collided);
-        const hasAnswer = !!asked.asOffered || !!asked.eveningAnswered || asked.catchup !== undefined || !!asked.forward?.length || [
-            asked.onDeck, asked.accept, asked.move, asked.keep, asked.finished, asked.notToday, asked.dismiss, asked.evening, asked.context, asked.overlaps
+        const hasAnswer = !!asked.asOffered || asked.catchup !== undefined || !!asked.forward?.length || [
+            asked.onDeck, asked.accept, asked.move, asked.keep, asked.finished, asked.notToday, asked.dismiss, asked.areas, asked.context, asked.overlaps
         ].some((answers) => answers.length > 0);
         const offered = [
             ...offer.onDeck.map((item) => item.text), ...offer.candidates.map((c) => c.text), ...offer.carry.map((line) => line.line), ...offer.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
@@ -205,7 +211,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         // Every question the step asked is answered now, whatever he said, so it isn't asked again.
         await labelDay(store, date, ASKED_LABEL, [
             ...offer.carry.map((line) => line.lineId), ...offer.overlaps.map((pair) => pair.overlapId), ...(offer.forwardSuggestion ? [ HEAVY_ID ] : []),
-            ...(offer.askEvening ? [ EVENING_ID ] : [])
+            ...offer.unmarked.flatMap((task) => areaAskIds(task.listItemId, task.text))
         ]);
         // An ask offered today is a Follow up from tomorrow on.
         await labelDay(store, date, ASK_SEEN_LABEL, offer.offeredAsks);
@@ -239,6 +245,11 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
                 record(written, skipped, { kind: "done", id: listItemId }, result);
             }
         });
+        // The areas he gave are written before anything moves, so a forward carries the marker.
+        await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas, {
+            day: date, noteFor: (id) => noteOf(store, id),
+            textOf: (id) => [ ...listItems(offer.day.plan), ...offer.onDeck, ...catchupTasks, ...heldTasks ].find((item) => item.listItemId === id)?.text
+        }, written, skipped));
         // A held task he named is settled; a hold that narrows to one releases it. Holds are settled on
         // every note they were given on, against what is open anywhere in the Journal.
         const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
@@ -293,11 +304,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, date, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, date, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, date, now, offer.candidates, input, written, skipped));
-        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, date, now, input, written, skipped, { tomorrow: true, events: eveningEventTitles(read) }));
-        // An evening he said holds nothing gets no suggestion, today or on a refresh.
-        const none = asked.eveningAnswered && !input.evening.length;
-        if (none) await labelDay(store, date, ASKED_LABEL, [ EVENING_NONE_ID ]);
-        await guarded({ kind: "suggested" }, skipped, () => suggestEvening(store, date, now, none ? null : offer.evening.suggestion, written, skipped));
+        eveningRetired(asked.evening, skipped);
+        await guarded({ kind: "context" }, skipped, () => contextLines(store, date, now, input.context, written, skipped, { tomorrow: true }));
         // A meeting he isn't taking leaves the Meetings block and the drawing written below.
         let taken = read;
         let headsUp = offer.headsUp;
@@ -333,7 +341,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         } else {
             await guarded({ kind: "meetings" }, skipped, async () => {
                 record(written, skipped, { kind: "meetings" }, await setMeetings(store, { date, lines: meetingLines(taken.inputs.calendar) }, {}));
-                await recordFocus(store, date, taken);
+                await recordFocus(store, date, taken, now);
             });
         }
 
@@ -392,7 +400,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const lines = await closingLines(store, date, targetDay, read);
         const known = new Map([
             ...dayCandidates({ jira: read.inputs.jira, week: facts.week, live: facts.live, exclude: [ ...facts.plan.dismissed, ...facts.closed ] }).map(present),
-            ...candidates
+            ...facts.projects, ...candidates
         ].map((candidate) => [ candidate.candidateId, candidate ]));
 
         const states = await loadStateSymbols(store);
@@ -427,7 +435,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         ]);
         const answers: WindDownApplyInput = asked.asOffered ? {
             ...asked,
-            accept: asked.accept.length ? asked.accept : candidates.filter((c) => !put.has(c.candidateId)).map((c) => ({ candidateId: c.candidateId })),
+            accept: asked.accept.length ? asked.accept : candidates.filter((c) => !put.has(c.candidateId) && c.kind !== "project").map((c) => ({ candidateId: c.candidateId })),
             keep: asked.keep.length ? asked.keep : lines.keep.map((line) => ({ lineId: line.lineId })),
             carry: asked.carry.length ? asked.carry : lines.carry.map((line) => ({ lineId: line.lineId }))
         } : asked;
@@ -435,8 +443,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
         const endOf = (id: string) => { const entry = byEntry.get(id); return entry ? chainEnd(entry, byEntry, copies)?.id ?? id : id; };
-        const hasAnswer = !!asked.asOffered || !!asked.eveningAnswered || [
-            asked.done, asked.fates, asked.accept, asked.move, asked.keep, asked.carry, asked.finished, asked.notToday, asked.dismiss, asked.evening, asked.context, asked.overlaps
+        const hasAnswer = !!asked.asOffered || [
+            asked.done, asked.fates, asked.accept, asked.move, asked.keep, asked.carry, asked.finished, asked.notToday, asked.dismiss, asked.areas, asked.context, asked.overlaps
         ].some((answers) => answers.length > 0);
         const offered = [
             ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
@@ -470,6 +478,11 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             const [ result ] = await setStates(store, "done", [ { noteId, listItemId } ], { states });
             record(written, skipped, { kind: "done", id: listItemId }, result);
         } });
+        // The areas he gave are written before the fates move anything, so a forward carries the marker.
+        await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas, {
+            day: targetDay, noteFor,
+            textOf: (id) => [ ...open.items, ...listItems(facts.plan) ].find((item) => item.listItemId === id)?.text
+        }, written, skipped));
 
         // An item an ambiguous answer matched stays where it is, on this call and later ones, until a
         // call names it: he named it, but which one is unclear.
@@ -517,10 +530,10 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "fate" }, skipped, async () => { for (const fate of fates) {
             const noteId = await noteFor(fate.listItemId);
             // A day he names takes it on its On deck ("I'd like to"), unless he needs to (onDeck: false), it is
-            // critical, or he gave it a place on that day's list. Left unsaid, an Important or evening task keeps its place.
+            // critical, or he gave it a place on that day's list. Left unsaid, an Important, Growth or Recharge task keeps its place.
             const toDay = fate.to !== undefined && PERIODS.day.pattern.test(fate.to);
             const source = open.items.find((item) => item.listItemId === fate.listItemId);
-            const keeps = !!source && (source.critical || EVENING_NAMES.has(normName(source.section ?? "")));
+            const keeps = !!source && (source.critical || source.area !== "foundation");
             const placing: { onDeck?: boolean; critical?: boolean } = !toDay ? {}
                 : fate.critical ? { critical: true }
                     : fate.onDeck === false || (fate.to === targetDay && placed.has(fate.listItemId)) ? { onDeck: false }
@@ -600,10 +613,10 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "not_today" }, skipped, () => putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
         await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
-        await guarded({ kind: "evening" }, skipped, () => eveningAndContext(store, targetDay, now, input, written, skipped, { events: eveningEventTitles(read) }));
-        if (asked.eveningAnswered && !input.evening.length) await labelDay(store, targetDay, ASKED_LABEL, [ EVENING_NONE_ID ]);
+        eveningRetired(asked.evening, skipped);
+        await guarded({ kind: "context" }, skipped, () => contextLines(store, targetDay, now, input.context, written, skipped));
         await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, input.overlaps, written, skipped));
-        if (!failedCalendar(read)) await recordFocus(store, targetDay, read);
+        if (!failedCalendar(read)) await recordFocus(store, targetDay, read, now);
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
         // A day keeps open while a hold given on it remains, or one given elsewhere covers an item that lives on it.
@@ -644,7 +657,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
     // answered (the lines written, a vague yes's included), so the reply asks the plan's questions and
     // never whether to plan. When they fail, the writes stand and the nextCall is left to make.
     const kept = result.written.filter((entry) => (entry.kind === "keep" || entry.kind === "carry") && entry.id).map((entry) => entry.id ?? "");
-    const answered = { evening: asked.evening, keep: [ ...new Set([ ...asked.keep, ...asked.carry ].map((line) => line.lineId).concat(kept)) ] };
+    const answered = { keep: [ ...new Set([ ...asked.keep, ...asked.carry ].map((line) => line.lineId).concat(kept)) ] };
     try {
         const catchup = await planDay(deps, { date: targetDay, step: "catchup" });
         const inputs = await planDay(deps, { date: targetDay, step: "inputs", answered });
@@ -706,19 +719,17 @@ async function contextOnly(deps: ApplyDeps, asked: PlanApplyInput) {
         if (unreadable) return unreadable;
         const written: Written[] = [];
         const skipped: Skipped[] = [];
-        await guarded({ kind: "context" }, skipped, () => eveningAndContext(store, date, now, { evening: [], context: asked.context }, written, skipped, { tomorrow: true }));
+        await guarded({ kind: "context" }, skipped, () => contextLines(store, date, now, asked.context, written, skipped, { tomorrow: true }));
         if (asked.groups) skipped.push({ kind: "groups", reason: "not_a_move", detail: "Groups at the top go with a call that only moves items of his list; give them in brief" });
         return withDateLabels({ date, written, skipped, say: sayOf({ written, skipped }, { day: date }) });
     });
 }
 
-/** The brief's "Get done today": the first work tasks of his list, in order, each with its candidate's reason when it had one. */
+/** The brief's "Get done today": the first Foundation tasks of his list, in order, each with its candidate's reason when it had one. */
 function picksFor(plan: Awaited<ReturnType<typeof readPlan>>, reasons: Map<string, Candidate>): BriefPick[] {
-    const day = listOf(plan).filter((task) => !task.evening);
-    // The top pick is work whenever his list has work: the first work task leads, the rest keep his order.
-    const lead = day.find((task) => task.work);
-    const ordered = lead && !day[0]?.work ? [ lead, ...day.filter((task) => task !== lead) ] : day;
-    return ordered.slice(0, MAX_PICKS).map((task) => {
+    // The picks are Foundation: a Growth or Recharge task is no pick of the day's work.
+    const day = listOf(plan).filter((task) => task.work);
+    return day.slice(0, MAX_PICKS).map((task) => {
         const reason = task.keys.map((key) => reasons.get(key)).find((candidate) => candidate && candidate.kind !== "week");
         return { text: task.text, minutes: task.minutes, ...(reason ? { because: reason.because } : {}) };
     });
@@ -735,7 +746,7 @@ function orderHeadline(header: ReturnType<typeof headerOf>): string | undefined 
 
 /** The brief's picks of a plan as they read, in order: the first work tasks of his list. */
 function picksOf(plan: Awaited<ReturnType<typeof readPlan>>): string {
-    return listOf(plan).filter((task) => !task.evening).slice(0, MAX_PICKS).map((task) => task.text).join("\n");
+    return listOf(plan).filter((task) => task.work).slice(0, MAX_PICKS).map((task) => task.text).join("\n");
 }
 
 /**
@@ -807,8 +818,6 @@ const WEEK_PHRASES: Record<string, string[]> = { w1: [ "later this week", "this 
 function listedOf(listed: ReturnType<typeof namedDays>): Set<string> {
     return new Set<string>([ ...listed.days.map((d) => "date" in d ? d.date : d.week), ...listed.weeks.map((w) => w.week), ...listed.months.map((m) => m.month) ]);
 }
-
-const EVENING = "Evening";
 
 /** What each kind of answer names its items from, each item with the ref its step gave it. */
 interface Pools {
@@ -1045,6 +1054,10 @@ function planAnswers(input: PlanApplyInput, pools: Pools, skipped: Skipped[], ta
         }),
         notToday: input.notToday.flatMap(candidate("not_today")),
         dismiss: input.dismiss.flatMap(candidate("dismiss")),
+        areas: input.areas.flatMap((ref) => {
+            const id = read("area", ref.item, [ pools.list, pools.deck, pools.open ]);
+            return id === null ? [] : [ { ...ref, item: id } ];
+        }),
         ...(input.forward ? { forward: input.forward.flatMap((fate) => {
             const id = read("forward", fate.listItemId, onList);
             const to = read("forward", fate.to, [ pools.days ]);
@@ -1130,6 +1143,10 @@ function windDownAnswers(input: WindDownApplyInput, pools: Pools, skipped: Skipp
         carry: input.carry.flatMap(line("carry")),
         notToday: input.notToday.flatMap(candidate("not_today")),
         dismiss: input.dismiss.flatMap(candidate("dismiss")),
+        areas: input.areas.flatMap((ref) => {
+            const id = read("area", ref.item, [ pools.list, pools.open ]);
+            return id === null ? [] : [ { ...ref, item: id } ];
+        }),
         held: [ ...held ].filter((id) => open.has(id)),
         heldGroups: groups.map((group) => ({ ...group, ids: group.ids.filter((id) => open.has(id)) })).filter((group) => group.ids.length > 0),
         follows,
@@ -1394,25 +1411,6 @@ async function unreadableDay(store: NoteStore, dates: string[]) {
 const NOT_LISTED = "Name a day from the step's data.days, a week from data.weeks or a month from data.months";
 
 /**
- * The day note's evening heading, Evening or Recharge with or without an emoji, given a
- * `### Evening` after his tasks and above Suggested when it has none, so an evening task never
- * lands in the work list and is drawn after work ends. Answers the heading's name.
- */
-async function eveningHeading(store: NoteStore, date: string): Promise<string> {
-    const note = await findPeriodNote(store, "day", date) ?? await store.calendarDay(date);
-    const before = await store.content(note.noteId);
-    const headings = [ ...before.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi) ];
-    const found = headings.find((m) => EVENING_NAMES.has(normName((m[1] ?? "").replace(/<[^>]+>/g, ""))));
-    if (found) return (found[1] ?? EVENING).replace(/<[^>]+>/g, "").trim();
-    const suggested = headings.find((m) => normName((m[1] ?? "").replace(/<[^>]+>/g, "")) === "suggested");
-    const at = suggested?.index ?? before.length;
-    await store.putContent(note.noteId, `${before.slice(0, at)}<h3>${EVENING}</h3>${before.slice(at)}`, before);
-    return EVENING;
-}
-
-const EVENING_NAMES = new Set([ "evening", "recharge" ]);
-
-/**
  * Takes `#caiusSettled` off every day note before `date` when `date` is closed, and off every other
  * day note older than the 3 workdays before `today` in any case. A re-run of `date` reads only its
  * own labels, so an earlier day's are needed only until a later day is closed; `date` keeps its own.
@@ -1436,8 +1434,8 @@ async function labelDay(store: NoteStore, date: string, name: string, values: st
 }
 
 /** Records on the day note of `day` the focus figure the steps stated for it (`#caiusFocus`), which the Plan tab shows. */
-async function recordFocus(store: NoteStore, day: string, read: DayRead) {
-    const { min, max } = focusOf(read.inputs.capacity);
+async function recordFocus(store: NoteStore, day: string, read: DayRead, now: Date) {
+    const { min, max } = focusFor(withBooked(read, await readPlan(store, "day", day, now)));
     const value = `${min}-${max}`;
     const note = await findPeriodNote(store, "day", day) ?? await store.calendarDay(day);
     for (const old of note.attributes.filter((a) => a.type === "label" && a.name === FOCUS_LABEL && a.value !== value)) removeLabel(note.noteId, FOCUS_LABEL, old.value);
@@ -1488,6 +1486,12 @@ async function dismiss(store: NoteStore, date: string, now: Date, refs: { candid
             written.push({ ...entry, status: "unchanged" });
             continue;
         }
+        if (candidate?.kind === "project") {
+            // A pick has no Suggested line: the dismissal is the label alone, which keeps it off the offers for 14 days.
+            await labelDay(store, date, DISMISSED_LABEL, [ candidateId ]);
+            written.push({ ...entry, status: "written" });
+            continue;
+        }
         let item = plan.suggested.find((task) => keysOf(task.text).includes(candidateId));
         if (!item && candidate?.key && candidate.kind !== "week") {
             const [ added ] = await addTasks(store, [ { date, suggested: true, text: suggestedLine(candidate), source: candidate.key } ], { now });
@@ -1518,30 +1522,11 @@ async function shelve(store: NoteStore, date: string, now: Date, offered: Candid
 }
 
 /**
- * His evening tasks under the day's Evening heading, and his Context lines placed by `contextAddOn`
- * (with `tomorrow` in Plan my day). An evening thing that names one of the day's evening calendar
- * `events` is not a task: it is skipped as `calendar_event`, and the Evening act names the event.
+ * His Context lines, placed by `contextAddOn` (with `tomorrow` in Plan my day). A line about him in
+ * the third person is skipped, with the message the agent rewords it from.
  */
-async function eveningAndContext(store: NoteStore, date: string, now: Date, input: { evening: string[]; context: string[] }, written: Written[], skipped: Skipped[], opts: { tomorrow?: boolean; events?: string[] } = {}) {
-    for (const text of input.evening) {
-        const event = opts.events?.find((title) => namesEvent(text, title));
-        if (event) {
-            skipped.push({ kind: "evening", text, reason: "calendar_event", detail: event });
-            continue;
-        }
-        // An evening task forwarded to the day carries a "from Monday 2" link, so the same words there count as written.
-        const same = (words: string) => plainText(words).toLowerCase();
-        if (listOf(await readPlan(store, "day", date, now)).some((task) => task.evening && same(task.text) === same(text))) {
-            written.push({ kind: "evening", text, status: "unchanged" });
-            continue;
-        }
-        const section = await eveningHeading(store, date);
-        const [ result ] = await addTasks(store, [ { date, section, text } ], { now });
-        // A duplicate here is a work task with the same words, not an evening task already written.
-        if (result?.status === "skipped" && result.reason === "duplicate") skipped.push({ kind: "evening", text, reason: "duplicate", detail: result.detail });
-        else record(written, skipped, { kind: "evening", text }, result);
-    }
-    for (const said of input.context) {
+async function contextLines(store: NoteStore, date: string, now: Date, lines: string[], written: Written[], skipped: Skipped[], opts: { tomorrow?: boolean } = {}) {
+    for (const said of lines) {
         const voiced = inHisVoice(said);
         if ("error" in voiced) {
             skipped.push({ kind: "context", text: said, reason: "third_person", detail: voiced.error });
@@ -1552,37 +1537,41 @@ async function eveningAndContext(store: NoteStore, date: string, now: Date, inpu
     }
 }
 
-type Candidate = ReturnType<typeof present>;
+/**
+ * Gives each task its area, written as its marker (none for Foundation, which writes nothing: the
+ * answer is already on the note). Every task he gave an area is recorded as asked on the day note
+ * of `day`, so neither it nor its forwarded copy is asked about again. A task whose note can't be
+ * found is skipped. The writes are one compare-and-swap per note, so a note edited meanwhile
+ * writes nothing.
+ */
+async function giveAreas(store: NoteStore, refs: { item: string; area: Area }[], on: { day: string; noteFor: (listItemId: string) => Promise<string | null>; textOf: (listItemId: string) => string | undefined }, written: Written[], skipped: Skipped[]) {
+    const reqs: { noteId: string; listItemId: string; area: Area }[] = [];
+    const entries: Omit<Written, "status">[] = [];
+    for (const { item, area } of refs) {
+        const entry = { kind: "area", id: item, detail: area };
+        const noteId = await on.noteFor(item);
+        if (!noteId) {
+            skipped.push({ ...entry, reason: "not_found" });
+            continue;
+        }
+        reqs.push({ noteId, listItemId: item, area });
+        entries.push(entry);
+    }
+    if (!reqs.length) return;
+    const results = await setAreas(store, reqs);
+    results.forEach((result, i) => record(written, skipped, entries[i]!, result));
+    await labelDay(store, on.day, ASKED_LABEL, reqs.flatMap(({ listItemId }) => areaAskIds(listItemId, on.textOf(listItemId) ?? "")));
+}
+
+/** The words of a "evening" answer, which the steps no longer take: each is skipped with where to add it instead. */
+function eveningRetired(texts: string[], skipped: Skipped[]) {
+    for (const text of texts) skipped.push({ kind: "evening", text, reason: "use_add", detail: t("caius.say.use_add_detail") });
+}
+
+type Candidate = Presented;
 
 /** The brief's prose as the agent writes it. */
 type Prose = NonNullable<PlanApplyInput["brief"]>;
-
-/**
- * The plan's evening suggestion (`eveningOf`'s line) in the day's Suggested, when the evening still
- * has no task once his answers are written: he can accept it or leave it.
- */
-async function suggestEvening(store: NoteStore, date: string, now: Date, line: string | null, written: Written[], skipped: Skipped[]) {
-    if (!line || listOf(await readPlan(store, "day", date, now)).some((task) => task.evening)) return;
-    const [ result ] = await addTasks(store, [ { date, suggested: true, text: line } ], { now });
-    record(written, skipped, { kind: "suggested", text: line.slice(0, line.indexOf(`: because ${EVENING_REASON}`)) }, result);
-    // Offered once a day: accepted, ticked done or dismissed, it doesn't come back.
-    if (result?.status === "added") await labelDay(store, date, ASKED_LABEL, [ EVENING_SUGGESTED_ID ]);
-}
-
-/**
- * Whether `text` names the event `title`: every word he said, past the filler, is a word of the
- * title ("just mom" and "Call Mom"). A line with words beyond the title ("Call Mom about the
- * flights") is a task of its own.
- */
-function namesEvent(text: string, title: string): boolean {
-    const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-    const said = words(plainText(text)).filter((word) => !FILLER.has(word));
-    const event = new Set(words(title));
-    return said.length > 0 && said.every((word) => event.has(word));
-}
-
-/** Words that don't name anything in what he says about the evening. */
-const FILLER = new Set([ "the", "a", "just", "is", "evening" ]);
 
 /** The catch-up as he answered it: every live task of the last workday forwarded to `date`, a skip, or nothing on "review". */
 async function catchup(store: NoteStore, date: string, now: Date, answer: PlanApplyInput["catchup"], written: Written[], skipped: Skipped[]) {
@@ -1710,7 +1699,7 @@ async function onDeckFates(store: NoteStore, date: string, offer: Awaited<Return
  * Puts a candidate at the end of his list: a week item by forwarding it to `date`, a ticket from
  * the day's Suggested, added there first when it isn't. One already on his list is unchanged.
  */
-async function accept(store: NoteStore, date: string, now: Date, candidate: Candidate | undefined, candidateId: string, written: Written[], skipped: Skipped[]) {
+async function accept(store: NoteStore, date: string, now: Date, candidate: Candidate | undefined, candidateId: string, filing: { block?: Block; area?: Area }, written: Written[], skipped: Skipped[]) {
     const entry = { kind: "accept", id: candidateId, ...(candidate ? { text: candidate.text } : {}) };
     const plan = await readPlan(store, "day", date, now);
     if (listOf(plan).some((task) => task.keys.includes(candidateId))) {
@@ -1721,6 +1710,20 @@ async function accept(store: NoteStore, date: string, now: Date, candidate: Cand
         skipped.push({ ...entry, reason: "not_offered" });
         return;
     }
+    if (candidate.kind === "project") {
+        // A project pick is a new line of its own, marked with its area, under Evening unless a block is named.
+        // The hour is written as its estimate, which the day's Growth load and the drawing read.
+        const same = (text: string) => plainText(withoutMoveLinks(stripMarker(text))).toLowerCase();
+        if (mainTasks(plan).some((task) => same(task.text) === same(candidate.text))) {
+            written.push({ ...entry, status: "unchanged" });
+            return;
+        }
+        const area = filing.area ?? candidate.area;
+        const block = await blockFor(store, date, area, filing.block);
+        const [ added ] = await addTasks(store, [ { date, section: BLOCK_NAMES[block ?? "evening"], text: withArea(candidate.text, area), est: "1h" } ], { now });
+        record(written, skipped, entry, added);
+        return;
+    }
     if (candidate.kind === "week") {
         if (!candidate.noteId || !candidate.listItemId) {
             skipped.push({ ...entry, reason: "no_id" });
@@ -1728,6 +1731,9 @@ async function accept(store: NoteStore, date: string, now: Date, candidate: Cand
         }
         const [ result ] = await forwardTasks(store, [ { noteId: candidate.noteId, listItemId: candidate.listItemId, to: date } ], {});
         record(written, skipped, entry, result);
+        if (result?.status === "moved" && filing.area && result.listItemId) {
+            await giveAreas(store, [ { item: result.listItemId, area: filing.area } ], { day: date, noteFor: (id) => noteOf(store, id), textOf: () => candidate.text }, written, skipped);
+        }
         return;
     }
     let shelf = plan;
@@ -1747,8 +1753,11 @@ async function accept(store: NoteStore, date: string, now: Date, candidate: Cand
         skipped.push({ ...entry, reason: "not_found" });
         return;
     }
-    const [ result ] = await acceptTasks(store, [ { noteId, listItemId: item.listItemId } ]);
+    // A ticket goes under the block he names, else under Morning when the note has that heading, else to the end of his list.
+    const block = await blockFor(store, date, filing.area ?? "foundation", filing.block);
+    const [ result ] = await acceptTasks(store, [ { noteId, listItemId: item.listItemId, ...(block ? { section: BLOCK_NAMES[block] } : {}) } ]);
     record(written, skipped, entry, result);
+    if (result?.status === "accepted" && filing.area) await giveAreas(store, [ { item: item.listItemId, area: filing.area } ], { day: date, noteFor: async () => noteId, textOf: () => candidate.text }, written, skipped);
 }
 
 /**
@@ -1759,7 +1768,7 @@ async function acceptAll(store: NoteStore, date: string, now: Date, input: Pick<
     const taken: typeof input.accept = [];
     for (const ref of input.accept) {
         const before = skipped.length;
-        await guarded({ kind: "accept", id: ref.candidateId }, skipped, () => accept(store, date, now, refs.known.get(ref.candidateId), ref.candidateId, written, skipped));
+        await guarded({ kind: "accept", id: ref.candidateId }, skipped, () => accept(store, date, now, refs.known.get(ref.candidateId), ref.candidateId, { block: ref.block, area: ref.area }, written, skipped));
         if (skipped.length === before) taken.push(ref);
     }
     // Several firsts keep the order he gave: each one after the first goes after the one before it.
@@ -1770,7 +1779,7 @@ async function acceptAll(store: NoteStore, date: string, now: Date, input: Pick<
         lastFirst = item;
         return at;
     };
-    for (const { candidateId, ...place } of taken) {
+    for (const { candidateId, block: _block, area: _area, ...place } of taken) {
         const at = inOrder(candidateId, place);
         await guarded({ kind: "place", id: candidateId }, skipped, () => placeOnList(store, date, now, { kind: "place", id: candidateId }, candidateId, at, refs, written, skipped));
     }
@@ -1863,9 +1872,9 @@ async function noteOf(store: NoteStore, listItemId: string): Promise<string | nu
  * calendar's events by their short names, and his list in its groups laid out between them from standup.
  */
 function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, date: string, now: Date, names: DrawnNames | null) {
-    const { start, end, workEnd } = read.rhythm;
+    const { start, end, workEnd, noon } = read.rhythm;
     const events = drawnEvents(read, names);
-    const { groups, work } = workBlocks(plan, { start, end, workEnd }, events, date, now, rolloverOf(read.rhythm), names);
+    const { groups, work } = workBlocks(plan, { start, end, workEnd, noon }, events, date, now, rolloverOf(read.rhythm), names);
     return { start: drawnStart(read), end, workEnd, events, groups, work };
 }
 

@@ -1,12 +1,26 @@
 // The day's work laid out in time: the main list, group by group, in the gaps between meetings.
 
 import { parseClock } from '../inputs/capacity.js';
+import type { Area, Block } from '../trilium/areas.js';
 
 export interface WorkTask {
   label: string;
   minutes: number;
-  /** An evening task (under Evening or Recharge): it starts no earlier than the end of work. */
-  evening?: boolean;
+  /** The time block it sits in: it starts no earlier than the block does (Morning at the start, Afternoon at noon, Evening at the end of work). */
+  block?: Block | null;
+  /** Its area: a task in no block starts with the work when it is Foundation, else no earlier than the end of work. */
+  area?: Area;
+  /** `HH:MM`: it is laid at this time, before the rest. */
+  at?: string | null;
+}
+
+/** The day's edges for laying work out. `noon` is where Morning ends and Afternoon starts (12:00 when not given). */
+export interface DaySpan {
+  start: string;
+  end: string;
+  workEnd: string;
+  noon?: string;
+  notBefore?: string;
 }
 
 export interface WorkBlock {
@@ -26,12 +40,15 @@ export interface GroupBlock {
 
 /**
  * Lays `tasks` out in order from `start`, or from `notBefore` when that is later (the time now, on
- * the day being planned), each in the earliest free time after the one before it, split across a
- * meeting when it has to be (only the first part carries the label), never past `end`. Evening tasks
- * start no earlier than `workEnd`. `unplaced` holds the minutes of each task that did not fit before `end`.
+ * the day being planned), each in the earliest free time after the one before it in its block, split
+ * across a meeting when it has to be (only the first part carries the label), never past `end`. A task
+ * with a clock is laid at it first. A Morning task starts no earlier than `start`, an Afternoon one
+ * than `noon`, an Evening one than `workEnd`; a task in no block starts with the work when it is
+ * Foundation, else no earlier than `workEnd`. A block that runs over runs on into the next.
+ * `unplaced` holds the minutes of each task that did not fit before `end`.
  */
 export function layoutWork(
-  day: { start: string; end: string; workEnd: string; notBefore?: string },
+  day: DaySpan,
   meetings: { start: string; end: string }[],
   tasks: WorkTask[],
 ): { work: WorkBlock[]; unplaced: { label: string; minutes: number }[] } {
@@ -44,7 +61,7 @@ export function layoutWork(
  * got time with its span and its count of tasks, as well as the blocks.
  */
 export function layoutGroups(
-  day: { start: string; end: string; workEnd: string; notBefore?: string },
+  day: DaySpan,
   meetings: { start: string; end: string }[],
   groups: { name: string; important?: boolean; tasks: WorkTask[] }[],
 ): { groups: GroupBlock[]; work: WorkBlock[]; unplaced: { label: string; minutes: number }[] } {
@@ -65,7 +82,7 @@ export function layoutGroups(
 
 /** `layoutWork`'s blocks, each with the index of its task. */
 function placeTasks(
-  day: { start: string; end: string; workEnd: string; notBefore?: string },
+  day: DaySpan,
   meetings: { start: string; end: string }[],
   tasks: WorkTask[],
 ): { work: (WorkBlock & { task: number })[]; unplaced: { label: string; minutes: number }[] } {
@@ -77,12 +94,15 @@ function placeTasks(
     .filter(([from, to]) => to > from);
   const work: (WorkBlock & { task: number })[] = [];
   const unplaced: { label: string; minutes: number }[] = [];
-  let workCursor = start;
-  let eveningCursor = Math.max(start, workEnd);
+  const noon = Math.max(start, parseClock(day.noon ?? '') ?? 12 * 60);
+  // One cursor per block; a task placed in one pushes the later blocks' cursors on, so the list keeps its order.
+  const cursors = [start, Math.max(start, Math.min(noon, workEnd)), Math.max(start, workEnd)];
+  const laneOf = (task: WorkTask) =>
+    task.block === 'morning' ? 0 : task.block === 'afternoon' ? 1 : task.block === 'evening' ? 2 : (task.area ?? 'foundation') === 'foundation' ? 0 : 2;
 
-  for (const [index, task] of tasks.entries()) {
+  const place = (index: number, task: WorkTask, from: number): number => {
     let left = Math.max(0, Math.round(task.minutes));
-    let at = task.evening ? Math.max(eveningCursor, workCursor) : workCursor;
+    let at = from;
     while (left > 0 && at < end) {
       const blocking = busy.filter(([from, to]) => to > at && from <= at);
       if (blocking.length) {
@@ -99,11 +119,22 @@ function placeTasks(
       at = until;
     }
     if (left > 0) unplaced.push({ label: task.label, minutes: left });
-    if (task.evening) eveningCursor = at;
-    else {
-      workCursor = at;
-      eveningCursor = Math.max(eveningCursor, at);
-    }
+    return at;
+  };
+
+  // A task with a clock holds its time, as a meeting does, and the rest flow around it.
+  const pinned = new Set<number>();
+  for (const [index, task] of tasks.entries()) {
+    const at = parseClock(task.at ?? '');
+    if (at === undefined || at >= end) continue;
+    place(index, task, Math.max(at, parseClock(day.notBefore ?? '') ?? 0));
+    pinned.add(index);
+  }
+  for (const [index, task] of tasks.entries()) {
+    if (pinned.has(index)) continue;
+    const lane = laneOf(task);
+    const at = place(index, task, cursors[lane]!);
+    for (let later = lane; later < cursors.length; later++) cursors[later] = Math.max(cursors[later]!, at);
   }
   return { work, unplaced };
 }

@@ -213,8 +213,8 @@ describe('renderDayTerrain', () => {
     const thursday = T13A_DAYS.find((day) => day.name === 'Thu 5 Nov');
     if (!thursday) throw new Error('no Thursday');
     const { groups } = layoutGroups(T13A_RHYTHM, thursday.meetings, [
-      { name: 'ZAP bugs', tasks: thursday.tasks.filter((task) => !task.evening) },
-      { name: 'Laundry', tasks: thursday.tasks.filter((task) => task.evening) },
+      { name: 'ZAP bugs', tasks: thursday.tasks.filter((task) => !task.area) },
+      { name: 'Laundry', tasks: thursday.tasks.filter((task) => task.area) },
     ]);
     expect(groups.find((group) => group.name === 'Laundry')).toMatchObject({ start: '18:00', end: '18:45', count: 1 });
     const svg = renderDayTerrain({ ...T13A_RHYTHM, events: thursday.meetings, groups });

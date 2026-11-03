@@ -131,9 +131,10 @@ describe("accept takes a position", () => {
         const inputs = await call("caius_planday", { date: WED, step: "inputs", refresh: true });
         expect(inputs.data.candidates).toEqual([ expect.objectContaining({ candidateId: "ZAP-101", kind: "week" }) ]);
         expect(inputs.data.list).toEqual([
-            { listItemId: "w105", text: "ZAP-105 Confirm the staging bucket name", evening: false, ref: refOf("l", "w105") },
-            { listItemId: "w111", text: "ZAP-111 Check the invoice export in QA", evening: false, ref: refOf("l", "w111") },
-            { listItemId: "wlau", text: "Laundry", evening: true, ref: refOf("l", "wlau") }
+            { listItemId: "w105", text: "ZAP-105 Confirm the staging bucket name", area: "foundation", block: null, at: null, ref: refOf("l", "w105") },
+            { listItemId: "w111", text: "ZAP-111 Check the invoice export in QA", area: "foundation", block: null, at: null, ref: refOf("l", "w111") },
+            // On a note with no Morning or Afternoon, an unmarked task under Evening reads as Recharge.
+            { listItemId: "wlau", text: "Laundry", area: "recharge", block: "evening", at: null, ref: refOf("l", "wlau") }
         ]);
         const applied = await call("caius_plan_apply", { date: WED, accept: [ { candidateId: "ZAP-101", first: true } ], brief: prose });
         expect(applied.skipped).toEqual([]);
@@ -162,8 +163,10 @@ describe("accept takes a position", () => {
         expect(moved.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "move", id: "trun", status: "written" }) ]));
         expect(await listed(DAY)).toEqual([ "Write the runbook", expect.stringContaining("ZAP-105"), expect.stringContaining("ZAP-120"), "Laundry" ]);
 
-        const refused = await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "tlau", first: true } ], brief: prose });
-        expect(refused.skipped).toEqual([ expect.objectContaining({ kind: "move", id: "tlau", reason: "not_in_main_list" }) ]);
+        // A move works within any work list, the evening's included; an item that is on no list is refused.
+        const evening = await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "tlau", first: true } ], brief: prose });
+        expect(evening.skipped).toEqual([]);
+        expect(evening.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "move", id: "tlau", status: "unchanged" }) ]));
     });
 });
 
@@ -511,36 +514,25 @@ describe("a meeting-free day has no Meetings heading", () => {
     });
 });
 
-describe("an evening calendar event is not a task", () => {
-    it("Mon 09:40 'evening is just mom': nothing is written for the 18:00 Call Mom, and the drawing names it", async () => {
+describe("the evening answer is retired", () => {
+    it("Mon 09:40 'evening is just mom': nothing is written for it, the apply says to add it with an area, and the drawing still names the 18:00 Call Mom", async () => {
         const DAY = "2027-01-25";
         calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("18:00", "18:30", "Call Mom") ];
         at(`${DAY}T09:40`);
         const applied = await call("caius_plan_apply", { date: DAY, evening: [ "mom" ], brief: prose });
-        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "mom", reason: "calendar_event" }) ]);
+        expect(applied.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "mom", reason: "use_add" }) ]);
         expect((await call("caius_plan", { period: "day", date: DAY })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
         expect((await headerOf(applied)).svg).toContain(">Call Mom</text>");
     });
 
-    it("matches only when every word he said, past the filler, is in an event's title; a longer line is a task", async () => {
-        const DAY = "2027-02-15";
-        calendars[DAY] = [ event("18:00", "18:30", "Call Mom"), event("19:00", "20:30", "Climbing gym"), event("20:30", "21:30", "Dinner"), event("21:30", "22:00", "Mom") ];
-        at(`${DAY}T09:40`);
-        const said = [
-            "mom", "just mom", "call mom", "climbing gym",
-            "call the plumber", "Call Mom about the flights", "buy mom's birthday card", "pack the climbing gym bag", "book dinner for Friday"
-        ];
-        const applied = await call("caius_plan_apply", { date: DAY, evening: said, brief: prose });
-        expect(applied.skipped.filter((s: any) => s.reason === "calendar_event").map((s: any) => s.text)).toEqual([ "mom", "just mom", "call mom", "climbing gym" ]);
-        expect(await listed(DAY)).toEqual([ "call the plumber", "Call Mom about the flights", "buy mom's birthday card", "pack the climbing gym bag", "book dinner for Friday" ]);
-    });
-
-    it("Mon 17:30 'mom is the 6pm call': the wind-down writes no Call Mom task for a next workday that has the call, and still writes the plants", async () => {
+    it("Mon 17:30 'water the plants': the wind-down writes no evening line either, and a Recharge add in the next workday's Evening is what writes it", async () => {
         const DAY = "2027-01-26";
-        calendars["2027-01-27"] = [ event("18:00", "18:30", "Call Mom") ];
         at(`${DAY}T17:30`);
         const wound = await call("caius_winddown_apply", { date: DAY, evening: [ "Call Mom", "Water the plants" ] });
-        expect(wound.skipped).toEqual([ expect.objectContaining({ kind: "evening", text: "Call Mom", reason: "calendar_event" }) ]);
-        expect(await listed("2027-01-27")).toEqual([ "Water the plants" ]);
+        expect(wound.skipped.map((entry: any) => [ entry.kind, entry.text, entry.reason ])).toEqual([ [ "evening", "Call Mom", "use_add" ], [ "evening", "Water the plants", "use_add" ] ]);
+        expect(await listed("2027-01-27")).toEqual([]);
+        const added = await call("caius_add", { items: [ { date: "2027-01-27", area: "recharge", block: "evening", text: "Water the plants" } ] });
+        expect(added.results[0]).toMatchObject({ status: "added" });
+        expect(await listed("2027-01-27")).toEqual([ "🔋 Water the plants" ]);
     });
 });

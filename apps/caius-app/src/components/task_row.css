@@ -48,6 +48,18 @@
     font-weight: 600;
 }
 
+.area-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: var(--s2);
+    border-radius: 50%;
+    vertical-align: middle;
+
+    &.area-growth { background: var(--moss); }
+    &.area-recharge { background: var(--dusk); }
+}
+
 .task-row.variant-critical {
     box-shadow: inset 3px 0 0 var(--clay);
 }

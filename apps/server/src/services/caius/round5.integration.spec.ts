@@ -111,11 +111,13 @@ describe("a correction after the apply", () => {
         await monday(MON);
         jira.handoff.push({ ...ticket("ZAP-111", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
         at(`${MON}T17:30`);
-        const first = await call("caius_winddown_apply", { date: MON, said: "110 is done. evening pack the climbing gym bag", done: [ "ZAP-110" ], evening: [ "Pack the climbing gym bag" ] });
+        // Tuesday's evening has the bag, a Recharge task added with its area and block.
+        await call("caius_add", { items: [ { date: TUE, area: "recharge", block: "evening", text: "Pack the climbing gym bag" } ] });
+        const first = await call("caius_winddown_apply", { date: MON, said: "110 is done.", done: [ "ZAP-110" ] });
         expect(first.skipped).toEqual([]);
         // The evening's bag on Tuesday's list, the two tickets on its On deck.
         expect((await tasksOf("day", TUE)).map((task: any) => task.text)).toEqual([
-            "Pack the climbing gym bag", "ZAP-101 Verify the export retry on staging", "ZAP-111 Check the invoice export in QA"
+            "🔋 Pack the climbing gym bag", "ZAP-101 Verify the export retry on staging", "ZAP-111 Check the invoice export in QA"
         ]);
 
         at(`${MON}T17:31`);
@@ -127,7 +129,7 @@ describe("a correction after the apply", () => {
         ]));
         // 111 left Tuesday for the week; 101 and the bag stay on Tuesday, once each.
         expect(await tasksOf("day", TUE)).toEqual([
-            { text: "Pack the climbing gym bag", state: "open" },
+            { text: "🔋 Pack the climbing gym bag", state: "open" },
             { text: "ZAP-101 Verify the export retry on staging", state: "open" },
             { text: "ZAP-111 Check the invoice export in QA ~30m", state: expect.not.stringMatching(/^open$/) }
         ]);
@@ -185,15 +187,15 @@ describe("his words decide", () => {
         const MON = "2026-11-16";
         await monday(MON);
         at(`${MON}T17:30`);
-        const said = "110 is done. 111 later this week. evening laundry";
+        const said = "110 is done. 111 later this week.";
         const before = await journal();
-        const checked = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ], evening: [ "Laundry" ] });
+        const checked = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ] });
         expect(checked.written).toEqual([]);
         expect(checked.check).toEqual([ expect.objectContaining({ item: "ZAP-111 Check the invoice export in QA", said: "111 later this week", missing: "fate" }) ]);
         expect(checked.check[0].message).toContain("later this week");
         expect(await journal()).toEqual(before);
 
-        const applied = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ], fates: [ { listItemId: "111", to: "w1" } ], evening: [ "Laundry" ] });
+        const applied = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ], fates: [ { listItemId: "111", to: "w1" } ] });
         expect(applied.check).toBeUndefined();
         expect(applied.skipped).toEqual([]);
         expect(applied.written).toEqual(expect.arrayContaining([
@@ -346,12 +348,12 @@ describe("the overlap answer", () => {
         expect(next.question).toContain("Incident Review overlaps Vendor Onboarding at 11:00");
         const { overlapId } = next.data.overlaps[0];
         // The agent's round-5 call: his answer only in his words.
-        const said = "111, 101 and the bag are done. incident review. evening iron shirts";
-        const checked = await call("caius_winddown_apply", { date: WED, said, evening: [ "Iron shirts" ] });
+        const said = "111, 101 and the bag are done. incident review.";
+        const checked = await call("caius_winddown_apply", { date: WED, said });
         expect(checked.written).toEqual([]);
         expect(checked.check).toEqual([ expect.objectContaining({ missing: "overlap", item: "Incident Review overlaps Vendor Onboarding at 11:00" }) ]);
 
-        const wound = await call("caius_winddown_apply", { date: WED, said, evening: [ "Iron shirts" ], overlaps: [ { overlapId, take: "Incident Review" } ] });
+        const wound = await call("caius_winddown_apply", { date: WED, said, overlaps: [ { overlapId, take: "Incident Review" } ] });
         expect(wound.skipped).toEqual([]);
         expect(wound.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "overlap", detail: "Incident Review", status: "written" }) ]));
         expect((await call("caius_context", { date: THU })).context).toEqual([ expect.objectContaining({ text: "Taking Incident Review, not Vendor Onboarding, at 11:00", period: "day" }) ]);
@@ -631,7 +633,7 @@ describe("the wind-down's last question", () => {
 });
 
 describe("a Review goes straight on", () => {
-    it("Wed 11 09:45 'carry it', 'nothing': the Review's apply returns today's plan steps already run, with the evening it heard not asked again", async () => {
+    it("Wed 11 09:45 'carry it', 'nothing': the Review's apply returns today's plan steps already run, with no evening question", async () => {
         const MON = "2027-02-15";
         const WED = "2027-02-17";
         await cls.init(async () => {
@@ -639,11 +641,11 @@ describe("a Review goes straight on", () => {
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("r5-dave", "Message Dave about the lights"))}`);
         });
         at(`${WED}T09:45`);
-        const wound = await call("caius_winddown_apply", { date: MON, said: "nothing", evening: [] });
+        const wound = await call("caius_winddown_apply", { date: MON, said: "nothing" });
         expect(wound.next).toBe("planday");
         expect(wound.nextCall).toBeUndefined();
         expect(wound.planday.catchup).toMatchObject({ step: "catchup", date: WED, question: null });
-        // Dave waits on today's On deck, so the plan's only question is the On deck one: the evening isn't asked again.
+        // Dave waits on today's On deck, so the plan's only question is the On deck one: the evening has none.
         expect(wound.planday.inputs).toMatchObject({
             step: "inputs", date: WED, question: "On deck: 'Message Dave about the lights'. All of it fits, so it goes on your list unless you say otherwise."
         });

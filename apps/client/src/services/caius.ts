@@ -36,6 +36,12 @@ export interface CaiusSetStateItem extends CaiusItemRef {
     reason?: string;
 }
 
+export type CaiusArea = "foundation" | "growth" | "recharge";
+
+export interface CaiusSetAreaItem extends CaiusItemRef {
+    area: CaiusArea;
+}
+
 export interface CaiusForwardItem extends CaiusItemRef {
     /** `YYYY-MM-DD`, `YYYY-Www` (ISO week) or `YYYY-MM`. */
     to: string;
@@ -96,6 +102,12 @@ export interface CaiusPlanTask {
     parentListItemId: string | null;
     section: string | null;
     critical: boolean;
+    /** Its marker, else an area heading above it, else Foundation. */
+    area: CaiusArea;
+    /** The time block heading above it, or `null`. */
+    block: "morning" | "afternoon" | "evening" | null;
+    /** The `HH:MM` its text starts with, which pins it to that time; `null` when it has none. */
+    at: string | null;
 }
 
 /** One day, week or month note read as a plan. */
@@ -117,8 +129,10 @@ export interface CaiusPlan {
         unestimatedCount: number;
         unestimatedMinutes: number;
         totalMinutes: number;
-        /** Minutes under Evening or Recharge, which the other counts leave out. */
+        /** On a day note, minutes of the live Growth and Recharge tasks, which the other counts leave out. */
         eveningMinutes: number;
+        /** Live minutes by area and each area's target; a day's counts above are Foundation's. */
+        areas: Record<CaiusArea, { minutes: number; target: { min: number; max: number } | null }>;
         /** Minutes of the live On deck tasks, which the other counts leave out until they are planned. */
         onDeckMinutes?: number;
         /** `null` for a month, which has no target. */
@@ -267,6 +281,7 @@ export const caiusApi = {
         return server.get<{ total: number; tasks: CaiusOpenTask[] }>(url);
     },
     setState: (items: CaiusSetStateItem[]) => postItems("set-state", items),
+    setArea: (items: CaiusSetAreaItem[]) => postItems("set-area", items),
     forward: (items: CaiusForwardItem[]) => postItems("forward", items),
     accept: (items: CaiusAcceptItem[]) => postItems("accept", items),
     dismiss: (items: CaiusDismissItem[]) => postItems("dismiss", items),

@@ -9,7 +9,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
-import { createBeccaStore, createChildNote } from "./store.js";
+import { refOf } from "./refs.js";
+import { createBeccaStore, createChildNote, setLabel } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -151,136 +152,131 @@ describe("a closed day's header", () => {
     });
 });
 
-describe("the evening", () => {
-    const SUGGESTION = "Something away from screens, a chore or a Recharge item: because the evening has nothing planned (~45m)";
+describe("Growth and Recharge picks", () => {
+    const brief = { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] };
     const suggestedOf = async (date: string) => (await call("caius_plan", { period: "day", date })).suggested.map((t: any) => t.text);
-
-    it("Wed 11 Nov: after a Review whose evening question went unsaid, the plan offers one Suggested evening item from the standing rule, once", async () => {
-        const MON = "2028-11-13";
-        const WED = "2028-11-15";
-        calendars[WED] = [ event("14:00", "15:00", "Design Sync") ];
-        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("n-dave", "Message Dave if he knows anyone who will hang lights as a small job"))}`);
-        at(`${WED}T09:45`);
-        // The round-6 calls: the three steps, then "carry it" with no evening answer.
-        for (const step of [ "open", "next", "context" ]) await call("caius_winddown", { date: MON, step });
-        const review = await call("caius_winddown_apply", { date: MON, said: "carry it" });
-        expect(review.skipped).toEqual([]);
-        const inputs = review.planday.inputs;
-        // Dave, carried to today, waits on its On deck; that is the plan's only question.
-        expect(inputs.question).toBe("On deck: 'Message Dave if he knows anyone who will hang lights as a small job'. All of it fits, so it goes on your list unless you say otherwise.");
-        expect(inputs.data.candidates).toEqual([]);
-        expect(inputs.data.evening).toEqual({ tasks: [], events: [], suggestion: SUGGESTION });
-
-        const planned = await call("caius_plan_apply", { date: WED, said: "fine", asOffered: true, brief: { headline: "Message Dave, then Design Sync at 14:00.", acts: [
-            { range: "10:00-14:00", text: "Message Dave about the lights." }, { range: "14:00-15:00", text: "Design Sync with Jordan." }
-        ] } });
-        expect(planned.skipped).toEqual([]);
-        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "suggested", status: "written", text: "Something away from screens, a chore or a Recharge item" }) ]));
-        expect(planned.say).toBe("Message Dave if he knows anyone who will hang lights as a small job is on your list, Something away from screens, a chore or a Recharge item is in Suggested, the meetings are updated and the brief is written.");
-        expect(await suggestedOf(WED)).toEqual([ SUGGESTION ]);
-
-        // A refresh doesn't offer it again, and the step says so.
-        at(`${WED}T11:05`);
-        expect((await call("caius_planday", { date: WED, step: "inputs" })).data.evening.suggestion).toBeNull();
-        await call("caius_plan_apply", { date: WED, said: "", brief: { headline: "Message Dave.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
-        expect(await suggestedOf(WED)).toEqual([ SUGGESTION ]);
-
-        // Accepted with no section, it goes under the evening's heading, not his work list.
-        const plan = await call("caius_plan", { period: "day", date: WED });
-        const [ item ] = plan.suggested;
-        await call("caius_accept", { items: [ { noteId: plan.noteId, listItemId: item.listItemId } ] });
-        expect(await sectionsOf(WED)).toEqual({
-            "☑️ Tasks": [ "Message Dave if he knows anyone who will hang lights as a small job" ],
-            Evening: [ "Something away from screens, a chore or a Recharge item" ]
-        });
-        delete calendars[WED];
+    /** An active project of an area, with a to-do list in its note; archived again by `retire`, so other tests don't see it. */
+    const project = (title: string, group: string, items: string[] = []) => cls.init(async () => {
+        const noteId = createChildNote("root", title, items.length ? ul(...items.map((text, i) => li(`${title}-${i}`, text))) : "<p>Notes.</p>");
+        await store.addLabel(noteId, "status", "active");
+        await store.addLabel(noteId, "priorityGroup", group);
+        return noteId;
     });
+    const retire = (noteId: string) => cls.init(async () => { setLabel(noteId, "status", "archived"); });
 
-    it("Thu 5 Nov: the evening asked last night and ignored is offered one Suggested item; an evening event or task, or a dismissal, keeps it off", async () => {
-        const WED = "2029-01-17";
-        const THU = "2029-01-18";
-        await dayWith(WED, `<h2>☑️ Tasks</h2>${ul(li("t-dave", "Message Dave about the lights"), li("t-101", `${zap("ZAP-701", "Verify the export retry")} ~30m`))}`);
-        at(`${WED}T17:45`);
-        const next = await call("caius_winddown", { date: WED, step: "next" });
-        expect(next.question).toBe("Anything for the evening?");
-        const wound = await call("caius_winddown_apply", { date: WED, said: "101 is done", done: [ "701" ] });
-        expect(wound.skipped).toEqual([]);
-
-        at(`${THU}T09:30`);
-        const inputs = await call("caius_planday", { date: THU, step: "inputs" });
-        expect(inputs.question).toBe("On deck: 'Message Dave about the lights'. All of it fits, so it goes on your list unless you say otherwise.");
-        expect(inputs.data.evening).toEqual({ tasks: [], events: [], suggestion: SUGGESTION });
-        const planned = await call("caius_plan_apply", { date: THU, said: "", brief: { headline: "Message Dave.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
-        expect(planned.skipped).toEqual([]);
-        expect(await suggestedOf(THU)).toEqual([ SUGGESTION ]);
-
-        // Dismissed, it stays off the day.
-        const plan = await call("caius_plan", { period: "day", date: THU });
-        await call("caius_dismiss", { items: [ { noteId: plan.noteId, listItemId: plan.suggested[0].listItemId } ] });
-        expect((await call("caius_planday", { date: THU, step: "inputs" })).data.evening.suggestion).toBeNull();
-        await call("caius_plan_apply", { date: THU, said: "", brief: { headline: "Message Dave.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
-        expect(await suggestedOf(THU)).toEqual([]);
-    });
-
-    it("the suggestion is offered once a day: accepted and ticked done, a later refresh offers it again nowhere", async () => {
-        const DAY = "2030-06-12";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("g-1", "Write the runbook ~30m"))}`);
+    it("Wed: the plan offers an hour of each active project beside the Foundation picks; taking the Growth one files it under Evening with its marker, sized an hour, once", async () => {
+        const DAY = "2030-07-10";
+        const caius = await project("Caius", "Growth", [ "the fate menu", "the voice" ]);
+        const printing = await project("3D printing", "Recharge");
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("pk-1", "Write the runbook ~30m"))}`);
         at(`${DAY}T09:40`);
-        const brief = { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] };
-        await call("caius_plan_apply", { date: DAY, said: "", brief });
-        let plan = await call("caius_plan", { period: "day", date: DAY });
-        expect(plan.suggested.map((t: any) => t.text)).toEqual([ SUGGESTION ]);
-        await call("caius_accept", { items: [ { noteId: plan.noteId, listItemId: plan.suggested[0].listItemId } ] });
-        plan = await call("caius_plan", { period: "day", date: DAY });
-        const accepted = plan.sections.flatMap((s: any) => s.tasks).find((t: any) => t.text.startsWith("Something"));
-        await call("caius_set_state", { items: [ { noteId: plan.noteId, listItemId: accepted.listItemId, state: "done" } ] });
+        try {
+            const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
+            // No evening question or suggestion: the picks are the offer.
+            expect(inputs.question).toBeNull();
+            expect(inputs.data).not.toHaveProperty("evening");
+            expect(inputs.data.candidates).toEqual([
+                expect.objectContaining({ candidateId: `project:${caius}`, kind: "project", area: "growth", text: "Caius: the fate menu", because: "from your active projects", minutes: 60, noteId: caius, ref: refOf("c", `project:${caius}`) }),
+                expect.objectContaining({ candidateId: `project:${printing}`, kind: "project", area: "recharge", text: "3D printing", minutes: 60 })
+            ]);
+            // Foundation's total is the one task; the picks are not work.
+            expect(inputs.data.capacity).toMatchObject({ plannedMinutes: 30 });
 
-        at(`${DAY}T19:30`);
-        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.evening.suggestion).toBeNull();
-        await call("caius_plan_apply", { date: DAY, said: "", brief });
-        expect(await suggestedOf(DAY)).toEqual([]);
+            const input = { date: DAY, said: "", accept: [ { candidateId: refOf("c", `project:${caius}`) } ], brief };
+            const planned = await call("caius_plan_apply", input);
+            expect(planned.skipped).toEqual([]);
+            expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", id: `project:${caius}`, status: "written" }) ]));
+            expect(planned.say).toContain("Caius: the fate menu is on your list");
+            // The recharge pick wasn't named, so nothing is written for it, not even a Suggested line.
+            expect(await suggestedOf(DAY)).toEqual([]);
+            const plan = await call("caius_plan", { period: "day", date: DAY });
+            const evening = plan.sections.find((section: any) => section.name === "Evening");
+            expect(evening.tasks).toEqual([ expect.objectContaining({ text: "🌱 Caius: the fate menu", area: "growth", block: "evening", estMinutes: 60 }) ]);
+            expect(plan.capacity).toMatchObject({ totalMinutes: 30, eveningMinutes: 60 });
+            expect(plan.capacity.areas.growth.minutes).toBe(60);
+
+            // A re-run adds nothing, and the taken pick isn't offered again; the other stays on offer.
+            const again = await call("caius_plan_apply", input);
+            expect(again.skipped).toEqual([]);
+            expect(again.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "accept", id: `project:${caius}`, status: "unchanged" }) ]));
+            expect((await sectionsOf(DAY)).Evening).toEqual([ "🌱 Caius: the fate menu" ]);
+            const refresh = await call("caius_planday", { date: DAY, step: "inputs" });
+            expect(refresh.data.growth).toMatchObject({ minutes: 60, over: false, sentence: "Growth: 1 h planned against 45–60 min." });
+            // Picks aren't news on a refresh of a planned day, as a week item isn't: the step offers nothing, and the winddown's next step offers what is left.
+            expect(refresh.data.candidates).toEqual([]);
+            at(`${DAY}T17:30`);
+            const night = await call("caius_winddown", { date: DAY, step: "next" });
+            // The Caius hour still open tonight is a leftover the open step gives its fate, so it isn't offered again as a pick.
+            expect(night.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${printing}` ]);
+            // Thursday's Growth is tonight's leftover hour, which stays on the list in its block.
+            expect(night.data.growth).toMatchObject({ minutes: 60 });
+            expect(night.data.load.incomingMinutes).toBe(30);
+            at(`${DAY}T09:41`);
+        } finally {
+            await retire(caius);
+            await retire(printing);
+        }
     });
 
-    it("'nothing for the evening' is an answer: no suggestion, in the plan's reply or the wind-down's the night before", async () => {
-        const DAY = "2030-06-13";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("h-1", "Write the runbook ~30m"))}`);
+    it("a block he names files the pick there; a yes (asOffered) never takes a pick; not today puts it off for the day, and a dismissal keeps it off", async () => {
+        const DAY = "2030-07-11";
+        const garden = await project("Garden", "Growth", [ "plan the beds" ]);
+        const games = await project("TTRPG prep", "Recharge", [ "map the dungeon" ]);
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("pb-1", "Write the runbook ~30m"))}`);
         at(`${DAY}T09:40`);
-        const brief = { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] };
-        const planned = await call("caius_plan_apply", { date: DAY, said: "nothing for the evening", evening: [], eveningAnswered: true, brief });
-        expect(planned.skipped).toEqual([]);
-        expect(planned.say).not.toContain("Suggested");
-        expect(await suggestedOf(DAY)).toEqual([]);
-        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.evening.suggestion).toBeNull();
+        try {
+            const yes = await call("caius_plan_apply", { date: DAY, said: "fine", asOffered: true, brief });
+            expect(yes.written.filter((w: any) => w.kind === "accept")).toEqual([]);
 
-        const MON = "2030-06-17";
-        const TUE = "2030-06-18";
-        await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("h-2", "Write the release note ~30m"))}`);
-        at(`${MON}T17:30`);
-        expect((await call("caius_winddown_apply", { date: MON, said: "done. nothing tomorrow evening", done: [ "h-2" ], evening: [], eveningAnswered: true })).skipped).toEqual([]);
-        at(`${TUE}T09:40`);
-        expect((await call("caius_planday", { date: TUE, step: "inputs" })).data.evening.suggestion).toBeNull();
-        await call("caius_plan_apply", { date: TUE, said: "", brief });
-        expect(await suggestedOf(TUE)).toEqual([]);
+            const input = {
+                date: DAY, said: "garden in the afternoon, not the ttrpg today",
+                accept: [ { candidateId: `project:${garden}`, block: "afternoon" } ], notToday: [ { candidateId: `project:${games}` } ], brief
+            };
+            const planned = await call("caius_plan_apply", input);
+            expect(planned.skipped).toEqual([]);
+            expect(await sectionsOf(DAY)).toMatchObject({ Afternoon: [ "🌱 Garden: plan the beds" ] });
+            const plan = await call("caius_plan", { period: "day", date: DAY });
+            const note = await cls.init(() => store.note(plan.noteId));
+            expect(note.attributes.filter((a) => a.name === "caiusNotToday").map((a) => a.value)).toEqual([ `project:${games}` ]);
+            expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.candidates).toEqual([]);
+
+            // The next workday it comes back; dismissed, it stays off for 14 days.
+            const NEXT = "2030-07-12";
+            at(`${NEXT}T09:40`);
+            const next = await call("caius_planday", { date: NEXT, step: "inputs", refresh: true });
+            // The garden hour is still open on the day before, so it is that day's leftover, not a pick.
+            expect(next.data.candidates.map((c: any) => c.candidateId)).toEqual([ `project:${games}` ]);
+            const dismissed = await call("caius_plan_apply", { date: NEXT, said: "drop the ttrpg prep", dismiss: [ { candidateId: `project:${games}` } ], brief });
+            expect(dismissed.check).toBeUndefined();
+            expect(dismissed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: `project:${games}`, status: "written" }) ]));
+            // Dismissed, it is off the offers of the days after, the wind-down's included (the garden hour is still a leftover).
+            at(`${NEXT}T17:30`);
+            const night = await call("caius_winddown", { date: NEXT, step: "next" });
+            expect(night.data.candidates).toEqual([]);
+        } finally {
+            await retire(garden);
+            await retire(games);
+        }
     });
 
-    it("an evening with a calendar event, or a task he names in the reply, gets no suggestion", async () => {
+    it("the evening asks nothing and gets no Suggested line, with an event in it or not; a thing he names for it is added with an area", async () => {
         const MON = "2029-02-05";
-        const TUE = "2029-02-06";
         calendars[MON] = [ event("19:00", "20:30", "Climbing gym") ];
         await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("e-1", "Write the runbook ~30m"))}`);
         at(`${MON}T09:40`);
         const gym = await call("caius_planday", { date: MON, step: "inputs" });
-        expect(gym.data.evening).toEqual({ tasks: [], events: [ "Climbing gym" ], suggestion: null });
-        await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "The runbook.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
+        expect(gym.question).toBeNull();
+        await call("caius_plan_apply", { date: MON, said: "", brief });
         expect(await suggestedOf(MON)).toEqual([]);
 
+        const TUE = "2029-02-06";
         await dayWith(TUE, `<h2>☑️ Tasks</h2>${ul(li("e-2", "Write the release note ~30m"))}`);
         at(`${TUE}T09:40`);
-        const asked = await call("caius_planday", { date: TUE, step: "inputs" });
-        expect(asked.question).toBe("Anything for the evening?");
-        await call("caius_plan_apply", { date: TUE, said: "evening laundry", evening: [ "Laundry" ], brief: { headline: "The release note.", acts: [ { range: "", text: "x" }, { range: "", text: "y" } ] } });
+        expect((await call("caius_planday", { date: TUE, step: "inputs" })).question).toBeNull();
+        await call("caius_add", { items: [ { date: TUE, area: "recharge", text: "Laundry" } ] });
+        await call("caius_plan_apply", { date: TUE, said: "", brief });
         expect(await suggestedOf(TUE)).toEqual([]);
-        expect((await sectionsOf(TUE)).Evening).toEqual([ "Laundry" ]);
+        expect((await sectionsOf(TUE)).Evening).toEqual([ "🔋 Laundry" ]);
         delete calendars[MON];
     });
 });
@@ -457,9 +453,9 @@ describe("a stale errand", () => {
         expect((await call("caius_plan", { period: "day", date: "2029-04-09" })).sections.flatMap((s: any) => s.tasks)).toEqual([]);
     });
 
-    it("the plan's top pick is work when his list has work: a chore or a ticketless personal item never leads it", async () => {
+    it("the plan's top pick is work when his list has work: a Growth or Recharge chore never leads it", async () => {
         const DAY = "2029-05-07";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Home</h3>${ul(li("p-dave", "Message Dave about the lights"))}<h3>Chores</h3>${ul(li("p-bins", "Take the bins out"))}`
+        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Home</h3>${ul(li("p-dave", "🌱 Message Dave about the lights"))}<h3>Chores</h3>${ul(li("p-bins", "🔋 Take the bins out"))}`
             + `<h3>Work</h3>${ul(li("p-801", `${zap("ZAP-801", "Verify the export retry")} ~30m`), li("p-802", `${zap("ZAP-802", "Check the invoice export")} ~30m`))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Verify the export retry, then the invoice check.", acts: [
@@ -468,7 +464,9 @@ describe("a stale errand", () => {
         expect(planned.skipped).toEqual([]);
         expect(planned.topPick).toContain("ZAP-801");
         const brief = await contentOf(planned.briefNoteId);
-        expect(brief.indexOf("ZAP-801")).toBeLessThan(brief.indexOf("Message Dave"));
+        // The picks are Foundation's: the Growth and Recharge chores are not among them.
+        expect(brief).not.toContain("Message Dave");
+        expect(brief).not.toContain("Take the bins out");
     });
 
     it("a task with a ticket is work under any heading: ZAP-821 under Admin chores stays the top pick", async () => {

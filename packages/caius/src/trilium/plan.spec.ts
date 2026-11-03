@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, setStates } from './plan.js';
+import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, setAreas, setStates } from './plan.js';
 import { parseSource, taskKeys, textHash } from './keys.js';
 import { readPlan } from './plan-read.js';
 import { fakeTrilium, li, periodNote, STATES, TEMPLATE, ul } from './helpers.js';
@@ -191,7 +191,7 @@ describe('moveTasks', () => {
     const f = fakeTrilium(seed(day));
     const out = await moveTasks(f.api, [
       { noteId: 'd', listItemId: 'e1', first: true },
-      { noteId: 'd', listItemId: 'ev1', first: true },
+      { noteId: 'd', listItemId: 'ev1', before: 'e1' },
       { noteId: 'd', listItemId: 'e2', before: 'es1' },
       { noteId: 'd', listItemId: 'e2', after: 'e2' },
       { noteId: 'd', listItemId: 'e2' },
@@ -397,5 +397,48 @@ describe('done, start, drop', () => {
     const f = fakeTrilium(seed(html), { failPut: 'd' });
     const out = await setStates(f.api, 'done', [{ noteId: 'd', listItemId: 'e1' }, { noteId: 'd', listItemId: 'zz' }], base);
     expect(out.map((o) => o.status)).toEqual(['failed', 'skipped']);
+  });
+});
+
+describe('setAreas', () => {
+  const html = '<h3>Work</h3>' + ul(li('e1', 'One'), li('e2', '🌱 Two'), li('e3', 'Three'));
+  const text = (id: string, doc: string | undefined) => new RegExp(`data-list-item-id="${id}".*?description">([^<]*)<`).exec(doc ?? '')?.[1];
+
+  it('sets the markers of one note in a single write', async () => {
+    const f = fakeTrilium(seed(html));
+    const out = await setAreas(f.api, [
+      { noteId: 'd', listItemId: 'e1', area: 'recharge' },
+      { noteId: 'd', listItemId: 'e2', area: 'foundation' },
+      { noteId: 'd', listItemId: 'e3', area: 'foundation' },
+    ], base);
+    expect(out.map((r) => r.status)).toEqual(['updated', 'updated', 'unchanged']);
+    expect([text('e1', f.html.d), text('e2', f.html.d), text('e3', f.html.d)]).toEqual(['🔋 One', 'Two', 'Three']);
+    expect(puts(f.log)).toEqual(['put d']);
+  });
+  it('writes nothing when every task already has its area', async () => {
+    const f = fakeTrilium(seed(html));
+    const out = await setAreas(f.api, [{ noteId: 'd', listItemId: 'e2', area: 'growth' }], base);
+    expect(out[0]).toMatchObject({ status: 'unchanged' });
+    expect(puts(f.log)).toEqual([]);
+  });
+  it('skips what it cannot find, and rejects a bad request, keeping the order', async () => {
+    const f = fakeTrilium(seed(html));
+    const out = await setAreas(f.api, [
+      { noteId: 'd', listItemId: 'zz', area: 'growth' },
+      { noteId: 'd', listItemId: 'e1', area: 'nope' as never },
+      { noteId: 'd', listItemId: 'e1', area: 'growth' },
+    ], base);
+    expect(out.map((r) => [r.status, 'reason' in r ? r.reason : undefined])).toEqual([['skipped', 'not_found'], ['skipped', 'bad_request'], ['updated', undefined]]);
+  });
+  it('dry run writes nothing; the guard drops a changed note; a failed put is reported', async () => {
+    const f = fakeTrilium(seed(html));
+    const [r] = await setAreas(f.api, [{ noteId: 'd', listItemId: 'e1', area: 'growth' }], { ...base, dryRun: true });
+    expect(r).toMatchObject({ status: 'updated', dryRun: true });
+    expect(puts(f.log)).toEqual([]);
+    const put = f.api.putContent;
+    f.api.putContent = async (id, body, expected) => { f.html.d += '<p>x</p>'; return put(id, body, expected); };
+    expect((await setAreas(f.api, [{ noteId: 'd', listItemId: 'e1', area: 'growth' }], base))[0]).toMatchObject({ reason: 'edited' });
+    const g = fakeTrilium(seed(html), { failPut: 'd' });
+    expect((await setAreas(g.api, [{ noteId: 'd', listItemId: 'e1', area: 'growth' }], base))[0].status).toBe('failed');
   });
 });

@@ -5,7 +5,7 @@
  * entry points never call one another, since the lock is not re-entrant. Each store write commits
  * in its own transaction behind a compare-and-swap, and gives any list item without an id one.
  *
- * Items of accept, dismiss, set state and forward can carry the `expectedBlobId` of their note,
+ * Items of accept, dismiss, set state, set area and forward can carry the `expectedBlobId` of their note,
  * which the routes accept and the tools don't: an item whose note has changed since is skipped as
  * `stale` with the note's current `blobId`, and the library never sees it.
  */
@@ -13,6 +13,7 @@
 import {
     acceptTasks,
     addTasks,
+    BLOCK_NAMES,
     caiusClock,
     clockOverride,
     closedKeys,
@@ -46,6 +47,7 @@ import {
     readDuplicatePlans,
     readPlan,
     scanDocs,
+    setAreas,
     setMeetings,
     setStates,
     type StateAction,
@@ -55,6 +57,7 @@ import {
     type TaskOrigin,
     taskRef,
     TRILIUM_CONFIG,
+    withArea,
     withListItemIds,
     workdayNow
 } from "@triliumnext/caius";
@@ -84,12 +87,14 @@ import {
     type PlanApplyInput,
     type PlanDayInput,
     type PlanInput,
+    type SetAreaInput,
     type SetStateInput,
     type SkipCatchupInput,
     type WindDownApplyInput,
     type WindDownInput
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
+import { blockFor } from "./filing.js";
 import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import { catchupOf, type DayRead, dayLabels, dayPeriods, drawnTitle, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
@@ -353,7 +358,9 @@ export function createCaiusService(
                 return undefined;
             };
             const skips = items.map(skipOf);
-            const added = await addTasks(store, items.filter((_, i) => !skips[i]), { dryRun, now });
+            const filed: Awaited<ReturnType<typeof filedItem>>[] = [];
+            for (const [ i, item ] of items.entries()) if (!skips[i]) filed.push(await filedItem(store, item));
+            const added = await addTasks(store, filed, { dryRun, now });
             let next = 0;
             return withBlobIds(skips.map((skipped) => {
                 const result = skipped ?? added[next++];
@@ -372,6 +379,10 @@ export function createCaiusService(
 
         setState: ({ items, dryRun, html }: SetStateInput) => withCaiusLock("caius_set_state", async () => withBlobIds(
             (await unlessStale(items, (fresh) => setStatesOf(store, fresh, dryRun))).map((r) => presentResult(r, html))
+        )),
+
+        setArea: ({ items, dryRun, html }: SetAreaInput) => withCaiusLock("caius_set_area", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => setAreas(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
 
         forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => withBlobIds(
@@ -538,7 +549,7 @@ export function createCaiusService(
                     : prior;
                 const events = input.header.events.map((event) => ({ ...event, title: drawnTitle(event.title, names) }));
                 // Work is laid out from standup, however early the drawing starts.
-                const span = { start: rhythm.start > input.header.start ? rhythm.start : input.header.start, end: input.header.end, workEnd: input.header.workEnd ?? DEFAULT_WORK_END };
+                const span = { start: rhythm.start > input.header.start ? rhythm.start : input.header.start, end: input.header.end, workEnd: input.header.workEnd ?? DEFAULT_WORK_END, noon: rhythm.noon };
                 const groups = plan ? workBlocks(plan, span, events, input.date, now, rollover, names).groups : input.header.groups;
                 const header = { ...input.header, events, groups };
                 const result = await writeBrief({
@@ -716,6 +727,22 @@ const MONTHS = [
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december"
 ];
+
+/**
+ * `item` as `addTasks` takes it: the area as its marker on the text, and the time block (or the one
+ * its area files it under) as its section. A Foundation task filed by area alone goes under Morning
+ * when the day note has that heading, else under Tasks, the main list.
+ */
+async function filedItem(store: NoteStore, { block, area, ...item }: AddInput["items"][number]) {
+    const text = area === undefined ? item.text : withArea(item.text, area);
+    const byArea = block === undefined && item.section === undefined && !item.critical && !item.suggested && !item.onDeck;
+    if (item.date === undefined || (block === undefined && !byArea)) return { ...item, text };
+    const filed = await blockFor(store, item.date, area ?? "foundation", block);
+    return { ...item, text, section: filed ? BLOCK_NAMES[filed] : MAIN_LIST };
+}
+
+/** The heading of a day note's main task list, which a task filed by area alone falls under when the note has no Morning. */
+const MAIN_LIST = "Tasks";
 
 /** The keys `addTasks` gives an item: its source's, else those of its text. */
 function addKeys(item: AddInput["items"][number]): string[] {

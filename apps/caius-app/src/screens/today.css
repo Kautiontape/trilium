@@ -113,8 +113,20 @@
     align-items: baseline;
     gap: var(--s2);
 
-    & span:first-child { flex: 1; }
+    & span:nth-child(2) { flex: 1; }
 }
+
+.capacity-row + .capacity-row,
+.capacity-note + .capacity-row { margin-top: var(--s3); }
+
+.capacity-name {
+    flex: none;
+    min-width: 84px;
+    color: var(--ink-2);
+}
+
+.capacity-row.thin .capacity-bar { height: 4px; border-radius: 2px; }
+.capacity-row.thin .capacity-fill { border-radius: 2px; background: var(--ink-3); }
 
 .capacity-over {
     color: var(--ochre);

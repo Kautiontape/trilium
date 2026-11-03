@@ -109,6 +109,16 @@ describe("plan tasks", () => {
         expect(unestimatedTasks(plan).map((t) => t.listItemId)).toEqual([ "k", "a1", "c" ]);
     });
 
+    it("leaves Growth and Recharge tasks out of a day's unestimated list, by their area", () => {
+        const evening = planOf([
+            task({ listItemId: "f", text: "Work" }),
+            task({ listItemId: "g", text: "🌱 Read", area: "growth" }),
+            task({ listItemId: "r", text: "🔋 Walk", area: "recharge", section: "Evening" })
+        ]);
+        expect(unestimatedTasks(evening).map((t) => t.listItemId)).toEqual([ "f" ]);
+        expect(unestimatedTasks({ ...evening, period: "week" }).map((t) => t.listItemId)).toEqual([ "f", "g", "r" ]);
+    });
+
     it("leaves empty to-dos out of the unestimated list, as the capacity does", () => {
         const blank = planOf([
             task({ listItemId: "x1", text: "Real" }),
@@ -247,7 +257,7 @@ function keyOf(viewed: ViewedPeriod) {
 function task(overrides: Partial<CaiusPlanTask>): CaiusPlanTask {
     return {
         noteId: "day", listItemId: null, state: "open", text: "", estMinutes: null, parent: null,
-        parentListItemId: null, section: "Morning", critical: false, ...overrides
+        parentListItemId: null, section: "Morning", critical: false, area: "foundation", block: null, at: null, ...overrides
     };
 }
 
@@ -258,7 +268,7 @@ function planOf(tasks: CaiusPlanTask[], critical: CaiusPlanTask[] = []): CaiusPl
         top3: [], suggested: [], dismissed: [],
         capacity: {
             plannedMinutes: 0, estimatedCount: 0, unestimatedCount: 0, unestimatedMinutes: 0,
-            totalMinutes: 0, eveningMinutes: 0, target: { min: 180, max: 240 }, horizons: {}
+            totalMinutes: 0, eveningMinutes: 0, areas: { foundation: { minutes: 0, target: null }, growth: { minutes: 0, target: null }, recharge: { minutes: 0, target: null } }, target: { min: 180, max: 240 }, horizons: {}
         }
     };
 }

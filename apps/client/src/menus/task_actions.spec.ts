@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
     caiusWrite: vi.fn(),
     api: {
         setState: vi.fn(async () => []),
+        setArea: vi.fn(async () => []),
         forward: vi.fn(async () => []),
         accept: vi.fn(async () => []),
         dismiss: vi.fn(async () => []),
@@ -81,12 +82,12 @@ function findItem(items: MenuItem<CommandNames>[], ...path: string[]): MenuComma
 const click = (item: MenuCommandItem<CommandNames>) => item.handler?.(item, {} as never);
 
 function target(overrides: Partial<TaskTarget> = {}): TaskTarget {
-    return { noteId: "day", listItemId: "eaaa", state: "open", inSuggested: false, headers: [ "Morning", "Work" ], ...overrides };
+    return { noteId: "day", listItemId: "eaaa", state: "open", area: "foundation", inSuggested: false, headers: [ "Morning", "Work" ], ...overrides };
 }
 
 const STATE_ACTIONS = [ "caius.doing", "caius.done", [ "caius.forward", [
     "caius.forward_tomorrow", "caius.forward_next_week", "caius.forward_next_month", "--", "caius.forward_pick"
-] ], "caius.drop" ];
+] ], [ "caius.area", [ "caius.area_foundation", "caius.area_growth", "caius.area_recharge" ] ], "caius.drop" ];
 
 describe("buildTaskActionItems", () => {
     it("offers the state actions that still apply to a live task", () => {
@@ -94,6 +95,14 @@ describe("buildTaskActionItems", () => {
         expect(outline(buildTaskActionItems(target({ state: "doing" })))).toEqual([
             ...STATE_ACTIONS.slice(1), "--", "caius.explain"
         ]);
+    });
+
+    it("marks the task's current area in the Area submenu", () => {
+        const areas = (area: TaskTarget["area"]) => (findItem(buildTaskActionItems(target({ area })), "caius.area").items ?? [])
+            .map((item) => (item as MenuCommandItem<CommandNames>).checked ? (item as MenuCommandItem<CommandNames>).title : null).filter(Boolean);
+        expect(areas("foundation")).toEqual([ "caius.area_foundation" ]);
+        expect(areas("growth")).toEqual([ "caius.area_growth" ]);
+        expect(areas("recharge")).toEqual([ "caius.area_recharge" ]);
     });
 
     it("offers no state action on a closed task", () => {
@@ -104,7 +113,7 @@ describe("buildTaskActionItems", () => {
 
     it("offers Accept into each heading or Critical, and Dismiss, under Suggested", () => {
         expect(outline(buildTaskActionItems(target({ inSuggested: true })))).toEqual([
-            ...STATE_ACTIONS, "--",
+            ...STATE_ACTIONS.filter((action) => !Array.isArray(action) || action[0] !== "caius.area"), "--",
             [ "caius.accept", [ "Morning", "Work", "--", "caius.accept_critical" ] ], "caius.dismiss",
             "--", "caius.explain"
         ]);
@@ -135,6 +144,14 @@ describe("buildTaskActionItems", () => {
             await click(findItem(buildTaskActionItems(target({ inSuggested: true })), "caius.accept", "caius.accept_critical"));
             expect(h.api.accept).toHaveBeenLastCalledWith([
                 { noteId: "day", listItemId: "eaaa", critical: true, expectedBlobId: "blob1" }
+            ]);
+        });
+
+        it("sets the area through caiusWrite", async () => {
+            await click(findItem(buildTaskActionItems(target()), "caius.area", "caius.area_growth"));
+            expect(h.caiusWrite).toHaveBeenCalledWith("day", expect.any(Function), "caius.set_area");
+            expect(h.api.setArea).toHaveBeenCalledWith([
+                { noteId: "day", listItemId: "eaaa", area: "growth", expectedBlobId: "blob1" }
             ]);
         });
 
@@ -277,7 +294,7 @@ describe("reading the task from the editor", () => {
         if (!description || !checkbox || !nestedText) throw new Error("Missing DOM");
 
         expect(findTaskAtElement(description)).toEqual({
-            noteId: "day", listItemId: "eopen", state: "open", inSuggested: false, headers: [ "Morning" ]
+            noteId: "day", listItemId: "eopen", state: "open", area: "foundation", inSuggested: false, headers: [ "Morning" ]
         });
         expect(findTaskAtElement(checkbox)).toMatchObject({ listItemId: "edone", state: "done" });
         expect(findTaskAtElement(item("esugg"))).toMatchObject({ listItemId: "esugg", inSuggested: true });
@@ -339,6 +356,16 @@ describe("reading the task from the editor", () => {
 
         expect(findTaskAtElement(item("eopen"))).toMatchObject({ state: "doing" });
         expect(findTaskAtElement(item("esugg"))).toMatchObject({ state: "rescheduled" });
+    });
+
+    it("reads the area from the task's leading marker", () => {
+        editor.model.change((writer) => {
+            writer.insertText("🌱\uFE0F ", blockOf("eopen"), 0);
+            writer.insertText("🔋 ", blockOf("esugg"), 0);
+        });
+
+        expect(findTaskAtElement(item("eopen"))).toMatchObject({ area: "growth" });
+        expect(findTaskAtElement(item("esugg"))).toMatchObject({ area: "recharge" });
     });
 
     it("reads the item at the caret", () => {
