@@ -65,7 +65,7 @@ export async function readDay(store: NoteStore, frame: DayFrame, plan: PlanView,
         listItemId ? [ [ listItemId, slipsOf(all, { noteId, listItemId, text }) ] ] : []));
     const stated = failedCalendar(frame) ? await statedFocus(store, date) : null;
     return {
-        date, plan, meetings: meetingsOf(frame), capacity: capacityFigures(frame, plan), growth: growthFigures(frame, plan), load: dayLoadOf(frame, plan, { stated }),
+        date, plan, meetings: meetingsOf(frame), capacity: capacityFigures(frame, plan, stated), growth: growthFigures(frame, plan), load: dayLoadOf(frame, plan, { stated }),
         layout: { events, groups, unplaced }, slips, context: frame.context, calendarFailed: failedCalendar(frame), errors: frame.inputs.errors
     };
 }
@@ -73,24 +73,22 @@ export async function readDay(store: NoteStore, frame: DayFrame, plan: PlanView,
 /**
  * The day's capacity: the work window, what the meetings book of it and leave open (less the time a
  * Growth or Recharge task pinned to a clock books), the Foundation focus target, the work planned
- * and `focus`, the figure the Plan tab shows too.
+ * and `focus` (`dayFocus`, given `stated`), the figure the Plan tab shows too.
  */
-export function capacityFigures(frame: DayFrame, plan: PlanView): CapacityFigures {
+export function capacityFigures(frame: DayFrame, plan: PlanView, stated: Range | null = null): CapacityFigures {
     // The meetings are what the figures call booked; a Growth task pinned in the day shrinks the open time and the target, not the meetings.
     const sized = withBooked(frame, plan);
     const { windowMinutes, openMinutes, targetMinutes, bookedRatio } = sized.inputs.capacity;
     const { bookedMinutes } = frame.inputs.capacity;
-    return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes: plan.capacity.totalMinutes, bookedRatio, focus: focusFor(sized) };
+    return { windowMinutes, bookedMinutes, openMinutes, targetMinutes, plannedMinutes: plan.capacity.totalMinutes, bookedRatio, focus: dayFocus(frame, plan, stated) };
 }
 
 /**
  * The day's one over figure (`dayLoad`): the list's Foundation minutes, with `incoming.list` added,
- * against the focus figure, and On deck's Foundation minutes, with `incoming.onDeck`, apart. The
- * focus is `focusFor` the day with its pinned tasks booked (`withBooked`); with a failed calendar it
- * is `stated`, the day's `#caiusFocus`, else the Rhythm's Foundation target.
+ * against the focus figure (`dayFocus`), and On deck's Foundation minutes, with `incoming.onDeck`, apart.
  */
 export function dayLoadOf(frame: DayFrame, plan: PlanView, { stated = null, incoming = { list: 0, onDeck: 0 } }: { stated?: Range | null; incoming?: { list: number; onDeck: number } } = {}): DayLoad {
-    const focus = failedCalendar(frame) ? stated ?? frame.rhythm.targets.foundation : focusFor(withBooked(frame, plan));
+    const focus = dayFocus(frame, plan, stated);
     return dayLoad({
         foundation: plan.capacity.areas.foundation.minutes + incoming.list,
         // The whole On deck, so a parent counts through its live sub-items as plan-read counts it.
@@ -98,6 +96,15 @@ export function dayLoadOf(frame: DayFrame, plan: PlanView, { stated = null, inco
         growth: plan.capacity.areas.growth.minutes,
         recharge: mainTasks(plan).filter((task) => task.area === "recharge" && task.text.trim() !== "").length
     }, { focus, growthTarget: frame.rhythm.targets.growth });
+}
+
+/**
+ * The day's focus figure, which every focus on a day reads: `focusFor` the day with its pinned tasks
+ * booked (`withBooked`), or with a failed calendar `stated` (the day's `#caiusFocus`), else the
+ * Rhythm's Foundation target.
+ */
+export function dayFocus(frame: DayFrame, plan: PlanView, stated: Range | null = null): Range {
+    return failedCalendar(frame) ? stated ?? frame.rhythm.targets.foundation : focusFor(withBooked(frame, plan));
 }
 
 /**

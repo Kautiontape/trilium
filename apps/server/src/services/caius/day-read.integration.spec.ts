@@ -228,7 +228,6 @@ describe("the one over figure", () => {
             target: { min: 180, max: 240 }, calendarFailed: false,
             areas: { foundation: { minutes: 230, target: { min: 180, max: 240 } }, growth: { target: frame.rhythm.targets.growth } }
         });
-
     });
 
     it("with a failed calendar, caius_plan reads the stated focus, else the Rhythm's Foundation target", async () => {
@@ -243,6 +242,14 @@ describe("the one over figure", () => {
             target: { min: 120, max: 150 }, calendarFailed: true, areas: { foundation: { target: { min: 120, max: 150 } } },
             load: { foundation: { minutes: 150, focus: { min: 120, max: 150 }, over: false, overMinutes: 0 } }
         });
+        // The day read gives the stated focus in its capacity as in its load.
+        const frame = await run(() => service.dayFrame(THU2));
+        const now = new Date(`${TUE2}T17:30:00`);
+        const day = await run(() => withCaiusLock("spec_day_read", async () => readDay(store, frame, await readPlan(store, "day", THU2, now), { date: THU2, now })));
+        expect(day.calendarFailed).toBe(true);
+        expect(day.capacity.focus).toEqual({ min: 120, max: 150 });
+        expect(day.load.foundation.focus).toEqual(day.capacity.focus);
+
         const rhythm = dataOf(await run(() => service.plan({ period: "day", date: FRI2 })));
         expect(rhythm.capacity).toMatchObject({
             target: { min: 180, max: 240 }, calendarFailed: true,
