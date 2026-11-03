@@ -7,7 +7,7 @@ import { useMemo, useState } from "preact/hooks";
 import { AreaMeter } from "../../components/AreaMeter.js";
 import { duration, nextWorkdayKey } from "../../lib/day.js";
 import { AREA_NAMES, type DaysCell, daysCells, type RedrawnDay, redrawDays, type RowAnswer, type ViewAnswers } from "../../lib/views.js";
-import { DayMeters, rowOpener, ViewRows } from "./ViewParts.js";
+import { DayMeters, NotShown, rowOpener, ViewRows } from "./ViewParts.js";
 
 /**
  * The Days view, drawn after the pending taps (`redrawDays`). Two days stand side by side with
@@ -42,6 +42,7 @@ export function DaysView({ data, answers, onAnswer }: {
                             <p class="days-meetings ink-2">{meetingsWords(day)}</p>
                             <DayMeters load={day.load} after={after.days[at].load} openOn={null} />
                             <ViewRows tasks={after.days[at].tasks} answers={answers} open={open} />
+                            <NotShown count={data.omitted?.[day.date]} />
                         </section>
                     ))}
                 </div>
@@ -53,6 +54,7 @@ export function DaysView({ data, answers, onAnswer }: {
                         <section class="day-group">
                             <h4 class="label-caps">{data.days[picked].dateLabel} · {AREA_NAMES[cell.area]}</h4>
                             <CellRows day={pickedDay} area={cell.area} answers={answers} open={open} />
+                            <NotShown count={data.omitted?.[cell.date]} />
                         </section>
                     )}
                 </>
@@ -63,6 +65,7 @@ export function DaysView({ data, answers, onAnswer }: {
                 {after.week.length > 0
                     ? <ViewRows tasks={after.week} answers={answers} open={open} />
                     : <p class="step-note ink-2">Nothing on the week that isn't on a day.</p>}
+                <NotShown count={data.omitted?.week} />
             </section>
         </>
     );

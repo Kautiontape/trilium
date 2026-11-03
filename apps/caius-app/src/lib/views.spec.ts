@@ -457,3 +457,32 @@ describe("overdueLine and dispositionWords", () => {
         expect(dispositionWords({ kind: "finished" })).toBe("Finished");
     });
 });
+
+describe("a view whose rows the server cut", () => {
+    const cut = TASKS.slice(0, 3);
+    const day: DayViewData = { ...DAY, tasks: cut, omitted: { tasks: TASKS.length - cut.length } };
+    const view: ShownView = { view: "day", title: "", sentence: "", data: day };
+
+    it("keeps the server's load with no taps, though rows are missing", () => {
+        expect(redraw(view, {})[0].load).toEqual(DAY.load);
+        expect(redraw(view, {})[0].load.foundation.minutes).toBe(195);
+    });
+
+    it("moves the server's load by just what the taps change", () => {
+        const after = redraw(view, tap({ [key("a2")]: { fate: { kind: "onDeck" } }, [key("a3")]: { estimate: 120 } }))[0].load;
+        expect(after.foundation.minutes).toBe(195 - 30 + 60);
+        expect(after.onDeck.minutes).toBe(30 + 30);
+        expect(after.growth.minutes).toBe(45);
+        expect(after.recharge.count).toBe(1);
+        expect(after.foundation).toMatchObject({ over: false, overMinutes: 0, focus: FOCUS });
+        expect(after.onDeck.overWith).toBe(225 + 60 - FOCUS.max);
+        const over = redraw(view, tap({ [key("a3")]: { estimate: 120 } }))[0].load.foundation;
+        expect(over).toEqual({ minutes: 255, focus: FOCUS, over: true, overMinutes: 15 });
+    });
+
+    it("counts a row landed from another day as a change on the day it lands on", () => {
+        const data: DaysViewData = { ...DAYS, days: [ DAYS.days[0], { ...DAYS.days[1], tasks: DAYS.days[1].tasks.slice(0, 2) } ], omitted: { "2026-11-04": 7 } };
+        expect(redrawDays(data, {}).days.map((d) => d.load)).toEqual([ DAY.load, DAY.load ]);
+        expect(redrawDays(data, tap({ [key("a2")]: { fate: toWed } })).days.map((d) => d.load.foundation.minutes)).toEqual([ 165, 225 ]);
+    });
+});

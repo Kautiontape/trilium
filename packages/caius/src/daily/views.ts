@@ -75,6 +75,8 @@ export interface DayViewData {
   tasks: ViewTask[];
   /** The Context lines in force on the day. */
   context: ViewContextLine[];
+  /** The rows cut off the end of `tasks` to keep the reply short; `load` still counts them. */
+  omitted?: { tasks?: number };
 }
 
 /** One day of Days: its figures, and its rows for a tapped cell. A future day with no note has meetings and nothing else. */
@@ -99,6 +101,8 @@ export interface DaysViewData {
     /** The week's Foundation minutes (its own items and its days' lists) against the week target. */
     foundation: { minutes: number; target: { min: number; max: number } };
   };
+  /** The rows cut off the end of each list to keep the reply short: a day's by its `date`, the week's as `week`. */
+  omitted?: Record<string, number>;
 }
 
 /** One copy of a task on its trail, oldest first. */
@@ -147,4 +151,6 @@ export interface SlippingViewData {
   overdue: { underWeek: number; oneToTwoWeeks: number; older: number };
   /** The month Park sends a task to. */
   parkMonth: string;
+  /** The slipping tasks not in `tasks`, past its 30 rows or cut to keep the reply short. */
+  omitted?: { tasks?: number };
 }

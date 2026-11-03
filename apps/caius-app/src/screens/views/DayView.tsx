@@ -7,7 +7,7 @@ import { useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import { duration, nextWorkdayKey, weekOf } from "../../lib/day.js";
 import { dayGroups, dayTerrain, redrawDay, type RowAnswer, type ViewAnswers } from "../../lib/views.js";
 import { cropToContent } from "../Today.js";
-import { ContextLines, DayMeters, rowOpener, ViewRows } from "./ViewParts.js";
+import { ContextLines, DayMeters, NotShown, rowOpener, ViewRows } from "./ViewParts.js";
 
 /**
  * The Day view: the three area meters, the day's timeline, the rows by block then On deck, and the
@@ -38,6 +38,7 @@ export function DayView({ data, answers, onAnswer }: {
                     <ViewRows tasks={group.tasks} variant={group.variant} answers={answers} open={open} />
                 </section>
             ))}
+            <NotShown count={data.omitted?.tasks} />
             <ContextLines lines={data.context} />
         </>
     );

@@ -163,7 +163,9 @@ export function viewPicks(view: ShownView, answers: ViewAnswers): { picks: ViewP
 
 /**
  * Each day of the view (one for Day, every day for Days, none for Item and Slipping) with its taps
- * applied and its meters worked again by `dayLoad`, against the focus and Growth target it came with.
+ * applied. Its meters are the server's `load` moved by what the taps change, worked again by
+ * `dayLoad` against the focus and Growth target it came with: the server can cut rows off a long
+ * list (`omitted`), so a count of the rows alone would read low.
  */
 export function redraw(view: ShownView, answers: ViewAnswers): RedrawnDay[] {
     switch (view.view) {
@@ -178,7 +180,7 @@ export function redraw(view: ShownView, answers: ViewAnswers): RedrawnDay[] {
 
 /** One day's rows and load after the taps. A leaving row stays in `tasks`, so the view can strike it through. */
 export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad }, answers: ViewAnswers): RedrawnDay {
-    return withLoad(day.load, redrawRows(day.tasks, answers));
+    return withLoad(day, redrawRows(day.tasks, answers));
 }
 
 /**
@@ -199,7 +201,7 @@ export function redrawDays(data: DaysViewData, answers: ViewAnswers): { days: Re
         ];
     };
     return {
-        days: data.days.map((day) => withLoad(day.load, landing(day.tasks, (fate) => fate.kind === "day" && fate.date === day.date
+        days: data.days.map((day) => withLoad(day, landing(day.tasks, (fate) => fate.kind === "day" && fate.date === day.date
             ? { period: { kind: "day", key: day.date }, place: fate.onDeck ? "onDeck" : "list", block: null }
             : null))),
         week: landing(data.week.tasks, (fate) => fate.kind === "week" && fate.week === data.week.key
@@ -265,18 +267,38 @@ export function takeTicket(data: ItemViewData, to: string, onDeck: boolean): Tic
     return { kind: "take", to, label: takeLabel(data, to), onDeck };
 }
 
-function withLoad(before: DayLoad, tasks: RedrawnTask[]): RedrawnDay {
-    const staying = tasks.filter((t) => !t.leaving);
-    const list = staying.filter((t) => t.place === "list");
-    const onDeck = staying.filter((t) => t.place === "onDeck");
+/**
+ * The day's server `load` moved by the change in each figure between its own rows and `tasks`,
+ * with `over`, `overMinutes` and `overWith` worked again; the server's own `load` when nothing changed.
+ */
+function withLoad(day: { tasks: ViewTask[]; load: DayLoad }, tasks: RedrawnTask[]): RedrawnDay {
+    const [ was, now ] = [ countOf(day.tasks), countOf(tasks.filter((t) => !t.leaving)) ];
+    if (FIGURES.every((figure) => was[figure] === now[figure])) {
+        return { tasks, load: day.load };
+    }
+    const { load: before } = day;
     const load = dayLoad({
+        foundation: before.foundation.minutes + now.foundation - was.foundation,
+        onDeck: before.onDeck.minutes + now.onDeck - was.onDeck,
+        growth: before.growth.minutes + now.growth - was.growth,
+        recharge: before.recharge.count + now.recharge - was.recharge
+    }, { focus: before.foundation.focus, growthTarget: before.growth.target });
+    return { tasks, load };
+}
+
+/** The four figures `dayLoad` takes, counted from rows: Foundation, On deck and Growth minutes, and the Recharge things on the list. */
+function countOf(tasks: ViewTask[]): Record<(typeof FIGURES)[number], number> {
+    const list = tasks.filter((t) => t.place === "list");
+    const onDeck = tasks.filter((t) => t.place === "onDeck");
+    return {
         foundation: liveMinutes(list, "foundation"),
         onDeck: liveMinutes(onDeck, "foundation"),
         growth: liveMinutes(list, "growth"),
         recharge: list.filter((t) => !t.parent && t.area === "recharge" && isLive(t)).length
-    }, { focus: before.foundation.focus, growthTarget: before.growth.target });
-    return { tasks, load };
+    };
 }
+
+const FIGURES = [ "foundation", "onDeck", "growth", "recharge" ] as const;
 
 /**
  * Rows with their taps applied: the estimate and area on the row itself, and its fate on the row

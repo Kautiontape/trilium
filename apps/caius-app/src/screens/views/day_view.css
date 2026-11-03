@@ -45,3 +45,9 @@
 .day-context {
     margin: var(--s2) 0 0;
 }
+
+.view-not-shown {
+    margin: var(--s2) 0 0;
+    font-size: 13px;
+    line-height: 18px;
+}

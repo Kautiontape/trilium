@@ -15,8 +15,8 @@ import {
 } from "../../lib/views.js";
 
 /**
- * The pieces the views share: the three area meters, a list of rows, the Context lines, and the
- * opener of a row's fate menu. Their classes are `day_view.css`'s.
+ * The pieces the views share: the three area meters, a list of rows and the line for the rows it
+ * lost, the Context lines, and the opener of a row's fate menu. Their classes are `day_view.css`'s.
  */
 
 /** The Foundation, Growth and Recharge meters: the view's figures, with the pending taps' as ghosts. The meter of `openOn` is marked. */
@@ -63,6 +63,11 @@ export function ViewRows({ tasks, variant, answers, open, detail }: {
             })}
         </div>
     );
+}
+
+/** A quiet line under a list the server cut to keep its reply short. Nothing for no count. */
+export function NotShown({ count }: { count: number | undefined }) {
+    return count ? <p class="view-not-shown ink-3">{count} more not shown</p> : null;
 }
 
 /** The Context lines, each with its until. Nothing for no lines. */

@@ -6,7 +6,7 @@ import { useMemo } from "preact/hooks";
 import { nextWorkdayKey, periodLabel, weekOf } from "../../lib/day.js";
 import { today } from "../../lib/store.js";
 import { overdueLine, redrawRows, type RowAnswer, type ViewAnswers } from "../../lib/views.js";
-import { rowOpener, ViewRows } from "./ViewParts.js";
+import { NotShown, rowOpener, ViewRows } from "./ViewParts.js";
 
 /**
  * The Slipping view: the tasks moved twice or more, the longest trail first, each with its count
@@ -29,6 +29,7 @@ export function SlippingView({ data, answers, onAnswer }: {
             {rows.length > 0
                 ? <ViewRows tasks={rows} answers={answers} open={open} detail={(task) => `on ${periodLabel(task.period.key)}`} />
                 : <p class="step-note ink-2">Nothing has moved twice.</p>}
+            <NotShown count={data.omitted?.tasks} />
             <p class="slipping-overdue ink-2">{overdue ? `Overdue: ${overdue}` : "Nothing overdue."}</p>
         </>
     );
