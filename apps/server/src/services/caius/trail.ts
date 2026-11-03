@@ -4,7 +4,7 @@
  * they count the same moves.
  */
 
-import { bareText, loadJournal, type NoteStore, scanDocs, TRILIUM_CONFIG } from "@triliumnext/caius";
+import { bareText, loadJournal, type NoteStore, scanDocs, TRILIUM_CONFIG, type TriliumDoc } from "@triliumnext/caius";
 
 import { copyKey, fromOf, plainText, SCHEDULED, withoutMoveLinks } from "./daily.js";
 
@@ -33,6 +33,8 @@ export interface Trail {
 
 export type Trails = Map<string, Trail>;
 
+type ScanResult = ReturnType<typeof scanDocs>;
+
 /** The item a trail is looked up for. */
 export interface TrailItem {
     noteId: string;
@@ -42,10 +44,14 @@ export interface TrailItem {
 
 /** The trail of every task in the journal, by `trailKey`. The caller holds the lock. */
 export async function trails(store: NoteStore, now: Date): Promise<Trails> {
-    const { docs } = await loadJournal(store);
+    return trailsOf((await loadJournal(store)).docs, now);
+}
+
+/** The trail of every task in `docs`, the Journal a caller already loaded, by `trailKey`; `scan` is `docs` scanned as of `now`. */
+export function trailsOf(docs: TriliumDoc[], now: Date, scan: ScanResult = scanDocs(docs, TRILIUM_CONFIG, now)): Trails {
     const byPath = new Map(docs.map((doc) => [ doc.path, doc ]));
     const result: Trails = new Map();
-    for (const task of scanDocs(docs, TRILIUM_CONFIG, now).tasks) {
+    for (const task of scan.tasks) {
         const doc = byPath.get(task.file);
         const where = doc && periodOf(task.file);
         if (!doc || !where) continue;

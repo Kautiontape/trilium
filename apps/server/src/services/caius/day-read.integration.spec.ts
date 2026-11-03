@@ -299,6 +299,25 @@ describe("several days", () => {
         expect((await run(() => readDays(deps, "2032-03-06", 3, now))).days.map((d) => d.workday)).toEqual([ false, false, true ]);
     });
 
+    it("loads the Journal once for seven days, and gives the Week row's slips", async () => {
+        const { service } = countedService();
+        vi.stubEnv("CAIUS_NOW", `${MON}T17:30`);
+        let loads = 0;
+        const counted = new Proxy(store, {
+            get(target, name, receiver) {
+                const value = Reflect.get(target, name, receiver);
+                if (name !== "search" || typeof value !== "function") return value;
+                return (query: string, ...rest: unknown[]) => {
+                    if (query === "#calendarRoot") loads++;
+                    return value.call(target, query, ...rest);
+                };
+            }
+        });
+        const read = await run(() => readDays({ store: counted, dayFrame: (date: string) => service.dayFrame(date), locked: withCaiusLock }, MON, 7, new Date(`${MON}T17:30:00`)));
+        expect(loads).toBe(1);
+        expect(read.week.slips).toEqual(Object.fromEntries(read.week.tasks.flatMap((task) => task.listItemId ? [ [ task.listItemId, 0 ] ] : [])));
+    });
+
     it("totals the week's Foundation from the week note and the days in that week only", async () => {
         const { service } = countedService();
         vi.stubEnv("CAIUS_NOW", "2033-03-03T17:30");

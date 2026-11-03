@@ -52,7 +52,7 @@ import { type DaysDeps, type DayView, readDay, readDays } from "./day-read.js";
 import type { TicketCard, TicketError } from "./inputs/jira.js";
 import { refOf } from "./refs.js";
 import type { ShowInput } from "./schemas.js";
-import { periodOf, type Trail, trailOf, trails } from "./trail.js";
+import { periodOf, type Trail, trailOf, trailsOf } from "./trail.js";
 
 /** What the views read through the service: the day read's needs, one ticket by key and a task's origin. */
 export interface ViewsDeps extends DaysDeps {
@@ -85,7 +85,8 @@ async function dayView(deps: ViewsDeps, date: string, area: DayViewData["openOn"
     const frame = await deps.dayFrame(date);
     const { day, drawn } = await deps.locked("caius_show", async () => {
         const plan = await readPlan(deps.store, "day", date, now);
-        return { day: await readDay(deps.store, frame, plan, { date, now }), drawn: await drawnNamesOf(deps.store, date) };
+        const drawn = await drawnNamesOf(deps.store, date);
+        return { day: await readDay(deps.store, frame, plan, { date, now, drawn }), drawn };
     });
     const { load, capacity } = day;
     const { start, noon, workEnd, end } = frame.rhythm;
@@ -111,7 +112,6 @@ async function daysView(deps: ViewsDeps, from: string, count: number, now: Date)
         return { error: "bad_request", detail: `count is ${count}; give ${MIN_DAYS} to ${MAX_DAYS} days` };
     }
     const read = await readDays(deps, from, count, now);
-    const all = await deps.locked("caius_show", () => trails(deps.store, now));
     const { key } = read.week;
     const data: DaysViewData = {
         from,
@@ -123,7 +123,7 @@ async function daysView(deps: ViewsDeps, from: string, count: number, now: Date)
             key,
             label: t("caius.views.days.week", { week: Number(key.slice(6)) }),
             tasks: read.week.tasks.flatMap((task) => task.listItemId
-                ? [ viewTask(task, task.listItemId, { kind: "week", key }, "list", trailOf(all, task)?.slips ?? 0) ]
+                ? [ viewTask(task, task.listItemId, { kind: "week", key }, "list", read.week.slips[task.listItemId] ?? 0) ]
                 : []),
             foundation: { minutes: read.week.foundation.minutes, target: read.week.foundation.target ?? { min: 0, max: 0 } }
         }
@@ -152,7 +152,7 @@ async function itemView(deps: ViewsDeps, input: ShowInput, now: Date): Promise<S
         const row = where ? await planRowOf(deps.store, docs, where, now) : null;
         if (input.item && !row) return null;
         const key = asked ?? (row ? ticketKeyOf(row.task.text) : undefined);
-        const trail = row ? trailOf(await trails(deps.store, now), row.task) : undefined;
+        const trail = row ? trailOf(trailsOf(docs, now), row.task) : undefined;
         return {
             row, trail, key,
             origin: row ? await deps.origin(deps.store, row.task.noteId, row.listItemId) : null,
@@ -195,8 +195,9 @@ async function slippingView(deps: ViewsDeps, period: string | null, now: Date): 
     const today = dayKey(now);
     const { rows, total, overdue } = await deps.locked("caius_show", async () => {
         const { docs } = await loadJournal(deps.store);
-        const open = openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, now));
-        const all = await trails(deps.store, now);
+        const scan = scanDocs(docs, TRILIUM_CONFIG, now);
+        const open = openTasks(docs, scan);
+        const all = trailsOf(docs, now, scan);
         const slipping = open
             .filter((task) => task.parent === null && task.listItemId)
             .flatMap((task) => {

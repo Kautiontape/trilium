@@ -5,10 +5,10 @@
 
 import { type ContextEntry, dayLoad, type DayLoad, isoWeekKey, liveMinutes, type NoteStore, type PlanTask, type PlanView, readPlan, type Rhythm } from "@triliumnext/caius";
 
-import { drawnNamesOf, FOCUS_LABEL } from "./brief.js";
+import { type DrawnNames, drawnNamesOf, FOCUS_LABEL } from "./brief.js";
 import { type DayFrame, dayLabels, deckTasks, drawnEvents, failedCalendar, focusFor, mainTasks, meetingsOf, rolloverOf, withBooked, workBlocks } from "./daily.js";
 import type { InputError } from "./inputs/types.js";
-import { slipsOf, trails } from "./trail.js";
+import { slipsOf, type Trails, trails } from "./trail.js";
 
 /** A day as `readDay` reads it. Plain data, so a tool can return it as it is. */
 export interface DayView {
@@ -53,21 +53,34 @@ export interface GrowthFigures {
 
 /**
  * The day `date` from `frame` (`dayFrame` or `dayRead`, read before the lock) and its `plan`. The
- * caller holds the lock, since the brief's names and the trail come from the store.
+ * caller holds the lock, since the brief's names and the trail come from the store; a caller that
+ * already has them passes the Journal's `trails` and the brief's `drawn` names (null for none).
  */
-export async function readDay(store: NoteStore, frame: DayFrame, plan: PlanView, { date, now }: { date: string; now: Date }): Promise<DayView> {
-    const names = await drawnNamesOf(store, date);
-    const all = await trails(store, now);
-    const { start, end, workEnd, noon } = frame.rhythm;
-    const events = drawnEvents(frame, names);
-    const { groups, unplaced } = workBlocks(plan, { start, end, workEnd, noon }, events, date, now, rolloverOf(frame.rhythm), names);
-    const slips: Record<string, number> = Object.fromEntries([ ...mainTasks(plan), ...deckTasks(plan) ].flatMap(({ noteId, listItemId, text }): [string, number][] =>
-        listItemId ? [ [ listItemId, slipsOf(all, { noteId, listItemId, text }) ] ] : []));
+export async function readDay(store: NoteStore, frame: DayFrame, plan: PlanView, { date, now, trails: known, drawn }: DayReadOptions): Promise<DayView> {
+    const names = drawn === undefined ? await drawnNamesOf(store, date) : drawn;
+    const all = known ?? await trails(store, now);
     const stated = failedCalendar(frame) ? await statedFocus(store, date) : null;
     return {
         date, plan, meetings: meetingsOf(frame), capacity: capacityFigures(frame, plan, stated), growth: growthFigures(frame, plan), load: dayLoadOf(frame, plan, { stated }),
-        layout: { events, groups, unplaced }, slips, context: frame.context, calendarFailed: failedCalendar(frame), errors: frame.inputs.errors
+        layout: dayLayout(frame, plan, names, { date, now }), slips: slipsByItem(all, [ ...mainTasks(plan), ...deckTasks(plan) ]), context: frame.context,
+        calendarFailed: failedCalendar(frame), errors: frame.inputs.errors
     };
+}
+
+/** What `readDay` reads a day as of, and what a caller that already read the Journal or the brief passes it. */
+export interface DayReadOptions {
+    date: string;
+    now: Date;
+    trails?: Trails;
+    drawn?: DrawnNames | null;
+}
+
+/** The drawing's events and `plan`'s list laid out between them (`workBlocks`), with the brief's `names`. */
+export function dayLayout(frame: DayFrame, plan: PlanView, names: DrawnNames | null, { date, now }: { date: string; now: Date }): DayView["layout"] {
+    const { start, end, workEnd, noon } = frame.rhythm;
+    const events = drawnEvents(frame, names);
+    const { groups, unplaced } = workBlocks(plan, { start, end, workEnd, noon }, events, date, now, rolloverOf(frame.rhythm), names);
+    return { events, groups, unplaced };
 }
 
 /**
@@ -145,6 +158,8 @@ export interface DaysRead {
         key: string;
         /** The week note's live top-level tasks: the ones not yet pulled to a day. */
         tasks: PlanTask[];
+        /** How many times each of `tasks` moved on from a day note, by `listItemId`. */
+        slips: Record<string, number>;
         /** The week's Foundation minutes: the week note's own items plus the lists of the requested days in that week, against the week's target. */
         foundation: { minutes: number; target: { min: number; max: number } | null };
     };
@@ -168,21 +183,29 @@ export async function readDays(deps: DaysDeps, from: string, count: number, now:
     const key = isoWeekKey(new Date(`${from}T00:00:00Z`));
     return deps.locked("caius_days", async () => {
         const weekPlan = await readPlan(deps.store, "week", key, now);
+        const all = await trails(deps.store, now);
         const days: DaysRead["days"] = [];
         for (const [ index, date ] of dates.entries()) {
             const frame = frames[index];
             if (!frame) throw new Error(`no frame for ${date}`);
             const plan = await readPlan(deps.store, "day", date, now);
             const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-            days.push({ date, workday: weekday !== 0 && weekday !== 6, day: await readDay(deps.store, frame, plan, { date, now }) });
+            days.push({ date, workday: weekday !== 0 && weekday !== 6, day: await readDay(deps.store, frame, plan, { date, now, trails: all }) });
         }
         const inWeek = days.filter(({ date }) => isoWeekKey(new Date(`${date}T00:00:00Z`)) === key);
         const minutes = weekPlan.capacity.areas.foundation.minutes + inWeek.reduce((sum, { day }) => sum + day.plan.capacity.areas.foundation.minutes, 0);
-        return { from, days, week: { key, tasks: mainTasks(weekPlan), foundation: { minutes, target: weekPlan.capacity.target } } };
+        const tasks = mainTasks(weekPlan);
+        return { from, days, week: { key, tasks, slips: slipsByItem(all, tasks), foundation: { minutes, target: weekPlan.capacity.target } } };
     });
 }
 
 type Range = { min: number; max: number };
+
+/** How many times each of `tasks` moved on from a day note (`slipsOf`), by `listItemId`. */
+function slipsByItem(all: Trails, tasks: PlanTask[]): Record<string, number> {
+    return Object.fromEntries(tasks.flatMap(({ noteId, listItemId, text }): [string, number][] =>
+        listItemId ? [ [ listItemId, slipsOf(all, { noteId, listItemId, text }) ] ] : []));
+}
 
 function addDays(date: string, days: number): string {
     return new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);

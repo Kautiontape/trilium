@@ -63,8 +63,8 @@ import {
 import { createHash } from "crypto";
 import { t } from "i18next";
 
-import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, DECLINED_LABEL, type DrawnNames, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
-import { capacityFigures, dayLoadOf, growthFigures, readDay } from "./day-read.js";
+import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, BRIEF_LABEL, DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, HELD_GROUP_LABEL, HELD_LABEL, NOT_TODAY_LABEL, PLANNED_AT_LABEL, RAISED_LABEL, SKIP_CATCHUP_LABEL, WOUND_DOWN_LABEL } from "./brief.js";
+import { capacityFigures, dayLayout, dayLoadOf, growthFigures } from "./day-read.js";
 import { flagOverlaps } from "./inputs/calendar.js";
 import { isInputWarning } from "./inputs/index.js";
 import { overriddenKeys } from "./inputs/jira.js";
@@ -415,7 +415,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
             raised: await raisedAsks(deps.store, deps.now, date),
             seen: await seenAsks(deps.store, date),
             live: liveKeys((await loadJournal(deps.store)).docs, deps.now),
-            layout: (await readDay(deps.store, read, plan, { date, now: deps.now })).layout
+            layout: dayLayout(read, plan, await drawnNamesOf(deps.store, date), { date, now: deps.now })
         };
     });
     const followUps = followUpsOf(unraised(splitAsks(read.inputs.jira, seen, live).followed, raised));
