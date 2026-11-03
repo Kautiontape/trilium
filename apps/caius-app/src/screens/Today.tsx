@@ -246,11 +246,12 @@ function CapacityCard({ data }: { data: TodayData }) {
         return null;
     }
     const over = foundation.minutes - foundation.target.max;
+    const onDeck = cap.load?.onDeck.minutes ?? cap.onDeckMinutes;
     return (
         <Card class="capacity" tone={over > 0 ? "ochre" : undefined}>
             <AreaMeter name="Foundation" minutes={foundation.minutes} target={foundation.target} tone />
             {cap.unestimatedCount > 0 && <p class="capacity-note ink-2">{cap.unestimatedCount} unestimated, counted at 30 m</p>}
-            {cap.onDeckMinutes > 0 && <p class="capacity-note ink-2">{duration(cap.onDeckMinutes)} on deck, not counted yet</p>}
+            {onDeck > 0 && <p class="capacity-note ink-2">{duration(onDeck)} on deck, not counted yet</p>}
             {growth && <AreaMeter name="Growth" minutes={growth.minutes} target={growth.target} />}
             {recharge && (
                 <AreaMeter name="Recharge" minutes={recharge.minutes} target={recharge.target}

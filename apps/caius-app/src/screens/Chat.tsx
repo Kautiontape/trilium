@@ -454,9 +454,9 @@ function findLastStep(messages: StoredMessage[]) {
         if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && stepOf(b.toolCall))) {
             return i;
         }
-        // A view is answered by writes, not an `…_apply`, so it stays live only while its turn is the last.
+        // A view is answered by writes, not an `…_apply`, so it stays live only until Caius replies; a failed send leaves it live.
         if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && viewOf(b.toolCall))) {
-            return i === messages.length - 1 ? i : -1;
+            return messages.slice(i + 1).every((later) => later.role === "user" || later.type === "error") ? i : -1;
         }
     }
     return -1;

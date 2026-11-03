@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "preact/hooks";
+import { useLayoutEffect, useMemo, useState } from "preact/hooks";
 
 import { haptic } from "../../components/ui.js";
 import { type RowAnswer, type ShownView, type ViewAnswers, viewPicks, viewReply } from "../../lib/views.js";
@@ -17,19 +17,21 @@ export interface ViewReport {
  * with no taps the report is empty and adds nothing to the pill. Days, Item and Slipping show the
  * view's one-line `sentence` for now.
  */
-export function ViewCard({ id, view, live, report }: {
+export function ViewCard({ id, view: parsed, live, report }: {
     id: string;
     view: ShownView;
     live: boolean;
     report: (key: string, answer: ViewReport) => void;
 }) {
+    // A tool call's result is final, so the view parsed again on each render is the same for one `id`;
+    // keeping the first lets `DayView` memoize its redraw and drawing across streaming chunks.
+    const view = useMemo(() => parsed, [ id ]);
     const [ answers, setAnswers ] = useState<ViewAnswers>({});
     const answerRow = (key: string, answer: RowAnswer) => {
         haptic("tick");
         setAnswers((prev) => ({ ...prev, rows: { ...prev.rows, [key]: answer } }));
     };
-    const sentences = viewReply(view, answers);
-    const { picks, total } = viewPicks(view, answers);
+    const { sentences, picks, total } = useMemo(() => ({ sentences: viewReply(view, answers), ...viewPicks(view, answers) }), [ view, answers ]);
     const joined = JSON.stringify([ sentences, picks.map((p) => [ p.what, p.choice ]) ]);
     // A layout effect, so the pill holds the new answer before the next paint and a quick Send never sends the old one.
     useLayoutEffect(() => {

@@ -26,8 +26,6 @@ export function DayView({ data, answers, onAnswer }: {
 }) {
     const day = useMemo(() => redrawDay(data, answers), [ data, answers ]);
     const terrain = useMemo(() => dayTerrain(data, day.tasks), [ data, day ]);
-    const tapped = Object.values(answers.rows ?? {}).some((a) => a.fate || a.estimate !== undefined || a.area);
-    const unplaced = tapped ? terrain.unplacedMinutes : data.unplacedMinutes;
     const { load } = data;
     const after = day.load;
     const where = { nextWorkday: nextWorkdayKey(data.date), week: weekOf(data.date) };
@@ -62,7 +60,7 @@ export function DayView({ data, answers, onAnswer }: {
                 </Meter>
             </div>
             <DayTimeline input={terrain.input} />
-            {unplaced > 0 && <p class="step-note ink-2">{duration(unplaced)} doesn't fit before bedtime.</p>}
+            {terrain.unplacedMinutes > 0 && <p class="step-note ink-2">{duration(terrain.unplacedMinutes)} doesn't fit before bedtime.</p>}
             {dayGroups(day.tasks).map((group) => (
                 <section key={group.name} class="day-group">
                     <h4 class="label-caps">{group.name}</h4>
