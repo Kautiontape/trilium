@@ -712,10 +712,11 @@ describe("'fine' takes what was offered through asOffered", () => {
 describe("a bare yes to the heavy day's move", () => {
     it("'Move X to Friday?' answered 'yes' is a check that writes nothing; the move is made only by its forward, and takes no candidate", async () => {
         const DAY = "2027-10-20";
+        // 2 h 30 m of work against the 2 h of focus the offsite leaves.
         calendars[DAY] = [ { start: "10:00", end: "15:00", title: "Offsite", attendees: [], allDay: false, declined: false, source: [ 0 ] } ];
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h-spec", "Write the spec ~1h"), li("h-review", "Review the plan ~1h"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h-spec", "Write the spec ~1h"), li("h-review", "Review the plan ~1h30m"))}`);
         });
         jira.handoff.push({ ...ticket("ZAP-950", { summary: "Check the gate" }), daysInStatus: 2 });
         at(`${DAY}T09:40`);
@@ -739,7 +740,7 @@ describe("a bare yes to the heavy day's move", () => {
         calendars[DAY] = [ { start: "10:00", end: "15:00", title: "Offsite", attendees: [], allDay: false, declined: false, source: [ 0 ] } ];
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("q-spec", "Write the spec ~1h"), li("q-review", "Review the plan ~1h"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("q-spec", "Write the spec ~1h"), li("q-review", "Review the plan ~1h30m"))}`);
         });
         at(`${DAY}T09:40`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });

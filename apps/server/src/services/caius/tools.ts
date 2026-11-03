@@ -21,7 +21,7 @@ export function createCaiusTools(
 
     return defineTools({
         caius_plan: {
-            description: "Read the plan of one day, week or month note: its sections, tasks (each with its area, time block and pinned clock), estimates and capacity (a day's total is Foundation's; capacity.areas has Growth and Recharge apart), plus its Meetings bullets and the Context lines in force (expired ones apart), and for a day with a brief the groups and meeting names its drawing uses (drawn). Use it to see what is planned for a period.",
+            description: "Read the plan of one day, week or month note: its sections, tasks (each with its area, time block and pinned clock), estimates and capacity (a day's total is Foundation's; capacity.areas has Growth and Recharge apart; a day's capacity.load is the one over figure, the list's Foundation against the focus figure, with On deck apart as what it would add), plus its Meetings bullets and the Context lines in force (expired ones apart), and for a day with a brief the groups and meeting names its drawing uses (drawn). Use it to see what is planned for a period.",
             inputSchema: toolInputs.plan,
             async: true,
             execute: parsed(toolInputs.plan, service.plan)
@@ -93,6 +93,29 @@ export function createCaiusTools(
             async: true,
             mutates: true,
             execute: parsed(toolInputs.setArea, service.setArea)
+        },
+
+        caius_place: {
+            description: "Move tasks within their own day note: into a time block (morning, afternoon, evening), onto On deck (onDeck: true) or onto the list (onDeck: false), and before or after another item there. The task keeps its words, state, sub-items and id; to move it to another day use caius_forward. An Important task stays in the Important block. Takes a list of items.",
+            inputSchema: toolInputs.place,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.place, service.place)
+        },
+
+        caius_set_estimate: {
+            description: "Set tasks' estimates in minutes (5 to 600), written as the ~30m token on the task, replacing one already there. A task with live sub-items counts through them, so it is skipped (has_subitems): set its sub-items instead. Takes a list of items.",
+            inputSchema: toolInputs.setEstimate,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.setEstimate, service.setEstimate)
+        },
+
+        caius_show: {
+            description: "Show a view on the phone, drawn from this result: day (date, and optionally area to open on; it opens on the area that is over), days (from and count, 2 to 7, with the week row), item (item: { noteId, listItemId }, or a ticket key: the task, its trail, origin, the ticket and what was said about it) or slipping (the tasks that keep moving, and the overdue count; period narrows it). Every row carries its noteId, listItemId and ref. Reads only. Show one when the user asks to see something, or when the answer is a load or a day's shape that runs over; never two in one reply, and never about something the user isn't talking about. Keep the line around it to the gist: the figures are on the view, and sentence has them in words for a client that draws none.",
+            inputSchema: toolInputs.show,
+            async: true,
+            execute: parsed(toolInputs.show, service.show)
         },
 
         caius_forward: {

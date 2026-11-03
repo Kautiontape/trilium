@@ -1,0 +1,81 @@
+.days-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    gap: var(--s3);
+}
+
+.days-column {
+    min-width: 0;
+
+    & h4 { margin: 0; }
+
+    & .capacity-line { flex-wrap: wrap; }
+
+    & .capacity-name { min-width: 0; }
+
+    /* The column is narrower than the card, so its rows keep to it instead of bleeding to the card's edges. */
+    & .day-rows { margin: 0; }
+
+    &.off h4 { color: var(--ink-3); }
+}
+
+.days-meetings {
+    margin: var(--s1) 0 var(--s3);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.days-grid {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 14px;
+
+    & th, & td {
+        padding: var(--s1);
+        text-align: left;
+        vertical-align: top;
+    }
+
+    & thead th {
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    & tbody th { font-weight: 600; }
+
+    & tbody tr + tr { border-top: 1px solid var(--line); }
+
+    & tr.off th { color: var(--ink-3); }
+}
+
+.days-cell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 36px;
+    padding: var(--s1);
+    border: 1px solid transparent;
+    border-radius: var(--r-chip);
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-family: var(--font-mono);
+    text-align: left;
+    cursor: pointer;
+
+    &.over { color: var(--ochre); font-weight: 600; }
+
+    &.selected {
+        background: var(--clay-wash);
+        border-color: var(--clay);
+    }
+}
+
+.days-cell-was {
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.days-week .capacity-row { margin-bottom: var(--s3); }

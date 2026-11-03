@@ -107,12 +107,12 @@ export function plannedNudges(data: TodayData, settings: Settings, now: Date): L
                 `${open} open, ${onDeck} on deck.`, on(data.key, workEnd)));
         }
 
-        const foundation = data.plan.capacity.areas?.foundation ?? { minutes: data.plan.capacity.totalMinutes, target: data.plan.capacity.target };
-        const target = foundation.target;
-        if (settings.nudgeOvercap && target && foundation.minutes > target.max) {
-            const over = foundation.minutes - target.max;
+        const over = overcapOf(data.plan.capacity);
+        if (settings.nudgeOvercap && over) {
+            const { min, max } = over.focus;
+            const range = min === max ? duration(max) : `${duration(min).replace(/ h$/, "")}–${duration(max)}`;
             nudges.push(nudge(NUDGE_IDS.overcap, "warnings", "overcap", "Over capacity",
-                `Today is ${duration(over)} over ${duration(target.min).replace(/ h$/, "")}–${duration(target.max)}.`, on(data.key, standup)));
+                `Today is ${duration(over.minutes)} over ${range}.`, on(data.key, standup)));
         }
     }
 
@@ -122,6 +122,20 @@ export function plannedNudges(data: TodayData, settings: Settings, now: Date): L
     }
 
     return nudges.filter((n) => n.schedule?.at && n.schedule.at > now);
+}
+
+/**
+ * How far today is over its focus figure, from `capacity.load` (On deck never counts), or, from an
+ * older server, the Foundation minutes against their target. Null when it isn't over.
+ */
+function overcapOf(capacity: TodayData["plan"]["capacity"]): { minutes: number; focus: { min: number; max: number } } | null {
+    if (capacity.load) {
+        const { over, overMinutes, focus } = capacity.load.foundation;
+        return over ? { minutes: overMinutes, focus } : null;
+    }
+    const foundation = capacity.areas?.foundation ?? { minutes: capacity.totalMinutes, target: capacity.target };
+    const { target } = foundation;
+    return target && foundation.minutes > target.max ? { minutes: foundation.minutes - target.max, focus: target } : null;
 }
 
 /** The snoozed nudges that are no longer true: the morning one once the day is planned, both once it is wound down. */

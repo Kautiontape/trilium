@@ -1,8 +1,20 @@
 import type { SavedGroup } from "@triliumnext/caius/src/daily/groups.js";
+import type { DayLoad } from "@triliumnext/caius/src/daily/load.js";
 import type { PlanTask, PlanView as PlanRead, PeriodKind } from "@triliumnext/caius/src/trilium/plan-read.js";
 
-/** A plan as `caius_plan` answers it: a day's carries the groups and meeting names its brief's drawing uses. */
-export type PlanView = PlanRead & { drawn?: { groups: SavedGroup[]; meetings: { title: string; name: string }[] } };
+/**
+ * A plan as `caius_plan` answers it: a day's carries the groups and meeting names its brief's drawing
+ * uses, and its capacity the one over figure. An older server gives a day neither `load` nor `calendarFailed`.
+ */
+export type PlanView = Omit<PlanRead, "capacity"> & {
+    capacity: PlanRead["capacity"] & {
+        /** The list's Foundation minutes against the focus figure, with On deck apart as what it would add. */
+        load?: DayLoad;
+        /** The calendar couldn't be read, so `load`'s focus is the stated one or the Rhythm's, not the meetings'. */
+        calendarFailed?: boolean;
+    };
+    drawn?: { groups: SavedGroup[]; meetings: { title: string; name: string }[] };
+};
 
 import type { Connection } from "./connection.js";
 import { HttpError, request } from "./http.js";

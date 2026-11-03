@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { moveInMainList, placeForwarded, placeInMainList, placeTask, setTaskArea, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
+import { moveInMainList, placeForwarded, placeInDay, placeInMainList, placeTask, setTaskArea, setTaskEstimate, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
 import { critical, li, STATES, TEMPLATE, ul } from './helpers.js';
 
 const item = itemMarkup('enew', 'New thing');
@@ -272,5 +272,123 @@ describe('setTaskArea', () => {
   it('fails for an unknown item, or one in Meetings', () => {
     expect(setTaskArea(note, 'zz', 'growth')).toEqual({ ok: false, reason: 'not_found' });
     expect(setTaskArea(note, 'p1', 'growth')).toMatchObject({ ok: false });
+  });
+});
+
+describe('setTaskEstimate', () => {
+  const note = '<h2>☑️ Tasks</h2>' + ul(
+    li('t1', 'Write the spec'),
+    li('t2', 'Draft &amp; send ~1h !'),
+    li('t3', 'Call back <em>from <a href="#root/srcnote">Mon 26 Oct</a></em> !'),
+    li('t4', 'Plan', { sub: ul(li('t4a', 'Part one')) }),
+    li('t5', 'Old part', { sub: ul(li('t5a', 'Closed', { checked: true })) }),
+    li('t6', 'Done', { checked: true }),
+    li('t7', 'Keep 30 min&nbsp;~30m'),
+  ) + '<h2>Meetings</h2>' + ul(li('p1', 'Standup'));
+  const text = (html: string, id: string) =>
+    parse(html).querySelectorAll('li').find((l) => l.getAttribute('data-list-item-id') === id)?.querySelector('span.todo-list__label__description')?.innerHTML;
+
+  it('adds a token, and replaces one in place, ahead of a trailing marker', () => {
+    const added = setTaskEstimate(note, 't1', 30);
+    expect(added).toMatchObject({ ok: true, unchanged: false });
+    expect(added.ok && text(added.html, 't1')).toBe('Write the spec ~30m');
+    const replaced = setTaskEstimate(note, 't2', 90);
+    expect(replaced.ok && text(replaced.html, 't2')).toBe('Draft &amp; send ~1h30m !');
+    const marked = setTaskEstimate(note, 't3', 120);
+    expect(marked.ok && text(marked.html, 't3')).toBe('Call back <em>from <a href="#root/srcnote">Mon 26 Oct</a></em> ~2h !');
+    expect(replaced.ok && replaced.html.replace('~1h30m', '~1h')).toBe(note.replace('~1h !', '~1h !'));
+  });
+  it('writes minutes below an hour, whole hours and hours with minutes', () => {
+    const at = (minutes: number) => { const r = setTaskEstimate(note, 't1', minutes); return r.ok && text(r.html, 't1'); };
+    expect([at(15), at(60), at(600), at(75)]).toEqual(['Write the spec ~15m', 'Write the spec ~1h', 'Write the spec ~10h', 'Write the spec ~1h15m']);
+  });
+  it('reads a token after a non-breaking space, and is unchanged for an equal one in another form', () => {
+    expect(setTaskEstimate(note, 't7', 30)).toEqual({ ok: true, html: note, unchanged: true });
+    expect(setTaskEstimate(note, 't2', 60)).toEqual({ ok: true, html: note, unchanged: true });
+    const r = setTaskEstimate(note, 't7', 45);
+    expect(r.ok && text(r.html, 't7')).toBe('Keep 30 min&nbsp;~45m');
+  });
+  it('skips a parent with live sub-items, but not one whose sub-items are closed', () => {
+    expect(setTaskEstimate(note, 't4', 30, STATES)).toEqual({ ok: false, reason: 'has_subitems' });
+    expect(setTaskEstimate(note, 't5', 30, STATES)).toMatchObject({ ok: true, unchanged: false });
+  });
+  it('fails for an unknown, closed or Meetings item', () => {
+    expect(setTaskEstimate(note, 'zz', 30)).toEqual({ ok: false, reason: 'not_found' });
+    expect(setTaskEstimate(note, 't6', 30)).toEqual({ ok: false, reason: 'not_live' });
+    expect(setTaskEstimate(note, 'p1', 30)).toMatchObject({ ok: false });
+  });
+});
+
+describe('placeInDay', () => {
+  const sub = ul(li('m2a', 'B1'));
+  const note = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A'), li('m2', 'B ~30m', { state: 'doing', sub }), li('m3', 'Done', { checked: true }))
+    + '<h3>Afternoon</h3>' + ul(li('a1', 'C')) + '<h3>On deck</h3>' + ul(li('d1', 'D'), li('d2', 'E')) + '<h3>Suggested</h3>' + ul(li('s1', 'S'));
+  const place = (html: string, id: string, at: Parameters<typeof placeInDay>[2]) => {
+    const r = placeInDay(html, id, at, STATES);
+    if (!r.ok) throw new Error(`${id}: ${r.reason}`);
+    return r;
+  };
+
+  it('moves a task from Morning to Afternoon, the same item with its state, sub-items and id', () => {
+    const r = place(note, 'm2', { block: 'afternoon' });
+    expect(r.unchanged).toBe(false);
+    expect(ids(r.html)).toEqual(['m1', 'm3', 'a1', 'm2', 'm2a', 'd1', 'd2', 's1']);
+    expect(r.html).toContain(`<h3>Afternoon</h3>${ul(li('a1', 'C'), li('m2', 'B ~30m', { state: 'doing', sub }))}<h3>On deck</h3>`);
+  });
+  it('puts a task On deck and back onto the list, which is the end of the first block with a list', () => {
+    const deck = place(note, 'm1', { onDeck: true });
+    expect(ids(deck.html)).toEqual(['m2', 'm2a', 'm3', 'a1', 'd1', 'd2', 'm1', 's1']);
+    const back = place(deck.html, 'm1', { onDeck: false });
+    expect(ids(back.html)).toEqual(['m2', 'm2a', 'm3', 'm1', 'a1', 'd1', 'd2', 's1']);
+  });
+  it('takes the On deck heading away with its last item, and leaves an emptied block heading', () => {
+    const one = '<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A')) + '<h3>On deck</h3>' + ul(li('d1', 'D')) + '<h3>Suggested</h3>' + ul(li('s1', 'S'));
+    const committed = place(one, 'd1', { block: 'morning' });
+    expect(committed.html).toBe('<h2>☑️ Tasks</h2><h3>Morning</h3>' + ul(li('m1', 'A'), li('d1', 'D')) + '<h3>Suggested</h3>' + ul(li('s1', 'S')));
+    const decked = place(one, 'm1', { onDeck: true });
+    expect(decked.html).toBe('<h2>☑️ Tasks</h2><h3>Morning</h3><h3>On deck</h3>' + ul(li('d1', 'D'), li('m1', 'A')) + '<h3>Suggested</h3>' + ul(li('s1', 'S')));
+  });
+  it('places before or after another item, in its list or in the target named', () => {
+    expect(ids(place(note, 'a1', { before: 'm1' }).html)).toEqual(['a1', 'm1', 'm2', 'm2a', 'm3', 'd1', 'd2', 's1']);
+    expect(ids(place(note, 'm1', { after: 'm2' }).html)).toEqual(['m2', 'm2a', 'm1', 'm3', 'a1', 'd1', 'd2', 's1']);
+    expect(ids(place(note, 'm1', { onDeck: true, before: 'd2' }).html)).toEqual(['m2', 'm2a', 'm3', 'a1', 'd1', 'm1', 'd2', 's1']);
+    expect(ids(place(note, 'd2', { block: 'morning', after: 'm1' }).html)).toEqual(['m1', 'd2', 'm2', 'm2a', 'm3', 'a1', 'd1', 's1']);
+  });
+  it('makes the Evening heading when the day has none', () => {
+    const r = place(note, 'a1', { block: 'evening' });
+    expect(r.html).toContain(`<h3>Afternoon</h3><h3>Evening</h3>${ul(li('a1', 'C'))}<h3>On deck</h3>`);
+  });
+  it('is unchanged where the task already is, however its heading is dressed', () => {
+    const dressed = note.replace('<h3>On deck</h3>', '<h4>🃏 On deck</h4>');
+    for (const [id, at] of [
+      ['m1', { block: 'morning' }], ['m1', { onDeck: false }], ['m2', { after: 'm1' }], ['m1', { before: 'm2' }], ['d1', { onDeck: true }], ['d2', { onDeck: true, after: 'd1' }],
+    ] as const) {
+      expect(placeInDay(dressed, id, at, STATES)).toEqual({ ok: true, html: dressed, unchanged: true });
+    }
+  });
+  it('refuses what it cannot place, and an anchor outside the target', () => {
+    const withMore = critical(li('c1', 'Rent')) + note + '<h2>Meetings</h2>' + ul(li('p1', 'Standup'));
+    const reason = (id: string, at: Parameters<typeof placeInDay>[2]) => {
+      const r = placeInDay(withMore, id, at, STATES);
+      return r.ok ? 'ok' : r.reason;
+    };
+    expect([
+      reason('zz', { block: 'morning' }),
+      reason('m2a', { block: 'afternoon' }),
+      reason('m3', { block: 'afternoon' }),
+      reason('p1', { block: 'afternoon' }),
+      reason('s1', { block: 'afternoon' }),
+      reason('c1', { block: 'afternoon' }),
+      reason('m1', { before: 'zz' }),
+      reason('m1', { block: 'afternoon', before: 'd1' }),
+      reason('m1', { onDeck: true, after: 'a1' }),
+      reason('d1', { onDeck: false, before: 'd2' }),
+      reason('m1', { before: 's1' }),
+      reason('m1', { before: 'm2a' }),
+      reason('m1', { block: 'morning', onDeck: true }),
+      reason('m1', {}),
+    ]).toEqual(['not_found', 'bad_request', 'not_live', 'not_live', 'bad_request', 'bad_request', 'not_found', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request']);
+    const parent = placeInDay(withMore, 'm2a', { block: 'afternoon' }, STATES);
+    expect(parent.ok ? '' : parent.detail).toBe('place its parent');
   });
 });

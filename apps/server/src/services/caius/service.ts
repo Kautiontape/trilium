@@ -17,6 +17,7 @@ import {
     caiusClock,
     clockOverride,
     closedKeys,
+    dayCapacity,
     daysLate,
     DEFAULT_WORK_END,
     diffSummary,
@@ -47,7 +48,9 @@ import {
     readDuplicatePlans,
     readPlan,
     scanDocs,
+    placeTasks,
     setAreas,
+    setEstimates,
     setMeetings,
     setStates,
     type StateAction,
@@ -87,18 +90,26 @@ import {
     type PlanApplyInput,
     type PlanDayInput,
     type PlanInput,
+    type PlaceInput,
     type SetAreaInput,
+    type SetEstimateInput,
     type SetStateInput,
+    type ShowInput,
     type SkipCatchupInput,
     type WindDownApplyInput,
     type WindDownInput
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { blockFor } from "./filing.js";
-import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, FOCUS_LABEL, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
-import { catchupOf, type DayRead, dayLabels, dayPeriods, drawnTitle, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
+import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { catchupOf, type DayFrame, type DayRead, dayLabels, dayPeriods, drawnTitle, failedCalendar, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
+import { dayCapacityOf, statedFocus } from "./day-read.js";
+import { createFeedCache, readCalendar } from "./inputs/calendar.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
+import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
+import type { CalendarEvent, InputError } from "./inputs/types.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
+import { showView } from "./views.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
 
@@ -107,7 +118,15 @@ export { routeInputs } from "./schemas.js";
 /** How long a `caius_inputs` answer is reused for the same day and Context. */
 export const INPUTS_TTL_MS = 15 * 60_000;
 
+/** How long a failed calendar read for a day is reused before the feeds are read again. */
+export const CALENDAR_RETRY_MS = 60_000;
+
 export type InputsReader = (input: InputsInput) => Promise<CaiusInputs>;
+
+export type TicketReader = (key: string) => Promise<TicketCard | TicketError>;
+
+/** The calendar half of `caius_inputs` alone, for one day. */
+export type CalendarReader = (date: string) => Promise<{ events: CalendarEvent[]; errors: InputError[] }>;
 
 /** The label of the standing note, "How I work". */
 const STANDING_LABEL = "assistantContext";
@@ -122,10 +141,16 @@ export function createCaiusService(
     baseStore: NoteStore = createBeccaStore(),
     weatherOf: (latitude: number, longitude: number, date: string) => Promise<DayWeather | undefined> = fetchDayWeather,
     inputsOf: InputsReader = (input) => readInputs(input),
-    clockMs: () => number = Date.now
+    clockMs: () => number = Date.now,
+    ticketOf: TicketReader = (key) => readTicket({ fetch: globalThis.fetch, env: process.env, now: () => new Date() }, key),
+    calendarOf?: CalendarReader
 ) {
     const store = withListItemIds(baseStore);
     const inputsCache = new Map<string, { at: number; inputs: CaiusInputs }>();
+    const ticketCache = new Map<string, { at: number; card: TicketCard }>();
+    const calendarCache = new Map<string, { at: number; ttl: number; calendar: Awaited<ReturnType<CalendarReader>> }>();
+    const feeds = createFeedCache(clockMs, INPUTS_TTL_MS);
+    const readDayCalendar: CalendarReader = calendarOf ?? ((date) => readCalendar({ fetch: globalThis.fetch, env: process.env, feeds }, date));
 
     /** The standing note (`#assistantContext`) as markdown. The caller holds the lock. */
     async function readStanding(): Promise<Standing> {
@@ -191,6 +216,45 @@ export function createCaiusService(
     }
 
     /**
+     * The frame of a day (`DayFrame`): the Rhythm, the Context in force and the calendar less the
+     * meetings they declined, with its capacity. Jira is never read for it. The notes are read under
+     * the lock, the calendar outside it.
+     */
+    async function dayFrame(date: string): Promise<DayFrame> {
+        const { context, standing, declined } = await withCaiusLock("caius_day_frame", async () => ({
+            context: (await gatherContext(store, date)).context,
+            standing: await readStanding(),
+            declined: await dayLabels(store, date, DECLINED_LABEL)
+        }));
+        const rhythm = readRhythm(standing.markdown);
+        const { events, errors } = await cachedCalendar(date);
+        const capacity = dayCapacity(events, { workStart: rhythm.start, workEnd: rhythm.workEnd });
+        return { inputs: withTaken({ calendar: events, capacity, errors }, declined, rhythm), context, rhythm };
+    }
+
+    /**
+     * The calendar of `date`: a fresh `caius_inputs` answer's for that day, else `calendarOf`'s,
+     * reused for `INPUTS_TTL_MS`, or for `CALENDAR_RETRY_MS` when a feed failed, so a day whose feed
+     * is down waits on it at most once a minute. A reader that throws reads as `unexpected`.
+     */
+    async function cachedCalendar(date: string): Promise<Awaited<ReturnType<CalendarReader>>> {
+        const fresh = (at: number, ttl = INPUTS_TTL_MS) => clockMs() - at < ttl;
+        const answered = [ ...inputsCache.values() ].filter((entry) => entry.inputs.date === date && fresh(entry.at)).sort((a, b) => b.at - a.at)[0];
+        if (answered) {
+            return { events: answered.inputs.calendar, errors: answered.inputs.errors.filter((e) => e.source === "calendar") };
+        }
+        const hit = calendarCache.get(date);
+        if (hit && fresh(hit.at, hit.ttl)) return hit.calendar;
+        const calendar = await readDayCalendar(date).catch((): Awaited<ReturnType<CalendarReader>> => ({ events: [], errors: [ { source: "calendar", error: "unexpected" } ] }));
+        for (const [ old, entry ] of calendarCache) {
+            if (!fresh(entry.at, entry.ttl)) calendarCache.delete(old);
+        }
+        const failed = !calendar.errors.every((e) => isInputWarning(e.error));
+        calendarCache.set(date, { at: clockMs(), ttl: failed ? CALENDAR_RETRY_MS : INPUTS_TTL_MS, calendar });
+        return calendar;
+    }
+
+    /**
      * Where the weather is read for: the standing note's Rhythm coordinates, else `given`, else
      * none. Reads the standing note under its own lock, so the forecast is fetched outside it.
      */
@@ -237,6 +301,41 @@ export function createCaiusService(
         return mainTasks(await readPlan(store, "week", week, now));
     }
 
+    /**
+     * The plan of `period` `key` as `caius_plan` answers it. A day's capacity is `dayCapacityOf` its
+     * `frame`: the focus the meetings leave, or with a failed calendar the stated one. The caller holds the lock.
+     */
+    async function planOf(period: PeriodKind, key: string, now: Date, frame: DayFrame | null) {
+        const plan = await readPlan(store, period, key, now);
+        // A second, newer note for the period is named, and its live tasks listed with their own
+        // noteId, so a task on it can still be found and moved.
+        const warnings = await duplicateWarnings(store, [ { period, key } ]);
+        const duplicates = warnings.length
+            ? (await readDuplicatePlans(store, period, key, now)).map((other) => ({ noteId: other.noteId, tasks: mainTasks(other) }))
+            : [];
+        const warned = warnings.length ? { ...plan, warnings, duplicates } : plan;
+        if (!frame) return warned;
+        // A day's brief keeps the groups and meeting names its drawing uses, which the phone draws with too.
+        const drawn = await drawnNamesOf(store, key);
+        const capacity = dayCapacityOf(frame, plan, failedCalendar(frame) ? await statedFocus(store, key) : null);
+        return { ...warned, capacity, ...(drawn ? { drawn } : {}) };
+    }
+
+    /** One Jira ticket by key, reused for `INPUTS_TTL_MS`. It reads no notes, so it takes no lock; an error is not kept. */
+    async function ticket(rawKey: string): Promise<TicketCard | TicketError> {
+        const key = rawKey.trim().toUpperCase();
+        if (!/^[A-Z][A-Z0-9]+-\d+$/.test(key)) return { error: "bad_request" };
+        const hit = ticketCache.get(key);
+        if (hit && clockMs() - hit.at < INPUTS_TTL_MS) return hit.card;
+        const card = await ticketOf(key);
+        if ("error" in card) {
+            ticketCache.delete(key);
+            return card;
+        }
+        ticketCache.set(key, { at: clockMs(), card });
+        return card;
+    }
+
     const stepDeps = async (): Promise<StepDeps> => ({ store, now: await today(), locked: withCaiusLock, dayRead, standing: readStanding });
     const applyDeps = async (): Promise<ApplyDeps> => ({
         ...await stepDeps(), place: () => placeOf(), weatherOf,
@@ -245,33 +344,32 @@ export function createCaiusService(
     });
 
     return {
+        dayFrame,
+
+        ticket,
+
         /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. A read, so it takes no lock and the status never waits on a write. */
         rollover: async () => readRhythm((await readStanding()).markdown).rollover,
 
-        plan: ({ period, date }: PlanInput) => withCaiusLock("caius_plan", async () => {
-            const now = await todayHeld();
+        /**
+         * A period's plan. A day's capacity carries the one over figure (`dayCapacityOf`), from its
+         * frame, which reads its own notes and so is read before the lock.
+         */
+        plan: async ({ period, date }: PlanInput) => {
+            const now = await today();
             const key = date ?? currentKey(period, now);
             if (!isPeriodKey(period, key)) {
                 return { error: "bad_request", detail: `"${key}" is not a ${period} that exists` };
             }
-            const plan = await readPlan(store, period, key, now);
-            // A second, newer note for the period is named, and its live tasks listed with their own
-            // noteId, so a task on it can still be found and moved.
-            const warnings = await duplicateWarnings(store, [ { period, key } ]);
-            const duplicates = warnings.length
-                ? (await readDuplicatePlans(store, period, key, now)).map((other) => ({ noteId: other.noteId, tasks: mainTasks(other) }))
-                : [];
-            const warned = warnings.length ? { ...plan, warnings, duplicates } : plan;
-            // A day's target is the focus the steps stated for it, when they did.
-            const [ focus ] = period === "day" ? await dayLabels(store, key, FOCUS_LABEL) : [];
-            const [ min, max ] = (focus ?? "").split("-").map(Number);
-            // A day's brief keeps the groups and meeting names its drawing uses, which the phone draws with too.
-            const drawn = period === "day" ? await drawnNamesOf(store, key) : null;
-            const shown = drawn ? { ...warned, drawn } : warned;
-            return min !== undefined && max !== undefined && Number.isFinite(min) && Number.isFinite(max) && focus
-                ? { ...shown, capacity: { ...plan.capacity, target: { min, max } } }
-                : shown;
-        }),
+            const frame = period === "day" ? await dayFrame(key) : null;
+            return withCaiusLock("caius_plan", () => planOf(period, key, now, frame));
+        },
+
+        /**
+         * A view for the phone to draw (`showView`). Today and the frames are read before the lock,
+         * the notes under it, and a ticket after it.
+         */
+        show: async (input: ShowInput) => showView({ store, dayFrame, locked: withCaiusLock, ticket, origin: originOf }, input, await today()),
 
         open: ({ lane, limit = DEFAULT_OPEN_LIMIT }: OpenInput) => withCaiusLock("caius_open", async () => {
             const now = await todayHeld();
@@ -383,6 +481,14 @@ export function createCaiusService(
 
         setArea: ({ items, dryRun, html }: SetAreaInput) => withCaiusLock("caius_set_area", async () => withBlobIds(
             (await unlessStale(items, (fresh) => setAreas(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
+
+        place: ({ items, dryRun, html }: PlaceInput) => withCaiusLock("caius_place", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => placeTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
+
+        setEstimate: ({ items, dryRun, html }: SetEstimateInput) => withCaiusLock("caius_set_estimate", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => setEstimates(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
 
         forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => withBlobIds(

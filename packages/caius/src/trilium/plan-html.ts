@@ -18,6 +18,7 @@ import {
   inProseSection,
   isHeading,
   isIncludeNote,
+  isLive,
   isPlaceholder,
   isTask,
   isTodoList,
@@ -27,6 +28,7 @@ import {
   rewriteOpenTag,
   sectionOf,
   spanEnd,
+  tokenZoneStartInHtml,
   type Edit,
   type ItemState,
 } from './html-util.js';
@@ -434,11 +436,7 @@ export function takeOnDeck(html: string, id: string, states: StateSymbols): { ok
   if (inProseSection(root, li) || inCriticalAside(li) || !isOnDeckName(sectionOf(root, li))) return { ok: false, reason: 'not_on_deck' };
   const state = itemState(li, states);
   if (state !== 'open' && state !== 'doing') return { ok: false, reason: 'not_live' };
-  const list = li.parentNode as HTMLElement;
-  const only = elements(list).filter((c) => c.tagName === 'LI').length === 1;
-  const heading = only ? loneHeading(html, root, list, isOnDeckName) : null;
-  const [start, end] = heading ? [heading.range[0], list.range[1]] : only ? list.range : li.range;
-  return { ok: true, html: apply(html, [{ start, end, text: '' }]), markup: html.slice(li.range[0], li.range[1]) };
+  return { ok: true, html: lift(html, root, li), markup: html.slice(li.range[0], li.range[1]) };
 }
 
 /**
@@ -456,6 +454,109 @@ function loneHeading(html: string, root: HTMLElement, list: HTMLElement, named: 
   if (next && !(isHeading(next) && levelOf(next) <= levelOf(heading))) return null;
   if (html.slice(list.range[1], next?.range[0] ?? html.length).trim()) return null;
   return heading;
+}
+
+/**
+ * Where `placeInDay` puts a task: a time block's list, On deck (`onDeck: true`) or the list
+ * (`onDeck: false`), and before or after a top-level item of that list.
+ */
+export type DayPlace = { block?: Block; onDeck?: boolean; before?: string; after?: string };
+export type PlaceProblem = 'not_found' | 'not_live' | 'bad_request';
+type PlaceFailure = { ok: false; reason: PlaceProblem; detail?: string };
+
+/**
+ * `html` with the live top-level task `id` moved within its note, the same `<li>` (words, state,
+ * sub-items and id). `block` puts it at the end of that block's list, the heading made when
+ * missing; `onDeck: true` at the end of On deck; `onDeck: false` where `placeInMainList` puts it.
+ * `before` or `after` puts it next to that item, which must be a top-level item of the list named,
+ * or of a work list or On deck when none is named. `unchanged` when it is there already. A list
+ * the task leaves empty goes, and an On deck heading with it; a block heading stays.
+ */
+export function placeInDay(
+  html: string,
+  id: string,
+  place: DayPlace,
+  states: StateSymbols,
+): { ok: true; html: string; unchanged: boolean } | PlaceFailure {
+  const problem = placeProblem(id, place);
+  if (problem) return { ok: false, reason: 'bad_request', detail: problem };
+  const root = parse(html, { comment: true });
+  const top = elements(root);
+  const li = findItem(root, id);
+  if (!li || !isTask(li)) return { ok: false, reason: 'not_found' };
+  const nested = li.parentNode?.parentNode;
+  if (nested instanceof HTMLElement && nested.tagName === 'LI') return { ok: false, reason: 'bad_request', detail: 'place its parent' };
+  if (inProseSection(root, li)) return { ok: false, reason: 'not_live' };
+  if (inCriticalAside(li)) return { ok: false, reason: 'bad_request', detail: 'an Important task stays in the Important block' };
+  if (isSuggestedName(sectionOf(root, li))) return { ok: false, reason: 'bad_request', detail: 'accept a Suggested item instead' };
+  const state = itemState(li, states);
+  if (state !== 'open' && state !== 'doing') return { ok: false, reason: 'not_live' };
+
+  const list = li.parentNode as HTMLElement;
+  const markup = html.slice(li.range[0], li.range[1]);
+  const anchorId = place.before ?? place.after;
+  if (anchorId !== undefined) {
+    const anchor = findItem(root, anchorId);
+    if (!anchor || !isTask(anchor)) return { ok: false, reason: 'not_found', detail: `no task ${anchorId}` };
+    const there = dayListOf(root, top, anchor);
+    if (!there) return { ok: false, reason: 'bad_request', detail: `${anchorId} is not a top-level task of a time block, the list or On deck` };
+    const named = place.block ? BLOCK_NAMES[place.block] : place.onDeck ? ON_DECK : place.onDeck === false ? 'the list' : null;
+    const fits = (!place.block || there.block === place.block) && (place.onDeck === undefined || place.onDeck === there.deck);
+    if (named && !fits) return { ok: false, reason: 'bad_request', detail: `${anchorId} is not in ${named}` };
+    const items = elements(there.list).filter((c) => c.tagName === 'LI');
+    if (items[items.indexOf(anchor) + (place.after !== undefined ? 1 : -1)] === li) return { ok: true, html, unchanged: true };
+    const lifted = lift(html, root, li);
+    const at = findItem(parse(lifted, { comment: true }), anchorId);
+    if (!at) return { ok: false, reason: 'not_found', detail: `no task ${anchorId}` };
+    return { ok: true, html: apply(lifted, [insertAt(place.after !== undefined ? at.range[1] : at.range[0], markup)]), unchanged: false };
+  }
+
+  const firstListUnder = (named: (name: string) => boolean) => {
+    const i = top.findIndex((e) => isHeading(e) && named(e.text));
+    return i >= 0 ? scanSection(top, i).list : undefined;
+  };
+  const block = place.block;
+  const already = block ? firstListUnder((name) => blockOf(name) === block) === list
+    : place.onDeck ? firstListUnder(isOnDeckName) === list
+      : !isOnDeckName(sectionOf(root, li));
+  if (already) return { ok: true, html, unchanged: true };
+  const lifted = lift(html, root, li);
+  const out = place.onDeck ? placeTask(lifted, markup, { kind: 'onDeck' }) : placeInMainList(lifted, markup, block);
+  return { ok: true, html: out, unchanged: false };
+}
+
+/** What is wrong with the shape of a `DayPlace` for the item `id`, or null. */
+export function placeProblem(id: string, place: DayPlace): string | null {
+  if (place.block !== undefined && !BLOCKS.includes(place.block)) return 'block must be morning, afternoon or evening';
+  if ([place.block, place.onDeck, place.before, place.after].every((v) => v === undefined)) return 'give a block, onDeck, before or after';
+  if (place.before !== undefined && place.after !== undefined) return 'give before or after, not both';
+  if (place.before === id || place.after === id) return 'an item is placed by another item';
+  if (place.block !== undefined && place.onDeck === true) return 'a time block is on the list, not On deck';
+  return null;
+}
+
+/**
+ * The list `li` is a top-level item of, when that is a work list (see `workListOf`) or the first
+ * list under an On deck heading; `block` is the time block a work list sits under.
+ */
+function dayListOf(root: HTMLElement, top: HTMLElement[], li: HTMLElement): { list: HTMLElement; deck: boolean; block: Block | null } | null {
+  const list = li.parentNode;
+  if (!(list instanceof HTMLElement) || inProseSection(root, li)) return null;
+  const at = top.indexOf(list);
+  const h = top.findLastIndex((e, i) => i < at && isHeading(e));
+  const heading = top[h];
+  if (at < 0 || !heading) return null;
+  if (isOnDeckName(heading.text)) return scanSection(top, h).list === list ? { list, deck: true, block: null } : null;
+  return workListOf(top, li) ? { list, deck: false, block: blockOf(heading.text) } : null;
+}
+
+/** `html` without the top-level item `li`: its list goes when it was the last item, and an On deck heading when nothing else is under it. */
+function lift(html: string, root: HTMLElement, li: HTMLElement): string {
+  const list = li.parentNode as HTMLElement;
+  const only = elements(list).filter((c) => c.tagName === 'LI').length === 1;
+  const heading = only ? loneHeading(html, root, list, isOnDeckName) : null;
+  const [start, end] = heading ? [heading.range[0], list.range[1]] : only ? list.range : li.range;
+  return apply(html, [{ start, end, text: '' }]);
 }
 
 export type StateAction = 'done' | 'start' | 'drop';
@@ -544,6 +645,45 @@ export function setTaskArea(
   const text = withArea(spaced, area);
   if (text === run) return { ok: true, html, unchanged: true };
   return { ok: true, html: apply(html, [{ start, end: start + run.length, text }]), unchanged: false };
+}
+
+export type EstimateProblem = 'not_found' | 'not_live' | 'has_subitems';
+
+/**
+ * The task `id` with its `~` estimate set to `minutes`, before any trailing `!` or date token.
+ * A task with live sub-items has none of its own, and `unchanged` means it has that many already.
+ */
+export function setTaskEstimate(
+  html: string,
+  id: string,
+  minutes: number,
+  states: StateSymbols = new Map(),
+): { ok: true; html: string; unchanged: boolean } | { ok: false; reason: EstimateProblem } {
+  const root = parse(html, { comment: true });
+  const li = findItem(root, id);
+  if (!li || !isTask(li)) return { ok: false, reason: 'not_found' };
+  if (inProseSection(root, li) || !isLive(li, states)) return { ok: false, reason: 'not_live' };
+  const span = descriptionOf(li);
+  if (!span) return { ok: false, reason: 'not_found' };
+  if (liveDescendants(li, states).length) return { ok: false, reason: 'has_subitems' };
+  const start = html.indexOf('>', span.range[0] + 5 + span.rawAttrs.length) + 1;
+  const inner = html.slice(start, spanEnd(html, span));
+  // Masked to the same length, so a `&nbsp;` before a token reads as the space it is.
+  const masked = inner.replace(/&nbsp;/g, '      ');
+  const zone = tokenZoneStartInHtml(masked);
+  const found = /~(?:(\d+)h(\d+)m|(\d+)h|(\d+)m)(?=\s|$)/.exec(masked.slice(zone));
+  const token = estimateToken(minutes);
+  if (!found) return { ok: true, html: apply(html, [{ start: start + zone, end: start + zone, text: ` ${token}` }]), unchanged: false };
+  const have = found[1] ? Number(found[1]) * 60 + Number(found[2]) : found[3] ? Number(found[3]) * 60 : Number(found[4]);
+  if (have === minutes) return { ok: true, html, unchanged: true };
+  const at = start + zone + found.index;
+  return { ok: true, html: apply(html, [{ start: at, end: at + found[0].length, text: token }]), unchanged: false };
+}
+
+function estimateToken(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `~${hours}h${rest ? `${rest}m` : ''}` : `~${rest}m`;
 }
 
 /** Every task under the Suggested heading that is still open (for same-note duplicate checks). */

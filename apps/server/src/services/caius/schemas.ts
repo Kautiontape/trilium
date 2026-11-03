@@ -107,6 +107,19 @@ const areaItem = z.object({
     area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).describe("The area to give the task: foundation (the day job, no marker), growth (🌱) or recharge (🔋)")
 });
 
+const placeItem = z.object({
+    ...taskRef,
+    block: z.enum(["morning", "afternoon", "evening"]).optional().describe("The time block to put the task in, at the end of its list unless before or after says where"),
+    onDeck: z.boolean().optional().describe("true: put the task on the day's On deck; false: on its list proper"),
+    before: z.string().optional().describe("Put the task before this item of the list, by its list item id"),
+    after: z.string().optional().describe("Put the task after this item of the list, by its list item id")
+});
+
+const estimateItem = z.object({
+    ...taskRef,
+    minutes: z.number().int().min(5).max(600).describe("The estimate in whole minutes, 5 to 600")
+});
+
 const forwardItem = z.object({
     ...taskRef,
     to: z.string().refine(
@@ -356,6 +369,17 @@ const reads = {
     })
 };
 
+const show = z.object({
+    view: z.enum([ "day", "days", "item", "slipping" ]).describe("day: one day; days: 2 to 7 days from from; item: one task or ticket; slipping: what keeps slipping"),
+    date: periodKey("day").optional().describe("day: the day to show, YYYY-MM-DD. Defaults to today."),
+    from: periodKey("day").optional().describe("days: the first day, YYYY-MM-DD. Defaults to today."),
+    count: z.number().int().optional().describe("days: how many days, 2 to 7. Defaults to 5."),
+    item: z.object(taskRef).optional().describe("item: the task, by its noteId and listItemId"),
+    key: z.string().optional().describe("item: a ticket key such as ZAP-101, with or without a task that names it"),
+    area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).optional().describe("day: the area to open the view on. Defaults to the area that is over."),
+    period: z.string().optional().describe("slipping: only tasks that moved on from a day in this day, week or month, such as 2026-W45")
+});
+
 const inputsClock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Must be HH:MM, from 00:00 to 24:00");
 
 const inputs = z.object({
@@ -441,6 +465,9 @@ export const toolInputs = {
     dismiss: writes(dismissItem),
     setState: writes(stateItem),
     setArea: writes(areaItem),
+    place: writes(placeItem),
+    setEstimate: writes(estimateItem),
+    show,
     forward: writes(forwardItem),
     header
 };
@@ -459,6 +486,8 @@ export const routeInputs = {
     dismiss: writes(dismissItem.extend(version)),
     setState: writes(stateItem.safeExtend(version)),
     setArea: writes(areaItem.safeExtend(version)),
+    place: writes(placeItem.safeExtend(version)),
+    setEstimate: writes(estimateItem.safeExtend(version)),
     forward: writes(forwardItem.safeExtend(version)),
     /** The Plan tab's Close: forwards, then state changes, behind one version check. */
     apply: z.object({
@@ -483,6 +512,7 @@ export type OpenInput = z.infer<typeof reads.open>;
 export type ExplainInput = z.infer<typeof reads.explain>;
 export type ContextInput = z.infer<typeof reads.context>;
 export type AssignIdsInput = z.infer<typeof reads.assignIds>;
+export type ShowInput = z.infer<typeof toolInputs.show>;
 export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
@@ -498,5 +528,7 @@ export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;
 export type SetStateInput = z.infer<typeof routeInputs.setState>;
 export type SetAreaInput = z.infer<typeof routeInputs.setArea>;
+export type PlaceInput = z.infer<typeof routeInputs.place>;
+export type SetEstimateInput = z.infer<typeof routeInputs.setEstimate>;
 export type ForwardInput = z.infer<typeof routeInputs.forward>;
 export type ApplyInput = z.infer<typeof routeInputs.apply>;

@@ -94,7 +94,7 @@ describe("a guide, not a script", () => {
         expect(again.results[0]).toMatchObject({ status: "skipped", reason: "duplicate" });
     });
 
-    it("(c, f) On deck stays out of the committed capacity but counts in the overload flag", async () => {
+    it("(c, f) On deck stays out of the committed capacity and the over figure, shown as what it would add", async () => {
         at(`${WED}T17:35`);
         const thursday = await call("caius_plan", { period: "day", date: THU });
         expect(thursday.capacity).toMatchObject({ totalMinutes: 120, onDeckMinutes: 90 });
@@ -102,13 +102,15 @@ describe("a guide, not a script", () => {
         const next = await call("caius_winddown", { date: WED, step: "next" });
         // The committed list alone.
         expect(next.data.capacity.plannedMinutes).toBe(120);
-        // 1 h 45 m of meetings leave 6 h 15 m open, so the focus target is 4 h; the list (2 h), On deck
-        // (1 h 30 m) and the leftovers proposed for Thursday (the report, the plumber, the email and the
-        // rent, 1 h 55 m; the evening's laundry isn't work) pass it.
+        // 1 h 45 m of meetings leave the Rhythm's 3 to 4 h of focus. The list (2 h) and the rent, the one
+        // leftover proposed for Thursday's list, fit it; On deck (1 h 30 m) and the leftovers proposed for
+        // it (the report, the plumber and the email, 1 h 45 m) would take the day 1 h 25 m over, and are
+        // only shown. The evening's laundry isn't work.
         expect(next.data.load).toMatchObject({
-            meetingMinutes: 105, listMinutes: 120, onDeckMinutes: 90, incomingMinutes: 115, targetMinutes: 240, over: true, overMinutes: 85
+            meetingMinutes: 105, listMinutes: 120, incomingMinutes: 10, onDeckMinutes: 90, incomingOnDeckMinutes: 105,
+            focus: { min: 180, max: 240 }, over: false, overMinutes: 0, overWithOnDeck: 85
         });
-        expect(next.data.load.sentence).toBe("Thursday: 1 h 45 m of meetings, 2 h on the list, 1 h 30 m on deck and 1 h 55 m more if today's leftovers go there, against 3–4 h of focus time. That's 1 h 25 m more than fits.");
+        expect(next.data.load.sentence).toBe("Thursday: 1 h 45 m of meetings, 2 h on the list and 10 m more if today's leftovers go there, against 3–4 h of focus time. On deck would add 3 h 15 m.");
     });
 
     it("(b) Wed 17:40: 'I'd like to' goes on Thursday's On deck, 'I need to' on its list; Important and evening tasks keep their place", async () => {
@@ -131,21 +133,22 @@ describe("a guide, not a script", () => {
         expect(listOf(thursday)).toEqual([ "Existing thing", "Call the plumber", "Laundry" ]);
         expect(thursday.critical.map((t: any) => plain(t.text))).toEqual([ "Pay the rent" ]);
         expect(thursday.sections.find((s: any) => s.name === "Evening")?.tasks.map((t: any) => plain(t.text))).toEqual([ "Laundry" ]);
-        // The apply says how Thursday stands now: still over, for the pushback.
-        expect(result.load).toMatchObject({ listMinutes: 160, onDeckMinutes: 150, over: true });
+        // The apply says how Thursday stands now: its list fits the focus, and On deck would take it 1 h 10 m over.
+        expect(result.load).toMatchObject({ listMinutes: 160, onDeckMinutes: 150, over: false, overWithOnDeck: 70 });
     });
 
-    it("(f) a light day is not flagged, and Thursday's leftovers would overload Friday", async () => {
+    it("(f) a light day is not flagged, and Thursday's leftovers on Friday's On deck would take it over", async () => {
         at(`${QUIET}T17:30`);
         const quiet = await call("caius_winddown", { date: QUIET, step: "next" });
         expect(quiet.data.load).toMatchObject({ listMinutes: 0, onDeckMinutes: 0, incomingMinutes: 0, over: false, overMinutes: 0 });
-        expect(quiet.data.load.sentence).toBe("Thursday: 0 m of meetings, 0 m on the list and 0 m on deck, against 3–4 h of focus time.");
+        expect(quiet.data.load.sentence).toBe("Thursday: 0 m of meetings and 0 m on the list, against 3–4 h of focus time.");
 
-        // Everything still open on Thursday would land on Friday: the step says so before he answers.
+        // Everything still open on Thursday would land on Friday, the rent on its list and the rest (5 h) on
+        // its On deck, which would take it 1 h 10 m over: the step says so before they answer.
         at(`${THU}T17:30`);
         const next = await call("caius_winddown", { date: THU, step: "next" });
         expect(next.targetDay).toBe(FRI);
-        expect(next.data.load).toMatchObject({ incomingMinutes: 310, over: true, overMinutes: 70 });
+        expect(next.data.load).toMatchObject({ incomingMinutes: 10, incomingOnDeckMinutes: 300, over: false, overMinutes: 0, overWithOnDeck: 70 });
     });
 });
 

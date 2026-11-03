@@ -1,0 +1,53 @@
+.day-meters {
+    margin-bottom: var(--s3);
+}
+
+.day-meter + .day-meter { margin-top: var(--s3); }
+
+.day-meter.open {
+    margin-left: calc(var(--s2) * -1);
+    margin-right: calc(var(--s2) * -1);
+    padding: var(--s2);
+    border-radius: var(--r-chip);
+    background: var(--surface-2);
+}
+
+.day-terrain {
+    margin: 0 calc(var(--s4) * -1);
+
+    & svg {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+}
+
+.day-group {
+    margin-top: var(--s4);
+
+    & h4 { margin: 0 0 var(--s2); }
+}
+
+.day-rows {
+    margin: 0 calc(var(--s4) * -1);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+}
+
+/* Each `TaskRow` sits in its own `.day-row`, so `.task-row-wrap:first-child` drops every border. */
+.day-row + .day-row .task-row-wrap { border-top: 1px solid var(--line); }
+
+.day-row.leaving .task-row-text {
+    color: var(--ink-3);
+    text-decoration: line-through;
+}
+
+.day-context {
+    margin: var(--s2) 0 0;
+}
+
+.view-not-shown {
+    margin: var(--s2) 0 0;
+    font-size: 13px;
+    line-height: 18px;
+}

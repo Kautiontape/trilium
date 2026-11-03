@@ -63,7 +63,7 @@ The gist rule ("Trilium was bumped to a newer version") holds for every answer. 
 
 ### Where the tools fall short
 
-Recommendations only; decisions 5 and 6 take up the ones the views need.
+Recommendations from the review; decisions 5 and 6 take up the ones the views need, and Shawn's answers below settle items 1–3.
 
 1. **The figures that answer "why" exist only inside the steps.** The load, the focus figure, Growth's load, the proposed fates, the slip counts, the `unplaced` minutes and the candidates are worked out in `caius_planday`'s and `caius_winddown`'s steps. In an Ask, Caius has `caius_plan` and `caius_inputs` and is told never to work out a figure, so it can't say why a day is over. Recommend reads shaped around things: a **day read** (plan, meetings, capacity, load by area, layout, slips) and an **item read** (task, trail, origin, ticket), used by the steps, the views and Today alike.
 2. **"Over" means two things.** Today's card and the Over capacity notification put the list's Foundation minutes against a fixed 3–4 h (`plan.capacity`, whose targets `plan-read.ts` hard-codes, reading neither the meetings nor the Rhythm's Capacity line). The chat puts the list plus On deck plus what the leftovers bring against a figure the meetings shrink (`loadOf`). A day can be over in the chat and fine on Today. Recommend one figure everywhere: the list's Foundation minutes against the focus figure, with On deck shown apart as what it would add.
@@ -71,6 +71,15 @@ Recommendations only; decisions 5 and 6 take up the ones the views need.
 4. **Reads that don't exist.** An item's trail (only Wind down's park counts it). One ticket by key with its status and last comments (`readJira` reads Shawn's involved tickets and checks keys for done, nothing more). Several days at once (a week takes seven `caius_plan` and seven `caius_inputs` calls). Why a key isn't offered (nothing reads the dispositions back).
 5. **Placing a task is spread over five tools**, each with its own rules: `caius_add` (five placement modes), `caius_accept`, `caius_forward`, and the applies' `move`, `accept` and `onDeck`. The views need one vocabulary, the fate menu, mapped onto them (decision 6).
 6. **Smaller overlaps.** Meetings are read twice, as calendar events and as the Meetings block's plain lines (`PlanView.meetings`); a timeline reads the events. The drawing has three writers (`caius_header`, `caius_brief_write`, `caius_plan_apply`); `caius_header` draws what both brief writers already draw, fed only by the brief step's `header`, and could leave the tool list. The skill sheet's Daily planning and Daily shutdown sections are an older procedure beside the rituals, still weighing the list against 180 to 240 by hand. And four things answer "what next": the brief's picks (list tasks with a reason), the project picks (which are candidates), the Top 3 and the phone's Now. Recommend "pick" mean only the brief's, and a project's offer be a candidate like the others.
+
+## Shawn's answers (2026-11-03)
+
+Four questions the review left open. The decisions below are written to match.
+
+1. **One "over" figure everywhere.** Caius, Today's card, the Over capacity notification and the views all put the list's Foundation minutes against the focus figure, which the meetings shrink. On deck is shown apart, as what it would add. This replaces `plan.capacity`'s fixed 180–240 for the day (`plan-read.ts`) and `loadOf`'s sum of the list, On deck and what the leftovers bring.
+2. **Build both new writes:** place a task in its day (a block, the list or On deck, before or after another) and set an estimate. Each takes a list of items and refuses a note that changed under it, like `caius_set_area`. The tool is enough for v1; a route under `/api/caius/` like set-area's comes when the desktop Task menu wants them.
+3. **Slipping is in v1.**
+4. **When a view shows is Caius's judgement.** Always when Shawn asks for one; usually when a day runs over; sometimes unasked, when Shawn asks something whose answer is a load or a day's shape and Caius thinks it runs over. Never two views in one reply, and never a view about something Shawn isn't talking about: the skill sheet's stay-on-topic rule holds. This replaces "never beside a rundown, never unprompted" (decision 4).
 
 ## Decisions
 
@@ -132,8 +141,14 @@ Recommendations only; decisions 5 and 6 take up the ones the views need.
    - **Fate menu:** the one control, the same on every row: the menu of the areas design (decision 16), with blocks, the estimate and the area added.
 
    Not in the first views: **Tickets** (what Jira has handed Shawn, as a list). Item covers one ticket and the ritual cards cover the hand-offs. A list earns its place once Shawn asks about tickets as a set outside a ritual. "Meetings vs open time" is Day's timeline, and the follow-ups are on the brief and on Item. Each new view is a new entry in the catalogue, not a new mechanism.
-4. **A view answers a question about that thing, and nothing else.** Caius shows one when Shawn asks about a load, a day's shape, a choice between days, an item or the slips, and the answer would run to three items or more. A single fact is just said. "Show me" always gets one. At most one view per reply, with one line around it in gist: the figures are on the view. Caius never puts a view beside a ritual's rundown and never shows one unprompted. In a ritual, a view comes only when Shawn asks about the load or an item after the rundown. When Shawn moves on to something else, the next reply doesn't bring the view back. The skill sheet holds the guide: the table in decision 3.
-5. **One tool: `caius_show`.** `{ view: "day" | "days" | "item" | "slipping", date?, from?, count?, item?, area? }`. It reads only. Its data comes from reads shaped around things (shortfall 1), which the steps and Today move onto too, so the figure on a view is the figure in Caius's sentence and on Today. The new reads are the day read, an item's trail, one ticket by key, and a reader for several days built on the day read. Every row carries its `noteId` and `listItemId`, and a ticket its key, so Caius can map the pill's sentences onto writes in an Ask, where no step has given refs.
+4. **A view answers a question about that thing, and nothing else; when to show one is Caius's judgement** (Shawn's answer 4).
+   - **Always** when Shawn asks to see something: "show me", "what does Tuesday look like?".
+   - **Usually** when a day runs over: the Day view, opened on the area that is over, says why better than a sentence.
+   - **Sometimes unasked**, when Shawn asks something whose answer is a load or a day's shape and Caius thinks it runs over. A single fact is just said.
+   - **Never** two views in one reply, and never a view about something Shawn isn't talking about: in a talk about tickets, no view of the day comes up (the stay-on-topic rule in the skill sheet's Voice section). When Shawn moves on, the next reply doesn't bring the view back.
+   - One line around a view, in gist: the figures are on the view. A view can follow a ritual's rundown in the same reply when the day the rundown proposes runs over.
+   - The skill sheet holds the guide: the table in decision 3 and these rules.
+5. **One tool: `caius_show`.** `{ view: "day" | "days" | "item" | "slipping", date?, from?, count?, item?, area? }`. It reads only. Its data comes from reads shaped around things (shortfall 1), which the steps and Today move onto too, so the figure on a view is the figure in Caius's sentence and on Today: the one "over" figure of Shawn's answer 1, the list's Foundation minutes against the focus figure, with On deck apart. The new reads are the day read, an item's trail, one ticket by key, and a reader for several days built on the day read. Every row carries its `noteId` and `listItemId`, and a ticket its key, so Caius can map the pill's sentences onto writes in an Ask, where no step has given refs.
 6. **Answers are words Caius already understands; two writes are new.** A view's taps become sentences in the pill, like the cards' ("Garage shelf goes to the week.", "The ballot goes in the afternoon.", "ZAP-2611 is 30 minutes."), and Caius makes them with these tools:
 
    | Tap | Tool |
@@ -147,7 +162,7 @@ Recommendations only; decisions 5 and 6 take up the ones the views need.
    | Morning, Afternoon, Evening; On deck or the list, on the same day | new: place a task in its day |
    | Estimate | new: set an estimate |
 
-   This replaces "no new write path": the board's main tap, another block, has no tool today (shortfall 3), and cutting it would leave Day unable to do what Shawn asked. Both new writes take a list of items and refuse a note that changed under them, like `caius_set_area`. A view's answers go through these tools in a ritual too. A ref in the step data whose item a view moved comes back `stale` from the apply, and Caius asks about that item, as it does now.
+   This replaces "no new write path": the board's main tap, another block, has no tool today (shortfall 3), and cutting it would leave Day unable to do what Shawn asked. Shawn's answer 2 builds both. Both new writes take a list of items and refuse a note that changed under them, like `caius_set_area`; v1 is the tools alone, with no `/api/caius/` route until the desktop Task menu wants one. A view's answers go through these tools in a ritual too. A ref in the step data whose item a view moved comes back `stale` from the apply, and Caius asks about that item, as it does now.
 
 ### Background and minimize
 
@@ -176,7 +191,7 @@ Recommendations only; decisions 5 and 6 take up the ones the views need.
 ## Testing
 
 - Server: a turn that runs to the end with the client gone saves the whole transcript; reattach returns the rest.
-- Server, views: each view's reader against the round-spec fixtures. Day's Foundation figure is the same as the steps' load sentence and Today's card for the same day. A task forwarded from Monday and Tuesday has a trail of two. One ticket's read has its last comment. Days over a week with an empty future day shows that day's meetings.
+- Server, views: each view's reader against the round-spec fixtures. Day's Foundation figure is the same as the steps' load sentence, Today's card and the Over capacity notification for the same day, and none of them counts On deck. A task forwarded from Monday and Tuesday has a trail of two. One ticket's read has its last comment. Days over a week with an empty future day shows that day's meetings.
 - Server, writes: placing a task moves it from Morning to Afternoon and between the list and On deck on one day, and refuses a note that changed. Setting an estimate replaces the token, and the load follows.
 - Phone: each tap becomes the right sentence (`replies.spec`), and a meter redrawn after a tap matches the server's figure after the write; the transcript survives a simulated pause; the mini bar keeps pill answers.
 - Live on the rig: hide the app mid-turn and come back; reply from the notification; "why is Monday over?" gets Day, opened on Foundation; "what's going on with ZAP-2640?" gets Item; in a talk about tickets, no view of the day comes up.

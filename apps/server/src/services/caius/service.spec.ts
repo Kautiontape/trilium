@@ -89,3 +89,25 @@ describe("caiusNow", () => {
         expect(caiusDevNow({ TRILIUM_ENV: "production", CAIUS_NOW: "2026-11-06T17:30" })).toBeUndefined();
     });
 });
+
+describe("the caius service reading a ticket", () => {
+    it("reuses a ticket for 15 minutes, keeps no error and refuses a bad key without reading", async () => {
+        let now = 0;
+        const reads: string[] = [];
+        const card = { key: "ZAP-1", summary: "s", status: "Done", resolution: null, url: "u", assignee: null, updated: "", daysInStatus: 1, done: true, lastComment: null, asks: [] };
+        const service = createCaiusService(noJournal, undefined, undefined, () => now, async (key) => {
+            reads.push(key);
+            return reads.length === 1 ? { error: "http_503" } : card;
+        });
+
+        expect(await service.ticket("zap 1")).toEqual({ error: "bad_request" });
+        expect(await service.ticket("zap-1")).toEqual({ error: "http_503" });
+        expect(await service.ticket("ZAP-1")).toBe(card);
+        now = 14 * 60_000;
+        expect(await service.ticket("ZAP-1")).toBe(card);
+        expect(reads).toEqual([ "ZAP-1", "ZAP-1" ]);
+        now = 16 * 60_000;
+        await service.ticket("ZAP-1");
+        expect(reads).toHaveLength(3);
+    });
+});

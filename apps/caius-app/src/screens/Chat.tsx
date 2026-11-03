@@ -7,6 +7,7 @@ import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/ca
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
+import { FateMenu } from "../components/FateMenu.js";
 import { useSwipeDown } from "../components/MiniChat.js";
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
@@ -21,6 +22,8 @@ import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, 
 import { appVersion, shareText } from "../lib/share.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack } from "../lib/store.js";
 import { chatTranscript } from "../lib/transcript.js";
+import { viewOf } from "../lib/views.js";
+import { ViewCard } from "./views/ViewCard.js";
 
 /**
  * A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while
@@ -749,6 +752,12 @@ function findLastStep(messages: StoredMessage[]) {
         if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && stepOf(b.toolCall))) {
             return i;
         }
+        // A view is answered by writes, not an `…_apply`, so it stays live only until Caius replies; a failed send leaves it live.
+        if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && viewOf(b.toolCall))) {
+            if (messages.slice(i + 1).every((later) => later.role === "user" || later.type === "error")) {
+                return i;
+            }
+        }
     }
     return -1;
 }
@@ -785,13 +794,20 @@ function AssistantBlocks({ blocks, chat, live, pending, notes, working }: {
         const step = b.type === "tool_call" ? stepOf(b.toolCall) : null;
         return step && b.type === "tool_call" && stepHasBody(step) ? [ { id: b.toolCall.id, step } ] : [];
     });
+    const views = blocks.flatMap((b) => {
+        const view = b.type === "tool_call" ? viewOf(b.toolCall) : null;
+        return view && b.type === "tool_call" ? [ { id: b.toolCall.id, view } ] : [];
+    });
     const text = turnText(blocks);
     return (
         <div class={`caius-turn${pending ? " pending" : ""}`}>
             {notes && <Notes notes={notes} label={working ?? "Caius's notes"} working={!!working} />}
-            {text && <CaiusText text={text} withoutLists={steps.length > 0} />}
+            {text && <CaiusText text={text} withoutLists={steps.length > 0 || views.length > 0} />}
             {!pending && steps.map(({ id, step }) => (
                 <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} />
+            ))}
+            {!pending && views.slice(-1).map(({ id, view }) => (
+                <ViewCard key={id} id={id} view={view} live={live && !pending} report={chat.report} />
             ))}
         </div>
     );
@@ -1086,16 +1102,11 @@ function FateList({ items, options, answers, update, disabled }: { items: StepIt
     };
     const choose = (i: number) => {
         const labels = options.map((o) => chipLabel(o, items[i].fate));
-        const now = chipLabel(choiceOf(i), items[i].fate);
+        // A fate that reads the same as the proposal is left out; the proposal itself stands for it.
+        const shown = options.flatMap((option, at) => at > 0 && labels[at] === labels[0] ? [] : [ { option, label: labels[at], detail: at === 0 ? "proposed" : undefined } ]);
         openSheet(
-            <>
-                <SheetTitle title="Fate" sub={displayText(items[i].text).text} />
-                {options.map((option, at) => (
-                    // A fate that reads the same as the proposal is left out; the proposal itself stands for it.
-                    at > 0 && labels[at] === labels[0] ? null
-                        : <SheetAction key={labels[at]} glyph={labels[at] === now ? "check" : "·"} label={labels[at]} detail={at === 0 ? "proposed" : undefined} onClick={() => pick(i, option)} />
-                ))}
-            </>
+            <FateMenu sub={displayText(items[i].text).text} current={chipLabel(choiceOf(i), items[i].fate)}
+                options={shown.map(({ label, detail }) => ({ label, detail }))} onPick={(at) => pick(i, shown[at].option)} />
         );
     };
     return (

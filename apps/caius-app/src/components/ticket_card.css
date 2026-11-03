@@ -1,0 +1,51 @@
+.ticket-card {
+    & p { margin: 0; }
+}
+
+.ticket-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s2);
+    margin-bottom: var(--s2);
+}
+
+.ticket-key {
+    font-weight: 600;
+}
+
+.ticket-status {
+    padding: 0 var(--s2);
+    border-radius: var(--r-chip);
+    background: var(--surface-2);
+    font-size: 14px;
+    line-height: 22px;
+
+    &.done { background: var(--moss-wash); }
+}
+
+.ticket-age,
+.ticket-assignee,
+.ticket-error {
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.ticket-summary {
+    font-weight: 600;
+}
+
+.ticket-comment {
+    margin: var(--s3) 0 0;
+    padding: var(--s2) var(--s3);
+    border-left: 3px solid var(--line);
+    overflow-wrap: anywhere;
+
+    &.ask { border-left-color: var(--clay); }
+}
+
+.ticket-comment-by {
+    display: block;
+    font-size: 13px;
+    line-height: 18px;
+}

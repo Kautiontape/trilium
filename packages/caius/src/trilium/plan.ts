@@ -24,13 +24,17 @@ import {
   inProseById,
   moveInMainList,
   placeForwarded,
+  placeInDay,
   placeInMainList,
+  placeProblem,
   placeTask,
   setTaskArea,
+  setTaskEstimate,
   setTaskState,
   suggestedItems,
   takeOnDeck,
   takeSuggested,
+  type DayPlace,
   type StateAction,
   type Target,
 } from './plan-html.js';
@@ -103,6 +107,7 @@ export type PlanSkip =
   | 'already_doing'
   | 'already_cancelled'
   | 'duplicate'
+  | 'has_subitems'
   | 'dismissed'
   | 'edited'
   | 'bad_request'
@@ -518,6 +523,119 @@ export async function setAreas(api: NoteStore, reqs: AreaRequest[], opts: PlanOp
     }
   }
   return reqs.map((req) => out.get(req)!);
+}
+
+// ---- estimate ----------------------------------------------------------
+
+/** A task to give an estimate: a whole number of minutes from 5 to 600. */
+export interface EstimateRequest {
+  noteId: string;
+  listItemId: string;
+  minutes: number;
+}
+
+/**
+ * Give each task its `~` estimate. The tasks of one note are changed together and written once, as
+ * `setAreas` writes them; if the note changed meanwhile, none of them is written and each reports
+ * `edited`. A task with live sub-items is skipped as `has_subitems`.
+ */
+export async function setEstimates(api: NoteStore, reqs: EstimateRequest[], opts: PlanOptions = {}): Promise<Done<EstimateRequest>[]> {
+  const states = opts.states ?? (await loadStateSymbols(api));
+  const out = new Map<EstimateRequest, Done<EstimateRequest>>();
+  const byNote = new Map<string, EstimateRequest[]>();
+  for (const req of reqs) {
+    if (!validItem(req)) out.set(req, skip(req, 'bad_request', 'need noteId and listItemId'));
+    else if (!Number.isInteger(req.minutes) || req.minutes < 5 || req.minutes > 600) out.set(req, skip(req, 'bad_request', 'minutes is a whole number from 5 to 600'));
+    else byNote.set(req.noteId, [...(byNote.get(req.noteId) ?? []), req]);
+  }
+  for (const [noteId, group] of byNote) {
+    try {
+      const loaded = await loadNote(api, noteId);
+      if ('problem' in loaded) {
+        for (const req of group) out.set(req, skip(req, 'unreadable', loaded.problem));
+        continue;
+      }
+      const before = await api.content(noteId);
+      let after = before;
+      const changed: EstimateRequest[] = [];
+      for (const req of group) {
+        const r = setTaskEstimate(after, req.listItemId, req.minutes, states);
+        if (!r.ok) out.set(req, skip(req, r.reason, r.reason === 'has_subitems' ? 'set the estimates of its sub-items' : undefined));
+        else if (r.unchanged) out.set(req, { ...req, status: 'unchanged' });
+        else {
+          after = r.html;
+          changed.push(req);
+        }
+      }
+      if (!changed.length) continue;
+      if (opts.dryRun) {
+        for (const [i, req] of changed.entries()) {
+          out.set(req, { ...req, status: 'updated', dryRun: true, changes: i ? undefined : [{ noteId, role: 'target', before, after }] });
+        }
+      } else if (!(await api.putContent(noteId, after, before))) {
+        for (const req of changed) out.set(req, skip(req, 'edited', 'note changed meanwhile; nothing written'));
+      } else for (const req of changed) out.set(req, { ...req, status: 'updated' });
+    } catch (e) {
+      for (const req of group) if (!out.has(req)) out.set(req, failed(req, e));
+    }
+  }
+  return reqs.map((req) => out.get(req) ?? failed(req, 'no result'));
+}
+
+// ---- place -------------------------------------------------------------
+
+/** A task to move within its note: into a time block, On deck or onto the list, and before or after an item there. */
+export interface PlaceRequest extends DayPlace {
+  noteId: string;
+  listItemId: string;
+}
+
+/**
+ * Move each task within its note (see `placeInDay`); a move to another note is `forwardTasks`. The
+ * tasks of one note are moved in order and written once, as `setAreas` writes them; if the note
+ * changed meanwhile, none of them is written and each reports `edited`.
+ */
+export async function placeTasks(api: NoteStore, reqs: PlaceRequest[], opts: PlanOptions = {}): Promise<Done<PlaceRequest>[]> {
+  const states = opts.states ?? (await loadStateSymbols(api));
+  const out = new Map<PlaceRequest, Done<PlaceRequest>>();
+  const byNote = new Map<string, PlaceRequest[]>();
+  for (const req of reqs) {
+    const problem = validItem(req) ? placeProblem(req.listItemId, req) : 'need noteId and listItemId';
+    if (problem) out.set(req, skip(req, 'bad_request', problem));
+    else byNote.set(req.noteId, [...(byNote.get(req.noteId) ?? []), req]);
+  }
+  for (const [noteId, group] of byNote) {
+    try {
+      const loaded = await loadNote(api, noteId);
+      if ('problem' in loaded) {
+        for (const req of group) out.set(req, skip(req, 'unreadable', loaded.problem));
+        continue;
+      }
+      const before = await api.content(noteId);
+      let after = before;
+      const changed: PlaceRequest[] = [];
+      for (const req of group) {
+        const r = placeInDay(after, req.listItemId, req, states);
+        if (!r.ok) out.set(req, skip(req, r.reason, r.detail));
+        else if (r.unchanged) out.set(req, { ...req, status: 'unchanged' });
+        else {
+          after = r.html;
+          changed.push(req);
+        }
+      }
+      if (!changed.length) continue;
+      if (opts.dryRun) {
+        for (const [i, req] of changed.entries()) {
+          out.set(req, { ...req, status: 'moved', dryRun: true, changes: i ? undefined : [{ noteId, role: 'target', before, after }] });
+        }
+      } else if (!(await api.putContent(noteId, after, before))) {
+        for (const req of changed) out.set(req, skip(req, 'edited', 'note changed meanwhile; nothing written'));
+      } else for (const req of changed) out.set(req, { ...req, status: 'moved' });
+    } catch (e) {
+      for (const req of group) if (!out.has(req)) out.set(req, failed(req, e));
+    }
+  }
+  return reqs.map((req) => out.get(req) ?? failed(req, 'no result'));
 }
 
 export { JIRA_BASE };
