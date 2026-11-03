@@ -3,7 +3,7 @@ import type { DayViewData, DaysViewData, ItemViewData, ShownView, ViewTask } fro
 import { describe, expect, it } from "vitest";
 
 import { slipLabel } from "../components/TaskRow.js";
-import { fateChoices, redraw, rowKey, type ViewAnswers, viewOf, viewPicks, viewReply } from "./views.js";
+import { dayGroups, dayTerrain, fateChoices, hasLiveSubItems, redraw, redrawRows, rowKey, type ViewAnswers, viewOf, viewPicks, viewReply } from "./views.js";
 
 const FOCUS = { min: 180, max: 240 };
 const GROWTH = { min: 30, max: 60 };
@@ -177,6 +177,22 @@ describe("redraw", () => {
         expect(after.load.recharge.count).toBe(2);
     });
 
+    it("carries a parent's fate to a sub-item listed before it", () => {
+        const order = [ TASKS[4], TASKS[3], TASKS[5] ];
+        const after = redrawRows(order, tap({ [key("p")]: { fate: { kind: "week", week: "2026-W45", label: "Week 45" } } }));
+        expect(after.map((t) => [ t.listItemId, t.leaving ])).toEqual([ [ "s1", true ], [ "p", true ], [ "s2", true ] ]);
+        const deck = redrawRows(order, tap({ [key("p")]: { fate: { kind: "onDeck" } }, [key("s2")]: { fate: { kind: "done" } } }));
+        expect(deck.map((t) => [ t.listItemId, t.place, t.leaving ])).toEqual([ [ "s1", "onDeck", false ], [ "p", "onDeck", false ], [ "s2", "list", true ] ]);
+    });
+
+    it("lowers the Foundation meter and adds one pill row for a tap to On deck", () => {
+        const answers = tap({ [key("a2")]: { fate: { kind: "onDeck" } } });
+        expect(moved(answers).load.foundation.minutes).toBeLessThan(DAY.load.foundation.minutes);
+        expect(moved(answers).load.onDeck.minutes).toBe(60);
+        expect(viewPicks(DAY_VIEW, answers).picks.map(({ what, choice }) => ({ what, choice }))).toEqual([ { what: "The ballot", choice: "On deck" } ]);
+        expect(viewPicks(DAY_VIEW, viewPicks(DAY_VIEW, answers).picks[0].undo).picks).toEqual([]);
+    });
+
     it("redraws each day of Days", () => {
         const other = TASKS.map((t) => ({ ...t, noteId: "day2", period: { kind: "day" as const, key: "2026-11-04" } }));
         const days: DaysViewData = {
@@ -203,6 +219,100 @@ describe("fateChoices", () => {
         const weekRow = { ...TASKS[1], period: { kind: "week" as const, key: "2026-W45" } };
         expect(labels(weekRow, where)).toEqual([ "Done", "Wed 4 Nov", "Tue 3 Nov", "Thu 5 Nov", "A day…", "Drop…" ]);
         expect(fateChoices(TASKS[0], where).find((c) => c.label === "Wed 4 Nov")?.fate).toEqual({ kind: "day", date: "2026-11-04", label: "Wed 4 Nov", onDeck: true });
+    });
+});
+
+describe("fateChoices for an Important row", () => {
+    it("leaves out the blocks and On deck", () => {
+        const critical = { ...TASKS[1], critical: true };
+        expect(fateChoices(critical, { nextWorkday: "2026-11-04", week: "2026-W45" }).map((c) => c.label))
+            .toEqual([ "Done", "Wed 4 Nov", "A day…", "Week 45", "Drop…" ]);
+    });
+});
+
+describe("dayGroups", () => {
+    const names = (groups: ReturnType<typeof dayGroups>) => groups.map((g) => [ g.name, g.variant, g.tasks.map((t) => t.listItemId) ]);
+
+    it("groups the rows Important first, then by block, then the list, then On deck, each sub-item under its parent", () => {
+        const tasks = [
+            row("i", "Ship it", { critical: true }), row("s1a", "Part of a part", { parent: "First part", parentListItemId: "s1" }), ...TASKS,
+            row("s0", "Early part", { parent: "Parent", parentListItemId: "p", block: "evening" })
+        ];
+        expect(names(dayGroups(redrawRows(tasks, {})))).toEqual([
+            [ "Important", "critical", [ "i" ] ],
+            [ "Morning", "list", [ "a1" ] ],
+            [ "Evening", "list", [ "g", "r" ] ],
+            [ "The list", "list", [ "a2", "a3", "p", "s1", "s1a", "s2", "s0" ] ],
+            [ "On deck", "onDeck", [ "d" ] ]
+        ]);
+    });
+
+    it("moves a row with its tap and keeps a leaving row in place", () => {
+        const after = redrawRows(TASKS, tap({
+            [key("a2")]: { fate: { kind: "block", block: "afternoon" } },
+            [key("p")]: { fate: { kind: "onDeck" } },
+            [key("a1")]: { fate: { kind: "done" } }
+        }));
+        expect(names(dayGroups(after))).toEqual([
+            [ "Morning", "list", [ "a1" ] ],
+            [ "Afternoon", "list", [ "a2" ] ],
+            [ "Evening", "list", [ "g", "r" ] ],
+            [ "The list", "list", [ "a3" ] ],
+            [ "On deck", "onDeck", [ "p", "s1", "s2", "d" ] ]
+        ]);
+        expect(dayGroups(after)[0].tasks[0].leaving).toBe(true);
+    });
+
+    it("shows a sub-item whose parent is not on the view as a row of its own", () => {
+        expect(names(dayGroups(redrawRows([ row("x", "Orphan", { parent: "Gone", parentListItemId: "gone", block: "morning" }) ], {}))))
+            .toEqual([ [ "Morning", "list", [ "x" ] ] ]);
+    });
+});
+
+describe("hasLiveSubItems", () => {
+    it("is true for a row with a live sub-item on its note", () => {
+        expect(hasLiveSubItems(TASKS[3], TASKS)).toBe(true);
+        expect(hasLiveSubItems(TASKS[0], TASKS)).toBe(false);
+        const finished = TASKS.map((t) => t.parentListItemId === "p" ? { ...t, state: "done" as const } : t);
+        expect(hasLiveSubItems(TASKS[3], finished)).toBe(false);
+        expect(hasLiveSubItems(TASKS[3], TASKS.map((t) => ({ ...t, noteId: t.listItemId === "p" ? "day1" : "day2" })))).toBe(false);
+    });
+});
+
+describe("dayTerrain", () => {
+    const tasks = [
+        row("m1", "Deep work", { estMinutes: 60, block: "morning" }),
+        row("m2", "Email", { block: "morning" }),
+        row("gr", "Read", { estMinutes: 45, area: "growth", block: "evening" }),
+        row("dk", "Deck thing", { place: "onDeck" })
+    ];
+    const data: DayViewData = {
+        ...DAY,
+        tasks,
+        meetings: [ { start: "10:00", end: "11:00", title: "Weekly sync with team" }, { start: "00:00", end: "24:00", title: "Holiday", allDay: true } ],
+        drawn: { groups: [ { name: "Focus", items: [ "m1", "m2" ] }, { name: "Evening", items: [ "gr" ] } ], meetings: [ { title: "Weekly sync with team", name: "Sync" } ] }
+    };
+    const laid = (answers: ViewAnswers, from: DayViewData = data) => dayTerrain(from, redrawRows(from.tasks, answers));
+    const hills = (answers: ViewAnswers, from?: DayViewData) => laid(answers, from).input.groups.map((g) => [ g.name, g.start, g.end, g.count ]);
+
+    it("lays the list's live rows into the brief's groups around the timed meetings", () => {
+        const { input, unplacedMinutes } = laid({});
+        expect(input).toMatchObject({ start: "09:00", end: "23:00", events: [ { start: "10:00", end: "11:00", title: "Sync" } ] });
+        expect(hills({})).toEqual([ [ "Focus", "09:00", "11:30", 2 ], [ "Evening", "17:00", "17:45", 1 ] ]);
+        expect(unplacedMinutes).toBe(0);
+    });
+
+    it("moves, drops and resizes hills with the taps", () => {
+        expect(hills(tap({ [key("m2")]: { fate: { kind: "block", block: "afternoon" } } }))).toEqual([ [ "Focus", "09:00", "10:00", 1 ], [ "Focus", "12:00", "12:30", 1 ], [ "Evening", "17:00", "17:45", 1 ] ]);
+        expect(hills(tap({ [key("m1")]: { fate: { kind: "done" } } }))).toEqual([ [ "Focus", "09:00", "09:30", 1 ], [ "Evening", "17:00", "17:45", 1 ] ]);
+        expect(hills(tap({ [key("m1")]: { estimate: 120 } }))).toEqual([ [ "Focus", "09:00", "12:30", 2 ], [ "Evening", "17:00", "17:45", 1 ] ]);
+        expect(hills(tap({ [key("dk")]: { fate: { kind: "block", block: "evening" } } }))).toEqual([ [ "Focus", "09:00", "11:30", 2 ], [ "Evening", "17:00", "17:45", 1 ], [ "Focus", "17:45", "18:15", 1 ] ]);
+    });
+
+    it("gives the minutes that don't fit before bedtime, and starts the drawing at an earlier meeting's hour", () => {
+        expect(laid(tap({ [key("gr")]: { estimate: 600 } })).unplacedMinutes).toBe(240);
+        const early = { ...data, meetings: [ { start: "08:15", end: "08:45", title: "Moved by the clock" } ] };
+        expect(laid({}, early).input.start).toBe("08:00");
     });
 });
 

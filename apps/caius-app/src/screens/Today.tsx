@@ -125,7 +125,7 @@ function TerrainView({ data, now }: { data: TodayData; now: Date }) {
  * The drawing leaves room above the line for meeting labels that stack; on a light day that room
  * is empty. Starting the viewBox just above what is drawn keeps the terrain close to the date.
  */
-function cropToContent(svg: SVGSVGElement | null | undefined) {
+export function cropToContent(svg: SVGSVGElement | null | undefined) {
     if (!svg) {
         return;
     }

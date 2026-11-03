@@ -56,9 +56,10 @@ export function FateMenu({ title = "Fate", sub, options, current, onPick, landin
         <>
             <SheetTitle title={title} sub={sub} />
             {landing && (
-                <div class="chip-row" role="group" aria-label="On a day">
-                    <Chip selected={onDeck} onClick={() => setOnDeck(true)}>On deck</Chip>
-                    <Chip selected={!onDeck} onClick={() => setOnDeck(false)}>The list</Chip>
+                <div class="chip-row fate-landing" role="group" aria-label="Another day lands on">
+                    <span class="label-caps">Another day lands on</span>
+                    <Chip selected={onDeck} onClick={() => setOnDeck(true)}>Its On deck</Chip>
+                    <Chip selected={!onDeck} onClick={() => setOnDeck(false)}>Its list</Chip>
                 </div>
             )}
             {options.map((option, at) => (

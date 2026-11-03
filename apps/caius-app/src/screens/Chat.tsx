@@ -19,6 +19,8 @@ import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
 import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack, today } from "../lib/store.js";
+import { viewOf } from "../lib/views.js";
+import { ViewCard } from "./views/ViewCard.js";
 
 /** A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while it runs. */
 export function Ritual({ kind, date }: { kind: "plan" | "winddown"; date: string }) {
@@ -452,6 +454,10 @@ function findLastStep(messages: StoredMessage[]) {
         if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && stepOf(b.toolCall))) {
             return i;
         }
+        // A view is answered by writes, not an `…_apply`, so it stays live only while its turn is the last.
+        if (Array.isArray(m.content) && m.content.some((b) => b.type === "tool_call" && viewOf(b.toolCall))) {
+            return i === messages.length - 1 ? i : -1;
+        }
     }
     return -1;
 }
@@ -488,13 +494,20 @@ function AssistantBlocks({ blocks, chat, live, pending, notes, working }: {
         const step = b.type === "tool_call" ? stepOf(b.toolCall) : null;
         return step && b.type === "tool_call" && stepHasBody(step) ? [ { id: b.toolCall.id, step } ] : [];
     });
+    const views = blocks.flatMap((b) => {
+        const view = b.type === "tool_call" ? viewOf(b.toolCall) : null;
+        return view && b.type === "tool_call" ? [ { id: b.toolCall.id, view } ] : [];
+    });
     const text = turnText(blocks);
     return (
         <div class={`caius-turn${pending ? " pending" : ""}`}>
             {notes && <Notes notes={notes} label={working ?? "Caius's notes"} working={!!working} />}
-            {text && <CaiusText text={text} withoutLists={steps.length > 0} />}
+            {text && <CaiusText text={text} withoutLists={steps.length > 0 || views.length > 0} />}
             {!pending && steps.map(({ id, step }) => (
                 <StepCard key={id} id={id} step={step} chat={chat} live={live && !pending} />
+            ))}
+            {!pending && views.map(({ id, view }) => (
+                <ViewCard key={id} id={id} view={view} live={live && !pending} report={chat.report} />
             ))}
         </div>
     );

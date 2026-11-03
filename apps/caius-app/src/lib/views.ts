@@ -1,11 +1,14 @@
 import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
-import { type DayLoad, dayLoad, liveMinutes } from "@triliumnext/caius/src/daily/load.js";
-import type { ShownView, ViewName, ViewTask } from "@triliumnext/caius/src/daily/views.js";
-import type { Area, Block } from "@triliumnext/caius/src/trilium/areas.js";
+import { layoutGroups } from "@triliumnext/caius/src/daily/blocks.js";
+import { groupTasks, meetingName } from "@triliumnext/caius/src/daily/groups.js";
+import { type DayLoad, dayLoad, DEFAULT_ESTIMATE, liveMinutes } from "@triliumnext/caius/src/daily/load.js";
+import type { DayViewData, ShownView, ViewName, ViewTask } from "@triliumnext/caius/src/daily/views.js";
+import type { TerrainInput } from "@triliumnext/caius/src/draw/terrain.js";
+import { type Area, bareText, type Block } from "@triliumnext/caius/src/trilium/areas.js";
 
 import { displayText } from "../components/TaskRow.js";
 import { type ToolCall, parseResult } from "./chat.js";
-import { dayLabel, monthLabel, weekLabel } from "./day.js";
+import { clockMinutes, dayLabel, hhmm, monthLabel, weekLabel } from "./day.js";
 import { chipLabel, choicePhrase } from "./replies.js";
 
 export type { ShownView, ViewName, ViewTask };
@@ -183,21 +186,29 @@ export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad }, answers: Vi
 
 /**
  * Rows with their taps applied: the estimate and area on the row itself, and its fate on the row
- * and its sub-items, which move with it. A block tap on an On deck row brings it onto the list.
+ * and its sub-items, which move with it wherever they are listed. A block tap on an On deck row
+ * brings it onto the list.
  */
 export function redrawRows(tasks: ViewTask[], answers: ViewAnswers): RedrawnTask[] {
-    const fates = new Map<string, ViewFate>();
-    for (const task of tasks) {
-        const own = answers.rows?.[rowKey(task)]?.fate;
-        const parent = task.parentListItemId ? fates.get(rowKey({ noteId: task.noteId, listItemId: task.parentListItemId })) : undefined;
-        const fate = own ?? parent;
-        if (fate) {
-            fates.set(rowKey(task), fate);
+    const own = new Map(tasks.flatMap((task) => {
+        const fate = answers.rows?.[rowKey(task)]?.fate;
+        return fate ? [ [ rowKey(task), fate ] as const ] : [];
+    }));
+    const parents = new Map(tasks.map((task) => [ rowKey(task), task.parentListItemId ? rowKey({ noteId: task.noteId, listItemId: task.parentListItemId }) : null ]));
+    const fateOf = (key: string): ViewFate | undefined => {
+        const seen = new Set<string>();
+        for (let at: string | null | undefined = key; at && !seen.has(at); at = parents.get(at)) {
+            seen.add(at);
+            const fate = own.get(at);
+            if (fate) {
+                return fate;
+            }
         }
-    }
+        return undefined;
+    };
     return tasks.map((task) => {
         const answer = answers.rows?.[rowKey(task)];
-        const fate = fates.get(rowKey(task));
+        const fate = fateOf(rowKey(task));
         const moved: RedrawnTask = {
             ...task,
             estMinutes: answer?.estimate ?? task.estMinutes,
@@ -212,6 +223,81 @@ export function redrawRows(tasks: ViewTask[], answers: ViewAnswers): RedrawnTask
         }
         return moved;
     });
+}
+
+/** A run of the Day view's rows under one heading, with the `TaskRow` variant its rows take. */
+export interface DayGroup {
+    name: string;
+    variant: "critical" | "list" | "onDeck";
+    tasks: RedrawnTask[];
+}
+
+/**
+ * The Day view's rows under their headings: Important, Morning, Afternoon, Evening, The list (no
+ * block) and On deck, empty ones left out. A sub-item follows its parent, whatever its own block.
+ */
+export function dayGroups(tasks: RedrawnTask[]): DayGroup[] {
+    const keys = new Set(tasks.map(rowKey));
+    const parentOf = (task: RedrawnTask) => task.parentListItemId ? rowKey({ noteId: task.noteId, listItemId: task.parentListItemId }) : null;
+    const isSub = (task: RedrawnTask) => {
+        const parent = parentOf(task);
+        return parent !== null && keys.has(parent);
+    };
+    const groups: DayGroup[] = [
+        { name: "Important", variant: "critical", tasks: [] },
+        ...(Object.keys(BLOCK_NAMES) as Block[]).map((block): DayGroup => ({ name: BLOCK_NAMES[block], variant: "list", tasks: [] })),
+        { name: "The list", variant: "list", tasks: [] },
+        { name: "On deck", variant: "onDeck", tasks: [] }
+    ];
+    const groupOf = (task: RedrawnTask) => {
+        if (task.place === "onDeck") {
+            return groups[5];
+        }
+        if (task.critical) {
+            return groups[0];
+        }
+        return task.block ? groups[1 + Object.keys(BLOCK_NAMES).indexOf(task.block)] : groups[4];
+    };
+    const withSubs = (task: RedrawnTask): RedrawnTask[] => [ task, ...tasks.filter((t) => parentOf(t) === rowKey(task)).flatMap(withSubs) ];
+    for (const task of tasks.filter((t) => !isSub(t))) {
+        groupOf(task).tasks.push(...withSubs(task));
+    }
+    return groups.filter((group) => group.tasks.length);
+}
+
+/** Whether a live sub-item on the task's note names it as its parent; the server sets no estimate on such a task. */
+export function hasLiveSubItems(task: ViewTask, tasks: ViewTask[]): boolean {
+    return tasks.some((t) => t.noteId === task.noteId && t.parentListItemId === task.listItemId && isLive(t));
+}
+
+/**
+ * The `renderDayTerrain` input for a Day view's redrawn rows, as the server's `workBlocks` lays the
+ * day out: the live top-level rows on the list that stay, in the brief's groups, around the timed
+ * meetings. `unplacedMinutes` is the work that doesn't fit before bedtime.
+ */
+export function dayTerrain(data: DayViewData, tasks: RedrawnTask[]): { input: TerrainInput; unplacedMinutes: number } {
+    const meetings = data.meetings.filter((m) => !m.allDay);
+    const work = tasks
+        .filter((t) => !t.leaving && t.place === "list" && !t.parent && isLive(t))
+        .map((t) => ({
+            id: t.listItemId, section: t.section ?? null, critical: t.critical,
+            label: bareText(t.text), minutes: t.estMinutes ?? DEFAULT_ESTIMATE, block: t.block, area: t.area, at: t.at
+        }));
+    const groups = groupTasks(work, data.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
+    const { span } = data;
+    const laid = layoutGroups({ start: span.start, end: span.end, workEnd: span.workEnd, noon: span.noon }, meetings, groups);
+    // A meeting before standup stretches the drawing back to its hour; work is still laid from standup.
+    const start = clockMinutes(span.start) ?? 600;
+    const earliest = Math.min(start, ...meetings.map((m) => clockMinutes(m.start) ?? start));
+    return {
+        input: {
+            start: hhmm(earliest < start ? Math.floor(earliest / 60) * 60 : start),
+            end: span.end,
+            events: meetings.map((m) => ({ start: m.start, end: m.end, title: meetingName(m.title, data.drawn?.meetings) })),
+            groups: laid.groups
+        },
+        unplacedMinutes: laid.unplaced.reduce((n, u) => n + u.minutes, 0)
+    };
 }
 
 /** A row's key in `ViewAnswers`: Days holds rows of several notes. */
@@ -256,20 +342,22 @@ export interface FateChoice {
 }
 
 /**
- * The fate menu's lines for a row: Done; the blocks and On deck or the list (a row on a day);
+ * The fate menu's lines for a row: Done; the blocks and On deck or the list (a row on a day, not Important);
  * the next workday and the shown days, each On deck unless the list is picked; a day picker; the
  * week (a row not on it); Park (Slipping); Drop.
  */
 export function fateChoices(task: ViewTask, where: { nextWorkday?: string; days?: string[]; week?: string; parkMonth?: string }): FateChoice[] {
     const onDay = task.period.kind === "day";
+    // `caius_place` moves no Important task, so an Important row offers no block and no On deck.
+    const placed = onDay && !task.critical;
     const day = (date: string, detail?: string): FateChoice => ({ label: dayLabel(date), detail, fate: { kind: "day", date, label: dayLabel(date), onDeck: true } });
     const days = (where.days ?? []).filter((date) => !(onDay && date === task.period.key) && date !== where.nextWorkday);
     const week = where.week && !(task.period.kind === "week" && task.period.key === where.week) ? where.week : undefined;
     const [ weekName, weekRange ] = week ? weekLabel(week).split(" · ") : [];
     return [
         { label: "Done", fate: { kind: "done" } },
-        ...(onDay ? (Object.keys(BLOCK_NAMES) as Block[]).map((block): FateChoice => ({ label: BLOCK_NAMES[block], fate: { kind: "block", block } })) : []),
-        ...(onDay ? [ task.place === "onDeck" ? { label: "Onto the list", fate: { kind: "list" } as const } : { label: "On deck", fate: { kind: "onDeck" } as const } ] : []),
+        ...(placed ? (Object.keys(BLOCK_NAMES) as Block[]).map((block): FateChoice => ({ label: BLOCK_NAMES[block], fate: { kind: "block", block } })) : []),
+        ...(placed ? [ task.place === "onDeck" ? { label: "Onto the list", fate: { kind: "list" } as const } : { label: "On deck", fate: { kind: "onDeck" } as const } ] : []),
         ...(where.nextWorkday && !(onDay && where.nextWorkday === task.period.key) ? [ day(where.nextWorkday, "next workday") ] : []),
         ...days.map((date) => day(date)),
         { label: "A day…", ask: "date" },
