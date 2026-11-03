@@ -107,6 +107,19 @@ const areaItem = z.object({
     area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).describe("The area to give the task: foundation (the day job, no marker), growth (🌱) or recharge (🔋)")
 });
 
+const placeItem = z.object({
+    ...taskRef,
+    block: z.enum(["morning", "afternoon", "evening"]).optional().describe("The time block to put the task in, at the end of its list unless before or after says where"),
+    onDeck: z.boolean().optional().describe("true: put the task on the day's On deck; false: on its list proper"),
+    before: z.string().optional().describe("Put the task before this item of the list, by its list item id"),
+    after: z.string().optional().describe("Put the task after this item of the list, by its list item id")
+});
+
+const estimateItem = z.object({
+    ...taskRef,
+    minutes: z.number().int().min(5).max(600).describe("The estimate in whole minutes, 5 to 600")
+});
+
 const forwardItem = z.object({
     ...taskRef,
     to: z.string().refine(
@@ -441,6 +454,8 @@ export const toolInputs = {
     dismiss: writes(dismissItem),
     setState: writes(stateItem),
     setArea: writes(areaItem),
+    place: writes(placeItem),
+    setEstimate: writes(estimateItem),
     forward: writes(forwardItem),
     header
 };
@@ -459,6 +474,8 @@ export const routeInputs = {
     dismiss: writes(dismissItem.extend(version)),
     setState: writes(stateItem.safeExtend(version)),
     setArea: writes(areaItem.safeExtend(version)),
+    place: writes(placeItem.safeExtend(version)),
+    setEstimate: writes(estimateItem.safeExtend(version)),
     forward: writes(forwardItem.safeExtend(version)),
     /** The Plan tab's Close: forwards, then state changes, behind one version check. */
     apply: z.object({
@@ -498,5 +515,7 @@ export type AcceptInput = z.infer<typeof routeInputs.accept>;
 export type DismissInput = z.infer<typeof routeInputs.dismiss>;
 export type SetStateInput = z.infer<typeof routeInputs.setState>;
 export type SetAreaInput = z.infer<typeof routeInputs.setArea>;
+export type PlaceInput = z.infer<typeof routeInputs.place>;
+export type SetEstimateInput = z.infer<typeof routeInputs.setEstimate>;
 export type ForwardInput = z.infer<typeof routeInputs.forward>;
 export type ApplyInput = z.infer<typeof routeInputs.apply>;

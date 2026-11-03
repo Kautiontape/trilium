@@ -95,6 +95,22 @@ export function createCaiusTools(
             execute: parsed(toolInputs.setArea, service.setArea)
         },
 
+        caius_place: {
+            description: "Move tasks within their own day note: into a time block (morning, afternoon, evening), onto On deck (onDeck: true) or onto the list (onDeck: false), and before or after another item there. The task keeps its words, state, sub-items and id; to move it to another day use caius_forward. An Important task stays in the Important block. Takes a list of items.",
+            inputSchema: toolInputs.place,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.place, service.place)
+        },
+
+        caius_set_estimate: {
+            description: "Set tasks' estimates in minutes (5 to 600), written as the ~30m token on the task, replacing one already there. A task with live sub-items counts through them, so it is skipped (has_subitems): set its sub-items instead. Takes a list of items.",
+            inputSchema: toolInputs.setEstimate,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.setEstimate, service.setEstimate)
+        },
+
         caius_forward: {
             description: "Forward tasks to another day, week or month note: marks each as rescheduled and copies it to the target. The source can be a day, week or month note too. Takes a list of items; `to` is YYYY-MM-DD, YYYY-Www or YYYY-MM. To a day, onDeck: true puts the copy on its On deck (he would like to do it then), onDeck: false on its list proper (he needs to), critical: true in its Important block; left out, an On deck task stays On deck and any other keeps its heading.",
             inputSchema: toolInputs.forward,

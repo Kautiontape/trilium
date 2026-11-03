@@ -2,6 +2,7 @@ import type { NoteStore } from "@triliumnext/caius";
 import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { caiusService, routeInputs } from "./service.js";
 import { createBeccaStore } from "./store.js";
 import { caiusTools, createCaiusTools } from "./tools.js";
 
@@ -56,7 +57,7 @@ describe("caius tools", () => {
         const defs = new Map([...caiusTools]);
         expect([...defs.keys()]).toEqual([
             "caius_plan", "caius_open", "caius_explain", "caius_context", "caius_inputs", "caius_add",
-            "caius_accept", "caius_dismiss", "caius_set_state", "caius_set_area", "caius_forward", "caius_assign_ids", "caius_meetings", "caius_context_add", "caius_context_keep", "caius_brief_write", "caius_skip_catchup", "caius_finished", "caius_winddown", "caius_planday", "caius_plan_apply", "caius_winddown_apply", "caius_header"
+            "caius_accept", "caius_dismiss", "caius_set_state", "caius_set_area", "caius_place", "caius_set_estimate", "caius_forward", "caius_assign_ids", "caius_meetings", "caius_context_add", "caius_context_keep", "caius_brief_write", "caius_skip_catchup", "caius_finished", "caius_winddown", "caius_planday", "caius_plan_apply", "caius_winddown_apply", "caius_header"
         ]);
         for (const [name, def] of defs) {
             expect(def.async).toBe(true);
@@ -192,6 +193,78 @@ describe("caius tools", () => {
         expect(schema.safeParse({ items: [{ ...base, state: "cancelled", reason: " " }] }).success).toBe(false);
         expect(schema.safeParse({ items: [{ ...base, state: "cancelled", reason: "moot" }] }).success).toBe(true);
         expect(schema.safeParse({ items: [{ ...base, state: "done" }] }).success).toBe(true);
+    });
+
+    describe("a day note in time blocks", () => {
+        const BLOCK_DAY = "2031-05-08";
+        const block = (name: string, ...items: string[]) => `<h3>${name}</h3>${ul(...items)}`;
+        let blockNote = "";
+        const place = (item: object) => call("caius_place", { items: [{ noteId: blockNote, listItemId: "p1", ...item }] });
+        const names = async (section: string) => {
+            const plan = await call("caius_plan", { period: "day", date: BLOCK_DAY });
+            if (section === "On deck") return plan.onDeck.map((t: any) => t.text);
+            return (plan.sections as any[]).find((s) => s.name === section)?.tasks.map((t: any) => t.text) ?? [];
+        };
+
+        beforeAll(async () => {
+            await cls.init(async () => {
+                blockNote = (await store.calendarDay(BLOCK_DAY)).noteId;
+            });
+        });
+
+        const reset = () => cls.init(() => store.putContent(blockNote,
+            block("Morning", li("p1", "Plan the demo ~30m").replace("</li>", ul(li("p1a", "Sub step ~10m")) + "</li>"), li("p2", "Second thing ~1h"))
+            + block("Afternoon", li("p3", "Afternoon thing"))
+            + block("On deck", li("p4", "Maybe later"))));
+
+        it("caius_place moves a task between blocks, On deck and the list, keeping its sub-items and id", async () => {
+            await reset();
+            const toAfternoon = await place({ block: "afternoon" });
+            expect(toAfternoon.results[0]).toMatchObject({ status: "moved", listItemId: "p1" });
+            expect(toAfternoon.blobIds[blockNote]).toBe(becca.getNoteOrThrow(blockNote).blobId);
+            expect(await names("Morning")).toEqual(["Second thing"]);
+            expect(await names("Afternoon")).toEqual(["Afternoon thing", "Plan the demo", "Sub step"]);
+
+            expect((await place({ onDeck: true })).results[0]).toMatchObject({ status: "moved" });
+            expect(await names("On deck")).toContain("Plan the demo");
+            expect((await place({ onDeck: false })).results[0]).toMatchObject({ status: "moved" });
+            expect(await names("On deck")).not.toContain("Plan the demo");
+
+            expect((await place({ block: "morning", before: "p2" })).results[0]).toMatchObject({ status: "moved" });
+            expect(await names("Morning")).toEqual(["Plan the demo", "Sub step", "Second thing"]);
+            expect((await place({ block: "morning", after: "p2" })).results[0]).toMatchObject({ status: "moved" });
+            expect(await names("Morning")).toEqual(["Second thing", "Plan the demo", "Sub step"]);
+            expect((await place({ block: "morning", after: "p2" })).results[0]).toMatchObject({ status: "unchanged" });
+        });
+
+        it("caius_place and caius_set_estimate skip as stale when the note changed since expectedBlobId", async () => {
+            await reset();
+            const stale = await caiusService.place(routeInputs.place.parse({
+                items: [{ noteId: blockNote, listItemId: "p1", block: "afternoon", expectedBlobId: "oldBlob" }]
+            }));
+            expect(stale.results[0]).toMatchObject({ status: "skipped", reason: "stale" });
+            expect(await names("Morning")).toContain("Plan the demo");
+
+            const est = await caiusService.setEstimate(routeInputs.setEstimate.parse({
+                items: [{ noteId: blockNote, listItemId: "p2", minutes: 45, expectedBlobId: "oldBlob" }]
+            }));
+            expect(est.results[0]).toMatchObject({ status: "skipped", reason: "stale" });
+        });
+
+        it("caius_set_estimate writes the ~ token and the day's foundation load follows", async () => {
+            await reset();
+            const load = async () => (await call("caius_plan", { period: "day", date: BLOCK_DAY })).capacity.load.foundation.minutes;
+            const before = await load();
+            const set = await call("caius_set_estimate", { items: [{ noteId: blockNote, listItemId: "p2", minutes: 90 }] });
+            expect(set.results[0]).toMatchObject({ status: "updated", minutes: 90 });
+            expect(set.blobIds[blockNote]).toBe(becca.getNoteOrThrow(blockNote).blobId);
+            expect(await load()).toBe(before + 30);
+            const again = await call("caius_set_estimate", { items: [{ noteId: blockNote, listItemId: "p2", minutes: 90 }] });
+            expect(again.results[0]).toMatchObject({ status: "unchanged" });
+            const parent = await call("caius_set_estimate", { items: [{ noteId: blockNote, listItemId: "p1", minutes: 30 }] });
+            expect(parent.results[0]).toMatchObject({ status: "skipped", reason: "has_subitems" });
+            expect(toolNamed("caius_set_estimate").inputSchema.safeParse({ items: [{ noteId: "n", listItemId: "i", minutes: 4 }] }).success).toBe(false);
+        });
     });
 
     it("caius_forward moves a task to a day or a week, and accepts a month", async () => {

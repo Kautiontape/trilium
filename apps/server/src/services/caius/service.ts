@@ -48,7 +48,9 @@ import {
     readDuplicatePlans,
     readPlan,
     scanDocs,
+    placeTasks,
     setAreas,
+    setEstimates,
     setMeetings,
     setStates,
     type StateAction,
@@ -88,7 +90,9 @@ import {
     type PlanApplyInput,
     type PlanDayInput,
     type PlanInput,
+    type PlaceInput,
     type SetAreaInput,
+    type SetEstimateInput,
     type SetStateInput,
     type SkipCatchupInput,
     type WindDownApplyInput,
@@ -464,6 +468,14 @@ export function createCaiusService(
 
         setArea: ({ items, dryRun, html }: SetAreaInput) => withCaiusLock("caius_set_area", async () => withBlobIds(
             (await unlessStale(items, (fresh) => setAreas(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
+
+        place: ({ items, dryRun, html }: PlaceInput) => withCaiusLock("caius_place", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => placeTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
+
+        setEstimate: ({ items, dryRun, html }: SetEstimateInput) => withCaiusLock("caius_set_estimate", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => setEstimates(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
 
         forward: ({ items, dryRun, html }: ForwardInput) => withCaiusLock("caius_forward", async () => withBlobIds(
