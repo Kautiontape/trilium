@@ -285,7 +285,8 @@ describe('setTaskEstimate', () => {
     li('t6', 'Done', { checked: true }),
     li('t7', 'Keep 30 min&nbsp;~30m'),
   ) + '<h2>Meetings</h2>' + ul(li('p1', 'Standup'));
-  const text = (html: string, id: string) => parse(html).querySelectorAll('li').find((l) => l.getAttribute('data-list-item-id') === id)!.querySelector('span.todo-list__label__description')!.innerHTML;
+  const text = (html: string, id: string) =>
+    parse(html).querySelectorAll('li').find((l) => l.getAttribute('data-list-item-id') === id)?.querySelector('span.todo-list__label__description')?.innerHTML;
 
   it('adds a token, and replaces one in place, ahead of a trailing marker', () => {
     const added = setTaskEstimate(note, 't1', 30);

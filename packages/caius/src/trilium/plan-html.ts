@@ -650,10 +650,8 @@ export function setTaskArea(
 export type EstimateProblem = 'not_found' | 'not_live' | 'has_subitems';
 
 /**
- * The task `id` with its `~` estimate token set to `minutes` (`~15m`, `~1h`, `~1h30m`), replacing
- * the one it has or put where the trailing tokens start, so it stays ahead of a `!` and reads as a
- * token after a link or a `from …` italic. A task with live sub-items counts through them and has
- * no estimate of its own. `unchanged` when it carries that many minutes already.
+ * The task `id` with its `~` estimate set to `minutes`, before any trailing `!` or date token.
+ * A task with live sub-items has none of its own, and `unchanged` means it has that many already.
  */
 export function setTaskEstimate(
   html: string,
