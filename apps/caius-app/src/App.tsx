@@ -5,7 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import type { ActionPerformed } from "@capacitor/local-notifications";
 import { useEffect, useRef } from "preact/hooks";
 
-import { appVisible, chatActivity, closeRitual, minimizeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
+import { appVisible, chatActivity, chatOnScreen, closeRitual, minimizeRitual, onboarding, openRitual, quickAddRequested, resumed, ritual, runWaiting, settingsOpen, tab, type Tab, withDay } from "./app-state.js";
 import { MiniChat } from "./components/MiniChat.js";
 import { QuickAdd } from "./components/QuickAdd.js";
 import { closeSheet, Icon, type IconName, openSheet, sheet, SheetHost, Snackbar } from "./components/ui.js";
@@ -38,8 +38,10 @@ let booted: Promise<void> | null = null;
  */
 export function App() {
     // Ask mounts on its first visit, since `useChat` reads `serverStatus` as it mounts, and stays mounted
-    // after; keyed by the day, it starts fresh on a new one.
+    // after. Keyed by its day, it starts fresh on a new one, but only once it is out of sight with no
+    // turn running and no reply unseen, so a turn that runs past midnight keeps its reply.
     const askVisited = useRef(false);
+    const askDay = useRef<string | undefined>(undefined);
     useEffect(() => {
         booted ??= boot();
     }, []);
@@ -81,6 +83,10 @@ export function App() {
     }
     const open = ritual.value;
     askVisited.current ||= tab.value === "ask";
+    const ask = chatActivity.value.ask;
+    if (askDay.current === undefined || !(ask?.working || ask?.unseen || chatOnScreen("ask"))) {
+        askDay.current = today.value?.key;
+    }
 
     return (
         <>
@@ -88,7 +94,7 @@ export function App() {
                 <main class="shell-main">
                     {tab.value === "today" && <Today />}
                     {tab.value === "plan" && <Plan />}
-                    {askVisited.current && <div key={today.value?.key} class="ask-host" hidden={tab.value !== "ask"}><Ask /></div>}
+                    {askVisited.current && <div key={askDay.current} class="ask-host" hidden={tab.value !== "ask"}><Ask day={askDay.current} /></div>}
                     {tab.value === "reminders" && <Reminders />}
                 </main>
                 <MiniChat />

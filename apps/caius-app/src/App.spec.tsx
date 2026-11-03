@@ -3,10 +3,13 @@ import { render } from "preact";
 import { act } from "preact/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
-import { minimizeRitual, openRitual, restoreRitual, settingsOpen, tab } from "./app-state.js";
+import { minimizeRitual, openRitual, publishActivity, restoreRitual, ritual, settingsOpen, tab } from "./app-state.js";
 import { App } from "./App.js";
+import { today, type TodayData } from "./lib/store.js";
 
 const mounts = vi.hoisted(() => ({ ritual: 0, ask: 0 }));
+/** The day each Ask mount was given. */
+const askDays = vi.hoisted((): (string | undefined)[] => []);
 
 vi.mock("./screens/Chat.js", async () => {
     const { h } = await import("preact");
@@ -20,11 +23,12 @@ vi.mock("./screens/Chat.js", async () => {
             }, []);
             return h("button", { type: "button", class: "ritual-stub", onClick: () => setAnswers(answers + 1) }, `${answers} answers`);
         },
-        Ask: () => {
+        Ask: ({ day }: { day: string | undefined }) => {
             useEffect(() => {
                 mounts.ask++;
+                askDays.push(day);
             }, []);
-            return h("div", { class: "ask-stub" });
+            return h("div", { class: "ask-stub" }, day);
         }
     };
 });
@@ -83,5 +87,53 @@ describe("App", () => {
 
         act(() => render(null, root));
         root.remove();
+    });
+
+    it("keeps Ask on its day through a turn that runs into the next one, and starts it fresh once it is out of sight", async () => {
+        ritual.value = null;
+        tab.value = "today";
+        const day = (key: string) => {
+            today.value = { key } as TodayData;
+        };
+        act(() => day("2026-11-03"));
+        const root = document.createElement("div");
+        document.body.append(root);
+        act(() => render(<App />, root));
+        await vi.waitFor(() => expect(root.querySelector(".shell")).not.toBeNull());
+        askDays.length = 0;
+        const shown = () => root.querySelector(".ask-stub")?.textContent;
+
+        act(() => {
+            tab.value = "ask";
+        });
+        expect(shown()).toBe("2026-11-03");
+        act(() => publishActivity("ask", { kind: "ask", working: true, streaming: true, line: "Reading" }));
+        act(() => {
+            tab.value = "today";
+        });
+        act(() => day("2026-11-04"));
+        expect(shown()).toBe("2026-11-03");
+
+        act(() => publishActivity("ask", { kind: "ask", working: false, streaming: false, line: "Two meetings." }));
+        expect(shown()).toBe("2026-11-03");
+        act(() => {
+            tab.value = "ask";
+        });
+        act(() => {
+            tab.value = "plan";
+        });
+        expect(askDays).toEqual([ "2026-11-03", "2026-11-04" ]);
+        expect(shown()).toBe("2026-11-04");
+
+        act(() => {
+            tab.value = "ask";
+        });
+        act(() => day("2026-11-05"));
+        expect(shown()).toBe("2026-11-04");
+
+        act(() => publishActivity("ask", null));
+        act(() => render(null, root));
+        root.remove();
+        today.value = null;
     });
 });

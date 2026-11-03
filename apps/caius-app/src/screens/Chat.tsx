@@ -20,7 +20,7 @@ import { chatTranscript } from "../lib/transcript.js";
 import { type ProseBlock, proseBlocks, type Span } from "../lib/prose.js";
 import { parseRemindMe, whenLabel } from "../lib/remind.js";
 import { type CandidateAnswer, type CandidateData, candidateDefault, chipLabel, type Choice, type ContextAnswer, type StepAnswers, type StepFate, stepPicks, stepReply, type UnmarkedData } from "../lib/replies.js";
-import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack, today } from "../lib/store.js";
+import { appNow, connection, messageOf, refreshToday, revision, serverStatus, settings, snack } from "../lib/store.js";
 
 /**
  * A ritual, full screen: Plan my day on a clay wash, Wind down on dusk. The screen stays awake while
@@ -67,11 +67,12 @@ export function Ritual({ kind, date, noteId, minimized }: { kind: "plan" | "wind
 const STARTERS = [ "What should I work on now?", "What's left today?", "What's on tomorrow?" ];
 
 /**
- * Ask: the server's Caius chat with the notes. A "remind me…" is read on the phone into a reminder
- * chip, and only a tap sets it. Today's conversation reopens where it was left; an older one is forgotten.
+ * Ask: the server's Caius chat with the notes, for `day`, which App holds while a turn runs. A
+ * "remind me…" is read on the phone into a reminder chip, and only a tap sets it. That day's
+ * conversation reopens where it was left; an older one is forgotten.
  */
-export function Ask() {
-    const key = today.value?.key;
+export function Ask({ day }: { day: string | undefined }) {
+    const key = day;
     const [ stored ] = useState(() => readStoredChats().ask);
     const chat = useChat("ask", key ?? "", stored && stored.date === key ? stored.noteId : undefined);
     useEffect(() => {
