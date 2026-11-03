@@ -328,8 +328,8 @@ describe("bounds", () => {
     it("ends a turn whose log passes the size cap, and keeps the reply it wrote", async () => {
         const noteId = newChatNote();
         const call = { toolCallId: "a", toolName: "caius_winddown_apply" };
-        // `status` chunks count toward the log but stay out of the saved reply, which keeps it under `MAX_CHAT_CONTENT_LENGTH`.
-        const filler: LlmStreamChunk = { type: "status", status: "x".repeat(64 * 1024) };
+        // `citation` chunks count toward the log but stay out of the saved reply, which keeps it under `MAX_CHAT_CONTENT_LENGTH`.
+        const filler: LlmStreamChunk = { type: "citation", citation: { citedText: "x".repeat(64 * 1024) } };
         llm.script = async function* () {
             yield { type: "tool_use", ...call, toolInput: {} };
             yield { type: "tool_result", ...call, result: "{}" };
