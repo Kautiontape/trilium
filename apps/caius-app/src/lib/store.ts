@@ -3,7 +3,7 @@ import { readRhythm, type Rhythm } from "@triliumnext/caius/src/daily/standing.j
 
 import { type CaiusApi, caiusApi, type CaiusStatus, type CatchupStep, type Nudge, type PlanTask, type PlanView, type TaskRef, type WriteResult, writeProblem } from "./caius.js";
 import type { Connection } from "./connection.js";
-import { clockMinutes, nextWorkdayKey } from "./day.js";
+import { clockMinutes, dayMinutes, nextWorkdayKey } from "./day.js";
 import { HttpError, hostOf, UnreachableError } from "./http.js";
 import { type Capture, type CaptureTarget, DEFAULT_SETTINGS, readLocal, readLocalList, type Reminder, type Settings, writeLocal } from "./local.js";
 import { McpError } from "./mcp.js";
@@ -224,8 +224,9 @@ export async function runWrite(send: () => Promise<unknown>): Promise<boolean> {
 export function defaultCaptureTarget(data: TodayData, now = appNow()): CaptureTarget {
     const woundDown = data.nudge?.state === "wound_down";
     const workEnd = clockMinutes(settings.value.workEndOverride || data.rhythm.workEnd) ?? 18 * 60;
-    const minutes = now.getHours() * 60 + now.getMinutes();
-    const pastWork = data.key === localKey(now) && minutes >= workEnd;
+    // Before the rollover the workday is still the day before, so 00:10 is past its work end.
+    const workday = dayMinutes(now, data.rhythm) >= 24 * 60 ? new Date(now.getTime() - 86_400_000) : now;
+    const pastWork = data.key === localKey(workday) && dayMinutes(now, data.rhythm) >= workEnd;
     return { kind: "onDeck", date: woundDown || pastWork ? nextWorkdayKey(data.key) : data.key };
 }
 

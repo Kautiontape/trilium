@@ -11,7 +11,7 @@ import { acceptFromSwipe, dismissSuggestion, ForwardSheet, markDone, startDoing,
 import { TaskRow } from "../components/TaskRow.js";
 import { Button, Card, Est, Icon, openSheet } from "../components/ui.js";
 import type { PlanTask } from "../lib/caius.js";
-import { clockMinutes, dayLabel, duration, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
+import { clockMinutes, dayLabel, dayMinutes, duration, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
 import { api, appNow, held, outbox, refreshing, refreshToday, runWrite, serverStatus, taskKey, today, type TodayData, todayError } from "../lib/store.js";
 
 /**
@@ -91,10 +91,10 @@ function TerrainView({ data, now }: { data: TodayData; now: Date }) {
                 label: bareText(t.text), minutes: t.estMinutes ?? 30, block: t.block, area: t.area, at: t.at
             }));
         const groups = groupTasks(tasks, data.plan.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
-        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        const nowMinutes = dayMinutes(now, data.rhythm);
         const start = clockMinutes(data.rhythm.start) ?? 600;
         const laid = layoutGroups(
-            { start: data.rhythm.start, end: data.rhythm.end, workEnd: data.rhythm.workEnd, notBefore: nowMinutes > start ? hhmm(nowMinutes) : undefined },
+            { start: data.rhythm.start, end: data.rhythm.end, workEnd: data.rhythm.workEnd, notBefore: nowMinutes > start ? `${String(Math.floor(nowMinutes / 60)).padStart(2, "0")}:${String(nowMinutes % 60).padStart(2, "0")}` : undefined },
             meetings,
             groups
         );
@@ -142,7 +142,7 @@ function NudgeCard({ data, now }: { data: TodayData; now: Date }) {
     const state = data.nudge?.state;
     const catchup = data.catchup;
     const pendingCatchup = catchup && !catchup.data.skipped && catchup.data.tasks.length > 0 && state !== "planned" && state !== "wound_down";
-    const minutes = now.getHours() * 60 + now.getMinutes();
+    const minutes = dayMinutes(now, data.rhythm);
     const offline = data.offline;
 
     if (pendingCatchup && catchup) {
@@ -197,7 +197,7 @@ function NudgeCard({ data, now }: { data: TodayData; now: Date }) {
 
 /** The next task in his order that fits before the next meeting; the one he is Doing comes first. */
 function NowCard({ data, now }: { data: TodayData; now: Date }) {
-    const minutes = now.getHours() * 60 + now.getMinutes();
+    const minutes = dayMinutes(now, data.rhythm);
     const workEnd = clockMinutes(data.rhythm.workEnd) ?? 18 * 60;
     const order = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ]
         .filter((t) => !t.parent && (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)])
