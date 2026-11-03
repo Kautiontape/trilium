@@ -333,7 +333,7 @@ export function redrawRows(tasks: ViewTask[], answers: ViewAnswers): RedrawnTask
             ...(fate ? { fate } : {})
         };
         if (fate?.kind === "block") {
-            return { ...moved, block: fate.block, place: "list" };
+            return { ...moved, block: fate.block, section: BLOCK_NAMES[fate.block], place: "list" };
         }
         if (fate?.kind === "onDeck" || fate?.kind === "list") {
             return { ...moved, place: fate.kind };
@@ -466,7 +466,8 @@ export interface FateChoice {
 export function fateChoices(task: ViewTask, where: { nextWorkday?: string; days?: string[]; week?: string; parkMonth?: string }): FateChoice[] {
     const onDay = task.period.kind === "day";
     // `caius_place` moves no Important task, so an Important row offers no block and no On deck.
-    const placed = onDay && !task.critical;
+    // A sub-item moves with its parent, so it offers no block, On deck or list move either.
+    const placed = onDay && !task.critical && !task.parent;
     const day = (date: string, detail?: string): FateChoice => ({ label: dayLabel(date), detail, fate: { kind: "day", date, label: dayLabel(date), onDeck: true } });
     const days = (where.days ?? []).filter((date) => !(onDay && date === task.period.key) && date !== where.nextWorkday);
     const week = where.week && !(task.period.kind === "week" && task.period.key === where.week) ? where.week : undefined;

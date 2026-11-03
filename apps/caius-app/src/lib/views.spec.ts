@@ -225,6 +225,14 @@ describe("fateChoices", () => {
     });
 });
 
+describe("fateChoices for a sub-item", () => {
+    it("offers no block, On deck or list move, which the server answers with the parent", () => {
+        const sub = row("s", "Part", { parent: "Parent", parentListItemId: "p", block: "morning" });
+        expect(fateChoices(sub, { nextWorkday: "2026-11-04", week: "2026-W45" }).map((c) => c.label))
+            .toEqual([ "Done", "Wed 4 Nov", "A day…", "Week 45", "Drop…" ]);
+    });
+});
+
 describe("fateChoices for an Important row", () => {
     it("leaves out the blocks and On deck", () => {
         const critical = { ...TASKS[1], critical: true };
@@ -310,6 +318,18 @@ describe("dayTerrain", () => {
         expect(hills(tap({ [key("m1")]: { fate: { kind: "done" } } }))).toEqual([ [ "Focus", "09:00", "09:30", 1 ], [ "Evening", "17:00", "17:45", 1 ] ]);
         expect(hills(tap({ [key("m1")]: { estimate: 120 } }))).toEqual([ [ "Focus", "09:00", "12:30", 2 ], [ "Evening", "17:00", "17:45", 1 ] ]);
         expect(hills(tap({ [key("dk")]: { fate: { kind: "block", block: "evening" } } }))).toEqual([ [ "Focus", "09:00", "11:30", 2 ], [ "Evening", "17:00", "17:45", 1 ], [ "Focus", "17:45", "18:15", 1 ] ]);
+    });
+
+    it("leaves no hill under the heading a block tap moved the only row out of", () => {
+        const bare: DayViewData = {
+            ...data, drawn: undefined,
+            tasks: [ row("w", "Write notes", { section: "Morning", block: "morning" }), row("e", "Email", { section: "Tasks" }) ]
+        };
+        const names = (answers: ViewAnswers) => laid(answers, bare).input.groups.map((g) => g.name);
+        expect(names({})).toContain("Morning");
+        const moved = names(tap({ [key("w")]: { fate: { kind: "block", block: "afternoon" } } }));
+        expect(moved).toContain("Afternoon");
+        expect(moved).not.toContain("Morning");
     });
 
     it("gives the minutes that don't fit before bedtime, and starts the drawing at an earlier meeting's hour", () => {
