@@ -52,7 +52,7 @@ export async function trails(store: NoteStore, now: Date): Promise<Trails> {
         const key = copyKey(fromOf(task.text) ?? doc.noteId, plainText(withoutMoveLinks(task.text)));
         const movedOn = task.state === "tombstone" || SCHEDULED.test(task.text);
         const trail = result.get(key) ?? { key, copies: [], slips: 0 };
-        trail.copies.push({ ...where, noteId: doc.noteId, listItemId: task.listItemId ?? null, state: task.state, movedOn });
+        trail.copies.push({ ...where, noteId: doc.noteId, listItemId: doc.itemIds.get(task.line) ?? null, state: task.state, movedOn });
         if (movedOn && where.kind === "day") trail.slips++;
         result.set(key, trail);
     }

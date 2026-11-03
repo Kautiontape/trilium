@@ -65,6 +65,8 @@ describe("a task forwarded Monday, Tuesday and Wednesday", () => {
             [ MON, "moved", true ], [ TUE, "moved", true ], [ WED, "open", false ]
         ]);
         expect(trail?.copies.map((copy) => copy.noteId)).toEqual([ mon, tue, await dayId(WED) ]);
+        const idOn = async (noteId: string) => /data-list-item-id="([^"]+)"/.exec(await cls.init(() => store.content(noteId)))?.[1];
+        expect(trail?.copies.map((copy) => copy.listItemId)).toEqual([ "t-mon", tueId, await idOn(await dayId(WED)) ]);
         expect(slipsOf(all, { noteId: mon, listItemId: "t-mon", text: WORDS })).toBe(2);
     });
 });
