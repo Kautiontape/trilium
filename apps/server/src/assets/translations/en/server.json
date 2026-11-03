@@ -559,6 +559,11 @@
     "confirm": "Restart and start over"
   },
   "caius": {
+    "turn": {
+      "stopped": "The reply stopped before it finished.",
+      "out_of_time": "Caius ran out of time on this reply.",
+      "too_long": "The reply grew too long."
+    },
     "explain": {
       "suggested": "Suggested: it's under the note's Suggested heading, so it joins a lane only once accepted.",
       "overdue_by_one": "Overdue by {{count}} day",

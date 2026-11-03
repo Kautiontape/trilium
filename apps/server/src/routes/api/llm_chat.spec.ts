@@ -6,7 +6,14 @@ const state = vi.hoisted(() => ({
     /** Milliseconds to wait before yielding chunk i. Missing entries wait 0. */
     delaysMs: [] as number[],
     /** The signal runChat was handed, so the disconnect wiring can be asserted. */
-    signal: undefined as AbortSignal | undefined
+    signal: undefined as AbortSignal | undefined,
+    /** The phone turns the registry holds, by chat note id. */
+    turns: new Map<string, { running: boolean }>(),
+    runChatCalls: 0
+}));
+
+vi.mock("../../services/caius/turns.js", () => ({
+    turnOf: (noteId: string) => state.turns.get(noteId)
 }));
 
 // The completion itself is core's and tested there; what this route adds is the
@@ -14,6 +21,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@triliumnext/core/src/services/llm/chat.js", () => ({
     async *runChat(_messages: unknown, _config: unknown, signal?: AbortSignal) {
         state.signal = signal;
+        state.runChatCalls++;
         for (const [index, chunk] of state.chunks.entries()) {
             const wait = state.delaysMs[index] ?? 0;
             if (wait > 0) {
@@ -60,6 +68,31 @@ describe("streamChat", () => {
         state.chunks = [];
         state.delaysMs = [];
         state.signal = undefined;
+        state.turns.clear();
+        state.runChatCalls = 0;
+    });
+
+    it("refuses with 409 when the chat note has a running phone turn, and streams otherwise", async () => {
+        state.chunks = [{ type: "done" }];
+        state.turns.set("noteX", { running: true });
+        state.turns.set("noteDone", { running: false });
+        const messages = [{ role: "user", content: "hi" }];
+
+        const refused = fakeRes();
+        await llmChatRoute.streamChat(req({ messages, config: { chatNoteId: "noteX" } }), refused.res);
+        expect(refused.statusCode).toBe(409);
+        expect(refused.jsonBody).toEqual({ error: "turn_running" });
+        expect(refused.headers["Content-Type"]).toBeUndefined();
+        expect(refused.writes).toEqual([]);
+        expect(state.runChatCalls).toBe(0);
+
+        for (const config of [{ chatNoteId: "other" }, { chatNoteId: "noteDone" }, {}]) {
+            const r = fakeRes();
+            await llmChatRoute.streamChat(req({ messages, config }), r.res);
+            expect(r.statusCode).toBe(200);
+            expect(r.writes.join("")).toContain('"type":"done"');
+        }
+        expect(state.runChatCalls).toBe(3);
     });
 
     it("returns 400 for an empty messages array, without opening a stream", async () => {

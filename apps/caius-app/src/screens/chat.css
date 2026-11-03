@@ -21,6 +21,11 @@
     background: var(--dusk-ground);
 }
 
+/* The WebView would read a drag on the header as a scroll and cancel the pointer before the swipe down to minimize. */
+.ritual > .chat-head {
+    touch-action: none;
+}
+
 .chat-head {
     display: flex;
     align-items: flex-start;

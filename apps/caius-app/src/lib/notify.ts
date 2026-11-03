@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
-import { type ActionPerformed, LocalNotifications, type LocalNotificationSchema } from "@capacitor/local-notifications";
+import { type ActionPerformed, type ActionType, LocalNotifications, type LocalNotificationSchema } from "@capacitor/local-notifications";
+import { ForegroundService, Importance } from "@capawesome-team/capacitor-android-foreground-service";
 
 import { clockMinutes, duration, hhmm, keyOf, nextWorkdayKey } from "./day.js";
 import type { Reminder, Settings } from "./local.js";
@@ -16,7 +17,8 @@ export const CHANNELS = [
     { id: "rituals", name: "Rituals", description: "Plan my day, the catch-up and Wind down", importance: 3 },
     { id: "warnings", name: "Warnings", description: "Over capacity", importance: 3 },
     { id: "reminders", name: "Reminders", description: "Reminders you set", importance: 4 },
-    { id: "sync", name: "Sync", description: "Captures waiting for the server", importance: 2 }
+    { id: "sync", name: "Sync", description: "Captures waiting for the server", importance: 2 },
+    { id: "caius", name: "Caius's replies", description: "A reply that lands while the chat is out of sight", importance: 3 }
 ] as const;
 
 /** Notification ids: the nudges have fixed ids, so scheduling one again replaces it. */
@@ -25,6 +27,23 @@ export const NUDGE_IDS = { plan: 11, winddown: 12, overcap: 13, nextPlan: 14 } a
 /** In 30 min / In 1 h bring a nudge back once, under a fixed id of its own, so a later read of Today can cancel it. */
 export const SNOOZE_IDS = { plan: 111, winddown: 112 } as const;
 
+/** A chat turn's notifications: the foreground service's while it runs, and the reply that lands out of sight. */
+export const CHAT_IDS = { working: 21, replied: 22 } as const;
+
+/** Each notification's buttons; Caius's reply takes an inline reply that starts the chat's next turn. */
+export const ACTION_TYPES: ActionType[] = [
+    { id: "plan", actions: [ { id: "plan", title: "Plan my day" }, { id: "later30", title: "In 30 min" } ] },
+    { id: "catchup", actions: [ { id: "moveall", title: "Move all to today" }, { id: "plan", title: "Plan my day" }, { id: "skip", title: "Skip" } ] },
+    { id: "winddown", actions: [ { id: "winddown", title: "Wind down" }, { id: "later60", title: "In 1 h" } ] },
+    { id: "overcap", actions: [ { id: "open", title: "Open Today" } ] },
+    { id: "reminder-task", actions: [ { id: "done", title: "Done" }, { id: "snooze", title: "Snooze 15 min" }, { id: "tomorrow", title: "Tomorrow" } ] },
+    { id: "reminder", actions: [ { id: "snooze", title: "Snooze 15 min" }, { id: "tomorrow", title: "Tomorrow" } ] },
+    { id: "caius-reply", actions: [
+        { id: "reply", title: "Reply", input: true, inputButtonTitle: "Send", inputPlaceholder: "Reply to Caius" },
+        { id: "open", title: "Open" }
+    ] }
+];
+
 export async function setUpNotifications(onAction: (action: ActionPerformed) => void) {
     if (!Capacitor.isNativePlatform()) {
         return;
@@ -32,17 +51,12 @@ export async function setUpNotifications(onAction: (action: ActionPerformed) => 
     for (const channel of CHANNELS) {
         await LocalNotifications.createChannel({ ...channel, visibility: 1, vibration: channel.importance >= 3 });
     }
-    await LocalNotifications.registerActionTypes({
-        types: [
-            { id: "plan", actions: [ { id: "plan", title: "Plan my day" }, { id: "later30", title: "In 30 min" } ] },
-            { id: "catchup", actions: [ { id: "moveall", title: "Move all to today" }, { id: "plan", title: "Plan my day" }, { id: "skip", title: "Skip" } ] },
-            { id: "winddown", actions: [ { id: "winddown", title: "Wind down" }, { id: "later60", title: "In 1 h" } ] },
-            { id: "overcap", actions: [ { id: "open", title: "Open Today" } ] },
-            { id: "reminder-task", actions: [ { id: "done", title: "Done" }, { id: "snooze", title: "Snooze 15 min" }, { id: "tomorrow", title: "Tomorrow" } ] },
-            { id: "reminder", actions: [ { id: "snooze", title: "Snooze 15 min" }, { id: "tomorrow", title: "Tomorrow" } ] }
-        ]
-    });
+    await LocalNotifications.registerActionTypes({ types: ACTION_TYPES });
     await LocalNotifications.addListener("localNotificationActionPerformed", onAction);
+    // The foreground service posts its own notification, on a channel only its plugin creates.
+    await ForegroundService.createNotificationChannel({
+        id: "caius-working", name: "Caius thinking", description: "While Caius writes a reply", importance: Importance.Low
+    }).catch(() => undefined);
 }
 
 export async function notificationsAllowed(): Promise<boolean> {
