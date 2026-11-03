@@ -9,7 +9,7 @@ import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
 import { CAIUS_EFFORTS, type CaiusEffort } from "@triliumnext/commons/src/lib/caius_openers.js";
-import { CHAT_TITLES, closeRitual, minimizeRitual, publishActivity, resumed } from "../app-state.js";
+import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, publishActivity, resumed } from "../app-state.js";
 import { useSwipeDown } from "../components/MiniChat.js";
 import { activityLine, applyChunk, type AssistantTurn, type ChatApi, chatApi, type ChatKind, type ContentBlock, historyForServer, type LlmChatContent, NeedsServerUpdateError, opener, type RitualStep, stepHasBody, stepOf, type StoredMessage, StreamBrokenError, turnMessages, type TurnState, turnText, workingLine } from "../lib/chat.js";
 import { type FollowedTurn, followTurn, readStoredChats, restoredMessages, storeChat } from "../lib/chats.js";
@@ -178,6 +178,8 @@ interface Chat {
     setEffort: (effort: CaiusEffort) => void;
     /** The conversation so far as plain text, for sharing. */
     exportText: () => Promise<string>;
+    /** On screen: not minimized, nor on another tab, nor under Settings. */
+    shown: boolean;
 }
 
 /** The chat's menu: how hard Caius thinks from here on, and sending the conversation off for review. */
@@ -531,7 +533,7 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         }
     };
 
-    return { state, messages, streaming, error, draft, setDraft, report, pending, leaveOut, start, send, reset, effort, setEffort: changeEffort, exportText };
+    return { state, messages, streaming, error, draft, setDraft, report, pending, leaveOut, start, send, reset, effort, setEffort: changeEffort, exportText, shown: chatOnScreen(slot) };
 }
 
 /** The abort reason of a reader dropped on resume, so the turn follows the server instead of ending. */
@@ -560,7 +562,14 @@ function Transcript({ chat }: { chat: Chat }) {
         })
     } : undefined;
     // While a turn streams, follow its end; once it lands, show it from its first line, where Caius asks.
+    // A hidden transcript has no layout to scroll, so a turn that changed while hidden scrolls when it shows.
+    const scrolled = useRef("");
     useEffect(() => {
+        const at = `${chat.messages.length}:${!!chat.streaming}`;
+        if (!chat.shown || scrolled.current === at) {
+            return;
+        }
+        scrolled.current = at;
         const last = chat.messages[chat.messages.length - 1];
         const turns = box.current?.querySelectorAll(".caius-turn, .chat-error");
         if (!chat.streaming && last?.role === "assistant" && turns?.length) {
@@ -568,7 +577,7 @@ function Transcript({ chat }: { chat: Chat }) {
         } else {
             end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
         }
-    }, [ chat.messages.length, !!chat.streaming ]);
+    }, [ chat.messages.length, !!chat.streaming, chat.shown ]);
 
     if (chat.state === "needs-update") {
         return (

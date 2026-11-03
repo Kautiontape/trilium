@@ -36,7 +36,8 @@ let booted: Promise<void> | null = null;
  * a turn keeps streaming and the answers gathered in a step card's pill stay.
  */
 export function App() {
-    // Ask mounts on its first visit, since `useChat` reads `serverStatus` as it mounts, and stays mounted after.
+    // Ask mounts on its first visit, since `useChat` reads `serverStatus` as it mounts, and stays mounted
+    // after; keyed by the day, it starts fresh on a new one.
     const askVisited = useRef(false);
     useEffect(() => {
         booted ??= boot();
@@ -86,7 +87,7 @@ export function App() {
                 <main class="shell-main">
                     {tab.value === "today" && <Today />}
                     {tab.value === "plan" && <Plan />}
-                    {askVisited.current && <div class="ask-host" hidden={tab.value !== "ask"}><Ask /></div>}
+                    {askVisited.current && <div key={today.value?.key} class="ask-host" hidden={tab.value !== "ask"}><Ask /></div>}
                     {tab.value === "reminders" && <Reminders />}
                 </main>
                 <MiniChat />
