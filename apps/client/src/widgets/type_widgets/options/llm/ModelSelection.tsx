@@ -53,11 +53,19 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
                 if (!active) return;
                 setModels(fetched);
                 setLoading(false);
-                if (autoSelectDefaults && selected.length === 0 && fetched.length > 0) {
+                const seedFresh = autoSelectDefaults && selected.length === 0;
+                // A stored selection the listing no longer carries any part of is one the provider
+                // has moved on from, so it is seeded again as for a new provider: the old ids are
+                // ones the provider now refuses, so keeping them would offer nothing usable.
+                const seedSuperseded = selected.length > 0
+                    && !selected.some(model => fetched.some(f => f.id === model.id));
+                if ((seedFresh || seedSuperseded) && fetched.length > 0) {
                     onChange(defaultSelectedModels(fetched));
-                } else {
-                    const renamed = withFetchedNames(selected, fetched);
-                    if (renamed) onChange(renamed);
+                    return;
+                }
+                const refreshed = refreshSelectedModels(selected, fetched);
+                if (refreshed) {
+                    onChange(refreshed);
                 }
             })
             .catch(err => {
@@ -90,7 +98,11 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
     if (error) {
         return (
             // JSX escapes the text itself, so i18next must not escape the message as well.
-            <NoItems icon="bx bx-error-circle" text={t("llm.models_load_failed", { error, interpolation: { escapeValue: false } })}>
+            <NoItems
+                icon="bx bx-error-circle"
+                className="model-selection-error"
+                text={t("llm.models_load_failed", { error, interpolation: { escapeValue: false } })}
+            >
                 {troubleshooting}
             </NoItems>
         );
@@ -114,7 +126,7 @@ export default function ModelSelection({ query, timeoutMs, selected, onChange, a
                     </button>
                 </div>
             </div>
-            <div className="model-selection-list">
+            <div className="model-selection-list scroll-edge-fade">
                 {models.map(model => (
                     <div key={model.id} className="model-selection-row">
                         <FormCheckbox
@@ -155,19 +167,21 @@ function defaultModelId(selected: LlmModelInfo[]): string | undefined {
 }
 
 /**
- * The selection with each model's name as the provider now gives it, or null when none changed. The
- * chat's picker shows the stored names, so a name the provider has since improved ("Sonnet" →
- * "Sonnet 5.5") reaches it on the next save.
+ * The selection with each stored model replaced by its listed entry, so saving the provider picks
+ * up new metadata such as `reasoningEfforts`, a changed price or an improved name. A model the
+ * listing no longer carries stays as stored. Once the user has a default, each model keeps its
+ * stored `isDefault`, so the listing's own default flag does not move it. Returns undefined when
+ * nothing changed.
  */
-function withFetchedNames(selected: LlmModelInfo[], fetched: LlmModelInfo[]): LlmModelInfo[] | null {
-    let changed = false;
-    const renamed = selected.map(model => {
-        const name = fetched.find(f => f.id === model.id)?.name;
-        if (!name || name === model.name) return model;
-        changed = true;
-        return { ...model, name };
+function refreshSelectedModels(selected: LlmModelInfo[], fetched: LlmModelInfo[]): LlmModelInfo[] | undefined {
+    const listed = new Map(fetched.map(model => [model.id, model]));
+    const hasChosenDefault = selected.some(model => model.isDefault);
+    const refreshed = selected.map(model => {
+        const entry = listed.get(model.id);
+        if (!entry) return model;
+        return hasChosenDefault ? { ...entry, isDefault: model.isDefault } : entry;
     });
-    return changed ? renamed : null;
+    return JSON.stringify(refreshed) === JSON.stringify(selected) ? undefined : refreshed;
 }
 
 /**

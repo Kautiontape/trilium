@@ -1,5 +1,5 @@
 /**
- * `EditableText` around a real CKEditor (the watchdog wrapper is replaced by a stub that builds one
+ * `EditableText` around a real CKEditor (the `CKEditor` wrapper is replaced by a stub that builds one
  * from `ckeditor5`): the `saveNoteDetailNow` command and what a content reload does to the caret.
  */
 import { deferred } from "@triliumnext/commons";
@@ -26,25 +26,42 @@ const created = vi.hoisted(() => ({ editor: undefined as ClassicEditor | undefin
 
 vi.mock("@triliumnext/ckeditor5", () => ({}));
 vi.mock("./snippets.js", () => ({ default: async () => [], updateTemplateCache: vi.fn() }));
-vi.mock("./CKEditorWithWatchdog", async () => {
+vi.mock("./CKEditor", async () => {
     const { useEffect } = await import("preact/hooks");
-    const { ClassicEditor, Essentials, Paragraph } = await import("ckeditor5");
+    const { ClassicEditor, Essentials, Paragraph, Plugin } = await import("ckeditor5");
 
-    function CKEditorStub({ watchdogRef, onChange, onEditorInitialized }: {
-        watchdogRef: { current: unknown };
+    // The plugins of the Trilium build that `EditableText` calls on every editor.
+    class FileUploadEditing extends Plugin {
+        static get pluginName() {
+            return "FileUploadEditing" as const;
+        }
+    }
+    class ReferenceLinkEditing extends Plugin {
+        static get pluginName() {
+            return "ReferenceLinkEditing" as const;
+        }
+        refreshNoteLinks() {}
+    }
+
+    function CKEditorStub({ editorRef, onChange, onEditorInitialized }: {
+        editorRef: { current: unknown };
         onChange: () => void;
         onEditorInitialized?: (editor: ClassicEditor) => void;
     }) {
         useEffect(() => {
             const el = document.createElement("div");
             document.body.appendChild(el);
-            const config = { plugins: [ Essentials, Paragraph ], licenseKey: "GPL" };
+            const config = {
+                plugins: [ Essentials, Paragraph, FileUploadEditing, ReferenceLinkEditing ],
+                licenseKey: "GPL"
+            };
             const editorPromise = ClassicEditor.create(el, config)
                 .then((editor) => {
                     created.editor = editor;
-                    watchdogRef.current = { editor };
-                    editor.model.document.on("change:data", () => onChange());
+                    editorRef.current = editor;
                     onEditorInitialized?.(editor);
+                    // After the content loads, as `CKEditor` listens once the editor is built.
+                    editor.model.document.on("change:data", () => onChange());
                     return editor;
                 });
             return () => {

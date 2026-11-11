@@ -6,20 +6,15 @@ import { buildTaskActionItems, findTaskAtSelection } from "../../../menus/task_a
 import { isCaiusEnabled } from "../../../services/caius.js";
 import { t } from "../../../services/i18n.js";
 
-/**
- * The toolbar entries that matter only while the caret is in a list, in the order they are pinned.
- */
-export const LIST_CONTEXT_TOOLBAR_ITEMS = ["outdent", "indent"] as const;
-
-/** Stamped on each pinned button, so the stylesheet can mark the group off from the rest. */
+/** Stamped on the pinned Task button, so the stylesheet can mark it off from the rest. */
 export const LIST_CONTEXT_PINNED_CLASS = "tn-list-context-pinned";
 
 export interface ListContextToolbarOptions {
-    /** Called each time a button is pinned, i.e. the caret has just entered a list or a task. */
+    /** Called each time the Task button is pinned, i.e. the caret has just entered a task. */
     onPinned?: () => void;
     /**
-     * The Task button from {@link createTaskToolbarButton}, pinned ahead of the list entries while
-     * it applies. It resolves to `null` while Caius is off.
+     * The Task button from {@link createTaskToolbarButton}, pinned while it applies. It resolves
+     * to `null` while Caius is off.
      */
     taskButton?: Promise<TaskToolbarButton | null>;
 }
@@ -30,90 +25,49 @@ export interface TaskToolbarButton {
     applies(): boolean;
 }
 
-/**
- * The slice of a model selection that {@link isSelectionInList}
- * and {@link isSelectionInTodo} read.
- */
+/** The slice of a model selection that {@link isSelectionInTodo} reads. */
 export interface SelectionBlocks {
-    getSelectedBlocks(): Iterable<{
-        hasAttribute(key: string): boolean;
-        getAttribute(key: string): unknown;
-    }>;
+    getSelectedBlocks(): Iterable<{ getAttribute(key: string): unknown }>;
 }
 
 /**
- * Pins the list-only toolbar entries (outdent, indent) to the front of the editor's toolbar for as
- * long as the selection is inside a list, and takes them out again when it leaves. With a
- * `taskButton`, the Task button goes in front of them while the caret is in a Journal task.
+ * Pins the Task button to the front of the editor's toolbar while the caret is in a Journal task,
+ * and takes it out again when the caret leaves. The `List ›` row of `ContextToolbar` holds the list
+ * controls, but it comes up by itself only as a list starts, so the button goes on the main row.
  *
- * On a phone the toolbar is a single row wider than the screen, so a button is only as useful as
- * its position: outdent and indent sit near the end, behind a scroll or the overflow dropdown, yet
- * in a checklist they are the two most-used controls, while in prose they matter not at all.
- * Rather than reorder the bar for good, the two are brought to the front only while the caret is
- * in a list. They are fresh views from the component factory, not the originals moved: the toolbar
- * keeps no names for its items, so finding the originals would mean replaying the config against
- * the factory, separator cleanup included. The duplicates left at the original position sit off
- * screen and cost nothing.
- *
- * @returns a function that stops listening and takes the pinned views out again.
+ * @returns a function that stops listening and takes the button out again.
  */
 export function attachListContextToolbar(
     editor: ClassicEditor,
     options: ListContextToolbarOptions = {}
 ): () => void {
     const toolbar = editor.ui.view.toolbar;
-    const factory = editor.ui.componentFactory;
-    if (!toolbar) {
+    if (!toolbar || !options.taskButton) {
         return () => {};
     }
 
-    const listViews = LIST_CONTEXT_TOOLBAR_ITEMS
-        .filter((name) => factory.has(name))
-        .map((name) => {
-            const view = factory.create(name);
-            // Before the first render, which happens when the view joins the toolbar.
-            view.extendTemplate({ attributes: { class: [LIST_CONTEXT_PINNED_CLASS] } });
-            return view;
-        });
-    if (listViews.length === 0 && !options.taskButton) {
-        return () => {};
-    }
-
+    const document = editor.model.document;
     let task: TaskToolbarButton | null = null;
-    let pinned: View[] = [];
+    let isPinned = false;
     let detached = false;
     // `change` fires for selection-only changes as well as for edits, so it also covers turning
     // the current paragraph into a list from the toolbar, where the caret does not move.
     const update = () => {
-        const selection = editor.model.document.selection;
-        const wanted = [
-            ...(task?.applies() ? [ task.view ] : []),
-            ...(isSelectionInList(selection) ? listViews : [])
-        ];
-        const unchanged = wanted.length === pinned.length
-            && wanted.every((view, index) => view === pinned[index]);
-        if (unchanged) {
+        const applies = !!task?.applies();
+        if (!task || applies === isPinned) {
             return;
         }
 
-        for (const view of pinned) {
-            toolbar.items.remove(view);
-        }
-        for (const [ index, view ] of wanted.entries()) {
-            toolbar.items.add(view, index);
-        }
-        const added = wanted.some((view) => !pinned.includes(view));
-        pinned = wanted;
-        if (added) {
+        isPinned = applies;
+        if (applies) {
+            toolbar.items.add(task.view, 0);
             options.onPinned?.();
+        } else {
+            toolbar.items.remove(task.view);
         }
     };
 
-    const document = editor.model.document;
-    document.on("change", update);
-    update();
-
-    void options.taskButton?.then((button) => {
+    void options.taskButton.then((button) => {
         if (!button) {
             return;
         }
@@ -123,6 +77,7 @@ export function attachListContextToolbar(
         }
 
         task = button;
+        document.on("change", update);
         // A caius write locks the editor while it reloads the note, and the unlock that follows
         // moves no caret, so `change` alone would leave the button hidden.
         editor.on("change:isReadOnly", update);
@@ -134,21 +89,19 @@ export function attachListContextToolbar(
             return;
         }
         detached = true;
-        document.off("change", update);
-        if (task) {
-            editor.off("change:isReadOnly", update);
+        if (!task) {
+            return;
         }
-        // A destroyed editor has torn its toolbar down, and any pinned views with it; views that
-        // were never pinned are unrendered and go with the editor's object graph.
+        document.off("change", update);
+        editor.off("change:isReadOnly", update);
+        // A destroyed editor has torn its toolbar down, and the pinned button with it.
         if (editor.state === "destroyed") {
             return;
         }
-        for (const view of pinned) {
-            toolbar.items.remove(view);
+        if (isPinned) {
+            toolbar.items.remove(task.view);
         }
-        for (const view of [ ...listViews, ...(task ? [ task.view ] : []) ]) {
-            view.destroy();
-        }
+        task.view.destroy();
     };
 }
 
@@ -189,16 +142,6 @@ export async function createTaskToolbarButton(
         applies: () => isSelectionInTodo(editor.model.document.selection)
             && findTaskAtSelection(editor) !== null
     };
-}
-
-/** Whether any block the selection touches is a list item, of whichever list type. */
-export function isSelectionInList(selection: SelectionBlocks): boolean {
-    for (const block of selection.getSelectedBlocks()) {
-        if (block.hasAttribute("listItemId")) {
-            return true;
-        }
-    }
-    return false;
 }
 
 /** Whether the first block the selection touches is a todo item. */

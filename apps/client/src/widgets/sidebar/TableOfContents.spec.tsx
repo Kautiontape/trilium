@@ -1,5 +1,4 @@
 import type { CKTextEditor } from "@triliumnext/ckeditor5";
-import { ClassicEditor, Essentials, Heading, Paragraph } from "ckeditor5";
 import { render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +11,8 @@ import { buildNote } from "../../test/easy-froca";
 import { renderInto } from "../../test/render";
 import { setEditorNoteId } from "../react/NoteStore";
 import { ParentComponent } from "../react/react_utils";
-import TableOfContents, { extractTocFromTextEditor, useActiveHeading } from "./TableOfContents";
+import { NavigatedInNote } from "./RightPanelWidget";
+import TableOfContents, { useActiveHeading } from "./TableOfContents";
 
 // `TableOfContents` loads `attributeChangeAffectsHeading` through a lazy `import()`. Pulling the
 // real module in loads the whole editor package from source, which takes longer than these tests
@@ -32,7 +32,7 @@ describe("useActiveHeading", () => {
     afterEach(() => vi.useRealTimers());
 
     it("re-subscribes when getHeadingElement changes, even though the container element does not", () => {
-        // The editor is swapped (watchdog recovery) while .scrolling-container, an ancestor of the
+        // The editor is swapped (a rebuild) while .scrolling-container, an ancestor of the
         // editor root, stays put — so the listener has to follow getHeadingElement, not the container.
         const container = scrollingContainer();
         const probe = mount(container, headingLookup({ first: 0, second: 500 }));
@@ -162,38 +162,49 @@ describe("TableOfContents while an auto-read-only note is temporarily editable",
 
         expect(toc.headings()).toEqual([ "Typed while loading" ]);
     });
-});
 
-describe("extractTocFromTextEditor", () => {
-    it("reads the headings without changing the model, with an id that stays with each heading", async () => {
-        const el = document.createElement("div");
-        document.body.appendChild(el);
-        const editor = await ClassicEditor.create(el, {
-            plugins: [ Essentials, Paragraph, Heading ], licenseKey: "GPL"
-        });
-        editor.setData("<h2>One</h2><p>text</p><h3>Two</h3>");
-        // A model change here is undoable and schedules a save of the note, even read-only.
-        let changes = 0;
-        editor.model.document.on("change:data", () => changes++);
+    it("reads the headings once per frame, however many changes arrive in it", async () => {
+        const toc = await setupUnlockScenario();
+        await toc.unlock();
+        const createRangeIn = vi.spyOn(toc.editor.editor.model, "createRangeIn");
 
-        const first = extractTocFromTextEditor(editor as unknown as CKTextEditor);
-        const again = extractTocFromTextEditor(editor as unknown as CKTextEditor);
-        expect(changes).toBe(0);
-        expect(first.map((heading) => heading.text)).toEqual([ "One", "Two" ]);
-        expect(new Set(first.map((heading) => heading.id)).size).toBe(2);
-        expect(again.map((heading) => heading.id)).toEqual(first.map((heading) => heading.id));
+        await toc.editor.loadNote(toc.noteId, [ [ 2, "Current" ] ], { changes: 3 });
 
-        // A reload makes new heading elements, which get ids of their own, still without a change.
-        editor.setData("<h2>One</h2><h3>Two</h3>");
-        changes = 0;
-        const reloaded = extractTocFromTextEditor(editor as unknown as CKTextEditor);
-        expect(changes).toBe(0);
-        expect(new Set(reloaded.map((heading) => heading.id)).size).toBe(2);
-        await editor.destroy();
+        expect(createRangeIn).toHaveBeenCalledTimes(1);
+        expect(toc.headings()).toEqual([ "Current" ]);
+    });
+
+    it("reads the headings without changing the model, and keeps each heading's id", async () => {
+        const toc = await setupUnlockScenario();
+        await toc.unlock();
+        const change = vi.spyOn(toc.editor.editor.model, "change");
+
+        await toc.editor.loadNote(toc.noteId, [ [ 2, "Current" ], [ 2, "Current" ] ]);
+        const [ first, second ] = toc.rows();
+        expect(toc.rows()).toHaveLength(2);
+        await toc.editor.notify();
+
+        expect(change).not.toHaveBeenCalled();
+        expect(toc.rows()).toHaveLength(2);
+        expect(toc.rows()[0]).toBe(first);
+        expect(toc.rows()[1]).toBe(second);
     });
 });
 
-async function setupUnlockScenario() {
+describe("TableOfContents in a host that covers the note", () => {
+    it("tells the host once a heading is pressed, so that it can close over the heading", async () => {
+        const onNavigated = vi.fn();
+        const toc = await setupUnlockScenario({ onNavigated });
+        const heading = toc.container.querySelector<HTMLElement>(".toc .item-content");
+        expect(heading?.textContent).toBe("Current");
+
+        await act(async () => heading?.click());
+
+        expect(onNavigated).toHaveBeenCalledOnce();
+    });
+});
+
+async function setupUnlockScenario({ onNavigated }: { onNavigated?: () => void } = {}) {
     options.load({ rightPaneCollapsedItems: "[]" } as Parameters<typeof options.load>[0]);
 
     const note = buildNote({ id: "bignote", title: "Big note", type: "text", content: "<h2>Current</h2>" });
@@ -225,7 +236,9 @@ async function setupUnlockScenario() {
     await act(async () => {
         container = renderInto(
             <ParentComponent.Provider value={parent}>
-                <TableOfContents />
+                <NavigatedInNote.Provider value={onNavigated ?? null}>
+                    <TableOfContents />
+                </NavigatedInNote.Provider>
             </ParentComponent.Provider>
         );
     });
@@ -234,7 +247,9 @@ async function setupUnlockScenario() {
     return {
         noteId: note.noteId,
         editor,
+        container,
         headings: () => [ ...container.querySelectorAll(".toc .item-content") ].map((el) => el.textContent),
+        rows: () => [ ...container.querySelectorAll(".toc li") ],
         async unlock({ rounds }: { rounds?: number } = {}) {
             await act(async () => {
                 if (noteContext.viewScope) noteContext.viewScope.readOnlyTemporarilyDisabled = true;
@@ -268,6 +283,7 @@ function fakeTextEditor() {
                 on: (_event: string, callback: () => void) => listeners.add(callback),
                 off: (_event: string, callback: () => void) => listeners.delete(callback)
             },
+            change: () => {},
             createRangeIn: () => ({ getWalker: () => items.map((item) => ({ type: "elementStart", item })) })
         },
         editing: {
@@ -278,38 +294,44 @@ function fakeTextEditor() {
 
     return {
         editor,
-        /** Stands in for the note detail feeding the editor a note's content once its blob arrives. */
-        async loadNote(noteId: string, headings: [ number, string ][]) {
+        /**
+         * Stands in for the note detail feeding the editor a note's content once its blob arrives,
+         * reported as `changes` separate changes within one frame.
+         */
+        async loadNote(noteId: string, headings: [ number, string ][], { changes = 1 } = {}) {
             items = headings.map(([ level, text ]) => fakeHeadingItem(level, text));
             setEditorNoteId(editor, noteId);
-            await act(async () => {
-                for (const listener of [ ...listeners ]) listener();
-                await new Promise((resolve) => requestAnimationFrame(resolve));
-            });
-        }
+            await notify(changes);
+        },
+        /** Reports a change that leaves the headings as they are. */
+        notify
     };
+
+    async function notify(changes = 1) {
+        await act(async () => {
+            for (let i = 0; i < changes; i++) {
+                for (const listener of [ ...listeners ]) listener();
+            }
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+        });
+    }
 }
 
 interface FakeHeadingItem {
     name: string;
     el: HTMLElement;
-    attrs: Map<string, string>;
     is(type: string, name?: string): boolean;
-    getAttribute(key: string): string | undefined;
     getChildren(): never[];
 }
 
 function fakeHeadingItem(level: number, text: string): FakeHeadingItem {
     const el = document.createElement(`h${level}`);
     el.textContent = text;
-    const attrs = new Map<string, string>();
 
     return {
         name: `heading${level}`,
         el,
-        attrs,
         is: (type, name) => type === "element" && (!name || name === `heading${level}`),
-        getAttribute: (key) => attrs.get(key),
         getChildren: () => []
     };
 }

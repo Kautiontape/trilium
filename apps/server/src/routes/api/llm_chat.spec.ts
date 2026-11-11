@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
     delaysMs: [] as number[],
     /** The signal runChat was handed, so the disconnect wiring can be asserted. */
     signal: undefined as AbortSignal | undefined,
+    /** The stream id runChat was handed. */
+    streamId: undefined as string | undefined,
     /** The phone turns the registry holds, by chat note id. */
     turns: new Map<string, { running: boolean }>(),
     runChatCalls: 0
@@ -19,7 +21,8 @@ vi.mock("../../services/caius/turns.js", () => ({
 // The completion itself is core's and tested there; what this route adds is the
 // SSE framing around it, so only the chunk source is faked.
 vi.mock("@triliumnext/core/src/services/llm/chat.js", () => ({
-    async *runChat(_messages: unknown, _config: unknown, signal?: AbortSignal) {
+    async *runChat(streamId: string, _messages: unknown, _config: unknown, signal?: AbortSignal) {
+        state.streamId = streamId;
         state.signal = signal;
         state.runChatCalls++;
         for (const [index, chunk] of state.chunks.entries()) {
@@ -61,13 +64,15 @@ function fakeRes({ withFlush = false } = {}) {
     };
 }
 
-function req(body: unknown) { return { body } as unknown as Request; }
+/** A request for the stream `s1`, which `body` can override. */
+function req(body: object) { return { body: { streamId: "s1", ...body } } as unknown as Request; }
 
 describe("streamChat", () => {
     afterEach(() => {
         state.chunks = [];
         state.delaysMs = [];
         state.signal = undefined;
+        state.streamId = undefined;
         state.turns.clear();
         state.runChatCalls = 0;
     });
@@ -95,12 +100,19 @@ describe("streamChat", () => {
         expect(state.runChatCalls).toBe(3);
     });
 
-    it("returns 400 for an empty messages array, without opening a stream", async () => {
-        const r = fakeRes();
-        await llmChatRoute.streamChat(req({ messages: [] }), r.res);
-        expect(r.statusCode).toBe(400);
-        expect(r.jsonBody).toEqual({ error: "messages array is required" });
-        expect(r.writes).toEqual([]);
+    it("returns 400 for a missing stream id or an empty messages array, without opening a stream", async () => {
+        const noId = fakeRes();
+        await llmChatRoute.streamChat(req({ streamId: undefined, messages: [{ role: "user", content: "hi" }] }), noId.res);
+        expect(noId.statusCode).toBe(400);
+        expect(noId.jsonBody).toEqual({ error: "streamId is required" });
+        expect(noId.writes).toEqual([]);
+
+        const noMessages = fakeRes();
+        await llmChatRoute.streamChat(req({ messages: [] }), noMessages.res);
+        expect(noMessages.statusCode).toBe(400);
+        expect(noMessages.jsonBody).toEqual({ error: "messages array is required" });
+        expect(noMessages.writes).toEqual([]);
+        expect(state.streamId).toBeUndefined();
     });
 
     it("writes each chunk as an SSE event, flushes it, and ends the response", async () => {
@@ -116,6 +128,7 @@ describe("streamChat", () => {
         ]);
         expect(r.flushes).toBe(2);
         expect(r.ended).toBe(true);
+        expect(state.streamId).toBe("s1");
     });
 
     it("ends the response and streams without a flush method available", async () => {

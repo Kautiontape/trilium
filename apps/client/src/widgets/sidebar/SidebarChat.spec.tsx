@@ -1,4 +1,4 @@
-import { type ComponentChildren, render } from "preact";
+import { type ComponentChild, type ComponentChildren, render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,37 +11,64 @@ const h = vi.hoisted(() => ({
     createLlmChat: vi.fn(),
     get: vi.fn(async (url: string): Promise<unknown> => (url === "keyboard-actions" ? [] : {})),
     put: vi.fn(async (_url: string, _body: { content: string }) => {}),
+    remove: vi.fn(async (_url: string) => {}),
     streamChatCompletion: vi.fn(),
     showMessage: vi.fn(),
+    /** The title of the open chat note. */
+    chatTitle: undefined as string | undefined,
     chat: null as UseLlmChatReturn | null
 }));
 
 vi.mock("../../services/date_notes.js", () => ({
-    default: { getMostRecentLlmChat: h.getMostRecentLlmChat, createLlmChat: h.createLlmChat }
+    default: {
+        getMostRecentLlmChat: h.getMostRecentLlmChat,
+        createLlmChat: h.createLlmChat,
+        getRecentLlmChats: vi.fn(async () => [])
+    }
 }));
-vi.mock("../../services/server.js", () => ({ default: { get: h.get, put: h.put } }));
+vi.mock("../../services/server.js", () => ({
+    default: { get: h.get, put: h.put, post: vi.fn(async () => ({})), remove: h.remove }
+}));
+vi.mock("../../services/dialog.js", () => ({ default: { confirm: vi.fn(async () => true), prompt: vi.fn() } }));
 vi.mock("../../services/llm_chat.js", () => ({ streamChatCompletion: h.streamChatCompletion }));
 vi.mock("../../services/i18n.js", () => ({ t: (key: string) => key }));
 vi.mock("../../services/toast.js", () => ({ default: { showMessage: h.showMessage } }));
 vi.mock("../type_widgets/llm_chat/ChatInputBar.js", () => ({
-    default: ({ chat }: { chat: UseLlmChatReturn }) => {
+    default: ({ chat, onSubmit }: { chat: UseLlmChatReturn; onSubmit: (e: Event) => void }) => {
         h.chat = chat;
-        return <div />;
+        return <form className="chat-input" onSubmit={onSubmit} />;
     }
 }));
 vi.mock("../type_widgets/llm_chat/ChatMessageList.js", () => ({ default: () => <div /> }));
 vi.mock("../type_widgets/llm_chat/chat_context_menu.js", () => ({ useChatContextMenu: () => {} }));
 vi.mock("../type_widgets/llm_chat/chat_highlights.js", () => ({ useChatHighlights: () => ({ highlightMenuItems: [] }) }));
-vi.mock("../react/Dropdown.js", () => ({ default: ({ children }: { children: ComponentChildren }) => <div>{children}</div> }));
-vi.mock("./RightPanelWidget.js", () => ({ default: ({ children }: { children: ComponentChildren }) => <div>{children}</div> }));
+vi.mock("../react/ActionButton.js", () => ({
+    default: ({ icon, onClick }: { icon: string; onClick: (e: MouseEvent) => void }) => <button data-icon={icon} onClick={onClick} />
+}));
+vi.mock("../react/Dropdown.js", () => ({
+    default: ({ text, children }: { text?: ComponentChildren; children: ComponentChildren }) => <div>{text}{children}</div>
+}));
+vi.mock("../react/FormList.js", () => ({
+    FormListItem: ({ icon, onClick, children }: { icon?: string; onClick?: () => void; children: ComponentChildren }) =>
+        <li data-icon={icon} onClick={onClick}>{children}</li>,
+    FormDropdownDivider: () => null
+}));
+vi.mock("./RightPanelWidget.js", async () => {
+    const { createContext } = await import("preact");
+    return {
+        default: ({ buttons, children }: { buttons: ComponentChildren; children: ComponentChildren }) => <div>{buttons}{children}</div>,
+        TabHeaderSlot: createContext<HTMLElement | null>(null)
+    };
+});
 vi.mock("../react/hooks.js", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../react/hooks.js")>()),
     useActiveNoteContext: () => ({ noteId: "day", note: null }),
     useNote: () => null,
-    useNoteProperty: () => undefined,
+    useNoteProperty: () => h.chatTitle,
     useNoteLabelBoolean: () => [ false ]
 }));
 
+import { TabHeaderSlot } from "./RightPanelWidget.js";
 import SidebarChat, { openNewChat, PENDING_OPENER_TTL_MS, START_TIMEOUT_MS, STOP_TIMEOUT_MS } from "./SidebarChat";
 
 const OLD_CHAT = {
@@ -57,24 +84,70 @@ function endlessStream(_messages: unknown, _config: unknown, _callbacks: unknown
     });
 }
 
-describe("openNewChat", () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        h.chat = null;
-        options.load({
-            llmProviders: JSON.stringify([ {
-                id: "p1", name: "Anthropic", provider: "anthropic",
-                selectedModels: [ { id: "model-1", name: "Model", isDefault: true } ]
-            } ])
-        } as Parameters<typeof options.load>[0]);
-        h.getMostRecentLlmChat.mockResolvedValue({ noteId: "old" });
-        h.get.mockImplementation(async (url: string) => (url === "keyboard-actions" ? [] : { content: JSON.stringify(OLD_CHAT) }));
-        h.createLlmChat.mockReset().mockResolvedValue({ noteId: "new" });
-        h.streamChatCompletion.mockImplementation(async () => {});
+beforeEach(() => {
+    vi.clearAllMocks();
+    h.chat = null;
+    h.chatTitle = undefined;
+    options.load({
+        llmProviders: JSON.stringify([ {
+            id: "p1", name: "Anthropic", provider: "anthropic",
+            selectedModels: [ { id: "model-1", name: "Model", isDefault: true } ]
+        } ])
+    } as Parameters<typeof options.load>[0]);
+    h.getMostRecentLlmChat.mockResolvedValue({ noteId: "old" });
+    h.get.mockImplementation(async (url: string) => (url === "keyboard-actions" ? [] : { content: JSON.stringify(OLD_CHAT) }));
+    h.createLlmChat.mockReset().mockResolvedValue({ noteId: "new" });
+    h.streamChatCompletion.mockImplementation(async () => {});
+});
+
+afterEach(() => vi.useRealTimers());
+
+describe("SidebarChat", () => {
+    it("sends the first message after deleting the open chat to a new chat, not to an older one", async () => {
+        const container = await mount();
+        expect(h.get).toHaveBeenCalledWith("notes/old/blob");
+
+        const deleteItem = container.querySelector<HTMLLIElement>("li[data-icon='bx bx-trash']");
+        expect(deleteItem).not.toBeNull();
+        act(() => deleteItem?.click());
+        await flush();
+        expect(h.remove).toHaveBeenCalledWith(expect.stringMatching(/^notes\/old\?/));
+
+        act(() => h.chat?.setInput("Hello"));
+        const form = container.querySelector("form.chat-input");
+        expect(form).not.toBeNull();
+        act(() => {
+            form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        });
+        await flush();
+
+        expect(h.createLlmChat).toHaveBeenCalledTimes(1);
+        expect(h.getMostRecentLlmChat).toHaveBeenCalledTimes(1);
+        expect(sent(0)).toEqual({
+            messages: [ expect.objectContaining({ role: "user", content: "Hello" }) ],
+            config: expect.objectContaining({ chatNoteId: "new" })
+        });
     });
 
-    afterEach(() => vi.useRealTimers());
+    it("puts its controls in the host's header slot when there is one, titled by the conversation", async () => {
+        h.chatTitle = "Trip planning";
+        const slot = document.createElement("div");
+        document.body.appendChild(slot);
+        const container = await mount(
+            <TabHeaderSlot.Provider value={slot}>
+                <SidebarChat />
+            </TabHeaderSlot.Provider>
+        );
 
+        expect(slot.querySelector("[data-icon='bx bx-plus']")).not.toBeNull();
+        expect(slot.querySelector("li[data-icon='bx bx-trash']")).not.toBeNull();
+        expect(container.querySelector("[data-icon='bx bx-plus']")).toBeNull();
+        expect(slot.querySelector(".sidebar-chat-title")?.textContent).toBe("Trip planning");
+        slot.remove();
+    });
+});
+
+describe("openNewChat", () => {
     it("starts a new conversation with note tools on and sends only the opener, leaving the open chat alone", async () => {
         await mount();
         expect(h.get).toHaveBeenCalledWith("notes/old/blob");
@@ -313,10 +386,10 @@ async function elapse(ms: number) {
     await flush();
 }
 
-async function mount() {
+async function mount(vnode: ComponentChild = <SidebarChat />) {
     let container: HTMLElement | undefined;
     act(() => {
-        container = renderInto(<SidebarChat />);
+        container = renderInto(vnode);
     });
     await flush();
     if (!container) throw new Error("SidebarChat did not render");

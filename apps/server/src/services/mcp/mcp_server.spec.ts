@@ -48,18 +48,23 @@ vi.mock("@triliumnext/core", async (importOriginal) => {
 const readExecute = vi.fn(() => ({ ok: "read" }));
 const mutateExecute = vi.fn(() => ({ ok: "mutate" }));
 
+const failExecute = vi.fn(() => ({ error: "Note not found" }));
 const asyncReadExecute = vi.fn(async () => ({ ok: "async-read" }));
 const asyncMutateExecute = vi.fn(async () => ({ ok: "async-mutate" }));
+const asyncFailExecute = vi.fn(async () => ({ error: "Note not found" }));
 const asyncRegistry: any = [
     ["async_read_tool", { description: "ar", inputSchema: {}, async: true, execute: asyncReadExecute }],
-    ["async_mutate_tool", { description: "am", inputSchema: {}, async: true, mutates: true, execute: asyncMutateExecute }]
+    ["async_mutate_tool", { description: "am", inputSchema: {}, async: true, mutates: true, execute: asyncMutateExecute }],
+    ["async_fail_tool", { description: "af", inputSchema: {}, async: true, execute: asyncFailExecute }]
 ];
 
 const readRegistry: any = [
-    ["read_tool", { description: "r", inputSchema: {}, execute: readExecute }]
+    ["read_tool", { description: "r", inputSchema: {}, execute: readExecute }],
+    ["fail_tool", { description: "f", inputSchema: {}, execute: failExecute }]
 ];
 const mutateRegistry: any = [
-    ["mutate_tool", { description: "m", inputSchema: {}, mutates: true, execute: mutateExecute }]
+    ["mutate_tool", { description: "m", inputSchema: {}, mutates: true, execute: mutateExecute }],
+    ["add_tool", { description: "a", inputSchema: {}, mutates: true, additive: true, execute: mutateExecute }]
 ];
 
 const resolveToolRegistriesMock = vi.fn(async () => {});
@@ -86,7 +91,9 @@ describe("createMcpServer", () => {
 
         expect(server).toBeInstanceOf(FakeMcpServer);
         expect((server as any).info).toMatchObject({ name: "trilium-notes", version: "9.9.9-test" });
-        expect(registered.map((r) => r.name)).toEqual(["read_tool", "mutate_tool", "async_read_tool", "async_mutate_tool"]);
+        expect(registered.map((r) => r.name)).toEqual([
+            "read_tool", "fail_tool", "mutate_tool", "add_tool", "async_read_tool", "async_mutate_tool", "async_fail_tool"
+        ]);
         expect(resolveToolRegistriesMock).toHaveBeenCalled();
     });
 
@@ -147,5 +154,38 @@ describe("createMcpServer", () => {
         expect(mockSql.transactional).not.toHaveBeenCalled();
         expect(mockCls.set).toHaveBeenCalledWith("componentId", "mcp");
         expect(result).toEqual({ content: [{ type: "text", text: JSON.stringify({ ok: "async-mutate" }) }] });
+    });
+
+    it("flags the { error } a tool returns as a failed call", async () => {
+        await createMcpServer();
+        const fail = registered.find((r) => r.name === "fail_tool");
+        const asyncFail = registered.find((r) => r.name === "async_fail_tool");
+        expect(fail).toBeDefined();
+        expect(asyncFail).toBeDefined();
+
+        const failed = {
+            content: [{ type: "text", text: JSON.stringify({ error: "Note not found" }) }],
+            isError: true
+        };
+        expect(fail?.callback({})).toEqual(failed);
+        expect(await asyncFail?.callback({})).toEqual(failed);
+    });
+});
+
+describe("tool annotations", () => {
+    it("tells the client which tools only read, which only add and which overwrite or remove", async () => {
+        await createMcpServer();
+        const annotationsOf = (name: string) => registered.find((r) => r.name === name)?.config.annotations;
+
+        expect(annotationsOf("read_tool")).toEqual({ readOnlyHint: true, openWorldHint: false });
+        expect(annotationsOf("add_tool")).toEqual({ readOnlyHint: false, destructiveHint: false, openWorldHint: false });
+        expect(annotationsOf("mutate_tool")).toEqual({ readOnlyHint: false, destructiveHint: true, openWorldHint: false });
+    });
+
+    it("leaves the hints out when asked to", async () => {
+        await createMcpServer({ toolHints: false });
+
+        expect(registered.map((r) => r.name)).toContain("read_tool");
+        expect(registered.map((r) => r.config.annotations)).toEqual(registered.map(() => undefined));
     });
 });

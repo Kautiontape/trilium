@@ -5,6 +5,11 @@
     padding: 4px 8px;
     border: 1px solid var(--main-border-color);
     border-radius: 6px;
+    background: var(--main-background-color);
+    color: var(--muted-text-color);
+    font-size: .9em;
+    cursor: default;
+    user-select: none;
 
     .caius-nudge-bar-content {
         display: flex;

@@ -16,7 +16,6 @@ import { useCaiusEnabled } from "../sidebar/plan/PlanTab";
 import ActionButton from "../react/ActionButton";
 import Button from "../react/Button";
 import { useNoteLabel, useNoteProperty, useTriliumEvent } from "../react/hooks";
-import InfoBar from "../react/InfoBar";
 
 /** How long the bar waits after a change to the day's notes before it reads its state again. */
 export const NUDGE_REFRESH_DELAY_MS = 300;
@@ -113,7 +112,7 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
     }
 
     return (
-        <InfoBar className="caius-nudge-bar" type="subtle">
+        <div className="caius-nudge-bar">
             <div className="caius-nudge-bar-content">
                 <span className="caius-nudge-text">{text}</span>
                 <div className="caius-nudge-actions">
@@ -123,7 +122,7 @@ export default function CaiusNudgeBar({ note }: { note: FNote | null | undefined
                 </div>
                 <ActionButton icon="bx bx-x" text={t("caius.nudge.hide")} onClick={dismiss} />
             </div>
-        </InfoBar>
+        </div>
     );
 }
 
@@ -149,7 +148,7 @@ function plannedText(plannedAt: string | null, date: string) {
 function useNudge(date: string | null, noteId: string | undefined) {
     const [ nudge, setNudge ] = useState<CaiusNudge | null>(null);
     const latest = useRef(0);
-    const timer = useRef<ReturnType<typeof setTimeout>>();
+    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     const load = useCallback(async () => {
         const request = ++latest.current;

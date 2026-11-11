@@ -92,8 +92,6 @@ function SuggestedRow({ task, sections, outcome, onAccept, onDismiss }: {
                     text={t("caius.accept")}
                     buttonClassName="btn-sm"
                     disabled={!task.listItemId}
-                    noDropdownListStyle
-                    portalToBody
                 >
                     {sections.map((section) => (
                         <FormListItem

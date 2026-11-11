@@ -7,7 +7,7 @@ import ItalicAsEmPlugin from "@triliumnext/ckeditor5/src/plugins/italic_as_em.js
 import ReferenceLink from "@triliumnext/ckeditor5/src/plugins/referencelink.js";
 import TodoListMultistateEditing from "@triliumnext/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate_editing.js";
 import { ClassicEditor, Essentials, Heading, Italic, Link, List, Paragraph, TodoList } from "ckeditor5";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const STATES = new Map([ [ "doing", "/" ], [ "cancelled", "-" ], [ "_rescheduled", ">" ] ]);
 const SOURCE = "<h3>Work</h3><ul class=\"todo-list\"><li data-list-item-id=\"eone\"><label class=\"todo-list__label\">"
@@ -18,11 +18,6 @@ describe("a Caius forward saved by the editor", () => {
     let editor: ClassicEditor;
 
     beforeAll(async () => {
-        // `ReferenceLink` asks for a note's title when it renders or saves a reference link.
-        vi.stubGlobal("glob", {
-            getReferenceLinkTitleSync: () => "26 - Monday",
-            getComponentByEl: () => ({ loadReferenceLinkTitle: () => {} })
-        });
         const el = document.createElement("div");
         document.body.appendChild(el);
         editor = await ClassicEditor.create(el, {
@@ -31,6 +26,9 @@ describe("a Caius forward saved by the editor", () => {
                 Italic, ItalicAsEmPlugin, Link, ReferenceLink
             ],
             licenseKey: "GPL",
+            // `ReferenceLink` titles a reference link with the note's title when it renders or saves
+            // it, as the text editor's `buildConfig()` sets up.
+            referenceLink: { getTitleSync: () => "26 - Monday" },
             taskStates: [
                 { name: "doing", title: "Doing", markdownSymbol: "/", isCompleted: false, icon: "bx" },
                 { name: "_rescheduled", title: "Rescheduled", markdownSymbol: ">", isCompleted: true, icon: "bx" }

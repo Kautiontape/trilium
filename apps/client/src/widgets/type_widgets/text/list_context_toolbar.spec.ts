@@ -34,7 +34,7 @@ import type { MenuItem } from "../../../menus/context_menu.js";
 import { buildTaskActionItems, findTaskAtSelection } from "../../../menus/task_actions.js";
 import { setEditorNoteId } from "../../react/NoteStore.js";
 import {
-    attachListContextToolbar, createTaskToolbarButton, isSelectionInList, isSelectionInTodo,
+    attachListContextToolbar, createTaskToolbarButton, isSelectionInTodo,
     LIST_CONTEXT_PINNED_CLASS, type TaskToolbarButton
 } from "./list_context_toolbar.js";
 
@@ -71,14 +71,21 @@ function block(inList: boolean, listType = "bulleted") {
  * The slice of an editor the controller touches: an array-backed toolbar collection, a component
  * factory handing out fresh views, and a document whose `change` event the test fires by hand.
  */
-function fakeEditor(initialItems: string[], isAvailable: (name: string) => boolean = () => true) {
+function fakeEditor(initialItems: string[]) {
     const items: FakeView[] = initialItems.map(makeView);
     const listeners: (() => void)[] = [];
+    const editorListeners: (() => void)[] = [];
     let blocks = [block(false)];
     const editor = {
         state: "ready",
+        on(event: string, callback: () => void) {
+            if (event === "change:isReadOnly") editorListeners.push(callback);
+        },
+        off(event: string, callback: () => void) {
+            if (event === "change:isReadOnly") editorListeners.splice(editorListeners.indexOf(callback), 1);
+        },
         ui: {
-            componentFactory: { has: isAvailable, create: makeView },
+            componentFactory: { has: () => true, create: makeView },
             view: {
                 toolbar: {
                     items: {
@@ -112,25 +119,16 @@ function fakeEditor(initialItems: string[], isAvailable: (name: string) => boole
         asEditor: editor as unknown as ClassicEditor,
         names: () => items.map((view) => view.name),
         items,
-        listenerCount: () => listeners.length,
-        /** Moves the caret into or out of a list and fires the document's `change`. */
-        setInList(inList: boolean) {
-            blocks = [block(inList)];
+        listenerCount: () => listeners.length + editorListeners.length,
+        /** Whether the caret is in a todo item, which is where the fake Task button applies. */
+        isInTask: () => blocks[0]?.getAttribute("listType") === "todo",
+        /** Moves the caret into or out of a todo item and fires the document's `change`. */
+        setInTask(inTask: boolean) {
+            blocks = [block(inTask, "todo")];
             for (const callback of [...listeners]) callback();
         }
     };
 }
-
-describe("isSelectionInList", () => {
-    it("is true when any selected block is a list item, of whichever list type", () => {
-        const selection = (blocks: ReturnType<typeof block>[]) => ({
-            getSelectedBlocks: () => blocks[Symbol.iterator]()
-        });
-        expect(isSelectionInList(selection([]))).toBe(false);
-        expect(isSelectionInList(selection([block(false), block(false)]))).toBe(false);
-        expect(isSelectionInList(selection([block(false), block(true)]))).toBe(true);
-    });
-});
 
 describe("isSelectionInTodo", () => {
     it("is true only when the first selected block is a todo item", () => {
@@ -145,93 +143,70 @@ describe("isSelectionInTodo", () => {
 });
 
 describe("attachListContextToolbar", () => {
-    const TOOLBAR = [
-        "heading", "bold", "|", "bulletedList", "todoList", "|", "outdent", "indent", "undo"
-    ];
+    const TOOLBAR = [ "undo", "redo", "|", "blockType", "|", "outdent", "indent" ];
 
-    it("pins outdent and indent to the front while the caret is in a list, and restores the bar when it leaves", () => {
+    async function attachFake() {
         const fake = fakeEditor(TOOLBAR);
+        const task = { view: makeView("task"), applies: fake.isInTask };
         const onPinned = vi.fn();
-        attachListContextToolbar(fake.asEditor, { onPinned });
+        const detach = attachListContextToolbar(fake.asEditor, {
+            onPinned, taskButton: Promise.resolve(task as unknown as TaskToolbarButton)
+        });
+        await vi.waitFor(() => expect(fake.listenerCount()).toBe(2));
+        return { fake, task, onPinned, detach };
+    }
 
-        // Prose: the bar is untouched, but the controller is listening.
-        expect(fake.names()).toEqual(TOOLBAR);
-        expect(fake.listenerCount()).toBe(1);
-        expect(onPinned).not.toHaveBeenCalled();
-
-        fake.setInList(true);
-        expect(fake.names()).toEqual(["outdent", "indent", ...TOOLBAR]);
-        expect(onPinned).toHaveBeenCalledTimes(1);
-        // The pinned views carry the class the stylesheet keys off, set before their first render.
-        const [pinnedOutdent, pinnedIndent] = [fake.items[0], fake.items[1]];
-        expect(pinnedOutdent.classes).toEqual([LIST_CONTEXT_PINNED_CLASS]);
-        expect(pinnedIndent.classes).toEqual([LIST_CONTEXT_PINNED_CLASS]);
-
-        // Moving around inside the list neither duplicates the group nor re-announces it.
-        fake.setInList(true);
-        expect(fake.names()).toEqual(["outdent", "indent", ...TOOLBAR]);
-        expect(onPinned).toHaveBeenCalledTimes(1);
-
-        fake.setInList(false);
+    it("pins only the Task button to the front while it applies, announcing each pin", async () => {
+        const { fake, task, onPinned } = await attachFake();
         expect(fake.names()).toEqual(TOOLBAR);
 
-        // Coming back reuses the same views rather than minting new ones.
-        fake.setInList(true);
+        fake.setInTask(true);
+        expect(fake.names()).toEqual([ "task", ...TOOLBAR ]);
+        expect(fake.items[0]).toBe(task.view);
+        expect(onPinned).toHaveBeenCalledTimes(1);
+
+        // Moving within the task neither pins it twice nor announces it again.
+        fake.setInTask(true);
+        expect(fake.names()).toEqual([ "task", ...TOOLBAR ]);
+        expect(onPinned).toHaveBeenCalledTimes(1);
+
+        fake.setInTask(false);
+        expect(fake.names()).toEqual(TOOLBAR);
+        fake.setInTask(true);
+        expect(fake.items[0]).toBe(task.view);
         expect(onPinned).toHaveBeenCalledTimes(2);
-        expect(fake.names()).toEqual(["outdent", "indent", ...TOOLBAR]);
-        expect(fake.items[0]).toBe(pinnedOutdent);
-        expect(fake.items[1]).toBe(pinnedIndent);
     });
 
-    it("pins the group straight away when the editor starts with the caret in a list", () => {
-        const fake = fakeEditor(TOOLBAR);
-        fake.setInList(true);
-        attachListContextToolbar(fake.asEditor);
-        expect(fake.names()).toEqual(["outdent", "indent", ...TOOLBAR]);
-    });
-
-    it("detaching unpins, destroys the views and stops listening", () => {
-        const fake = fakeEditor(TOOLBAR);
-        const detach = attachListContextToolbar(fake.asEditor);
-        fake.setInList(true);
-        const pinnedViews = [fake.items[0], fake.items[1]];
+    it("unpins and destroys the button once, however often it is detached", async () => {
+        const { fake, task, detach } = await attachFake();
+        fake.setInTask(true);
 
         detach();
+        detach();
         expect(fake.names()).toEqual(TOOLBAR);
-        expect(pinnedViews.every((view) => view.destroyed)).toBe(true);
+        expect(task.view.destroyed).toBe(true);
         expect(fake.listenerCount()).toBe(0);
-        fake.setInList(true);
+        fake.setInTask(true);
         expect(fake.names()).toEqual(TOOLBAR);
     });
 
-    it("leaves a destroyed editor alone when detaching, since its toolbar is already gone", () => {
-        const fake = fakeEditor(TOOLBAR);
-        const detach = attachListContextToolbar(fake.asEditor);
-        fake.setInList(true);
+    it("leaves a destroyed editor alone when detaching, since its toolbar is already gone", async () => {
+        const { fake, task, detach } = await attachFake();
+        fake.setInTask(true);
         fake.editor.state = "destroyed";
 
         detach();
         expect(fake.listenerCount()).toBe(0);
-        expect(fake.names()).toEqual(["outdent", "indent", ...TOOLBAR]);
-        expect(fake.items[0].destroyed).toBe(false);
+        expect(fake.names()).toEqual([ "task", ...TOOLBAR ]);
+        expect(task.view.destroyed).toBe(false);
     });
 
-    it("pins only the entries the editor can build, and does nothing when it can build none", () => {
-        const partial = fakeEditor(TOOLBAR, (name) => name === "indent");
-        attachListContextToolbar(partial.asEditor);
-        partial.setInList(true);
-        expect(partial.names()).toEqual(["indent", ...TOOLBAR]);
-
-        const none = fakeEditor(TOOLBAR, () => false);
-        const detach = attachListContextToolbar(none.asEditor);
-        expect(none.listenerCount()).toBe(0);
-        none.setInList(true);
-        expect(none.names()).toEqual(TOOLBAR);
-        detach();
-
+    it("does nothing without a toolbar", () => {
         const noToolbar = fakeEditor(TOOLBAR);
         (noToolbar.editor.ui.view as { toolbar?: unknown }).toolbar = undefined;
-        attachListContextToolbar(noToolbar.asEditor);
+        attachListContextToolbar(noToolbar.asEditor, {
+            taskButton: Promise.resolve({ view: makeView("task"), applies: () => true } as never)
+        });
         expect(noToolbar.listenerCount()).toBe(0);
     });
 });
@@ -319,18 +294,18 @@ describe("the Task button", () => {
         return { promise, resolve };
     }
 
-    it("pins Task ahead of outdent and indent in a Journal todo item, and only there", async () => {
+    it("pins Task to the front in a Journal todo item, and only there", async () => {
         const { detach, onPinned } = await attach();
         expect(labels()).toEqual(TOOLBAR);
 
         caretIn("eopen");
-        expect(labels()).toEqual([ "caius.task", OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual([ "caius.task", ...TOOLBAR ]);
         expect(onPinned).toHaveBeenCalledTimes(1);
         const taskButton = editor.ui.view.toolbar.items.get(0);
         expect(taskButton?.element?.classList.contains(LIST_CONTEXT_PINNED_CLASS)).toBe(true);
 
         caretIn("ebull");
-        expect(labels()).toEqual([ OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual(TOOLBAR);
         caretIn("plain");
         expect(labels()).toEqual(TOOLBAR);
         detach();
@@ -340,7 +315,7 @@ describe("the Task button", () => {
         h.notes.day = dayNote([]);
         const outside = await attach();
         caretIn("eopen");
-        expect(labels()).toEqual([ OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual(TOOLBAR);
         outside.detach();
 
         h.notes.day = dayNote([ "dateNote" ]);
@@ -348,37 +323,36 @@ describe("the Task button", () => {
         expect(labels()[0]).toBe("caius.task");
         // A caius write locks the editor and reloads it; unlocking moves no caret.
         editor.enableReadOnlyMode("caius-write");
-        expect(labels()).toEqual([ OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual(TOOLBAR);
         editor.disableReadOnlyMode("caius-write");
-        expect(labels()).toEqual([ "caius.task", OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual([ "caius.task", ...TOOLBAR ]);
         locked.detach();
 
         h.isCaiusEnabled.mockResolvedValue(false);
         const off = await attach();
         expect(off.resolved).toBeNull();
-        expect(labels()).toEqual([ OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual(TOOLBAR);
         off.detach();
     });
 
-    it("goes first when Caius answers after the list controls are pinned, or a bullet turns into a todo", async () => {
+    it("pins Task when Caius answers late, or when a bullet turns into a todo", async () => {
         const late = deferred();
         caretIn("eopen");
         const onPinned = vi.fn();
         const detach = track(attachListContextToolbar(asEditor(), {
             onPinned, taskButton: late.promise
         }));
-        expect(labels()).toEqual([ OUTDENT, INDENT, ...TOOLBAR ]);
-        expect(onPinned).toHaveBeenCalledTimes(1);
+        expect(labels()).toEqual(TOOLBAR);
+        expect(onPinned).not.toHaveBeenCalled();
 
         late.resolve(await createTaskToolbarButton(asEditor()));
-        await vi.waitFor(() =>
-            expect(labels()).toEqual([ "caius.task", OUTDENT, INDENT, ...TOOLBAR ]));
-        expect(onPinned).toHaveBeenCalledTimes(2);
+        await vi.waitFor(() => expect(labels()).toEqual([ "caius.task", ...TOOLBAR ]));
+        expect(onPinned).toHaveBeenCalledTimes(1);
 
         caretIn("ebull");
-        expect(labels()).toEqual([ OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual(TOOLBAR);
         editor.execute("todoList");
-        expect(labels()).toEqual([ "caius.task", OUTDENT, INDENT, ...TOOLBAR ]);
+        expect(labels()).toEqual([ "caius.task", ...TOOLBAR ]);
         detach();
     });
 

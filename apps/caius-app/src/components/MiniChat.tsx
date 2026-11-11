@@ -1,6 +1,6 @@
 import "./mini-chat.css";
 
-import type { JSX } from "preact";
+import type { TargetedPointerEvent } from "preact";
 import { useRef } from "preact/hooks";
 
 import { CHAT_TITLES, type ChatActivity, chatActivity, restoreRitual, ritual, settingsOpen, tab } from "../app-state.js";
@@ -60,10 +60,10 @@ export function useSwipeDown(onSwipe: () => void, distance = 60) {
         from.current = null;
     };
     return {
-        onPointerDown: (e: JSX.TargetedPointerEvent<HTMLElement>) => {
+        onPointerDown: (e: TargetedPointerEvent<HTMLElement>) => {
             from.current = e.clientY;
         },
-        onPointerMove: (e: JSX.TargetedPointerEvent<HTMLElement>) => {
+        onPointerMove: (e: TargetedPointerEvent<HTMLElement>) => {
             if (from.current === null) {
                 return;
             }

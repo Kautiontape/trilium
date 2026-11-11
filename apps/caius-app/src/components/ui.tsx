@@ -20,7 +20,7 @@ import settingsSvg from "@material-symbols/svg-300/rounded/settings.svg?raw";
 import todaySvg from "@material-symbols/svg-300/rounded/today.svg?raw";
 import { signal } from "@preact/signals";
 import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
-import type { ComponentChildren, JSX } from "preact";
+import type { ButtonHTMLAttributes, ComponentChildren } from "preact";
 import { useEffect } from "preact/hooks";
 
 import type { PlanTask } from "../lib/caius.js";
@@ -29,11 +29,11 @@ import { flushHeld, type HeldState, settings, snack } from "../lib/store.js";
 export function Button({ kind = "secondary", children, class: className, ...rest }: {
     kind?: "primary" | "secondary" | "quiet" | "danger";
     children: ComponentChildren;
-} & JSX.ButtonHTMLAttributes<HTMLButtonElement>) {
+} & ButtonHTMLAttributes<HTMLButtonElement>) {
     return <button type="button" class={`btn btn-${kind} ${className ?? ""}`} {...rest}>{children}</button>;
 }
 
-export function Chip({ selected, children, ...rest }: { selected?: boolean; children: ComponentChildren } & JSX.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function Chip({ selected, children, ...rest }: { selected?: boolean; children: ComponentChildren } & ButtonHTMLAttributes<HTMLButtonElement>) {
     return <button type="button" class={`chip${selected ? " selected" : ""}`} aria-pressed={selected} {...rest}>{children}</button>;
 }
 
