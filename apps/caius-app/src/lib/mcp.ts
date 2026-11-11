@@ -42,6 +42,11 @@ export function parseToolReply<T>(body: string, id?: number): T {
     }
     const text = reply.result?.content?.[0]?.text;
     if (reply.result?.isError) {
+        // The server flags a tool's own `{ error }` answer too; callers read that as data.
+        const answer = typeof text === "string" ? errorAnswer(text) : null;
+        if (answer) {
+            return answer as T;
+        }
         throw new McpError(text ?? "The tool call failed.");
     }
     if (typeof text !== "string") {
@@ -72,6 +77,16 @@ function rpcMessages(body: string): RpcMessage[] {
         }
     }
     return messages;
+}
+
+/** The `{ error }` object a tool answered with, or null when `text` is not one. */
+function errorAnswer(text: string): object | null {
+    try {
+        const parsed = JSON.parse(text) as unknown;
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) && "error" in parsed ? parsed : null;
+    } catch {
+        return null;
+    }
 }
 
 interface RpcMessage {

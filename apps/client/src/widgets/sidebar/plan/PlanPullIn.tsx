@@ -153,8 +153,6 @@ function PullInRow({ task, outcome, onOpen, onPullIn, onDone, onDrop }: {
                     text={t("caius.plan.actions")}
                     buttonClassName="btn-sm"
                     disabled={!task.listItemId}
-                    noDropdownListStyle
-                    portalToBody
                 >
                     <FormListItem icon="bx bx-right-arrow-alt" onClick={() => void onPullIn(task)}>
                         {t("caius.plan.pull_in")}

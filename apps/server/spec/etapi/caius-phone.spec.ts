@@ -10,7 +10,7 @@ import config from "../../src/services/config.js";
 import { login } from "./utils.js";
 
 const chat = vi.hoisted(() => ({
-    calls: [] as { messages: unknown; config: Record<string, unknown>; signal?: AbortSignal }[],
+    calls: [] as { streamId: unknown; messages: unknown; config: Record<string, unknown>; signal?: AbortSignal }[],
     hold: undefined as Promise<void> | undefined,
     release: () => {}
 }));
@@ -19,8 +19,8 @@ const chat = vi.hoisted(() => ({
 // config they force, so only the chunk source is faked. While `chat.hold` is set, a turn waits
 // after its first chunk until the test releases it or the turn is aborted.
 vi.mock("@triliumnext/core/src/services/llm/chat.js", () => ({
-    async *runChat(messages: unknown, config: Record<string, unknown>, signal?: AbortSignal) {
-        chat.calls.push({ messages, config, signal });
+    async *runChat(streamId: unknown, messages: unknown, config: Record<string, unknown>, signal?: AbortSignal) {
+        chat.calls.push({ streamId, messages, config, signal });
         const hold = chat.hold;
         yield { type: "text", content: "Here's what's left." };
         if (hold) {
@@ -288,7 +288,9 @@ describe("Caius phone token routes", () => {
             expect(res.headers["content-type"]).toContain("text/event-stream");
             expect(res.text).toContain(`data: {"type":"done"}`);
             expect(chat.calls).toHaveLength(1);
-            expect(chat.calls[0].config).toEqual({ providerId: "agent1", chatNoteId, enableNoteTools: true, enableWebSearch: false });
+            expect(chat.calls[0].config).toEqual({
+                providerId: "agent1", chatNoteId, enableNoteTools: true, enableWebSearch: false, permissionMode: "dont_ask"
+            });
         });
 
         it("accepts all three openers, and a model the provider's setup selected", async () => {

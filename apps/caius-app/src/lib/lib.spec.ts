@@ -23,6 +23,12 @@ describe("parseToolReply", () => {
         expect(() => parseToolReply(framed({ id: 1, error: { code: -1, message: "nope" } }), 1)).toThrow("nope");
         expect(() => parseToolReply("", 1)).toThrow("no answer");
     });
+
+    it("hands back a tool's own { error } answer, which the server flags as an error, instead of throwing", () => {
+        const answer = { error: "not_found", detail: "No task t1 on a list" };
+        const body = framed({ id: 1, result: { isError: true, content: [ { type: "text", text: JSON.stringify(answer) } ] } });
+        expect(parseToolReply(body, 1)).toEqual(answer);
+    });
 });
 
 describe("sseParser and applyChunk", () => {
@@ -68,6 +74,8 @@ describe("sseParser and applyChunk", () => {
         const step = stepOf({ id: "1", toolName: "mcp__trilium__caius_planday", input: {}, result: later });
         expect(step).toEqual({ ritual: "plan", step: "not_today", title: null, question: null, data: { date: "2026-11-02" }, dateLabel: "Mon 2 Nov" });
         expect(step && stepReply(step, {})).toEqual([]);
+        // The server flags a tool's `{ error }` answer as a failed call; this one is still the step.
+        expect(stepOf({ id: "1", toolName: "caius_planday", input: {}, result: later, isError: true })).toEqual(step);
     });
 
     it("leaves out a card with nothing to answer, and keeps one with a sentence to read", () => {

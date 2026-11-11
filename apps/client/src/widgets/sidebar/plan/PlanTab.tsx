@@ -227,7 +227,7 @@ function usePlanData(kind: CaiusPeriodKind, key: string) {
     const visible = useContext(RightPaneTabVisible);
     const [ data, setData ] = useState<PlanData | null>(null);
     const [ error, setError ] = useState<string | null>(null);
-    const timer = useRef<ReturnType<typeof setTimeout>>();
+    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const inFlight = useRef(false);
     const queued = useRef(false);
     const missed = useRef(false);

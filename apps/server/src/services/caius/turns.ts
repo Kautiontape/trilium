@@ -177,7 +177,11 @@ const registry = new Map<string, TurnState>();
 async function run(state: TurnState, messages: LlmMessage[], config: LlmProviderConfig) {
     // Imported here so the chat pipeline and the provider SDKs stay in lazy chunks.
     const { runChat } = await import("@triliumnext/core/src/services/llm/chat.js");
-    for await (const chunk of runChat(messages, config, state.controller.signal)) {
+    // A fresh id per turn, since a finished turn's `runChat` can still be draining under its own.
+    const streamId = `caius-turn-${utils.newEntityId()}`;
+    // No client answers a tool approval on a server-owned turn, so its tool calls never ask.
+    const turnConfig: LlmProviderConfig = { ...config, permissionMode: "dont_ask" };
+    for await (const chunk of runChat(streamId, messages, turnConfig, state.controller.signal)) {
         // After its terminal chunk `runChat` still releases the agent session and names the chat
         // note, so the generator is drained to its end rather than stopped.
         if (!state.running || TOOL_INPUT_CHUNKS.has(chunk.type)) {

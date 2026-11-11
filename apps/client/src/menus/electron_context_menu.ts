@@ -16,10 +16,9 @@ function setupContextMenu() {
     const api = eApi.contextMenu;
 
     api.onContextMenu(async (params) => {
-        // Electron reports the point in device-independent pixels; the page works in CSS pixels.
+        // The IPC params contain only window coordinates, so `document.elementFromPoint()` finds
+        // the element under the pointer. Dividing by the zoom factor converts them to CSS pixels.
         const zoomLevel = zoomService.getCurrentZoom();
-        const x = params.x / zoomLevel;
-        const y = params.y / zoomLevel;
 
         const items = await buildNoteContextMenuItems({
             linkURL: params.linkURL,
@@ -27,7 +26,7 @@ function setupContextMenu() {
             isMedia: params.mediaType !== "none",
             isEditable: params.isEditable,
             selectionText: params.selectionText,
-            element: document.elementFromPoint(x, y)
+            element: document.elementFromPoint(params.x / zoomLevel, params.y / zoomLevel)
         }, electronHost(eApi, params));
 
         if (items.length === 0) {
@@ -35,8 +34,8 @@ function setupContextMenu() {
         }
 
         contextMenu.show({
-            x,
-            y,
+            x: params.x / zoomLevel,
+            y: params.y / zoomLevel,
             items,
             selectMenuItemHandler: ({ command, spellingSuggestion }) => {
                 if (command === "replaceMisspelling" && spellingSuggestion) {
@@ -61,7 +60,14 @@ function electronHost(eApi: ElectronApi, params: ElectronContextMenuParams): Con
         paste: {
             enabled: editFlags.canPaste,
             run: () => api.webContentsAction("paste"),
-            runAsPlainText: () => api.webContentsAction("pasteAndMatchStyle")
+            runAsPlainText: () => api.webContentsAction("pasteAndMatchStyle"),
+            read: async () => {
+                const [html, text] = await Promise.all([
+                    eApi.clipboard.readHTML(),
+                    eApi.clipboard.readText()
+                ]);
+                return { html, text };
+            }
         },
         canCut: editFlags.canCut,
         cut: () => api.webContentsAction("cut"),

@@ -251,12 +251,13 @@ export function turnText(blocks: ContentBlock[]) {
 /**
  * A ritual step the agent ran, read from a successful `caius_winddown` / `caius_planday` result:
  * the step's name, Caius's question and its data, for a step card. A day that hasn't started
- * (`error: "not_today"`) is the step `not_today`, whose card asks to plan it now. Null for any
- * other tool, a failed call, or a result that isn't a step.
+ * (`error: "not_today"`, which the server flags as a failed call) is the step `not_today`, whose
+ * card asks to plan it now. Null for any other tool, any other failed call, or a result that isn't
+ * a step.
  */
 export function stepOf(call: ToolCall): RitualStep | null {
     const tool = call.toolName.replace(/^mcp__\w+__/, "");
-    if ((tool !== "caius_winddown" && tool !== "caius_planday") || call.isError || !call.result) {
+    if ((tool !== "caius_winddown" && tool !== "caius_planday") || !call.result) {
         return null;
     }
     const parsed = parseResult(call.result);
@@ -266,6 +267,9 @@ export function stepOf(call: ToolCall): RitualStep | null {
     const later = parsed as { error?: string; date?: string; dateLabel?: string; title?: string };
     if (later.error === "not_today") {
         return { ritual: "plan", step: "not_today", title: later.title ?? null, question: null, data: { date: later.date }, dateLabel: later.dateLabel };
+    }
+    if (call.isError) {
+        return null;
     }
     const step = parsed as { step: string; title?: string; question?: string | null; data?: Record<string, unknown>; dateLabel?: string };
     return {

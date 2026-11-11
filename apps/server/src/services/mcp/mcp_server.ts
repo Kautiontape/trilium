@@ -7,6 +7,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { isToolErrorResult } from "@triliumnext/commons";
 import { app_info as appInfo } from "@triliumnext/core";
 import { cls } from "@triliumnext/core";
 
@@ -19,15 +20,20 @@ import sql from "../sql.js";
  * Register a tool definition on the MCP server.
  *
  * Every call runs in a CLS context so that Becca entity tracking works, and a
- * sync tool's writes run in one transaction.
+ * sync tool's writes run in one transaction. With `toolHints`, the annotations
+ * tell the client which tools only read and which overwrite or remove, so it can
+ * decide what to ask the user about.
  */
-function registerTool(server: McpServer, name: string, def: ToolDefinition, withArgs?: ArgsHook) {
+function registerTool(server: McpServer, name: string, def: ToolDefinition, { withArgs, toolHints }: { withArgs?: ArgsHook; toolHints: boolean }) {
+    const annotations = def.mutates
+        ? { readOnlyHint: false, destructiveHint: def.additive !== true, openWorldHint: false }
+        : { readOnlyHint: true, openWorldHint: false };
     server.registerTool(name, {
         description: def.description,
-        inputSchema: def.inputSchema
+        inputSchema: def.inputSchema,
+        annotations: toolHints ? annotations : undefined
     }, (given: any): CallToolResult | Promise<CallToolResult> => {
         const args = withArgs ? withArgs(name, given) : given;
-        const toContent = (result: object): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(result) }] });
 
         if (def.async) {
             return cls.init(async () => {
@@ -53,10 +59,12 @@ function registerTool(server: McpServer, name: string, def: ToolDefinition, with
 export type ArgsHook = (name: string, args: Record<string, unknown>) => Record<string, unknown>;
 
 /**
- * Trilium's MCP server with every registered tool but those named in `omit`, which it never lists.
- * `withArgs` sees every call's arguments first, for what the session knows and the agent may not.
+ * Build Trilium's MCP server with every registered tool but those named in `omit`, which it never
+ * lists. `withArgs` sees every call's arguments first, for what the session knows and the agent
+ * may not. An in-chat agent's server sets `toolHints: false`: the chat's approvals decide its
+ * calls, and Codex runs a tool marked read-only without asking.
  */
-export async function createMcpServer({ omit = [], withArgs }: { omit?: string[]; withArgs?: ArgsHook } = {}): Promise<McpServer> {
+export async function createMcpServer({ omit = [], withArgs, toolHints = true }: { omit?: string[]; withArgs?: ArgsHook; toolHints?: boolean } = {}): Promise<McpServer> {
     // Host-registered registries (the User Guide tools) load lazily; the array
     // is complete only after this resolves.
     await resolveToolRegistries();
@@ -69,9 +77,15 @@ export async function createMcpServer({ omit = [], withArgs }: { omit?: string[]
     for (const registry of allToolRegistries) {
         for (const [name, def] of registry) {
             if (omit.includes(name)) continue;
-            registerTool(server, name, def, withArgs);
+            registerTool(server, name, def, { withArgs, toolHints });
         }
     }
 
     return server;
+}
+
+function toContent(result: object): CallToolResult {
+    const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(result) }];
+    // Without `isError`, an agent (and the chat behind it) takes a failure for a success.
+    return isToolErrorResult(result) ? { content, isError: true } : { content };
 }

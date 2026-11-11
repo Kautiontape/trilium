@@ -1314,7 +1314,7 @@ function fateChecks(said: string, input: ReturnType<typeof windDownAnswers>, poo
         const given = answered.has(heard.id) ? answered.get(heard.id) : answered.has(end) ? answered.get(end) : null;
         if (given === undefined || given === heard.to || (given !== null && !PERIODS.day.pattern.test(given) && !PERIODS.week.pattern.test(given) && !PERIODS.month.pattern.test(given))) return [];
         const item = pool.find((entry) => entry.id === heard.id)?.text ?? heard.id;
-        const key = given === null ? "caius.check.fate" : "caius.check.fate_other";
+        const key = given === null ? "caius.check.fate" : "caius.check.fate_elsewhere";
         return [ { item, said: heard.clause, missing: "fate" as const, message: t(key, { item, clause: heard.clause }) } ];
     });
 }

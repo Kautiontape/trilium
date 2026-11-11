@@ -1,15 +1,22 @@
 import type { CKTextEditor } from "@triliumnext/ckeditor5";
 
 import appContext, { type CommandNames } from "../components/app_context.js";
+import { buildBlockReferenceMenuItems } from "../services/block_reference.js";
 import { isCaiusEnabled } from "../services/caius.js";
 import { copyHtml, copyTextWithToast } from "../services/clipboard_ext.js";
 import { t } from "../services/i18n.js";
-import options from "../services/options.js";
+import { getSearchEngine } from "../services/search_engine.js";
 import server from "../services/server.js";
 import utils from "../services/utils.js";
+import { buildCodeEditorContextMenuItems } from "./code_editor_context_menu.js";
 import contextMenu, { type MenuItem } from "./context_menu.js";
+import { splitMenuItem } from "./context_menu_utils.js";
+import { buildTableContextMenuSections, hasTableCellSelection } from "./table_context_menu.js";
 import { buildTaskActionsMenuItem, isOverJournalTask, TASK_ACTIONS_CLASS } from "./task_actions.js";
-import { buildAiActionsMenuItem, getTextEditorAtSelection } from "./text_editor_context_menu.js";
+import {
+    buildAiActionsMenuItem, buildSortSelectionMenuItem, getTextEditorAtSelection,
+    getTextEditorContaining
+} from "./text_editor_context_menu.js";
 
 /** What the pointer was over when the menu was summoned. */
 export interface ContextMenuTarget {
@@ -23,14 +30,14 @@ export interface ContextMenuTarget {
     isEditable: boolean;
     /** The selected text, or an empty string. */
     selectionText: string;
-    /** The element under the pointer, which decides whether the Task submenu applies. */
+    /** The element under the pointer, when the host can resolve one. */
     element?: Element | null;
 }
 
 /**
  * What the surrounding application can run on the menu's behalf. An optional member the host leaves
- * out drops the rows that depend on it: a page reaches neither the spell checker's state nor a
- * paste cheaper than Ctrl+V, so a browser host supplies neither.
+ * out drops the rows that depend on it: a page never reaches the spell checker's state, and reads
+ * the clipboard only in a secure context, so the browser host leaves out what it cannot serve.
  */
 export interface ContextMenuHost {
     spelling?: {
@@ -42,6 +49,8 @@ export interface ContextMenuHost {
         enabled: boolean;
         run(): void;
         runAsPlainText(): void;
+        /** Reads the clipboard, for the rows that paste through an editor command. */
+        read(): Promise<{ html: string; text: string }>;
     };
     canCut: boolean;
     cut(): void | Promise<void>;
@@ -52,10 +61,10 @@ export interface ContextMenuHost {
 }
 
 /**
- * Puts Trilium's menu over the browser's own wherever the pointer sits on a selection or on a
- * task in a Journal note. A click at a bare caret elsewhere keeps the native menu, the only way to
- * spelling corrections and the browser's paste. Electron replaces the menu everywhere; see
- * `electron_context_menu.ts`.
+ * Puts Trilium's menu over the browser's own wherever the pointer sits on a selection, in a table
+ * cell of a text note or on a task in a Journal note. A click at a bare caret elsewhere keeps the
+ * native menu, the only way to spelling corrections and the browser's paste. Electron replaces the
+ * menu everywhere; see `electron_context_menu.ts`.
  */
 export function setupContextMenu() {
     // `isOverJournalTask()` answers synchronously from the last known status, so ask for it early.
@@ -75,18 +84,27 @@ export function setupContextMenu() {
         }
 
         const element = event.target instanceof HTMLElement ? event.target : null;
+        const isEditable = acceptsTyping(element);
 
         // `window.getSelection()` does not report a selection inside an `<input>` or `<textarea>`,
         // so those keep the browser's menu, which is the better one for a plain text field.
+        // The clipboard and search rows act on the selection, so the pointer has to be on it: a
+        // right-click on the surrounding UI, which takes no selection of its own, leaves an
+        // earlier one standing.
         const selection = window.getSelection();
-        // The rows act on the selection, so the pointer has to be on it. A right-click on the
-        // surrounding UI, which takes no selection of its own, leaves an earlier one standing.
-        const pointIsInSelection = selection
-            && isPointInSelection(selection, event.clientX, event.clientY);
-        const selectionText = pointIsInSelection ? selection.toString() : "";
+        const selectionText = selection?.toString() ?? "";
+        const isOnSelection = !!selection && (isOnSelectedCodeLine(selection, element, isEditable)
+            || (!!selectionText.trim()
+                && isPointInSelection(selection, event.clientX, event.clientY)));
+
+        // A table cell in the text editor is claimed even at a bare caret, for the table section.
+        const isOnEditableTableCell = isEditable && !!element?.closest("td, th");
 
         // A task's actions apply to the item under the pointer, selection or not.
-        if (!selectionText.trim() && !isOverJournalTask(element)) {
+        const isClaimedForTask = !isOnSelection && !isOnEditableTableCell
+            && isOverJournalTask(element);
+
+        if (!isOnSelection && !isOnEditableTableCell && !isClaimedForTask) {
             return;
         }
 
@@ -99,10 +117,12 @@ export function setupContextMenu() {
             linkURL: link instanceof HTMLAnchorElement ? link.href : "",
             linkText: link?.textContent ?? "",
             isMedia: !!element?.closest("img, video, audio"),
-            isEditable: acceptsTyping(element),
-            selectionText,
+            isEditable,
+            // Claimed off the selection (a bare caret in a table cell or on a task), those rows get
+            // none.
+            selectionText: isOnSelection ? selectionText : "",
             element
-        });
+        }, isClaimedForTask);
     });
 }
 
@@ -117,7 +137,6 @@ export async function buildNoteContextMenuItems(
     target: ContextMenuTarget,
     host: ContextMenuHost
 ): Promise<MenuItem<CommandNames>[]> {
-    const hasText = target.selectionText.trim().length > 0;
     const platformModifier = utils.isMac() ? "Meta" : "Ctrl";
     const items: MenuItem<CommandNames>[] = [];
 
@@ -126,6 +145,27 @@ export async function buildNoteContextMenuItems(
     // lands somewhere a completion could not be committed anyway (a read-only note, the tree).
     const aiActions = target.isEditable ? await buildAiActionsMenuItem() : null;
     const taskActions = target.element ? await buildTaskActionsMenuItem(target.element) : null;
+    const tableSections = target.isEditable
+        ? await buildTableContextMenuSections(target.element, host.paste)
+        : null;
+
+    // Read after the table sections are built, which moves the selection into the clicked cell.
+    // A cell selection supersedes `selectionText`: over one, Electron reports the hidden
+    // fake-selection label as the selected text, which no row should act on.
+    const hasCellSelection = tableSections !== null && await hasTableCellSelection(target.element);
+    const blockReferenceItems = target.isEditable
+        ? await buildBlockReferenceMenuItems(target.element, host.paste)
+        : null;
+    const codeEditorItems = target.isEditable
+        ? await buildCodeEditorContextMenuItems(target.element)
+        : null;
+    // The table section sorts the rows.
+    const sortItem = target.isEditable
+        ? buildSortSelectionMenuItem(await getTextEditorContaining(target.element),
+            { isRowsExcluded: tableSections !== null })
+        : null;
+    const hasText = !hasCellSelection && target.selectionText.trim().length > 0;
+    const hasClipboardContent = hasText || hasCellSelection;
 
     if (host.spelling?.misspelledWord) {
         const { misspelledWord, suggestions, addToDictionary } = host.spelling;
@@ -140,7 +180,7 @@ export async function buildNoteContextMenuItems(
         }
 
         items.push({
-            title: t("electron_context_menu.add-term-to-dictionary", { term: misspelledWord }),
+            title: t("electron_context_menu.add-term-to-dictionary", { term: utils.escapeHtml(misspelledWord) }),
             uiIcon: "bx bx-plus",
             handler: () => addToDictionary(misspelledWord)
         });
@@ -156,9 +196,13 @@ export async function buildNoteContextMenuItems(
         items.push(aiActions, { kind: "separator" });
     }
 
+    if (tableSections) {
+        items.push(...tableSections.main, { kind: "separator" });
+    }
+
     if (target.isEditable) {
         items.push({
-            enabled: host.canCut && hasText,
+            enabled: host.canCut && hasClipboardContent,
             title: t("electron_context_menu.cut"),
             shortcut: `${platformModifier}+X`,
             uiIcon: "bx bx-cut",
@@ -167,20 +211,27 @@ export async function buildNoteContextMenuItems(
     }
 
     if (target.isEditable || hasText) {
-        items.push({
-            enabled: host.canCopy && hasText,
+        const copyVariants: MenuItem<CommandNames>[] = [
+            {
+                enabled: hasClipboardContent,
+                title: t("electron_context_menu.copy-as-markdown"),
+                uiIcon: "bx bx-copy-alt",
+                handler: copySelectionAsMarkdown
+            }
+        ];
+        const referenceItems = [ blockReferenceItems?.copy, blockReferenceItems?.copyTab ]
+            .filter((item): item is MenuItem<CommandNames> => !!item);
+        if (referenceItems.length) {
+            copyVariants.push({ kind: "separator" }, ...referenceItems);
+        }
+
+        items.push(splitMenuItem({
+            enabled: host.canCopy && hasClipboardContent,
             title: t("electron_context_menu.copy"),
             shortcut: `${platformModifier}+C`,
             uiIcon: "bx bx-copy",
             handler: () => host.copy()
-        });
-
-        items.push({
-            enabled: hasText,
-            title: t("electron_context_menu.copy-as-markdown"),
-            uiIcon: "bx bx-copy-alt",
-            handler: copySelectionAsMarkdown
-        });
+        }, copyVariants));
     }
 
     const unlinkable = [ "", "javascript:", "about:blank#blocked" ];
@@ -198,22 +249,41 @@ export async function buildNoteContextMenuItems(
 
     if (host.paste && target.isEditable) {
         const { enabled, run, runAsPlainText } = host.paste;
+        const pasteVariants: MenuItem<CommandNames>[] = [
+            {
+                enabled,
+                title: t("electron_context_menu.paste-as-plain-text"),
+                shortcut: `${platformModifier}+Shift+V`,
+                uiIcon: "bx bx-paste",
+                handler: runAsPlainText
+            }
+        ];
+        if (blockReferenceItems?.paste.length) {
+            pasteVariants.push({ kind: "separator" }, ...blockReferenceItems.paste);
+        }
+        if (tableSections?.pasteRows.length) {
+            pasteVariants.push({ kind: "separator" }, ...tableSections.pasteRows);
+        }
 
-        items.push({
+        items.push(splitMenuItem({
             enabled,
             title: t("electron_context_menu.paste"),
             shortcut: `${platformModifier}+V`,
             uiIcon: "bx bx-paste",
             handler: run
-        });
+        }, pasteVariants));
+    }
 
-        items.push({
-            enabled,
-            title: t("electron_context_menu.paste-as-plain-text"),
-            shortcut: `${platformModifier}+Shift+V`,
-            uiIcon: "bx bx-paste",
-            handler: runAsPlainText
-        });
+    if (tableSections) {
+        const sortItems = sortItem ? [ tableSections.sort, sortItem ] : [ tableSections.sort ];
+        items.push({ kind: "separator" }, ...sortItems, { kind: "separator" },
+            ...tableSections.delete, { kind: "separator" }, tableSections.select);
+    } else if (sortItem) {
+        items.push({ kind: "separator" }, sortItem);
+    }
+
+    if (codeEditorItems) {
+        items.push({ kind: "separator" }, ...codeEditorItems);
     }
 
     if (hasText) {
@@ -222,33 +292,23 @@ export async function buildNoteContextMenuItems(
             ? `${selectionText.slice(0, 13)}…`
             : selectionText;
 
-        const customSearchEngineName = options.get("customSearchEngineName");
-        const customSearchEngineUrl = options.get("customSearchEngineUrl") as string;
-        let searchEngineName;
-        let searchEngineUrl;
-        if (customSearchEngineName && customSearchEngineUrl) {
-            searchEngineName = customSearchEngineName;
-            searchEngineUrl = customSearchEngineUrl;
-        } else {
-            searchEngineName = "DuckDuckGo";
-            searchEngineUrl = "https://duckduckgo.com/?q={keyword}";
-        }
-
-        const searchUrl = searchEngineUrl.replace("{keyword}", encodeURIComponent(selectionText));
-
         items.push({ kind: "separator" });
 
-        items.push({
-            title: t("electron_context_menu.search_online", {
-                term: shortenedSelection,
-                searchEngine: searchEngineName
-            }),
-            uiIcon: "bx bx-search-alt",
-            handler: () => host.openExternal(searchUrl)
-        });
+        const searchEngine = getSearchEngine();
+        if (searchEngine) {
+            const searchUrl = searchEngine.url.replace("{keyword}", encodeURIComponent(selectionText));
+            items.push({
+                title: t("electron_context_menu.search_online", {
+                    term: utils.escapeHtml(shortenedSelection),
+                    searchEngine: utils.escapeHtml(searchEngine.name)
+                }),
+                uiIcon: searchEngine.icon,
+                handler: () => host.openExternal(searchUrl)
+            });
+        }
 
         items.push({
-            title: t("electron_context_menu.search_in_trilium", { term: shortenedSelection }),
+            title: t("electron_context_menu.search_in_trilium", { term: utils.escapeHtml(shortenedSelection) }),
             uiIcon: "bx bx-search",
             handler: async () => {
                 await appContext.triggerCommand("searchNotes", { searchString: selectionText });
@@ -282,18 +342,36 @@ export async function getSelectedHtmlForMarkdown(): Promise<string> {
     return div.innerHTML;
 }
 
-async function showBrowserContextMenu(x: number, y: number, target: ContextMenuTarget) {
+async function showBrowserContextMenu(
+    x: number,
+    y: number,
+    target: ContextMenuTarget,
+    isClaimedForTask: boolean
+) {
     const editor = await getTextEditorAtSelection();
-    const items = await buildNoteContextMenuItems(target, browserHost(editor));
+    const items = await buildNoteContextMenuItems(target, browserHost(editor, target.element));
     if (!items.length) return;
 
-    // The menu opened for a task with nothing selected. If the task's editor locked meanwhile, the
-    // Task submenu is gone and only disabled rows would be left.
+    // The menu opened only for a task. If the task's editor locked meanwhile, the Task submenu is
+    // gone and only disabled rows would be left.
     const hasTaskActions = items.some((item) =>
         "className" in item && item.className === TASK_ACTIONS_CLASS);
-    if (!target.selectionText.trim() && !hasTaskActions) return;
+    if (isClaimedForTask && !hasTaskActions) return;
 
     contextMenu.show({ x, y, items, selectMenuItemHandler: () => {} });
+}
+
+/**
+ * Whether `element` is on a line of an editable code editor that `selection` touches. The whole
+ * line counts, so that the text tools are reachable for a selection of blank lines or spaces.
+ */
+function isOnSelectedCodeLine(
+    selection: Selection,
+    element: HTMLElement | null,
+    isEditable: boolean
+) {
+    const line = isEditable ? element?.closest(".cm-line") : null;
+    return !!line && !selection.isCollapsed && selection.containsNode(line, true);
 }
 
 /** Whether the point (`x`, `y`), in viewport coordinates, lands on what `selection` highlights. */
@@ -327,8 +405,14 @@ function acceptsTyping(element: HTMLElement | null) {
  * `editor` is what the selection sits in, when it sits in a text note at all — `null` in a code
  * note, which has a CodeMirror instead, and in a plain field.
  */
-function browserHost(editor: CKTextEditor | null): ContextMenuHost {
+function browserHost(
+    editor: CKTextEditor | null,
+    element: Element | null | undefined
+): ContextMenuHost {
+    const paste = browserPaste(editor, element);
+
     return {
+        ...(paste && { paste }),
         canCut: !editor?.isReadOnly,
         cut() {
             // A text note's editor is asked directly, so that the clipboard gets the clean
@@ -347,10 +431,84 @@ function browserHost(editor: CKTextEditor | null): ContextMenuHost {
     };
 }
 
+/**
+ * The paste rows for a page, supplied when `navigator.clipboard.read()` exists, which requires a
+ * secure context.
+ */
+function browserPaste(
+    editor: CKTextEditor | null,
+    element: Element | null | undefined
+): ContextMenuHost["paste"] {
+    if (!navigator.clipboard?.read) {
+        return undefined;
+    }
+
+    return {
+        // Whether the clipboard holds anything is unknowable without reading it, which prompts
+        // for permission, so the rows stay enabled and an empty clipboard pastes nothing.
+        enabled: true,
+        run: () => void pasteFromClipboard(editor, element, false),
+        runAsPlainText: () => void pasteFromClipboard(editor, element, true),
+        read: readClipboard
+    };
+}
+
+async function pasteFromClipboard(
+    editor: CKTextEditor | null,
+    element: Element | null | undefined,
+    asPlainText: boolean
+) {
+    // Pinned before the read, which can wait on a permission prompt, so the paste lands where the
+    // menu was opened.
+    const pasteTarget = editor?.capturePasteTarget();
+    try {
+        const { html, text } = await readClipboard();
+
+        // The editor's clipboard pipeline, so a paste lands the way a native one does — a table
+        // pasted into a multi-cell selection merges into it.
+        if (pasteTarget) {
+            pasteTarget.paste(asPlainText ? "" : html, text);
+            return;
+        }
+
+        // A non-CKEditor editable (a code note's CodeMirror, a plain field) takes the text
+        // flavor as a typed insertion.
+        const editable = element?.closest<HTMLElement>("[contenteditable]");
+        if (editable && text) {
+            editable.focus();
+            document.execCommand("insertText", false, text);
+        }
+    } catch (error) {
+        console.warn("Failed to paste from the clipboard:", error);
+    } finally {
+        pasteTarget?.release();
+    }
+}
+
+/** The first `text/html` and `text/plain` flavors on the clipboard, empty when absent. */
+async function readClipboard(): Promise<{ html: string; text: string }> {
+    let html = "";
+    let text = "";
+
+    for (const item of await navigator.clipboard.read()) {
+        if (!html && item.types.includes("text/html")) {
+            html = await (await item.getType("text/html")).text();
+        }
+        if (!text && item.types.includes("text/plain")) {
+            text = await (await item.getType("text/plain")).text();
+        }
+    }
+
+    return { html, text };
+}
+
 /** Copies the selection as rich text, so that it pastes back into a note with its formatting. */
 async function copySelection() {
     const html = await getSelectedHtmlForMarkdown();
-    const plainText = window.getSelection()?.toString() ?? "";
+    // The editor's own plain-text flavor first: over a multi-cell table selection the DOM
+    // selection reads as the hidden fake-selection label, not as cell text.
+    const editor = await getTextEditorAtSelection();
+    const plainText = (editor?.getSelectedPlainText() || window.getSelection()?.toString()) ?? "";
     if (!html && !plainText) return;
 
     await copyHtml(html || utils.escapeHtml(plainText), plainText);
@@ -363,7 +521,9 @@ async function copySelectionAsMarkdown() {
     try {
         const { markdownContent } = await server.post<{ markdownContent: string }>(
             "other/to-markdown",
-            { htmlContent }
+            // The clipboard never reimports, so a headerless table (a copied subset of body
+            // cells) becomes a markdown table under a blank header instead of raw HTML.
+            { htmlContent, headerlessTables: "emptyHeader" }
         );
         copyTextWithToast(markdownContent);
     } catch (error) {

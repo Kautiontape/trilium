@@ -16,6 +16,7 @@ export const skillTools = defineTools({
             return `Load a skill to get specialized instructions. Available skills:\n${
                 listSkills().map((s) => `- ${s.name}: ${s.description}`).join("\n")}`;
         },
+        readsUserData: false,
         inputSchema: z.object({
             name: z.string().describe("The skill name to load")
         }),

@@ -21,12 +21,12 @@ type Script = (signal?: AbortSignal) => AsyncGenerator<LlmStreamChunk>;
 
 const llm = vi.hoisted(() => ({
     script: undefined as Script | undefined,
-    calls: [] as { messages: unknown; config: unknown; signal?: AbortSignal }[]
+    calls: [] as { streamId: unknown; messages: unknown; config: unknown; signal?: AbortSignal }[]
 }));
 
 vi.mock("@triliumnext/core/src/services/llm/chat.js", () => ({
-    runChat(messages: unknown, config: unknown, signal?: AbortSignal) {
-        llm.calls.push({ messages, config, signal });
+    runChat(streamId: unknown, messages: unknown, config: unknown, signal?: AbortSignal) {
+        llm.calls.push({ streamId, messages, config, signal });
         if (!llm.script) {
             throw new Error("No chat script set");
         }
@@ -218,6 +218,25 @@ describe("startTurn", () => {
         const types = [ "text", "tool_use", "tool_result", "done" ];
         expect(turn.chunks.map((chunk) => chunk.type)).toEqual(types);
         expect(live).toEqual(types.map((type, index) => `${index}:${type}`));
+    });
+
+    it("gives each turn a stream id of its own and runs it with no approval prompts, whatever the config asks", async () => {
+        const gate = gated([], [ { type: "done" } ]);
+        const before = llm.calls.length;
+        const first = started({ noteId: newChatNote(), messages: OPENER, config: { permissionMode: "always_ask" } });
+        const second = started({ noteId: newChatNote(), messages: OPENER, config: {} });
+        await vi.waitFor(() => expect(llm.calls).toHaveLength(before + 2));
+        const [ a, b ] = llm.calls.slice(before);
+
+        expect(typeof a.streamId).toBe("string");
+        expect(typeof b.streamId).toBe("string");
+        expect(a.streamId).not.toBe(b.streamId);
+        expect(a.messages).toEqual(OPENER);
+        expect(a.config).toMatchObject({ permissionMode: "dont_ask" });
+        expect(b.config).toMatchObject({ permissionMode: "dont_ask" });
+
+        gate.release();
+        await Promise.all([ first.finished, second.finished ]);
     });
 
     it("runs `runChat` in a context of its own, apart from the caller's", async () => {

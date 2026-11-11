@@ -26,6 +26,8 @@ interface MutatingToolDefinition {
     /** Marks this tool as modifying data (needs CLS + transaction wrapping). */
     mutates: true;
     async?: false;
+    /** Marks a tool that only adds to the notes (a note, a clone, text at the end), never overwriting or removing. */
+    additive?: true;
     /**
      * Execute the tool synchronously. Must NOT be async because better-sqlite3
      * transactions are synchronous and would commit before awaits complete.
@@ -39,6 +41,11 @@ interface ReadOnlyToolDefinition {
     inputSchema: z.ZodType;
     mutates?: false;
     async?: false;
+    /**
+     * `false` for a tool that reads only what ships with Trilium (its User Guide, skill sheets,
+     * icons), never the user's notes, so its calls never wait for approval.
+     */
+    readsUserData?: false;
     /** Execute the tool synchronously. Kept sync for consistency with MCP. */
     execute: (args: any) => NotAPromise<object>;
 }
@@ -55,6 +62,10 @@ interface AsyncToolDefinition {
     inputSchema: z.ZodType;
     /** Marks this tool as modifying data. Unlike on a sync tool, it adds no transaction. */
     mutates?: boolean;
+    /** As on a sync tool: a write that only adds to the notes. */
+    additive?: true;
+    /** As on a sync tool: a read of only what ships with Trilium. */
+    readsUserData?: false;
     async: true;
     execute: (args: any) => Promise<object>;
 }
