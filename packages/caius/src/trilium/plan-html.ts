@@ -32,6 +32,7 @@ import {
   type Edit,
   type ItemState,
 } from './html-util.js';
+import { scheduledMarksOf } from './forward-html.js';
 
 export type Target = { kind: 'section'; name: string } | { kind: 'critical' } | { kind: 'suggested' } | { kind: 'onDeck' };
 
@@ -684,17 +685,40 @@ export function setTaskEstimate(
   const span = descriptionOf(li);
   if (!span) return { ok: false, reason: 'not_found' };
   const start = html.indexOf('>', span.range[0] + 5 + span.rawAttrs.length) + 1;
-  const inner = html.slice(start, spanEnd(html, span));
-  // Masked to the same length, so a `&nbsp;` before a token reads as the space it is.
-  const masked = inner.replace(/&nbsp;/g, '      ');
+  // The zone is read on the text without its "scheduled" marks, as the scan reads it; masked to the
+  // same length, so a `&nbsp;` before a token reads as the space it is.
+  const { bare, original } = descriptionWithoutMarks(html, span, start);
+  const masked = bare.replace(/&nbsp;/g, '      ');
   const zone = tokenZoneStartInHtml(masked);
   const found = /~(?:(\d+)h(\d+)m|(\d+)h|(\d+)m)(?=\s|$)/.exec(masked.slice(zone));
   const token = estimateToken(minutes);
-  if (!found) return { ok: true, html: apply(html, [{ start: start + zone, end: start + zone, text: ` ${token}` }]), unchanged: false };
+  if (!found) {
+    const at = start + original(zone);
+    return { ok: true, html: apply(html, [{ start: at, end: at, text: ` ${token}` }]), unchanged: false };
+  }
   const have = found[1] ? Number(found[1]) * 60 + Number(found[2]) : found[3] ? Number(found[3]) * 60 : Number(found[4]);
   if (have === minutes) return { ok: true, html, unchanged: true };
-  const at = start + zone + found.index;
+  const at = start + original(zone + found.index);
   return { ok: true, html: apply(html, [{ start: at, end: at + found[0].length, text: token }]), unchanged: false };
+}
+
+/**
+ * A description's inner HTML (which starts at `start` in `html`) without its "scheduled" marks and
+ * the spaces before each, and `original`, which maps an offset in that text back into the inner HTML.
+ */
+function descriptionWithoutMarks(html: string, span: HTMLElement, start: number): { bare: string; original: (at: number) => number } {
+  const cuts: { at: number; length: number }[] = [];
+  const edits: Edit[] = [];
+  let removed = 0;
+  for (const mark of scheduledMarksOf(span)) {
+    const from = mark.start - (/(?:\s|&nbsp;)*$/.exec(html.slice(start, mark.start))?.[0].length ?? 0);
+    edits.push({ start: from - start, end: mark.end - start, text: '' });
+    cuts.push({ at: from - start - removed, length: mark.end - from });
+    removed += mark.end - from;
+  }
+  const bare = apply(html.slice(start, spanEnd(html, span)), edits);
+  const original = (at: number) => at + cuts.filter((cut) => cut.at < at).reduce((sum, cut) => sum + cut.length, 0);
+  return { bare, original };
 }
 
 function estimateToken(minutes: number): string {

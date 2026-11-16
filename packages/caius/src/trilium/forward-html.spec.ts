@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { dayLabel, periodLabel, hasCopy, insertCopy, inspectItem, markRescheduled } from './forward-html.js';
+import { dayLabel, periodLabel, hasCopy, insertCopy, inspectItem, markRescheduled, scheduledMarksOf } from './forward-html.js';
 
 const STATES = new Map([
   ['doing', '/'],
@@ -286,6 +286,47 @@ describe('a task forwarded again', () => {
   });
 });
 
+describe('a task reopened with a click, its mark kept', () => {
+  const reopened = ul(li('eone', 'Write it <em>scheduled </em><a href="#root/tue"><em>Tue 27 Oct</em></a> ~30m'));
+  const fresh = { ...copy, newId: () => 'enew' };
+
+  it('copies without the old mark, and recognises its copy in the note that holds the first one', () => {
+    const r = insertCopy('<h3>Work</h3>', reopened, 'eone', fresh);
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a> ~30m');
+    expect(hasCopy(r.html, reopened, 'eone', SRC_ID)).toBe(true);
+    expect(hasCopy('<h3>Work</h3>', reopened, 'eone', SRC_ID)).toBe(false);
+  });
+
+  it('drops a written mark and the &nbsp; before a saved one, from the top item and its kept sub-items', () => {
+    const sub = li('esub', 'Child <em>scheduled <a href="#root/x">X</a></em>');
+    const src = ul(li('eone', 'Write it&nbsp;<em>scheduled&nbsp;</em><a class="reference-link" href="#root/tue">03 - Tuesday</a>', { sub: ul(sub) }));
+    const r = insertCopy('', src, 'eone', fresh);
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a>');
+    expect(r.html).not.toContain('scheduled');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a>');
+    expect(r.html).toContain('>Child</span>');
+  });
+});
+
+describe('a task rescheduled, then reopened with a click', () => {
+  it('copies as the real output reads: the mark follows the estimate, and the copy has none', () => {
+    const src = ul(li('eone', 'Write it ~30m'));
+    const marked = markRescheduled(src, 'eone', mark);
+    if (!marked.ok) throw new Error('expected ok');
+    const reopened = marked.html
+      .replace(/ data-trilium-task-state="[^"]*"/g, '')
+      .replace(/ data-trilium-task-title="[^"]*"/g, '')
+      .replace(/ checked="checked"/g, '');
+    expect(reopened).toContain('Write it ~30m <em>scheduled');
+    const r = insertCopy('<h3>Work</h3>', reopened, 'eone', { ...copy, newId: () => 'enew' });
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a> ~30m');
+    expect(hasCopy(r.html, reopened, 'eone', SRC_ID)).toBe(true);
+  });
+});
+
 describe('hasCopy of a task with a back link', () => {
   it('tells a recurring Laundry from Monday from one from Tuesday by where each link points', () => {
     const fromMon = ul(li('wlau', 'Laundry <a href="#root/mon">from Mon 2 Nov</a>'));
@@ -293,5 +334,43 @@ describe('hasCopy of a task with a back link', () => {
     expect(hasCopy(fromMon, fromTue, 'tlau', 'src')).toBe(false);
     const same = ul(li('wlau', 'Laundry <a href="#root/tue">from Tue 3 Nov</a>'));
     expect(hasCopy(same, fromTue, 'tlau', 'src')).toBe(true);
+  });
+});
+
+describe('scheduledMarksOf', () => {
+  const marksIn = (inner: string) => scheduledMarksOf(parse(inner));
+
+  it.each([
+    ['as written', '<em>scheduled <a href="#root/tue">Tue 3 Nov</a></em>', true, 'Tue 3 Nov'],
+    ['as the editor saves a plain link', '<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>', false, 'Tue 3 Nov'],
+    ['as the editor saves a reference link', '<em>scheduled&nbsp;</em><a class="reference-link" href="#root/tue">03 - Tuesday</a>', false, '03 - Tuesday'],
+    ['after a Markdown round trip, plain link', '<em>scheduled</em> <a href="#root/tue"><em>Tue 3 Nov</em></a>', false, 'Tue 3 Nov'],
+    ['after a Markdown round trip, reference link', '<em>scheduled</em>&nbsp;<a class="reference-link" href="#root/tue">03 - Tuesday</a>', false, '03 - Tuesday'],
+  ])('finds one mark %s', (_shape, mark, written, label) => {
+    const inner = `Call the vet ${mark} ~30m`;
+    const found = marksIn(inner);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ noteId: 'tue', label, written });
+    expect(inner.slice(found[0]?.start, found[0]?.end)).toBe(mark);
+  });
+
+  it('reads a rescheduled mark', () => {
+    expect(marksIn('Pay <em>rescheduled</em> <a href="#root/tue">Tue 3 Nov</a>')).toMatchObject([{ noteId: 'tue', written: false }]);
+  });
+
+  it('finds no mark in a bare em, an em then words then a link, or an em then a "from" link', () => {
+    expect(marksIn('Call <em>scheduled</em> soon')).toEqual([]);
+    expect(marksIn('Call <em>scheduled</em> for later <a href="#root/tue">Tue 3 Nov</a>')).toEqual([]);
+    expect(marksIn('Call <em>scheduled</em> <a href="#root/mon">from Mon 2 Nov</a>')).toEqual([]);
+  });
+
+  it('finds no mark when the italic holds other words, so a copy keeps the phrase', () => {
+    const phrase = '<em>scheduled in <a href="#root/q4">Q4 planning</a></em>';
+    expect(marksIn(`Prep ${phrase}`)).toEqual([]);
+    expect(marksIn('Prep <em>scheduled <a href="#root/q4">Q4</a> for later</em>')).toEqual([]);
+    const src = ul(li('eone', `Prep ${phrase}`));
+    const r = insertCopy('', src, 'eone', { ...copy, newId: () => 'enew' });
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toContain(phrase);
   });
 });

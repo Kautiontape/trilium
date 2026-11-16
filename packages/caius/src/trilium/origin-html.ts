@@ -4,8 +4,8 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { backLinkOf, withoutBackLink } from './forward-html.js';
-import { descriptionOf, elements, findItem, isHeading, itemState, norm, tokenZoneStart } from './html-util.js';
+import { backLinkOf, MARK_WORD, withoutBackLink, withoutScheduledMarks } from './forward-html.js';
+import { apply, descriptionOf, elements, findItem, isHeading, itemState, norm, tokenZoneStart, type Edit } from './html-util.js';
 
 /** What the source note's HTML says about a task. */
 export interface OriginFields {
@@ -31,9 +31,6 @@ export interface TaskOrigin extends OriginFields {
 
 export const MAX_NEIGHBOURS = 3;
 export const LEAD_CHARS = 200;
-
-/** Caius's "scheduled Tue 27 Oct" note on a forwarded item, as written or as CKEditor saves it. */
-const SCHEDULED = /(?:\s|&nbsp;)*<em>\s*(?:re)?scheduled\b[\s\S]*?<\/em>/g;
 
 /**
  * The task's own words and the note its "from …" link points at; null when the note has no item
@@ -64,8 +61,19 @@ function itemText(li: HTMLElement): string {
   const inner = span
     ? span.innerHTML
     : li.childNodes.filter((n) => !(n instanceof HTMLElement && /^(UL|OL)$/.test(n.tagName))).map((n) => n.toString()).join('');
-  const text = parse(withoutBackLink(inner).replace(SCHEDULED, '')).text.replace(/\s+/g, ' ').trim();
+  const text = wordsWithoutMarks(withoutBackLink(inner)).replace(/\s+/g, ' ').trim();
   return text.slice(0, tokenZoneStart(text)).trim();
+}
+
+/** `inner` as text, without its scheduled marks or any other italic that starts with the word. */
+function wordsWithoutMarks(inner: string): string {
+  const stripped = withoutScheduledMarks(inner);
+  const root = parse(stripped);
+  const edits: Edit[] = [];
+  for (const em of root.querySelectorAll('em')) {
+    if (MARK_WORD.test(em.text)) edits.push({ start: em.range[0], end: em.range[1], text: '' });
+  }
+  return parse(apply(stripped, edits)).text;
 }
 
 function matchItem(root: HTMLElement, text: string, states: StateSymbols): HTMLElement | undefined {

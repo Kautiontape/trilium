@@ -758,7 +758,7 @@ describe("fix round 1: a finished key that two open items carry", () => {
         at(`${DAY}T17:45`);
         const applied = await call("caius_winddown_apply", { date: DAY, finished: [ "ZAP-105" ] });
         expect(applied.skipped).toEqual([]);
-        expect((await tasksOf(DAY)).map((task: any) => task.state)).toEqual([ "done", "done", "done" ]);
+        expect((await tasksOf(DAY)).map((task: any) => task.state)).toEqual([ "done", "done", "tombstone" ]);
         expect((await tasksOf("2027-07-01")).map((task: any) => task.text)).toEqual([ "Other thing" ]);
     });
 

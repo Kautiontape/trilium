@@ -1,7 +1,7 @@
-import { HTMLElement, parse } from 'node-html-parser';
+import { HTMLElement, parse, type Node } from 'node-html-parser';
 import { parseClock } from '../inputs/capacity.js';
 import { clockOf, stripMarker } from './areas.js';
-import { backLinkOf } from './forward-html.js';
+import { backLinkOf, RESCHEDULED_STATE_ID, scheduledMarksOf } from './forward-html.js';
 import { apply, descriptionOf, findItem, inProseSection, isTask, itemState, sectionOf, spanEnd, tokenZoneStart, tokenZoneStartInHtml } from './html-util.js';
 import { taskKeys } from './keys.js';
 import type { StateSymbols } from './markdown.js';
@@ -32,7 +32,7 @@ export function rewordTask(
   if (!span) return { ok: false, reason: 'not_found' };
   if (inProseSection(root, li)) return { ok: false, reason: 'not_live' };
   if (isSuggestedName(sectionOf(root, li))) return { ok: false, reason: 'suggested' };
-  if (li.getAttribute('data-trilium-task-state') === '_rescheduled') return { ok: false, reason: 'moved' };
+  if (li.getAttribute('data-trilium-task-state') === RESCHEDULED_STATE_ID) return { ok: false, reason: 'moved' };
   const state = itemState(li, states);
   if (state === 'rescheduled') return { ok: false, reason: 'moved' };
   if (state === 'cancelled') return { ok: false, reason: 'cancelled' };
@@ -76,7 +76,7 @@ function leadingRun(inner: string): { markerEnd: number; clockEnd: number } {
 
 /** The offset in `inner` where the kept tail starts: its own leading space, then the trail or the tokens. */
 function tailStartOf(html: string, inner: string, start: number, span: HTMLElement, clockEnd: number): number {
-  const trail = trailChildren(span).map((el) => el.range[0] - start);
+  const trail = trailChildren(span).map((node) => node.range[0] - start);
   const firstTrail = trail.length ? Math.min(...trail) : inner.length;
   const masked = inner.slice(0, firstTrail).replace(/&nbsp;/g, '      ');
   let at = Math.min(firstTrail, tokenZoneStartInHtml(masked));
@@ -85,10 +85,10 @@ function tailStartOf(html: string, inner: string, start: number, span: HTMLEleme
   return Math.max(at, clockEnd);
 }
 
-/** The "from …" link and any `<em>scheduled <a href="#root/…">…</a></em>` the task carries. */
-function trailChildren(span: HTMLElement): HTMLElement[] {
+/** The "from …" link and every node of each scheduled mark the task carries. */
+function trailChildren(span: HTMLElement): Node[] {
   const back = backLinkOf(span);
-  const scheduled = span.querySelectorAll('em').filter((em) => em.text.includes('scheduled') && em.querySelector('a[href^="#root/"]'));
+  const scheduled = scheduledMarksOf(span).flatMap((mark) => mark.nodes);
   return back ? [back, ...scheduled] : scheduled;
 }
 

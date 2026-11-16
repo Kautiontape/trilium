@@ -2,12 +2,18 @@
 //
 // Mirrors the Trilium fork's own export rule (trilium-core export/markdown.ts,
 // buildListItemFilter): a todo-list item's `data-trilium-task-state` picks its
-// symbol, otherwise the checkbox does. Two differences, both for the parser's
+// symbol, otherwise the checkbox does. Four differences, all for the parser's
 // sake: text is not markdown-escaped (a literal `[>]` typed into a plain list
-// stays a task marker, and `~`/`!` tokens stay tokens), and a nested list sits
-// directly under its parent line with no blank line between.
+// stays a task marker, and `~`/`!` tokens stay tokens), a nested list sits
+// directly under its parent line with no blank line between, a saved
+// "scheduled" mark is read in its written form and ahead of the token zone,
+// and `_rescheduled` reads as `>` even when the symbols don't list it.
 
+import { parse } from 'node-html-parser';
 import TurndownService from 'turndown';
+import { RESCHEDULED_STATE_ID, scheduledMarksOf, type ScheduledMark } from './forward-html.js';
+import { apply, descriptionOf, spanEnd, tokenZoneStartInHtml, type Edit } from './html-util.js';
+import { escapeHtml } from './plan-html.js';
 
 /** Task state id (the `stateId` label) → its single-character markdown symbol. */
 export type StateSymbols = ReadonlyMap<string, string>;
@@ -84,7 +90,7 @@ function convert(html: string, states: StateSymbols): string {
         prefix = `${start + Array.prototype.indexOf.call(parent.children, li)}. `;
       } else if (/\btodo-list\b/.test(parent?.getAttribute('class') ?? '')) {
         const state = li.getAttribute('data-trilium-task-state');
-        const symbol = state ? states.get(state) : undefined;
+        const symbol = state ? (states.get(state) ?? (state === RESCHEDULED_STATE_ID ? '>' : undefined)) : undefined;
         if (symbol) prefix = `- [${symbol}] `;
         else prefix = ownCheckboxChecked(li) ? '- [x] ' : '- [ ] ';
       }
@@ -100,7 +106,58 @@ function convert(html: string, states: StateSymbols): string {
     replacement: (content) => `\n${content.replace(/\n+$/, '')}`,
   });
 
-  return td.turndown(html);
+  return td.turndown(withWrittenMarks(html));
+}
+
+/**
+ * `html` with each "scheduled" mark of a task written as Caius writes it,
+ * `<em>scheduled <a href="#root/ID">label</a></em>`, and placed ahead of the description's token
+ * zone (`~30m`, `!`, `*date`), so the scan reads every saved form alike and still reads the tokens.
+ */
+function withWrittenMarks(html: string): string {
+  if (!html.includes('scheduled')) return html;
+  const edits: Edit[] = [];
+  for (const li of parse(html, { comment: true }).querySelectorAll('li')) {
+    const span = descriptionOf(li);
+    const marks = span ? scheduledMarksOf(span) : [];
+    if (!span || !marks.length) continue;
+    // A span closed in some other way (`</span >`) is left as it is: the scan must not throw.
+    if (html.slice(span.range[1] - '</span>'.length, span.range[1]) !== '</span>') continue;
+    const inner = span.innerHTML;
+    const innerStart = spanEnd(html, span) - inner.length;
+    // Each mark's cut includes the spaces before it; `at` is where it sits once every mark is gone.
+    const cuts = marks.map((mark) => {
+      const start = mark.start - (/(?:\s|&nbsp;)*$/.exec(html.slice(innerStart, mark.start))?.[0].length ?? 0);
+      return { mark, start, end: mark.end };
+    });
+    const bare = apply(inner, cuts.map((c) => ({ start: c.start - innerStart, end: c.end - innerStart, text: '' })));
+    // Masked to the same length, so a `&nbsp;` next to a token reads as the space it is.
+    const zone = tokenZoneStartInHtml(bare.replace(/&nbsp;/g, '      '));
+    let removed = 0;
+    let keptLength = 0;
+    const moved: string[] = [];
+    for (const { mark, start, end } of cuts) {
+      const at = start - innerStart - removed;
+      removed += end - start;
+      if (at <= zone) {
+        keptLength += end - start;
+        if (!mark.written) edits.push({ start: mark.start, end: mark.end, text: writtenForm(mark) });
+        continue;
+      }
+      edits.push({ start, end, text: '' });
+      moved.push(` ${mark.written ? html.slice(mark.start, mark.end) : writtenForm(mark)}`);
+    }
+    if (moved.length) {
+      const point = innerStart + zone + keptLength;
+      edits.push({ start: point, end: point, text: moved.join('') });
+    }
+  }
+  return apply(html, edits);
+}
+
+function writtenForm(mark: ScheduledMark): string {
+  const label = escapeHtml(mark.label.replace(/\s+/g, ' '));
+  return `<em>scheduled <a href="#root/${mark.noteId}">${label}</a></em>`;
 }
 
 /** The item's own checkbox (in its label), not one in a nested sub-list. */

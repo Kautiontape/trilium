@@ -36,6 +36,44 @@ describe("displayText", () => {
         expect(displayText("Plan 10:30 slots").area).toBeUndefined();
     });
 
+    it("shows the day a forwarded task went to when the editor has saved its marker", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Pair on the seed data ~30m _scheduled_ [_Thu 5 Nov_](#root/xZTuVVFJcsxn)"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "Thu 5 Nov" });
+        expect.soft(displayText("Pair on the seed data ~30m _scheduled_\u00a0[05 - Thursday](#root/xZTuVVFJcsxn)"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "05 - Thursday" });
+        expect.soft(displayText("Pair on the seed data _scheduled_").forwardedTo).toBeNull();
+    });
+
+    it("reads only Caius's marker, and the latest of several", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Read the scheduled [runbook](https://wiki.example/x)"))
+            .toEqual({ text: "Read the scheduled runbook", forwardedTo: null });
+        expect.soft(displayText("Tidy unscheduled [x](#root/a)").forwardedTo).toBeNull();
+        expect.soft(displayText("Pair on the seed data _scheduled [Tue](#root/a)_ _scheduled [Wed](#root/b)_"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "Wed" });
+    });
+
+    it("keeps the user's own scheduled words, and only a lower-case marker with its leading underscore counts", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Prep for the scheduled [Q4 planning](#root/q4)"))
+            .toEqual({ text: "Prep for the scheduled Q4 planning", forwardedTo: null });
+        expect.soft(displayText("un_scheduled [x](#root/a)").forwardedTo).toBeNull();
+        expect.soft(displayText("word_scheduled [x](#root/a)").forwardedTo).toBeNull();
+        expect.soft(displayText("_Scheduled [Tue](#root/a)_").forwardedTo).toBeNull();
+        expect.soft(displayText("_scheduled_ [from Mon](#root/m)").forwardedTo).toBeNull();
+    });
+
+    it("keeps the user's own estimate and refuses a \"from\" link whether or not it is italic", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Block ~2h for the review _scheduled [Tue](#root/x)_"))
+            .toEqual({ text: "Block ~2h for the review", forwardedTo: "Tue" });
+        expect.soft(displayText("Pair on the seed data _scheduled [Thu 5 Nov](#root/x)_"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "Thu 5 Nov" });
+        expect.soft(displayText("_scheduled_ [_from Mon_](#root/m)").forwardedTo).toBeNull();
+        expect.soft(displayText("_scheduled_ [from Mon](#root/m)").forwardedTo).toBeNull();
+    });
+
 describe("displayText's emphasis", () => {
     it("drops **bold**, *italic* and _italic_ markers and keeps their words, but not an underscore inside a word", async () => {
         const { displayText } = await import("./TaskRow.js");
