@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
 import { FateMenu } from "../components/FateMenu.js";
 import { useSwipeDown } from "../components/MiniChat.js";
+import { NestCards } from "../components/NestCards.js";
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
@@ -1053,6 +1054,7 @@ function StepBody({ step, answers, update, disabled, chat }: { step: RitualStep;
                 {onDeck.length > 0 && <FateList items={onDeck} options={options} answers={answers} update={update} disabled={disabled} />}
                 <Candidates items={Array.isArray(d.candidates) ? d.candidates : []} answers={answers} update={update} disabled={disabled} />
                 <Unmarked items={Array.isArray(d.unmarked) ? d.unmarked : []} answers={answers} update={update} disabled={disabled} />
+                <NestCards items={Array.isArray(d.nests) ? d.nests : []} answers={answers} update={update} disabled={disabled} />
             </>
         );
     }

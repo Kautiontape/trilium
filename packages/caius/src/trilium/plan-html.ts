@@ -574,14 +574,15 @@ export interface StateOptions {
 /**
  * Done: checked, no state attribute. Start (Doing): state `doing`, title "Doing".
  * Drop (Cancelled): state `cancelled`, box checked, the reason as a trailing
- * italic; still-live sub-items are cancelled with it.
+ * italic; still-live sub-items are cancelled with it. Ticking the last live sub-item of a live parent
+ * reports the parent as `parentComplete` and leaves it as it is.
  */
 export function setTaskState(
   html: string,
   id: string,
   action: StateAction,
   opts: StateOptions,
-): { ok: true; html: string; from: ItemState } | { ok: false; reason: StateProblem; from?: ItemState } {
+): { ok: true; html: string; from: ItemState; parentComplete?: ParentComplete } | { ok: false; reason: StateProblem; from?: ItemState } {
   const root = parse(html, { comment: true });
   const li = findItem(root, id);
   if (!li || !isTask(li)) return { ok: false, reason: 'not_found' };
@@ -615,7 +616,24 @@ export function setTaskState(
     const span = descriptionOf(li);
     if (span) edits.push(insertAt(spanEnd(html, span), ` <em>${escapeHtml((opts.reason ?? '').trim())}</em>`));
   }
-  return { ok: true, html: apply(html, edits), from };
+  const parentComplete = action === 'done' ? completedParent(li, opts.states) : undefined;
+  return { ok: true, html: apply(html, edits), from, ...(parentComplete && { parentComplete }) };
+}
+
+/** The parent a tick of `li` leaves with no live sub-item: its list item id and plain words. */
+export interface ParentComplete {
+  listItemId: string;
+  text: string;
+}
+
+function completedParent(li: HTMLElement, states: StateSymbols): ParentComplete | undefined {
+  const parent = li.parentNode?.parentNode;
+  if (!(parent instanceof HTMLElement) || parent.tagName !== 'LI') return undefined;
+  const listItemId = parent.getAttribute('data-list-item-id');
+  if (!listItemId || !isLive(parent, states)) return undefined;
+  if (liveDescendants(parent, states).some((d) => d !== li)) return undefined;
+  const text = (descriptionOf(parent)?.text ?? '').replace(/\s+/g, ' ').trim();
+  return { listItemId, text };
 }
 
 export type AreaProblem = 'not_found' | 'not_live';
@@ -647,11 +665,11 @@ export function setTaskArea(
   return { ok: true, html: apply(html, [{ start, end: start + run.length, text }]), unchanged: false };
 }
 
-export type EstimateProblem = 'not_found' | 'not_live' | 'has_subitems';
+export type EstimateProblem = 'not_found' | 'not_live';
 
 /**
  * The task `id` with its `~` estimate set to `minutes`, before any trailing `!` or date token.
- * A task with live sub-items has none of its own, and `unchanged` means it has that many already.
+ * A parent takes its own estimate, which covers its sub-items; `unchanged` means it has that many already.
  */
 export function setTaskEstimate(
   html: string,
@@ -665,7 +683,6 @@ export function setTaskEstimate(
   if (inProseSection(root, li) || !isLive(li, states)) return { ok: false, reason: 'not_live' };
   const span = descriptionOf(li);
   if (!span) return { ok: false, reason: 'not_found' };
-  if (liveDescendants(li, states).length) return { ok: false, reason: 'has_subitems' };
   const start = html.indexOf('>', span.range[0] + 5 + span.rawAttrs.length) + 1;
   const inner = html.slice(start, spanEnd(html, span));
   // Masked to the same length, so a `&nbsp;` before a token reads as the space it is.

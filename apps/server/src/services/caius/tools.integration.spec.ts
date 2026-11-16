@@ -2,6 +2,7 @@ import type { NoteStore } from "@triliumnext/caius";
 import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { refOf } from "./refs.js";
 import { caiusService, routeInputs } from "./service.js";
 import { createBeccaStore } from "./store.js";
 import { caiusTools, createCaiusTools } from "./tools.js";
@@ -75,6 +76,10 @@ describe("caius tools", () => {
             expect(def.description, name).not.toContain("Shawn");
             expect(def.description, name).not.toContain("still do the step's writes");
         }
+    });
+
+    it("tells the agent a view's hidden rows are for counting, not listing", () => {
+        expect(toolNamed("caius_show").description).toContain("A row with hidden: true is a closed sub-item sent for counting; never list it.");
     });
 
     it("caius_plan reads a day, and defaults to the current period", async () => {
@@ -261,9 +266,89 @@ describe("caius tools", () => {
             expect(await load()).toBe(before + 30);
             const again = await call("caius_set_estimate", { items: [{ noteId: blockNote, listItemId: "p2", minutes: 90 }] });
             expect(again.results[0]).toMatchObject({ status: "unchanged" });
-            const parent = await call("caius_set_estimate", { items: [{ noteId: blockNote, listItemId: "p1", minutes: 30 }] });
-            expect(parent.results[0]).toMatchObject({ status: "skipped", reason: "has_subitems" });
+            const parent = await call("caius_set_estimate", { items: [{ noteId: blockNote, listItemId: "p1", minutes: 45 }] });
+            expect(parent.results[0]).toMatchObject({ status: "updated", minutes: 45 });
+            expect(toolNamed("caius_set_estimate").description).not.toContain("has_subitems");
             expect(toolNamed("caius_set_estimate").inputSchema.safeParse({ items: [{ noteId: "n", listItemId: "i", minutes: 4 }] }).success).toBe(false);
+        });
+
+        /** The list item ids nested inside the item `id` of the block note, in order. */
+        const childrenOf = async (id: string) => {
+            const html = await cls.init(() => store.content(blockNote));
+            const start = html.indexOf(`<li data-list-item-id="${id}"`);
+            let depth = 0;
+            let end = start;
+            for (const m of html.slice(start).matchAll(/<li[ >]|<\/li>/g)) {
+                depth += m[0] === "</li>" ? -1 : 1;
+                if (depth === 0) { end = start + m.index; break; }
+            }
+            return [ ...html.slice(start, end).matchAll(/data-list-item-id="([^"]+)"/g) ].map((m) => m[1]).slice(1);
+        };
+
+        it("caius_add nests a task under another by id or l-ref, and caius_place nests, groups and lifts out", async () => {
+            await reset();
+            const add = (item: object) => call("caius_add", { items: [{ date: BLOCK_DAY, text: "Answer Ana", ...item }] });
+            const ana = await add({ under: "p2" });
+            expect(ana.results[0]).toMatchObject({ status: "added" });
+            expect(await childrenOf("p2")).toEqual([ana.results[0].listItemId]);
+            const ben = await add({ text: "Answer Ben", under: refOf("l", "p2") });
+            expect(ben.results[0]).toMatchObject({ status: "added" });
+            expect(await childrenOf("p2")).toEqual([ana.results[0].listItemId, ben.results[0].listItemId]);
+            expect(await names("Morning")).toEqual(["Plan the demo", "Sub step", "Second thing", "Answer Ana", "Answer Ben"]);
+            expect(toolNamed("caius_add").inputSchema.safeParse({ items: [{ date: BLOCK_DAY, text: "x", under: "p2", critical: true }] }).success).toBe(false);
+
+            await reset();
+            const nested = await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p3", under: "p2" }] });
+            expect(nested.results[0]).toMatchObject({ status: "moved", parentListItemId: "p2" });
+            expect(await childrenOf("p2")).toEqual(["p3"]);
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p3", out: true }] })).results[0]).toMatchObject({ status: "moved" });
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p2", under: refOf("l", "p1") }] })).results[0]).toMatchObject({ status: "moved", parentListItemId: "p1" });
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p4", under: "p2" }] })).results[0]).toMatchObject({ status: "skipped", reason: "too_deep" });
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p4", under: "p1a" }] })).results[0]).toMatchObject({ status: "skipped", reason: "too_deep" });
+
+            await reset();
+            const group = await call("caius_place", { items: [
+                { noteId: blockNote, listItemId: "p2", under: { text: "09:30 Standup", est: "15m" } },
+                { noteId: blockNote, listItemId: "p3", under: { text: "Never made" }, out: true }
+            ] });
+            expect(group.results[0]).toMatchObject({ status: "moved" });
+            expect(group.results[1]).toMatchObject({ status: "skipped", reason: "bad_request" });
+            const html = await cls.init(() => store.content(blockNote));
+            expect(html).toContain("09:30 Standup ~15m");
+            const parentId = group.results[0].parentListItemId;
+            expect(await childrenOf(parentId)).toEqual(["p2"]);
+
+            await reset();
+            const standup = { text: "09:30 Standup", est: "15m" };
+            const pair = { items: [
+                { noteId: blockNote, listItemId: "p2", under: standup },
+                { noteId: blockNote, listItemId: "p3", under: standup }
+            ] };
+            const two = await call("caius_place", pair);
+            expect(two.results.map((r: any) => r.status)).toEqual(["moved", "moved"]);
+            const parent = two.results[0].parentListItemId;
+            expect(parent).toBeTruthy();
+            expect(two.results[1].parentListItemId).toBe(parent);
+            expect(await childrenOf(parent)).toEqual(["p2", "p3"]);
+            const grouped = await cls.init(() => store.content(blockNote));
+            expect(grouped.match(/09:30 Standup/g)).toHaveLength(1);
+            expect((await call("caius_place", pair)).results.map((r: any) => r.status)).toEqual(["unchanged", "unchanged"]);
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p4", under: "nowhere99" }] })).results[0]).toMatchObject({ status: "skipped", reason: "not_found" });
+
+            await reset();
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p3", under: "t1" }] })).results[0]).toMatchObject({ status: "skipped", reason: "other_note" });
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p3", under: refOf("l", "t1") }] })).results[0]).toMatchObject({ status: "skipped", reason: "other_note" });
+            expect((await call("caius_add", { items: [{ date: BLOCK_DAY, text: "Answer Cy", under: refOf("l", "t1") }] })).results[0]).toMatchObject({ status: "skipped", reason: "other_note" });
+        });
+
+        it("caius_set_state answers parentComplete when a tick closes a parent's last open sub-item", async () => {
+            await cls.init(() => store.putContent(blockNote, block("Morning",
+                li("q1", "Parent").replace("</li>", ul(li("q1a", "Step A"), li("q1b", "Step B")) + "</li>"))));
+            const first = await call("caius_set_state", { items: [{ noteId: blockNote, listItemId: "q1a", state: "done" }] });
+            expect(first.results[0].parentComplete).toBeUndefined();
+            const last = await call("caius_set_state", { items: [{ noteId: blockNote, listItemId: "q1b", state: "done" }] });
+            expect(last.results[0].parentComplete).toEqual({ noteId: blockNote, listItemId: "q1", text: "Parent" });
+            expect(toolNamed("caius_set_state").description).toContain("parentComplete");
         });
     });
 

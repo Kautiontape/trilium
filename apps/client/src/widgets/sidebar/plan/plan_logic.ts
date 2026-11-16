@@ -1,3 +1,5 @@
+import { countUnits, parentsOf, topLevelOf } from "@triliumnext/caius/src/daily/load.js";
+
 import type FNote from "../../../entities/fnote";
 import {
     dayKey, isSuggested, monthKey, nextMonthKey, nextWeekKey, tomorrowKey, weekKey
@@ -144,9 +146,43 @@ export function planTasks(plan: CaiusPlan) {
     return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ];
 }
 
-/** The live top-level tasks of a day's On deck, in order. */
+/**
+ * The live tasks of a day's On deck that are not under a live parent, in order: a sub-item whose
+ * parent is done or gone stays, as a task of its own.
+ */
 export function onDeckTasks(plan: CaiusPlan) {
-    return (plan.onDeck ?? []).filter((task) => isLive(task) && task.parent === null);
+    return topLevelOf(plan.onDeck ?? []).filter(isLive);
+}
+
+/**
+ * Each parent of `tasks` mapped to its direct sub-items that are open, in progress or done, in
+ * order. A parent whose sub-items are all cancelled is left out.
+ */
+export function subItemsOf(tasks: CaiusPlanTask[]) {
+    const subs = new Map<CaiusPlanTask, CaiusPlanTask[]>();
+    for (const [ task, parent ] of parentsOf(tasks)) {
+        if (task.state === "open" || task.state === "in_progress" || task.state === "done") {
+            subs.set(parent, [ ...(subs.get(parent) ?? []), task ]);
+        }
+    }
+    return subs;
+}
+
+/** "1/3" for a parent's done and total sub-items; "2 open" for a done parent with live ones. */
+export function subItemCount(parent: Pick<CaiusPlanTask, "state">, subs: CaiusPlanTask[]) {
+    const open = subs.filter(isLive).length;
+    if (parent.state === "done" && open > 0) {
+        return t("caius.plan.sub_open", { count: open });
+    }
+
+    return t("caius.plan.sub_count", {
+        done: subs.filter((sub) => sub.state === "done").length, total: subs.length
+    });
+}
+
+/** The `noteId/listItemId` an open parent is remembered by; `null` for a task without an id. */
+export function parentKey(task: Pick<CaiusPlanTask, "noteId" | "listItemId">) {
+    return task.listItemId ? `${task.noteId}/${task.listItemId}` : null;
 }
 
 /**
@@ -160,15 +196,30 @@ export function closeCandidates(plan: CaiusPlan) {
 }
 
 /**
- * The live tasks without an estimate, counted as `capacity.unestimatedCount` counts them: a task
- * with live sub-items counts through its sub-items instead, an empty to-do is not a task, and on
- * a day a Growth or Recharge task is not work.
+ * The live tasks that leave the plan without an estimate, as `capacity.unestimatedCount` counts
+ * them through `countUnits` over the plan's tasks in every state: a task without sub-items, or the
+ * unestimated live sub-items of a parent with no estimate of its own. A parent with an estimate,
+ * pinned to the clock of one of `plan.meetings`, or with every sub-item done, lists none. An empty
+ * to-do is not a task, and on a day a Growth or Recharge task is not work.
  */
 export function unestimatedTasks(plan: CaiusPlan) {
-    const live = planTasks(plan).filter((task) => isLive(task) && task.text.trim() !== "");
-    const parents = new Set(live.filter((task) => task.parent !== null).map((task) => task.parent));
-    return live.filter((task) => !parents.has(task.text) && task.estMinutes === null
-        && (plan.period !== "day" || task.area === "foundation"));
+    const tasks = planTasks(plan);
+    const live = tasks.filter((task) => isLive(task) && task.text.trim() !== "");
+    const parents = parentsOf(tasks);
+    const owed = new Set<CaiusPlanTask>();
+    for (const { task, unestimated } of countUnits(tasks, { meetings: plan.meetings, parents })) {
+        if (unestimated === 0 || (plan.period === "day" && task.area !== "foundation")) {
+            continue;
+        }
+
+        const subs = live.filter((candidate) => parents.get(candidate) === task);
+        for (const owing of subs.length ? subs : [ task ]) {
+            if (owing.estMinutes === null) {
+                owed.add(owing);
+            }
+        }
+    }
+    return live.filter((task) => owed.has(task));
 }
 
 /** Where the capacity of the plan stands against its target. */

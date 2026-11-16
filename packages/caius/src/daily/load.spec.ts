@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { critical, fakeTrilium, li, periodNote, ul } from '../trilium/helpers.js';
 import { readPlan, type PlanTask } from '../trilium/plan-read.js';
-import { dayLoad, liveMinutes } from './load.js';
+import { countUnits, dayLoad, liveMinutes, parentsOf, topLevelOf, unitMinutes } from './load.js';
 
 const task = (over: Partial<PlanTask>): PlanTask => ({
   noteId: 'd', listItemId: null, state: 'open', text: 't', estMinutes: null, parent: null, parentListItemId: null,
@@ -9,7 +9,7 @@ const task = (over: Partial<PlanTask>): PlanTask => ({
 });
 
 describe('liveMinutes', () => {
-  it('counts a parent through its live sub-items and an unestimated task at 30', () => {
+  it('counts a parent by its own estimate, a plain task at 30 when unestimated, and skips done and empty ones', () => {
     const tasks = [
       task({ text: 'Parent', estMinutes: 90 }),
       task({ text: 'Step a', parent: 'Parent', estMinutes: 10 }),
@@ -18,8 +18,28 @@ describe('liveMinutes', () => {
       task({ text: 'Done', state: 'done', estMinutes: 60 }),
       task({ text: '  ', estMinutes: 60 }),
     ];
-    expect(liveMinutes(tasks)).toBe(10 + 30 + 30);
+    expect(liveMinutes(tasks)).toBe(90 + 30);
     expect(liveMinutes(tasks, 'growth')).toBe(0);
+  });
+
+  it('counts a task of the same words as a parent by its own estimate, by row or by the nearest earlier one', () => {
+    const byId = [
+      task({ listItemId: 's1', text: 'Standup', estMinutes: 30 }),
+      task({ listItemId: 's2', text: 'Standup' }),
+      task({ listItemId: 's2a', text: 'Notes', parent: 'Standup', parentListItemId: 's2', estMinutes: 10 }),
+    ];
+    expect(liveMinutes(byId)).toBe(30 + 10);
+    const idless = [
+      task({ text: 'Standup', estMinutes: 30 }),
+      task({ text: 'Standup' }),
+      task({ text: 'Notes', parent: 'Standup', estMinutes: 10 }),
+    ];
+    expect(liveMinutes(idless)).toBe(30 + 10);
+    const parents = parentsOf(idless);
+    expect(parents.get(idless[2])).toBe(idless[1]);
+    expect(parents.size).toBe(1);
+    const otherNote = [task({ noteId: 'x', text: 'Standup' }), task({ noteId: 'y', text: 'Notes', parent: 'Standup' })];
+    expect(parentsOf(otherNote).size).toBe(0);
   });
 
   it('equals the plan read\'s foundation minutes', async () => {
@@ -33,6 +53,82 @@ describe('liveMinutes', () => {
     expect(plan.capacity.areas.foundation.minutes).toBeGreaterThan(0);
     expect(liveMinutes(tasks, 'foundation')).toBe(plan.capacity.areas.foundation.minutes);
     expect(liveMinutes(tasks, 'growth')).toBe(plan.capacity.areas.growth.minutes);
+  });
+});
+
+describe('countUnits', () => {
+  const sub = (text: string, parent: string, over: Partial<PlanTask> = {}) => task({ text, parent, ...over });
+
+  it('counts a parent by its own estimate, else the sum of its live sub-items', () => {
+    const own = [task({ text: 'Fix', estMinutes: 15 }), sub('a', 'Fix', { estMinutes: 10 }), sub('b', 'Fix', { estMinutes: 10 }), sub('c', 'Fix', { estMinutes: 10 })];
+    expect(countUnits(own).map((u) => [u.task.text, u.minutes, u.estimated, u.unestimated])).toEqual([['Fix', 15, 1, 0]]);
+    const summed = [task({ text: 'Fix' }), sub('a', 'Fix', { estMinutes: 10 }), sub('b', 'Fix')];
+    expect(countUnits(summed).map((u) => [u.minutes, u.estimated, u.unestimated])).toEqual([[40, 1, 1]]);
+    expect(unitMinutes(summed[0]!, summed)).toBe(40);
+    expect(unitMinutes(summed[2]!, summed)).toBe(30);
+    expect(unitMinutes(summed[1]!, summed)).toBe(10);
+  });
+
+  it('counts a hand-made deeper nest through its sub-items', () => {
+    const tasks = [
+      task({ listItemId: 'p', text: 'P' }),
+      task({ listItemId: 'q', text: 'Q', parent: 'P', parentListItemId: 'p' }),
+      task({ listItemId: 'r', text: 'R', parent: 'Q', parentListItemId: 'q', estMinutes: 5 }),
+    ];
+    expect(liveMinutes(tasks)).toBe(5);
+  });
+
+  it('counts a meeting parent as 0, but a pinned task without sub-items or a non-meeting parent as usual', () => {
+    const meetings = ['09:30 Standup (Ana)', '11:00'];
+    const standup = [task({ text: '9:30 Standup', at: '9:30', estMinutes: 20 }), sub('Notes', '9:30 Standup', { estMinutes: 10 })];
+    expect(countUnits(standup, { meetings }).map((u) => [u.minutes, u.estimated, u.unestimated])).toEqual([[0, 0, 0]]);
+    expect(liveMinutes([task({ text: '09:30 Standup', at: '09:30' })], undefined, { meetings })).toBe(30);
+    const appointment = [task({ text: '10:30 Appointment', at: '10:30' }), sub('Bring ID', '10:30 Appointment', { estMinutes: 5 })];
+    expect(liveMinutes(appointment, undefined, { meetings })).toBe(5);
+  });
+
+  it('counts a done parent\'s open sub-item on its own, in its own area', () => {
+    const tasks = [task({ text: 'P', state: 'done', area: 'growth' }), sub('a', 'P', { estMinutes: 10, area: 'growth' })];
+    expect(countUnits(tasks).map((u) => [u.task.text, u.minutes])).toEqual([['a', 10]]);
+    expect(liveMinutes(tasks, 'growth')).toBe(10);
+  });
+
+  it('takes the parents map when given', () => {
+    const tasks = [task({ text: 'X' }), task({ text: 'Y', estMinutes: 10 })];
+    const parents = new Map([[tasks[1]!, tasks[0]!]]);
+    expect(liveMinutes(tasks, undefined, { parents })).toBe(10);
+    const x = task({ text: 'X' });
+    const doneY = task({ text: 'Y', state: 'done', estMinutes: 10 });
+    expect(liveMinutes([x, doneY], undefined, { parents: new Map([[doneY, x]]) })).toBe(0);
+  });
+
+  it('keeps a parent a parent once its sub-items are done: 20, then 10, then 0 as two 10m sub-items are ticked', () => {
+    const ticked = (n: number) => [
+      task({ text: 'Fix' }),
+      sub('a', 'Fix', { estMinutes: 10, state: n > 0 ? 'done' : 'open' }),
+      sub('b', 'Fix', { estMinutes: 10, state: n > 1 ? 'done' : 'open' }),
+    ];
+    expect([0, 1, 2].map((n) => liveMinutes(ticked(n)))).toEqual([20, 10, 0]);
+    const fix = task({ text: 'Fix' });
+    const allDone = [fix, sub('a', 'Fix', { state: 'done', estMinutes: 10 }), sub('b', 'Fix', { state: 'done' })];
+    expect(countUnits(allDone).map((u) => [u.task.text, u.minutes, u.estimated, u.unestimated])).toEqual([['Fix', 0, 0, 0]]);
+    expect(unitMinutes(fix, allDone)).toBe(0);
+  });
+
+  it('counts a meeting parent with every answer done as 0, and a parent of its own estimate with every sub-item done as that', () => {
+    const meetings = ['09:30 Standup (Ana)'];
+    const answered = [task({ text: '9:30 Standup', at: '9:30' }), sub('Ask Ana', '9:30 Standup', { state: 'done', estMinutes: 10 })];
+    expect(liveMinutes(answered, undefined, { meetings })).toBe(0);
+    const own = [task({ text: 'Fix', estMinutes: 15 }), sub('a', 'Fix', { state: 'done', estMinutes: 10 })];
+    expect(countUnits(own).map((u) => [u.minutes, u.estimated, u.unestimated])).toEqual([[15, 1, 0]]);
+  });
+
+  it('counts a parent whose sub-items are only cancelled, moved or empty as a task of its own', () => {
+    for (const state of ['cancelled', 'tombstone'] as const) {
+      const tasks = [task({ text: 'Fix' }), sub('a', 'Fix', { state, estMinutes: 10 })];
+      expect(countUnits(tasks).map((u) => [u.task.text, u.minutes, u.estimated, u.unestimated])).toEqual([['Fix', 30, 0, 1]]);
+    }
+    expect(liveMinutes([task({ text: 'Fix' }), sub('  ', 'Fix', { state: 'done' })])).toBe(30);
   });
 });
 
@@ -56,5 +152,20 @@ describe('dayLoad', () => {
     expect(load(0, 0, 120).growth).toEqual({ minutes: 120, target: { min: 60, max: 120 }, over: false });
     expect(load(0, 0, 135, 2).growth.over).toBe(true);
     expect(load(0, 0, 0, 2).recharge).toEqual({ count: 2 });
+  });
+});
+
+describe('topLevelOf', () => {
+  it('keeps a sub-item whose parent is done or cancelled, drops one under a live parent, and finds an id-less parent by its words', () => {
+    const tasks = [
+      task({ listItemId: 'p1', text: 'Standup', state: 'done' }),
+      task({ listItemId: 'a1', text: 'Answer', parent: 'Standup', parentListItemId: 'p1' }),
+      task({ listItemId: 'p2', text: 'Review' }),
+      task({ listItemId: 'b1', text: 'Read', parent: 'Review', parentListItemId: 'p2' }),
+      task({ text: 'Sync', state: 'cancelled' }),
+      task({ text: 'Notes', parent: 'Sync' }),
+      task({ text: 'Plain' }),
+    ];
+    expect(topLevelOf(tasks).map((t) => t.text)).toEqual(['Standup', 'Answer', 'Review', 'Sync', 'Notes', 'Plain']);
   });
 });

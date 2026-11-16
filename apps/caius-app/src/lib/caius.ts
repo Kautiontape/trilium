@@ -124,7 +124,7 @@ export interface AddItem {
 
 /** What a write tool answers: one result per item, each with a status such as `updated` or `skipped`. */
 export interface WriteResult {
-    results?: { status?: string; reason?: string; detail?: string; noteId?: string; listItemId?: string }[];
+    results?: { status?: string; reason?: string; detail?: string; noteId?: string; listItemId?: string; parentComplete?: { noteId: string; listItemId: string; text: string } }[];
     error?: string;
     [key: string]: unknown;
 }

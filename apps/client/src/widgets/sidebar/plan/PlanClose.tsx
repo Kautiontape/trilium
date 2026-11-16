@@ -16,7 +16,7 @@ import SegmentedChoice from "../../react/SegmentedChoice";
 import RightPanelWidget from "../RightPanelWidget";
 import {
     closeCandidates, closeFates, type Fate, type FateKind, fateTarget, groupFates, isDecided,
-    listedFates, taskLabel
+    listedFates, planTasks, subItemCount, subItemsOf, taskLabel
 } from "./plan_logic";
 import type { PlanTaskRef } from "./PlanTab";
 
@@ -43,6 +43,7 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
     const [ results, setResults ] = useState<{ text: string; message: string }[]>([]);
     const [ applying, setApplying ] = useState(false);
     const candidates = closeCandidates(plan);
+    const subs = subItemsOf([ ...planTasks(plan), ...(plan.onDeck ?? []) ]);
     // One moment per render, so that Apply sends each task where its row says.
     const now = caiusNow();
     const fateKinds = closeFates(plan.period, plan.key, now);
@@ -106,6 +107,7 @@ export default function PlanClose({ plan, onOpen, onChanged }: {
                         <CloseRow
                             key={task.listItemId ?? task.text}
                             task={task}
+                            subs={subs.get(task)}
                             fate={task.listItemId ? fates[task.listItemId] : undefined}
                             kinds={fateKinds}
                             period={plan.period}
@@ -151,8 +153,9 @@ export function applyFates(
     return caiusApi.apply({ forwards: forward, drops: drop, expectedBlobId });
 }
 
-function CloseRow({ task, fate, kinds, period, now, onFate, onOpen }: {
+function CloseRow({ task, subs, fate, kinds, period, now, onFate, onOpen }: {
     task: CaiusPlanTask;
+    subs: CaiusPlanTask[] | undefined;
     fate: Fate | undefined;
     kinds: FateKind[];
     period: CaiusPeriodKind;
@@ -169,6 +172,7 @@ function CloseRow({ task, fate, kinds, period, now, onFate, onOpen }: {
                 text={taskLabel(task.text)}
                 onClick={() => onOpen(task)}
             />
+            {subs && <span className="plan-sub-count">{subItemCount(task, subs)}</span>}
             {listItemId ? (
                 <div className="plan-close-fate">
                     <SegmentedChoice<FateKind>

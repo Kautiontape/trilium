@@ -26,6 +26,7 @@ import {
     nextWorkday,
     type NoteStore,
     openTasks,
+    parentsOf,
     type PeriodKind,
     PERIODS,
     periodSpan,
@@ -37,6 +38,7 @@ import {
     type SlippingViewData,
     type StoreNote,
     type TaskOrigin,
+    topLevelOf,
     TRILIUM_CONFIG,
     type TriliumDoc,
     type ViewContextLine,
@@ -99,6 +101,7 @@ async function dayView(deps: ViewsDeps, date: string, area: DayViewData["openOn"
         capacity: { windowMinutes: capacity.windowMinutes, bookedMinutes: capacity.bookedMinutes, openMinutes: capacity.openMinutes },
         span: { start, noon, workEnd, end },
         meetings: day.meetings,
+        meetingLines: day.plan.meetings,
         drawn: drawn ? { groups: drawn.groups, meetings: drawn.meetings } : null,
         unplacedMinutes: day.layout.unplaced.reduce((sum, unplaced) => sum + unplaced.minutes, 0),
         tasks: rowsOf(day.plan, day.slips),
@@ -117,7 +120,7 @@ async function daysView(deps: ViewsDeps, from: string, count: number, now: Date)
         from,
         days: read.days.map(({ date, workday, day }) => ({
             date, dateLabel: dateLabel(date) ?? date, workday, meetingMinutes: day.capacity.bookedMinutes,
-            load: day.load, calendarFailed: day.calendarFailed, tasks: rowsOf(day.plan, day.slips)
+            load: day.load, calendarFailed: day.calendarFailed, meetingLines: day.plan.meetings, tasks: rowsOf(day.plan, day.slips)
         })),
         week: {
             key,
@@ -198,8 +201,8 @@ async function slippingView(deps: ViewsDeps, period: string | null, now: Date): 
         const scan = scanDocs(docs, TRILIUM_CONFIG, now);
         const open = openTasks(docs, scan);
         const all = trailsOf(docs, now, scan);
-        const slipping = open
-            .filter((task) => task.parent === null && task.listItemId)
+        const slipping = topLevelOf(open)
+            .filter((task) => task.listItemId)
             .flatMap((task) => {
                 const trail = trailOf(all, task);
                 return trail && trail.slips >= MIN_SLIPS && (!within || movedWithin(trail, within)) ? [ { task, trail } ] : [];
@@ -251,25 +254,33 @@ const ESTIMATE = /\s+~\d+(?:h\d*m?|m)\b/g;
 
 /**
  * A plan's live rows with ids: the Important block, the list in order and On deck, each sub-item
- * after its parent. They hold every task `liveMinutes` counts, so the phone's recount matches `load`.
+ * after its parent. A done or cancelled sub-item of a live parent is a row too, flagged `hidden`:
+ * `countUnits` needs it to see the parent as a parent, so the phone's recount matches `load`.
  */
 function rowsOf(plan: PlanView, slips: Record<string, number>): ViewTask[] {
     const period = { kind: plan.period, key: plan.key };
-    const placed = [
-        ...[ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].map((task) => ({ task, place: "list" as const })),
-        ...plan.onDeck.map((task) => ({ task, place: "onDeck" as const }))
+    const lists = [
+        { place: "list" as const, tasks: [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ] },
+        { place: "onDeck" as const, tasks: plan.onDeck }
     ];
-    return inParentOrder(placed.flatMap(({ task, place }) => task.listItemId && isLive(task)
-        ? [ viewTask(task, task.listItemId, period, place, slips[task.listItemId] ?? 0) ]
-        : []));
+    return inParentOrder(lists.flatMap(({ place, tasks }) => {
+        const parents = parentsOf(tasks);
+        return tasks.flatMap((task) => {
+            if (!task.listItemId) return [];
+            const row = (hidden: boolean) => viewTask(task, task.listItemId ?? "", period, place, slips[task.listItemId ?? ""] ?? 0, hidden);
+            if (isLive(task)) return [ row(false) ];
+            const parent = parents.get(task);
+            return parent && isLive(parent) && isClosed(task) ? [ row(true) ] : [];
+        });
+    }));
 }
 
-function viewTask(task: PlanTask, listItemId: string, period: ViewTask["period"], place: ViewTask["place"], slips: number): ViewTask {
+function viewTask(task: PlanTask, listItemId: string, period: ViewTask["period"], place: ViewTask["place"], slips: number, hidden = false): ViewTask {
     const { noteId, state, text, estMinutes, parent, parentListItemId, section, critical, area, block, at } = task;
     const key = ticketKeyOf(text);
     return {
         noteId, listItemId, ref: refOf("v", listItemId), state, text, estMinutes, parent, parentListItemId, section, critical, area, block, at,
-        period, place, slips, ...(key ? { ticket: { key } } : {})
+        period, place, slips, ...(key ? { ticket: { key } } : {}), ...(hidden ? { hidden: true as const } : {})
     };
 }
 
@@ -322,6 +333,11 @@ function taskNaming(docs: TriliumDoc[], key: string, now: Date): { noteId: strin
 /** The first ticket key a task's text names, if any. */
 function ticketKeyOf(text: string): string | undefined {
     return keysOf(text).find((key) => JIRA_KEY.test(key));
+}
+
+/** Whether the task is done or cancelled, with words. */
+function isClosed(task: PlanTask): boolean {
+    return (task.state === "done" || task.state === "cancelled") && task.text.trim() !== "";
 }
 
 function isLive(task: PlanTask): boolean {
@@ -395,7 +411,7 @@ function capped<R extends ShownView>(reply: R, lists: { name: string; rows: View
         const cut = familyOf(longest.rows, last);
         longest.rows.splice(0, longest.rows.length, ...longest.rows.filter((row) => !cut.has(row)));
         for (const row of cut) size -= JSON.stringify(row).length + 1;
-        omitted[longest.name] = (omitted[longest.name] ?? 0) + cut.size;
+        omitted[longest.name] = (omitted[longest.name] ?? 0) + [ ...cut ].filter((row) => !row.hidden).length;
     }
     return Object.keys(omitted).length ? { ...reply, data: { ...reply.data, omitted } } : reply;
 }

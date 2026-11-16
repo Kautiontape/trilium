@@ -18,7 +18,6 @@ import {
     contextNotes,
     dayCandidates,
     dayCapacity,
-    DEFAULT_ESTIMATE,
     DEFAULT_ROLLOVER,
     findPeriodNote,
     formatHours,
@@ -49,6 +48,11 @@ import {
     readPlan,
     readProjectPicks,
     type Rhythm,
+    type NestAsk,
+    type NestMeeting,
+    type NestTask,
+    type NumberedNest,
+    planNests,
     sameContext,
     scanDocs,
     sectionOf,
@@ -58,6 +62,8 @@ import {
     headingArea,
     headingStacks,
     TRILIUM_CONFIG,
+    topLevelOf,
+    unitMinutes,
     workdayMinutes
 } from "@triliumnext/caius";
 import { createHash } from "crypto";
@@ -411,10 +417,10 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
     const calendarFailed = failedCalendar(read);
 
     if (step === "inputs") {
-        const { offer, yesterday } = await deps.locked("caius_planday", async () => ({
-            offer: await planOffer(deps.store, date, deps.now, read),
-            yesterday: await yesterdayOf(deps.store, date, deps.now)
-        }));
+        const { offer, yesterday, nests } = await deps.locked("caius_planday", async () => {
+            const offer = await planOffer(deps.store, date, deps.now, read);
+            return { offer, yesterday: await yesterdayOf(deps.store, date, deps.now), nests: await nestsOf(deps.store, read, offer) };
+        });
         const { day: facts, plannedAt, candidates, jira, headsUp, overlaps, forwardSuggestion, fits, onDeck, unmarked } = offer;
         // What he already answered in this conversation is not asked again.
         // A kept line can be given by its words, its lineId or its ref.
@@ -433,10 +439,11 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
             ...(forwardSuggestion ? [ t("caius.daily.heavy", {
                 percent: Math.round(read.inputs.capacity.bookedRatio * 100), task: forwardSuggestion.text, day: weekdayName(nextDay)
             }) ] : []),
-            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : [])
+            ...(carry.length ? [ carryQuestion(carry.map((c) => c.line), true) ] : []),
+            ...nests.map((nest) => nest.because)
         ];
         return reply(read.standing, {
-            yesterday, plannedAt, onDeck, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, meetingTitles: meetingTitles(read), overlaps,
+            yesterday, plannedAt, onDeck, nests, list: withRefs(listItems(facts.plan), "l", (item) => item.listItemId), candidates: withRefs(candidates, "c", (candidate) => candidate.candidateId), meetings, meetingTitles: meetingTitles(read), overlaps,
             capacity: capacityOf(read, facts.plan), growth: growthOf(read, facts.plan), unmarked, ...namedDays(date, nextDay),
             targetWeek: isoWeekKey(utcDay(date)), keepDate: date, carry: withRefs(carry, "x", (line) => line.lineId),
             context: read.context, forwardSuggestion, followUps: followUpsOf(jira), headsUp, errors: read.inputs.errors, ...(fits ? { summary: fits } : {}),
@@ -482,6 +489,62 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
         },
         errors: read.inputs.errors
     }, null, null);
+}
+
+/**
+ * The groupings Plan my day offers (`planNests`): each with its `ref` (`n1`), where it goes (`under`),
+ * the `items` that move into it, `because` as a sentence for the question, and `reason`, the same
+ * in data. Reads the notes the tasks came from, so the caller holds the lock.
+ */
+async function nestsOf(store: NoteStore, read: DayFrame, offer: Awaited<ReturnType<typeof planOffer>>) {
+    const { plan, projects } = offer.day;
+    const parents = new Set([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].map((task) => task.parentListItemId));
+    const sources = new Map<string, Promise<{ noteId: string; title: string } | null>>();
+    const sourceOf = (noteId: string) => {
+        const found = sources.get(noteId) ?? store.note(noteId).then(
+            (note) => [ "dateNote", "weekNote", "monthNote" ].some((name) => label(note, name) !== undefined) ? null : { noteId, title: note.title },
+            () => null
+        );
+        sources.set(noteId, found);
+        return found;
+    };
+    const list: NestTask[] = [];
+    for (const task of mainTasks(plan)) {
+        const id = task.listItemId;
+        if (!id) continue;
+        const text = withoutMoveLinks(task.text);
+        const plain = bareText(plainText(text));
+        const from = fromOf(task.text);
+        const named = projects.find((pick) => pick.noteId && pick.project && plain.startsWith(`${pick.project}: `));
+        list.push({
+            listItemId: id, ref: refOf("l", id), text: plain, at: task.at, keys: keysOf(text), subItem: task.parentListItemId !== null || task.parent !== null,
+            hasSubItems: parents.has(id),
+            project: (from ? await sourceOf(from) : null) ?? (named?.noteId && named.project ? { noteId: named.noteId, title: named.project } : null)
+        });
+    }
+    const meetings: NestMeeting[] = failedCalendar(read) ? [] : timedEvents(read).map((e) => ({ start: e.start, title: e.title, attendees: e.attendees }));
+    const asks: NestAsk[] = offer.candidates.filter((candidate) => candidate.kind === "ask" && candidate.author).map((candidate) => ({
+        key: candidate.key ?? candidate.candidateId, author: candidate.author ?? "", candidateId: candidate.candidateId, ref: refOf("c", candidate.candidateId), text: candidate.text
+    }));
+    for (const ask of latestAsks(offer.jira.asks)) {
+        if (!asks.some((offered) => offered.key === ask.ticket.key)) asks.push({ key: ask.ticket.key, author: ask.author });
+    }
+    return planNests(meetings, list, asks).map((nest) => nestWords(nest));
+}
+
+/** `nest` with its `because` as the sentence the question asks, the structured reason kept as `reason`. */
+function nestWords(nest: NumberedNest) {
+    const { because: reason, ...rest } = nest;
+    const because = reason.kind === "meeting"
+        ? [
+            t("caius.daily.nest_meeting", { count: nest.items.length, meeting: "text" in nest.under ? nest.under.text : "" }),
+            t("caius.daily.nest_askers", {
+                count: reason.askers.length,
+                askers: reason.askers.length > 1 ? t("caius.daily.list_and", { head: reason.askers.slice(0, -1).join(", "), last: reason.askers.at(-1) }) : reason.askers[0] ?? ""
+            })
+        ].join(" ")
+        : t("caius.daily.nest_project", { count: reason.count, project: reason.project });
+    return { ...rest, because, reason };
 }
 
 /** A catch-up day as the question names it: by weekday in the week of `date`, with its date in an earlier week ("Fri 30 Oct"). */
@@ -876,7 +939,7 @@ export async function periodNotesWith(store: NoteStore, name: string): Promise<S
 
 /** A plan's top-level tasks in any state, On deck included. */
 function topLevel(plan: PlanView): PlanTask[] {
-    return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ].filter((task) => task.parent === null && task.text.trim() !== "");
+    return topLevelOf([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ]).filter((task) => task.text.trim() !== "");
 }
 
 /**
@@ -1125,10 +1188,11 @@ function wallClock(clock: string): string {
  * its time block, its pinned clock and whether it is work: a Foundation task, whatever its heading.
  */
 export function listOf(plan: PlanView) {
+    const all = [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ];
     return mainTasks(plan).map((task) => {
         const keys = keysOf(withoutMoveLinks(task.text));
         return {
-            label: workLabel(bareText(withoutMoveLinks(task.text))), text: bareText(plainText(withoutMoveLinks(task.text))), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
+            label: workLabel(bareText(withoutMoveLinks(task.text))), text: bareText(plainText(withoutMoveLinks(task.text))), minutes: unitMinutes(task, all, { meetings: plan.meetings }),
             area: task.area, block: task.block, at: task.at, work: task.area === "foundation", keys,
             id: task.listItemId, section: task.section, critical: task.critical
         };
@@ -1245,7 +1309,7 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
         .map((task) => ({ task, area: areaOf(task) }))
         .map(({ task, area }) => ({
             group: group(task), noteId: task.noteId, listItemId: task.listItemId, text: task.text, period: task.period,
-            section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: task.estMinutes ?? DEFAULT_ESTIMATE, area,
+            section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: unitMinutes(task, grouped), area,
             fate: group(task) !== "week" ? dayFate(task, area, targetDay) : week === targetWeek ? { stay: week } : { forward: targetWeek }
         }));
     const oldestDate = older.map((task) => periodStart(task.period)).sort()[0] ?? null;
@@ -1348,14 +1412,17 @@ function onOffer<C extends { candidateId: string; kind: string }>(candidates: C[
         && !(candidate.kind === "week" && facts.putOffBefore.has(candidate.candidateId)));
 }
 
-/** The live top-level tasks of a plan, the Important block first, then in his order. On deck is not on his list: see `deckTasks`. */
+/**
+ * The live top-level tasks of a plan, the Important block first, then in his order, with a
+ * sub-item whose parent is not live (`topLevelOf`). On deck is not on his list: see `deckTasks`.
+ */
 export function mainTasks(plan: PlanView): PlanTask[] {
-    return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].filter((task) => isLive(task) && task.parent === null);
+    return topLevelOf([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ]).filter(isLive);
 }
 
 /** The live top-level tasks of a plan's On deck, in order. */
 export function deckTasks(plan: PlanView): PlanTask[] {
-    return plan.onDeck.filter((task) => isLive(task) && task.parent === null);
+    return topLevelOf(plan.onDeck).filter(isLive);
 }
 
 /** Every live top-level task of a plan a day leaves behind: his list, then On deck. */
@@ -1363,10 +1430,10 @@ export function leftovers(plan: PlanView): PlanTask[] {
     return [ ...mainTasks(plan), ...deckTasks(plan) ];
 }
 
-/** A day's On deck as the steps show it: each live item's id, plain text and minutes (30 without an estimate), with its ref. */
+/** A day's On deck as the steps show it: each live item's id, plain text and minutes (`unitMinutes`), with its ref. */
 export function deckItems(plan: PlanView) {
     return withRefs(deckTasks(plan).flatMap((task) => task.listItemId
-        ? [ { listItemId: task.listItemId, noteId: task.noteId, text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE, area: task.area } ]
+        ? [ { listItemId: task.listItemId, noteId: task.noteId, text: plainText(withoutMoveLinks(task.text)), minutes: unitMinutes(task, plan.onDeck, { meetings: plan.meetings }), area: task.area } ]
         : []), "o", (item) => item.listItemId);
 }
 
@@ -1429,10 +1496,11 @@ function projectsOffered(facts: { projects: Presented[]; live: Map<string, unkno
  * without a clock is not counted: only the pinned spans are booked.
  */
 export function withBooked<R extends DayFrame>(read: R, plan: PlanView): R {
+    const listed = [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ];
     const spans = mainTasks(plan).flatMap((task) => {
         const from = task.area !== "foundation" && task.at ? parseClock(task.at) : undefined;
         if (from === undefined) return [];
-        const to = from + (task.estMinutes ?? DEFAULT_ESTIMATE);
+        const to = from + unitMinutes(task, listed, { meetings: plan.meetings });
         const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
         return [ { start: clock(from), end: clock(Math.min(to, 29 * 60 + 59)) } ];
     });
@@ -1476,7 +1544,7 @@ export function present(candidate: Candidate): Presented {
             : t("caius.daily.get_done", { subject });
     return {
         candidateId: keys[0] ?? candidate.source, kind: reason.kind, area: "foundation", text, ...ticket, because, ...rest,
-        ...(reason.kind === "ask" ? { minutes: ASK_MINUTES } : {})
+        ...(reason.kind === "ask" ? { minutes: ASK_MINUTES, author: reason.author } : {})
     };
 }
 
@@ -1501,6 +1569,8 @@ export interface Presented {
     listItemId?: string | null;
     /** A project's title. */
     project?: string;
+    /** An ask: who asked. */
+    author?: string;
 }
 
 /** The size of answering an ask. */

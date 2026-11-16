@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { slipLabel } from "../components/TaskRow.js";
 import {
-    dayGroups, daysCells, dayTerrain, dispositionWords, fateChoices, hasLiveSubItems, overdueLine, redraw, redrawDays, redrawRows, rowKey, takeTicket,
+    dayGroups, daysCells, dayTerrain, dispositionWords, fateChoices, overdueLine, redraw, redrawDays, redrawRows, rowKey, takeTicket,
     ticketTakes, trailWords, type ViewAnswers, viewOf, viewPicks, viewReply
 } from "./views.js";
 
@@ -47,7 +47,7 @@ const DAY: DayViewData = {
     date: "2026-11-03", dateLabel: "Tue 3 Nov", openOn: null, load: loadOf(TASKS), calendarFailed: false,
     capacity: { windowMinutes: 480, bookedMinutes: 60, openMinutes: 420 },
     span: { start: "09:00", noon: "12:00", workEnd: "17:00", end: "23:00" },
-    meetings: [], drawn: null, unplacedMinutes: 0, tasks: TASKS, context: []
+    meetings: [], meetingLines: [], drawn: null, unplacedMinutes: 0, tasks: TASKS, context: []
 };
 const DAY_VIEW: ShownView = { view: "day", title: "Tue 3 Nov", sentence: "3 h 15 m of 3–4 h.", data: DAY };
 
@@ -173,6 +173,24 @@ describe("redraw", () => {
         expect(after.load.onDeck.minutes).toBe(45);
     });
 
+    it("keeps a meeting parent's sub-items out of the Foundation meter, on the day and on Days", () => {
+        const standup = (noteId: string): ViewTask[] => [
+            row("m", "Standup", { noteId, estMinutes: null, at: "10:00" }),
+            row("q1", "Ask Ana", { noteId, estMinutes: null, parent: "Standup", parentListItemId: "m" }),
+            row("q2", "Ask Ben", { noteId, estMinutes: null, parent: "Standup", parentListItemId: "m" })
+        ];
+        const tasks = standup("day1");
+        const load = dayLoad({ foundation: 0, onDeck: 0, growth: 0, recharge: 0 }, { focus: FOCUS, growthTarget: GROWTH });
+        const view: ShownView = { view: "day", title: "Tue 3 Nov", sentence: "", data: { ...DAY, load, tasks, meetingLines: [ "10:00 Standup (Ana, Ben)" ] } };
+        const tick = tap({ [key("q1")]: { fate: { kind: "done" } } });
+        expect(redraw(view, tick)[0].load.foundation.minutes).toBe(0);
+        const days: ShownView = {
+            view: "days", title: "", sentence: "",
+            data: { from: "2026-11-03", days: [ { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 30, load, calendarFailed: false, tasks, meetingLines: [ "10:00 Standup (Ana, Ben)" ] } ], week: DAYS.week }
+        };
+        expect(redraw(days, tick)[0].load.foundation.minutes).toBe(0);
+    });
+
     it("moves minutes between meters on an area tap", () => {
         const after = moved(tap({ [key("a2")]: { area: "growth" }, [key("g")]: { area: "recharge" } }));
         expect(after.load.foundation.minutes).toBe(165);
@@ -201,8 +219,8 @@ describe("redraw", () => {
         const days: DaysViewData = {
             from: "2026-11-03",
             days: [
-                { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 60, load: DAY.load, calendarFailed: false, tasks: TASKS },
-                { date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false, tasks: other }
+                { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 60, load: DAY.load, calendarFailed: false, meetingLines: [], tasks: TASKS },
+                { date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false, meetingLines: [], tasks: other }
             ],
             week: { key: "2026-W45", label: "Week 45", tasks: [], foundation: { minutes: 0, target: { min: 720, max: 900 } } }
         };
@@ -280,16 +298,6 @@ describe("dayGroups", () => {
     });
 });
 
-describe("hasLiveSubItems", () => {
-    it("is true for a row with a live sub-item on its note", () => {
-        expect(hasLiveSubItems(TASKS[3], TASKS)).toBe(true);
-        expect(hasLiveSubItems(TASKS[0], TASKS)).toBe(false);
-        const finished = TASKS.map((t) => t.parentListItemId === "p" ? { ...t, state: "done" as const } : t);
-        expect(hasLiveSubItems(TASKS[3], finished)).toBe(false);
-        expect(hasLiveSubItems(TASKS[3], TASKS.map((t) => ({ ...t, noteId: t.listItemId === "p" ? "day1" : "day2" })))).toBe(false);
-    });
-});
-
 describe("dayTerrain", () => {
     const tasks = [
         row("m1", "Deep work", { estMinutes: 60, block: "morning" }),
@@ -332,10 +340,57 @@ describe("dayTerrain", () => {
         expect(moved).not.toContain("Morning");
     });
 
+    it("counts a parent once, at its own estimate or its sub-items' sum, and keeps a done parent's open sub-item", () => {
+        const nested = (tasks: ViewTask[], meetings: DayViewData["meetings"] = []): DayViewData => ({
+            ...data, drawn: null, meetings, meetingLines: meetings.map((m) => `${m.start} ${m.title}`), tasks
+        });
+        const sub = (id: string, rest: Partial<ViewTask> = {}) => row(id, `Step ${id}`, { section: "Tasks", estMinutes: null, parent: "Fix things", parentListItemId: "p", ...rest });
+        const parent = (rest: Partial<ViewTask> = {}) => row("p", "Fix things", { section: "Tasks", estMinutes: null, ...rest });
+        expect(hills({}, nested([ parent({ estMinutes: 90 }), sub("a"), sub("b") ]))).toEqual([ [ "Tasks", "09:00", "10:30", 1 ] ]);
+        expect(hills({}, nested([ parent(), sub("a", { estMinutes: 20 }), sub("b") ]))).toEqual([ [ "Tasks", "09:00", "09:50", 1 ] ]);
+        expect(hills({}, nested([ parent({ state: "done" }), sub("a", { estMinutes: 20 }) ]))).toEqual([ [ "Tasks", "09:00", "09:20", 1 ] ]);
+        expect(hills({}, nested([ parent({ at: "10:00" }), sub("a"), sub("b") ], [ { start: "10:00", end: "10:30", title: "Standup" } ]))).toEqual([]);
+    });
+
     it("gives the minutes that don't fit before bedtime, and starts the drawing at an earlier meeting's hour", () => {
         expect(laid(tap({ [key("gr")]: { estimate: 600 } })).unplacedMinutes).toBe(240);
         const early = { ...data, meetings: [ { start: "08:15", end: "08:45", title: "Moved by the clock" } ] };
         expect(laid({}, early).input.start).toBe("08:00");
+    });
+});
+
+describe("a parent with closed sub-items", () => {
+    const hid = (id: string, rest: Partial<ViewTask> = {}) => row(id, `Step ${id}`, { parent: "Review", parentListItemId: "rv", estMinutes: null, hidden: true, ...rest });
+    const review = (rest: Partial<ViewTask> = {}) => row("rv", "Review", { estMinutes: null, ...rest });
+    const sub = (id: string, minutes: number) => row(id, `Step ${id}`, { parent: "Review", parentListItemId: "rv", estMinutes: minutes });
+    const dayOf = (tasks: ViewTask[]): DayViewData => ({ ...DAY, tasks, load: loadOf(tasks), drawn: null });
+    const foundation = (data: DayViewData, answers: ViewAnswers) => redraw({ view: "day", title: "", sentence: "", data }, answers)[0].load.foundation.minutes;
+
+    it("counts a parent with a done sub-item as the server does, after the last open sub-item is ticked", () => {
+        const data = dayOf([ review(), hid("a", { state: "done" }), sub("b", 20) ]);
+        expect(data.load.foundation.minutes).toBe(20);
+        expect(foundation(data, tap({ [key("b")]: { fate: { kind: "done" } } }))).toBe(0);
+        const terrain = dayTerrain(data, redrawRows(data.tasks, tap({ [key("b")]: { fate: { kind: "done" } } })));
+        expect(terrain.input.groups).toEqual([]);
+    });
+
+    it("keeps a parent a parent when all its open sub-items are ticked, with or without a closed one", () => {
+        const data = dayOf([ review(), sub("a", 20), sub("b", 25) ]);
+        const both = tap({ [key("a")]: { fate: { kind: "done" } }, [key("b")]: { fate: { kind: "done" } } });
+        expect(foundation(data, both)).toBe(0);
+        expect(dayTerrain(data, redrawRows(data.tasks, both)).input.groups).toEqual([]);
+        expect(foundation(data, tap({ [key("a")]: { fate: { kind: "drop", reason: "not needed" } }, [key("b")]: { fate: { kind: "drop", reason: "not needed" } } }))).toBe(30);
+    });
+
+    it("moves the meter by nothing when a parent whose sub-items are all done is ticked", () => {
+        const data = dayOf([ review(), hid("a", { state: "done" }), hid("b", { state: "done" }) ]);
+        expect(data.load.foundation.minutes).toBe(0);
+        expect(foundation(data, tap({ [key("rv")]: { fate: { kind: "done" } } }))).toBe(0);
+    });
+
+    it("lists no hidden row", () => {
+        const tasks = redrawRows([ review(), hid("a", { state: "done" }), sub("b", 20) ], {});
+        expect(dayGroups(tasks).flatMap((g) => g.tasks.map((t) => t.listItemId))).toEqual([ "rv", "b" ]);
     });
 });
 
@@ -349,9 +404,9 @@ describe("slipLabel", () => {
 const DAYS: DaysViewData = {
     from: "2026-11-03",
     days: [
-        { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 90, load: DAY.load, calendarFailed: false, tasks: TASKS },
+        { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 90, load: DAY.load, calendarFailed: false, meetingLines: [], tasks: TASKS },
         {
-            date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false,
+            date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false, meetingLines: [],
             tasks: TASKS.map((t) => ({ ...t, noteId: "day2", period: { kind: "day" as const, key: "2026-11-04" } }))
         }
     ],

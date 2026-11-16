@@ -4,7 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import { useEffect, useState } from "preact/hooks";
 
-import type { Explanation, PlanTask, TaskRef } from "../lib/caius.js";
+import type { Explanation, PlanTask, TaskRef, WriteResult } from "../lib/caius.js";
 import { addMonths, addWeeks, dayLabel, monthLabel, nextWorkdayKey, periodLabel, addDays, weekLabel, weekOf } from "../lib/day.js";
 import type { Reminder } from "../lib/local.js";
 import { cancelReminder, inQuietHours, scheduleReminder } from "../lib/notify.js";
@@ -30,7 +30,24 @@ export function markDone(task: PlanTask) {
     }
     haptic("confirm");
     closeSheet();
-    holdWrite(ref, "done", `Done: ${task.text}`, () => api().setState([ { ...ref, state: "done" } ]));
+    holdWrite(ref, "done", `Done: ${task.text}`, async () => {
+        const result = await api().setState([ { ...ref, state: "done" } ]);
+        offerParent(task, result);
+        return result;
+    });
+}
+
+/** After a tick that closed a parent's last open sub-item, asks in the snackbar whether to tick the parent too. */
+function offerParent(task: PlanTask, result: WriteResult) {
+    const parent = result.results?.[0]?.parentComplete;
+    if (!parent) {
+        return;
+    }
+    const words = parent.text.length > 24 ? `${parent.text.slice(0, 23).trimEnd()}…` : parent.text;
+    snack.value = {
+        text: `Done: ${task.text}`,
+        action: { label: `Mark ${words} done`, run: () => markDone({ ...task, ...parent, parent: null, parentListItemId: null }) }
+    };
 }
 
 export function startDoing(task: PlanTask) {
