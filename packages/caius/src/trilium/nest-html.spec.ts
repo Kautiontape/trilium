@@ -256,6 +256,18 @@ describe('liftOut', () => {
     ]);
   });
 
+  it('places the item right after `after`, a top-level item of the parent\'s list, else after the parent', () => {
+    const cy = li('eC', 'Answer Cy');
+    const html = ul(standup(ul(ana, ben, cy)), report);
+    expect(written(liftOut(html, 'eB', 'eX'))).toBe(ul(standup(ul(ana, cy)), report, ben));
+    expect(written(liftOut(html, 'eB', 'eP'))).toBe(ul(standup(ul(ana, cy)), ben, report));
+    for (const after of ['nope', 'eA', 'eB']) {
+      expect(written(liftOut(html, 'eB', after))).toBe(ul(standup(ul(ana, cy)), ben, report));
+    }
+    const lifted = written(liftOut(written(liftOut(html, 'eA')), 'eB', 'eA'));
+    expect(lifted).toBe(ul(standup(ul(cy)), ana, ben, report));
+  });
+
   it('drops the sub-list it empties, and lifts a finished sub-item too', () => {
     const done = li('eA', 'Answer Ana', { checked: true });
     expect(liftOut(ul(standup(ul(done))), 'eA')).toEqual({ ok: true, html: ul(standup(), done), unchanged: false });

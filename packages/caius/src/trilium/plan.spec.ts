@@ -633,6 +633,21 @@ describe('nesting writes', () => {
     expect(order(f.html.d)).toEqual(['p1', 'p2', 'p2a', 'p3']);
     expect(parentOf(f.html.d, 'p2a')).toBeUndefined();
   });
+  it('keeps the order of sub-items lifted out in one call, and each parent\'s own', async () => {
+    const tree = '<h3>Work</h3>' + ul(
+      li('P', 'Parent', { sub: ul(li('a', 'A'), li('b', 'B'), li('c', 'C')) }),
+      li('Q', 'Other', { sub: ul(li('x', 'X'), li('y', 'Y')) }),
+      li('R', 'Last'),
+    );
+    const lift = async (ids: string[]) => {
+      const f = fakeTrilium(seed(tree));
+      await placeTasks(f.api, ids.map((listItemId) => ({ noteId: 'd', listItemId, out: true as const })), base);
+      return order(f.html.d);
+    };
+    expect(await lift(['a', 'b', 'c'])).toEqual(['P', 'a', 'b', 'c', 'Q', 'x', 'y', 'R']);
+    expect(await lift(['b', 'a'])).toEqual(['P', 'c', 'b', 'a', 'Q', 'x', 'y', 'R']);
+    expect(await lift(['a', 'x', 'b', 'y'])).toEqual(['P', 'c', 'a', 'b', 'Q', 'x', 'y', 'R']);
+  });
   it('passes the nest refusals through, and refuses other notes and bad shapes', async () => {
     const f = fakeTrilium(seed(day, other));
     const out = await placeTasks(f.api, [

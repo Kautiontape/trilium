@@ -74,8 +74,11 @@ export function nestNew(html: string, ids: string[], parentMarkup: string, state
   return { ok: true, html: apply(html, [{ start: first.range[0], end: first.range[1], text: made }, ...leaveEdits(html, root, rest)]), unchanged: false };
 }
 
-/** `html` with the sub-item `id` moved to right after its parent, in the parent's list. A sub-list it leaves empty goes. */
-export function liftOut(html: string, id: string): NestResult {
+/**
+ * `html` with the sub-item `id` moved to right after its parent, in the parent's list, or right
+ * after `after` when that is an item of the parent's list. A sub-list it leaves empty goes.
+ */
+export function liftOut(html: string, id: string, after?: string): NestResult {
   const root = parse(html, { comment: true });
   const li = findItem(root, id);
   if (!li || !isTask(li)) return refuse('not_found', `no task ${id}`);
@@ -86,7 +89,8 @@ export function liftOut(html: string, id: string): NestResult {
   if (problem) return problem;
   const [start, end] = lis(list).length === 1 ? list.range : li.range;
   const markup = html.slice(li.range[0], li.range[1]);
-  return { ok: true, html: apply(html, [{ start, end, text: '' }, insertAt(parent.range[1], markup)]), unchanged: false };
+  const anchor = after === undefined ? undefined : lis(parent.parentNode ?? root).find((c) => idOf(c) === after);
+  return { ok: true, html: apply(html, [{ start, end, text: '' }, insertAt((anchor ?? parent).range[1], markup)]), unchanged: false };
 }
 
 const refuse = (reason: NestProblem, detail: string): NestFailure => ({ ok: false, reason, detail });

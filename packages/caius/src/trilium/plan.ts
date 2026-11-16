@@ -649,6 +649,7 @@ export async function placeTasks(api: NoteStore, reqs: PlaceRequest[], opts: Pla
       let after = before;
       const changed: PlaceRequest[] = [];
       const parents = new Map<PlaceRequest, string>();
+      const lifted = new Map<string, string>();
       const parentOf = (req: PlaceRequest) => (parents.has(req) ? { parentListItemId: parents.get(req) } : {});
       for (const req of group) {
         if (out.has(req) || changed.includes(req)) continue;
@@ -663,8 +664,11 @@ export async function placeTasks(api: NoteStore, reqs: PlaceRequest[], opts: Pla
         } else if (typeof req.under === 'string') {
           r = nestUnder(after, req.listItemId, req.under, states);
           if (r.ok) parents.set(req, req.under);
-        } else if (req.out) r = liftOut(after, req.listItemId);
-        else r = placeInDay(after, req.listItemId, req, states);
+        } else if (req.out) {
+          const parent = parentIdOf(after, req.listItemId);
+          r = liftOut(after, req.listItemId, parent === undefined ? undefined : lifted.get(parent));
+          if (r.ok && parent !== undefined) lifted.set(parent, req.listItemId);
+        } else r = placeInDay(after, req.listItemId, req, states);
         if (!r.ok) {
           const [reason, detail] = typeof req.under === 'string' ? await nestRefusal(api, r as Extract<NestResult, { ok: false }>, req.under, after, noteId) : [r.reason, r.detail];
           for (const q of members) out.set(q, skip(q, reason, detail));
