@@ -52,7 +52,7 @@ export function ViewRows({ tasks, variant, answers, open, detail }: {
 }) {
     return (
         <div class="day-rows">
-            {tasks.map((task) => {
+            {tasks.filter((task) => !task.hidden).map((task) => {
                 const fate = answers.rows?.[rowKey(task)]?.fate;
                 const words = task.landed ? `from ${periodLabel(task.landed.key)}` : fate ? fateLabel(fate) : detail?.(task);
                 return (

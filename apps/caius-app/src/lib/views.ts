@@ -272,7 +272,7 @@ export function takeTicket(data: ItemViewData, to: string, onDeck: boolean): Tic
  * with `over`, `overMinutes` and `overWith` worked again; the server's own `load` when nothing changed.
  */
 function withLoad(day: { tasks: ViewTask[]; load: DayLoad; meetingLines: string[] }, tasks: RedrawnTask[]): RedrawnDay {
-    const [ was, now ] = [ countOf(day.tasks, day.meetingLines), countOf(tasks.filter((t) => !t.leaving), day.meetingLines) ];
+    const [ was, now ] = [ countOf(day.tasks, day.meetingLines), countOf(afterTaps(tasks), day.meetingLines) ];
     if (FIGURES.every((figure) => was[figure] === now[figure])) {
         return { tasks, load: day.load };
     }
@@ -284,6 +284,14 @@ function withLoad(day: { tasks: ViewTask[]; load: DayLoad; meetingLines: string[
         recharge: before.recharge.count + now.recharge - was.recharge
     }, { focus: before.foundation.focus, growthTarget: before.growth.target });
     return { tasks, load };
+}
+
+/**
+ * `tasks` with each row's state as its fate leaves it, for `countUnits`: a row ticked done stays
+ * done, so it keeps its parent a parent; a row a tap moves off the day or drops counts as cancelled.
+ */
+function afterTaps(tasks: RedrawnTask[]): RedrawnTask[] {
+    return tasks.map((t) => t.leaving ? { ...t, state: t.fate?.kind === "done" ? "done" : "cancelled" } : t);
 }
 
 /** The four figures `dayLoad` takes, counted from rows: Foundation, On deck and Growth minutes, and the Recharge things on the list. */
@@ -354,7 +362,8 @@ export interface DayGroup {
  * The Day view's rows under their headings: Important, Morning, Afternoon, Evening, The list (no
  * block) and On deck, empty ones left out. A sub-item follows its parent, whatever its own block.
  */
-export function dayGroups(tasks: RedrawnTask[]): DayGroup[] {
+export function dayGroups(rows: RedrawnTask[]): DayGroup[] {
+    const tasks = rows.filter((t) => !t.hidden);
     const keys = new Set(tasks.map(rowKey));
     const parentOf = (task: RedrawnTask) => task.parentListItemId ? rowKey({ noteId: task.noteId, listItemId: task.parentListItemId }) : null;
     const isSub = (task: RedrawnTask) => {
@@ -390,7 +399,7 @@ export function dayGroups(tasks: RedrawnTask[]): DayGroup[] {
  */
 export function dayTerrain(data: DayViewData, tasks: RedrawnTask[]): { input: TerrainInput; unplacedMinutes: number } {
     const meetings = data.meetings.filter((m) => !m.allDay);
-    const listed = tasks.filter((t) => !t.leaving && t.place === "list");
+    const listed = afterTaps(tasks).filter((t) => t.place === "list");
     const work = topLevelOf(listed)
         .filter(isLive)
         .map((t) => ({
@@ -499,6 +508,10 @@ const BLOCK_NAMES: Record<Block, string> = { morning: "Morning", afternoon: "Aft
 export const AREA_NAMES: Record<Area, string> = { foundation: "Foundation", growth: "Growth", recharge: "Recharge" };
 
 function rowsOf(view: ShownView): ViewTask[] {
+    return allRowsOf(view).filter((t) => !t.hidden);
+}
+
+function allRowsOf(view: ShownView): ViewTask[] {
     switch (view.view) {
         case "day": return view.data.tasks ?? [];
         case "days": return [ ...(view.data.days ?? []).flatMap((d) => d.tasks ?? []), ...(view.data.week?.tasks ?? []) ];

@@ -187,6 +187,25 @@ describe("the day view", () => {
     });
 });
 
+describe("a parent's closed sub-items", () => {
+    it("come back hidden, so a recount counts the parent as the server does, and a done top-level task doesn't come back", async () => {
+        const DATE = "2034-04-05";
+        await dayWith(DATE, `<h3>Work</h3>${ul(
+            li("h-review", "Review the draft", ul(doneLi("h-done", "Read the intro ~10m"), li("h-open", "Check the figures ~20m"))),
+            doneLi("h-gone", "Send the invoice ~15m")
+        )}`);
+        const { data } = await shown("day", { date: DATE });
+        const byId = (id: string) => data.tasks.find((t) => t.listItemId === id);
+        expect(byId("h-done")).toMatchObject({ state: "done", hidden: true, parentListItemId: "h-review" });
+        expect(byId("h-review")?.hidden).toBeUndefined();
+        expect(byId("h-open")?.hidden).toBeUndefined();
+        expect(byId("h-gone")).toBeUndefined();
+        expect(data.tasks.map((t) => t.listItemId)).toEqual([ "h-review", "h-done", "h-open" ]);
+        expect(data.load.foundation.minutes).toBe(20);
+        expect(liveMinutes(data.tasks, "foundation", { meetings: data.meetingLines })).toBe(20);
+    });
+});
+
 describe("the days view", () => {
     it("reads two days and seven, each weighed as the day view weighs it, with the Week row", async () => {
         const week = await run(async () => (await store.calendarWeek(WEEK)).noteId);

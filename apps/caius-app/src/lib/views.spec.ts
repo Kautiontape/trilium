@@ -359,6 +359,41 @@ describe("dayTerrain", () => {
     });
 });
 
+describe("a parent with closed sub-items", () => {
+    const hid = (id: string, rest: Partial<ViewTask> = {}) => row(id, `Step ${id}`, { parent: "Review", parentListItemId: "rv", estMinutes: null, hidden: true, ...rest });
+    const review = (rest: Partial<ViewTask> = {}) => row("rv", "Review", { estMinutes: null, ...rest });
+    const sub = (id: string, minutes: number) => row(id, `Step ${id}`, { parent: "Review", parentListItemId: "rv", estMinutes: minutes });
+    const dayOf = (tasks: ViewTask[]): DayViewData => ({ ...DAY, tasks, load: loadOf(tasks), drawn: null });
+    const foundation = (data: DayViewData, answers: ViewAnswers) => redraw({ view: "day", title: "", sentence: "", data }, answers)[0].load.foundation.minutes;
+
+    it("counts a parent with a done sub-item as the server does, after the last open sub-item is ticked", () => {
+        const data = dayOf([ review(), hid("a", { state: "done" }), sub("b", 20) ]);
+        expect(data.load.foundation.minutes).toBe(20);
+        expect(foundation(data, tap({ [key("b")]: { fate: { kind: "done" } } }))).toBe(0);
+        const terrain = dayTerrain(data, redrawRows(data.tasks, tap({ [key("b")]: { fate: { kind: "done" } } })));
+        expect(terrain.input.groups).toEqual([]);
+    });
+
+    it("keeps a parent a parent when all its open sub-items are ticked, with or without a closed one", () => {
+        const data = dayOf([ review(), sub("a", 20), sub("b", 25) ]);
+        const both = tap({ [key("a")]: { fate: { kind: "done" } }, [key("b")]: { fate: { kind: "done" } } });
+        expect(foundation(data, both)).toBe(0);
+        expect(dayTerrain(data, redrawRows(data.tasks, both)).input.groups).toEqual([]);
+        expect(foundation(data, tap({ [key("a")]: { fate: { kind: "drop" } }, [key("b")]: { fate: { kind: "drop" } } }))).toBe(30);
+    });
+
+    it("moves the meter by nothing when a parent whose sub-items are all done is ticked", () => {
+        const data = dayOf([ review(), hid("a", { state: "done" }), hid("b", { state: "done" }) ]);
+        expect(data.load.foundation.minutes).toBe(0);
+        expect(foundation(data, tap({ [key("rv")]: { fate: { kind: "done" } } }))).toBe(0);
+    });
+
+    it("lists no hidden row", () => {
+        const tasks = redrawRows([ review(), hid("a", { state: "done" }), sub("b", 20) ], {});
+        expect(dayGroups(tasks).flatMap((g) => g.tasks.map((t) => t.listItemId))).toEqual([ "rv", "b" ]);
+    });
+});
+
 describe("slipLabel", () => {
     it("shows the slip count from 2 only", () => {
         expect([ 0, 1, 2, 3 ].map(slipLabel)).toEqual([ null, null, "↻2", "↻3" ]);

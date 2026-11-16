@@ -29,6 +29,8 @@ export interface ViewTask extends Pick<PlanTask, 'noteId' | 'state' | 'text' | '
   place: 'list' | 'onDeck';
   /** Moves off day notes (`slipsOf`). */
   slips: number;
+  /** A closed sub-item of a live parent, sent so a recount sees the parent as the server does; never listed. */
+  hidden?: true;
   /** The first ticket key the task names, with its Jira status when it was read. */
   ticket?: { key: string; status?: string };
 }
