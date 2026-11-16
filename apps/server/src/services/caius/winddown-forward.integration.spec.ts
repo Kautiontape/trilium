@@ -8,9 +8,9 @@ import { dayCapacity } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { areaAskIds } from "./daily.js";
 import type { CaiusInputs } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
-import { areaAskIds } from "./daily.js";
 import { createBeccaStore } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 

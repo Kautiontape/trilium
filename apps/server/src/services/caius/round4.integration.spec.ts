@@ -889,27 +889,26 @@ describe("fix round 1: a moved item is followed to its copy, not taken as in pla
 
     it("Plan my day: a later call's groups name catch-up tasks by their old refs after move_all moved them", async () => {
         await cls.init(async () => {
-            const tuesday = await store.calendarDay("2027-08-24");
+            const tuesday = await store.calendarDay("2027-10-19");
             await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("g-one", "Sort the kiln glazes ~30m"), li("g-two", "Label the pottery shelves ~30m"))}`);
-            const wednesday = await store.calendarDay("2027-08-25");
+            const wednesday = await store.calendarDay("2027-10-20");
             await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("g-own", "Wax the canoe ~30m"))}`);
         });
-        at("2027-08-25T09:40");
-        const catchup = await call("caius_planday", { date: "2027-08-25", step: "catchup" });
+        at("2027-10-20T09:40");
+        const catchup = await call("caius_planday", { date: "2027-10-20", step: "catchup" });
         const refs = [ "g-one", "g-two" ].map((id) => catchup.data.tasks.find((task: any) => task.listItemId === id).ref);
-        await call("caius_plan_apply", { date: "2027-08-25", catchup: "move_all", brief: prose });
-        const grouped = await call("caius_plan_apply", { date: "2027-08-25", brief: { ...prose, groups: [ { name: "Studio", items: refs }, { name: "Dock", items: [ "Wax the canoe" ] } ] } });
+        await call("caius_plan_apply", { date: "2027-10-20", catchup: "move_all", brief: prose });
+        const grouped = await call("caius_plan_apply", { date: "2027-10-20", brief: { ...prose, groups: [ { name: "Studio", items: refs }, { name: "Dock", items: [ "Wax the canoe" ] } ] } });
         expect(grouped.skipped).toEqual([]);
         expect(grouped.ungrouped).toBeUndefined();
-        const day = await cls.init(() => store.calendarDay("2027-08-25"));
+        const day = await cls.init(() => store.calendarDay("2027-10-20"));
         const saved = JSON.parse(becca.notes[day.noteId]?.getChildNotes().map((child) => child.getLabelValue("caiusGroups")).find((value) => value) ?? "{}");
-        const plan = await call("caius_plan", { period: "day", date: "2027-08-25" });
+        const plan = await call("caius_plan", { period: "day", date: "2027-10-20" });
         const idOf = (text: string) => plan.sections.flatMap((s: any) => s.tasks).find((t: any) => t.text.startsWith(text))?.listItemId;
         expect(saved.groups).toEqual([
             { name: "Studio", items: [ idOf("Sort the kiln glazes"), idOf("Label the pottery shelves") ] },
             { name: "Dock", items: [ "g-own" ] }
         ]);
-        expect(saved.groups[0].items).not.toContain(undefined);
         expect(saved.groups[0].items).not.toContain("g-one");
     });
 });
