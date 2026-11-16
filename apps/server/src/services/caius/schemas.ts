@@ -38,6 +38,7 @@ const addItem = z.object({
     critical: z.boolean().optional().describe("Add the task to the Important block"),
     block: z.enum(BLOCKS as [ "morning", "afternoon", "evening" ]).optional().describe("A day only: the time block to file the task under (the Morning, Afternoon or Evening heading, made when missing), instead of a section"),
     area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).optional().describe("The task's area, written as its marker (🌱 Growth, 🔋 Recharge; Foundation has none). On a day with no section, critical, onDeck or block given, an area files the task by it: Growth and Recharge under Evening, Foundation under Morning when the note has that heading, else in the main list"),
+    under: z.string().min(1).optional().describe("A task of the same note, by list item id or ref (l…): the new task becomes its last sub-item"),
     suggested: z.boolean().optional().describe("Add the task to the Suggested section, from key, title, because and minutes"),
     onDeck: z.boolean().optional().describe("A day only: add the task to the day's On deck section, for something he would like to do that day (\"I'd like to do X Thursday\"). Tracked, but not on his list until Plan my day puts it there. For something he needs to do that day, give a section or critical instead"),
     text: z.string().optional().describe("The task text. Not for a Suggested item, unless already in its \"Get KEY title done: because why (~30m)\" shape."),
@@ -52,9 +53,12 @@ const addItem = z.object({
     (item) => [item.date, item.week, item.month].filter((v) => v !== undefined).length === 1,
     "Give exactly one of date, week or month"
 ).refine(
-    (item) => [item.section !== undefined, item.critical, item.suggested, item.onDeck, item.block !== undefined].filter(Boolean).length === 1
-        || ([item.section !== undefined, item.critical, item.suggested, item.onDeck, item.block !== undefined].every((given) => !given) && item.area !== undefined && item.date !== undefined),
-    "Give exactly one of section, critical, suggested, onDeck or block (or, on a day, an area alone to file the task by it)"
+    (item) => [item.section !== undefined, item.critical, item.suggested, item.onDeck, item.block !== undefined, item.under !== undefined].filter(Boolean).length === 1
+        || ([item.section !== undefined, item.critical, item.suggested, item.onDeck, item.block !== undefined, item.under !== undefined].every((given) => !given) && item.area !== undefined && item.date !== undefined),
+    "Give exactly one of section, critical, suggested, onDeck, block or under (or, on a day, an area alone to file the task by it)"
+).refine(
+    (item) => !(item.under !== undefined && item.suggested),
+    "A Suggested item can't go under a task"
 ).refine(
     (item) => item.block === undefined || item.date !== undefined,
     "Only a day note has time blocks: give date with block"
@@ -112,7 +116,16 @@ const placeItem = z.object({
     block: z.enum(["morning", "afternoon", "evening"]).optional().describe("The time block to put the task in, at the end of its list unless before or after says where"),
     onDeck: z.boolean().optional().describe("true: put the task on the day's On deck; false: on its list proper"),
     before: z.string().optional().describe("Put the task before this item of the list, by its list item id"),
-    after: z.string().optional().describe("Put the task after this item of the list, by its list item id")
+    after: z.string().optional().describe("Put the task after this item of the list, by its list item id"),
+    under: z.union([
+        z.string().min(1),
+        z.object({
+            text: z.string().trim().min(1),
+            est: z.string().optional(),
+            area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).optional()
+        })
+    ]).optional().describe("A task's list item id or ref (l…): the task, with nothing under it, becomes its last sub-item. Or { text, est?, area? }: a new parent is made where the first item stood and the items go under it, in order"),
+    out: z.literal(true).optional().describe("true: lift a sub-item to right after its parent")
 });
 
 const estimateItem = z.object({

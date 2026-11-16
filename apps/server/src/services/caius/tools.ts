@@ -56,7 +56,7 @@ export function createCaiusTools(
         },
 
         caius_add: {
-            description: "Add tasks to a day, week or month note, in a section or the Important block (text), under a day's time block (block: morning, afternoon or evening), in a day's On deck (onDeck: true, text: something he would like to do that day, tracked but not on his list until Plan my day puts it there), or the Suggested section (key, title, because and minutes, written as \"Get KEY title done: because why (~30m)\"; free text is rejected unless already in that shape). Give an area (foundation, growth or recharge) to write its marker (Growth 🌱, Recharge 🔋); a day's task with an area and no other place is filed by it: Growth and Recharge under Evening, Foundation under Morning when the note has that heading. Takes a list of items.",
+            description: "Add tasks to a day, week or month note, in a section or the Important block (text), under a day's time block (block: morning, afternoon or evening), in a day's On deck (onDeck: true, text: something he would like to do that day, tracked but not on his list until Plan my day puts it there), or the Suggested section (key, title, because and minutes, written as \"Get KEY title done: because why (~30m)\"; free text is rejected unless already in that shape). Give an area (foundation, growth or recharge) to write its marker (Growth 🌱, Recharge 🔋); a day's task with an area and no other place is filed by it: Growth and Recharge under Evening, Foundation under Morning when the note has that heading. `under` (a task's id or ref in the same note) makes the new task its last sub-item. Takes a list of items.",
             inputSchema: toolInputs.add,
             async: true,
             mutates: true,
@@ -80,7 +80,7 @@ export function createCaiusTools(
         },
 
         caius_set_state: {
-            description: "Mark tasks done, doing or cancelled. A cancelled task needs a reason. Takes a list of items.",
+            description: "Mark tasks done, doing or cancelled. A cancelled task needs a reason. A tick that closes a parent's last open sub-item answers parentComplete: ask the user before ticking the parent. Takes a list of items.",
             inputSchema: toolInputs.setState,
             async: true,
             mutates: true,
@@ -96,7 +96,7 @@ export function createCaiusTools(
         },
 
         caius_place: {
-            description: "Move tasks within their own day note: into a time block (morning, afternoon, evening), onto On deck (onDeck: true) or onto the list (onDeck: false), and before or after another item there. The task keeps its words, state, sub-items and id; to move it to another day use caius_forward. An Important task stays in the Important block. Takes a list of items.",
+            description: "Move tasks within their own day note: into a time block (morning, afternoon, evening), onto On deck (onDeck: true) or onto the list (onDeck: false), and before or after another item there. The task keeps its words, state, sub-items and id; to move it to another day use caius_forward. An Important task stays in the Important block. `under` an id or ref makes the task (with nothing under it) that task's last sub-item; `under` { text, est?, area? } makes a new parent where the first item stood, the items under it in order; `out: true` lifts a sub-item to right after its parent. One level only (too_deep); both in one note (other_note). Takes a list of items.",
             inputSchema: toolInputs.place,
             async: true,
             mutates: true,
@@ -104,7 +104,7 @@ export function createCaiusTools(
         },
 
         caius_set_estimate: {
-            description: "Set tasks' estimates in minutes (5 to 600), written as the ~30m token on the task, replacing one already there. A task with live sub-items counts through them, so it is skipped (has_subitems): set its sub-items instead. Takes a list of items.",
+            description: "Set tasks' estimates in minutes (5 to 600), written as the ~30m token on the task, replacing one already there. A parent's estimate covers its sub-items. Takes a list of items.",
             inputSchema: toolInputs.setEstimate,
             async: true,
             mutates: true,
