@@ -414,7 +414,7 @@ describe("capacity is one honest number", () => {
         expect(inputs.question).toBeNull();
         expect(inputs.data.summary).toBe("ZAP-150 fits; that's the day.");
 
-        at(`${DAY}T09:00`);
+        at("2026-11-18T18:00");
         const before = await call("caius_winddown", { date: "2026-11-18", step: "next" });
         expect(before.data.capacity).toEqual({
             windowMinutes: 480, bookedMinutes: 285, openMinutes: 195, targetMinutes: 127, plannedMinutes: 30, bookedRatio: 0.59375,

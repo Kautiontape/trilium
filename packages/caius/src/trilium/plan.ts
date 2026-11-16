@@ -77,7 +77,10 @@ export interface ItemRequest {
   reason?: string;
 }
 
-/** An On deck task put on his list: the end of his main list, or first, before or after an item of it, or the Important block. */
+/**
+ * An On deck task put on his list: the end of his main list, or `first` of it, or `before` or
+ * `after` a task of any time block, or the Important block.
+ */
 export interface CommitRequest {
   noteId: string;
   listItemId: string;
@@ -357,7 +360,8 @@ export async function acceptTasks(api: NoteStore, reqs: AcceptRequest[], opts: P
 
 /**
  * Puts On deck tasks on his list, each the same item (id, text, state, sub-items): into the
- * Important block, or at the end of his main list and then first, before or after an item of it.
+ * Important block, or at the end of his main list and then first, or before or after a task of
+ * any time block (see `placeInDay`).
  * An item already off the deck and live is `unchanged`, so a re-run writes nothing.
  */
 export async function commitTasks(api: NoteStore, reqs: CommitRequest[], opts: PlanOptions = {}): Promise<Done<CommitRequest>[]> {
@@ -375,11 +379,17 @@ export async function commitTasks(api: NoteStore, reqs: CommitRequest[], opts: P
       return inspectItem(html, req.listItemId, states).ok ? { ...req, status: 'unchanged', detail: 'already on the list' } : skip(req, 'not_on_deck');
     }
     let after = req.critical ? placeTask(taken.html, taken.markup, { kind: 'critical' }) : placeInMainList(taken.html, taken.markup);
-    const place = req.first ? { first: true as const } : req.before !== undefined ? { before: req.before } : req.after !== undefined ? { after: req.after } : null;
-    if (place) {
-      const moved = moveInMainList(after, req.listItemId, place);
-      if (!moved.ok) return skip(req, moved.reason, 'the item it is placed by must be in his main list');
+    if (req.first) {
+      const moved = moveInMainList(after, req.listItemId, { first: true });
+      if (!moved.ok) return skip(req, moved.reason);
       after = moved.html;
+    } else {
+      const place = req.before !== undefined ? { before: req.before, onDeck: false } : req.after !== undefined ? { after: req.after, onDeck: false } : null;
+      if (place) {
+        const placed = placeInDay(after, req.listItemId, place, states);
+        if (!placed.ok) return skip(req, placed.reason, placed.detail);
+        after = placed.html;
+      }
     }
     if (opts.dryRun) return { ...req, status: 'moved', dryRun: true, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };
     if (!(await api.putContent(req.noteId, after, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');

@@ -30,6 +30,7 @@ import {
     overlapPairs,
     openTasks,
     PERIODS,
+    placeTasks,
     readPlan,
     scanDocs,
     setAreas,
@@ -49,6 +50,7 @@ import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_L
 import {
     allHeld as heldItems,
     catchupOf,
+    isReview,
     closingLines,
     copyKey,
     closingPeriods,
@@ -373,11 +375,14 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
  * Wind down's writes for `date`, against the next workday: what he called done, the fates he named
  * (a forward, or a drop with his reason), the proposed fate for every open item he didn't name,
  * the candidates he took for the next workday in his order, the keep and carry lines, finished
- * tickets, candidates put off, evening tasks and Context lines on the next workday.
+ * tickets, candidates put off, evening tasks and Context lines on the next workday. A review
+ * (`isReview`) writes the answers about `date`, the keep lines it asks and the Context lines he
+ * gives, and leaves the target day's offers to Plan my day.
  */
 export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) {
     const { date } = asked;
     const targetDay = windDownTarget(date, deps.now);
+    const reviewOnly = isReview(date, targetDay, dayKey(deps.now));
     const read = await deps.dayRead(targetDay);
     // The next workday, when it has a brief, has its header drawn again after the writes, from its
     // calendar, with the day's forecast fetched for a brief that kept no weather.
@@ -406,7 +411,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const states = await loadStateSymbols(store);
         // An answer may name only an item the open step showed, and only a day, week or month it listed.
         const shownItems = new Set(open.items.map((item) => item.listItemId).filter((id): id is string => !!id));
-        const listed = namedDays(date, targetDay);
+        const listed = namedDays(date, targetDay, reviewOnly);
         const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
         const pools: Pools = {
@@ -433,12 +438,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...[ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId),
             ...candidatesNamed(pools.candidates, [ ...asked.done, ...asked.finished, ...asked.fates.map((fate) => fate.listItemId) ])
         ]);
-        const answers: WindDownApplyInput = asked.asOffered ? {
+        // A review takes only its keep lines as offered: its other offers are the target day's.
+        const keep = asked.keep.length ? asked.keep : lines.keep.map((line) => ({ lineId: line.lineId }));
+        const answers: WindDownApplyInput = !asked.asOffered ? asked : reviewOnly ? { ...asked, keep } : {
             ...asked,
             accept: asked.accept.length ? asked.accept : candidates.filter((c) => !put.has(c.candidateId) && c.kind !== "project").map((c) => ({ candidateId: c.candidateId })),
-            keep: asked.keep.length ? asked.keep : lines.keep.map((line) => ({ lineId: line.lineId })),
+            keep,
             carry: asked.carry.length ? asked.carry : lines.carry.map((line) => ({ lineId: line.lineId }))
-        } : asked;
+        };
         const input = windDownAnswers(answers, pools, skipped, table, copies, collided);
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
@@ -446,17 +453,21 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const hasAnswer = !!asked.asOffered || [
             asked.done, asked.fates, asked.accept, asked.move, asked.keep, asked.carry, asked.finished, asked.notToday, asked.dismiss, asked.areas, asked.context, asked.overlaps
         ].some((answers) => answers.length > 0);
-        const offered = [
-            ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
-            ...open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)))
+        const parks = open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)));
+        // A review offers only the reviewed day's parks and keep lines, so his words are checked against those alone.
+        const offered = reviewOnly ? [ ...lines.keep.map((line) => line.line), ...parks ] : [
+            ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`), ...parks
         ];
         const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...finishedChecks(input.unmatched), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
-            ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
+            ...(reviewOnly ? [] : [ ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ]) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
-        await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
-        // The next step's questions are about the next workday, so they are answered on its note.
-        await labelDay(store, targetDay, ASKED_LABEL, nextAsked(asks));
-        await labelDay(store, targetDay, ASK_SEEN_LABEL, offeredAsks);
+        // A review asks only the keep lines, so only they are recorded as asked.
+        await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...(reviewOnly ? [] : lines.carry) ].map((line) => line.lineId));
+        if (!reviewOnly) {
+            // The next step's questions are about the next workday, so they are answered on its note.
+            await labelDay(store, targetDay, ASKED_LABEL, nextAsked(asks));
+            await labelDay(store, targetDay, ASK_SEEN_LABEL, offeredAsks);
+        }
         // The ref table covers the Journal, so a held item that lives outside the window is read from it.
         const journalItem = (id: string) => items.find((item) => item.id === id);
         // The open items and the ref table carry their note; only an id from elsewhere needs the Journal searched.
@@ -479,7 +490,15 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             record(written, skipped, { kind: "done", id: listItemId }, result);
         } });
         // The areas he gave are written before the fates move anything, so a forward carries the marker.
-        await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas, {
+        // A review gives areas only to its open items and their followed copies, and leaves the rest
+        // to Plan my day.
+        const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
+        const laterArea = (ref: { item: string }) => reviewOnly && !openIds.has(ref.item) && !input.follows.has(ref.item);
+        leftForPlanDay(skipped, input.areas.filter(laterArea).map((ref) => {
+            const text = journalItem(ref.item)?.text;
+            return { kind: "area", id: ref.item, ...(text ? { text } : {}) };
+        }));
+        await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas.filter((ref) => !laterArea(ref)), {
             day: targetDay, noteFor,
             textOf: (id) => [ ...open.items, ...listItems(facts.plan) ].find((item) => item.listItemId === id)?.text
         }, written, skipped));
@@ -490,7 +509,6 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...input.done.map((id) => [ id, "done" ] as const), ...input.fates.map((fate) => [ fate.listItemId, "fate" ] as const),
             ...input.move.map((ref) => [ ref.listItemId, "move" ] as const)
         ]);
-        const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
         // A hold's items can live on several days, so whether one is still open is read across the Journal.
         const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
         const periodOf = (id: string) => journalItem(id)?.period;
@@ -523,7 +541,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...freed
         ];
         // An item he gives a place on the next workday's list ("the bike first") goes on that list, not on deck.
-        const placed = new Set([ ...input.move.flatMap((ref) => [ ref.listItemId, ref.before, ref.after ]), ...input.accept.flatMap((ref) => [ ref.before, ref.after ]) ]
+        // A review reads the places only from the moves of its own open items.
+        const places = reviewOnly ? input.move.filter((ref) => openIds.has(ref.listItemId)) : input.move;
+        const placed = new Set([ ...places.flatMap((ref) => [ ref.listItemId, ref.before, ref.after ]), ...(reviewOnly ? [] : input.accept).flatMap((ref) => [ ref.before, ref.after ]) ]
             .filter((id): id is string => !!id));
         // A moved item he names again is followed to its copy: by source, the copy he means.
         const copyOf = new Map([ ...input.follows ].map(([ copy, { source, period } ]) => [ source, { id: copy, period } ]));
@@ -594,8 +614,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             return fate ? fate.to === targetDay : "forward" in item.fate && item.fate.forward === targetDay;
         };
         const moved = new Map(open.items.filter(toTarget).map((item) => [ item.listItemId ?? "", { text: item.text, noteId: item.noteId } ] as const));
-        await acceptAll(store, targetDay, now, input, { known, moved }, written, skipped);
-        await guarded({ kind: "keep" }, skipped, async () => { for (const [ kind, refs ] of [ [ "keep", input.keep ], [ "carry", input.carry ] ] as const) {
+        const onTarget = reviewOnly ? reviewAnswers(input, targetDay, moved, new Set(lines.carry.map((line) => line.lineId)), skipped) : input;
+        await acceptAll(store, targetDay, now, onTarget, { known, moved }, written, skipped);
+        await guarded({ kind: "keep" }, skipped, async () => { for (const [ kind, refs ] of [ [ "keep", onTarget.keep ], [ "carry", onTarget.carry ] ] as const) {
             for (const { lineId } of refs) {
                 const line = [ ...lines.keep, ...lines.carry ].find((l) => l.lineId === lineId);
                 if (!line) {
@@ -610,13 +631,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             }
         } });
         await guarded({ kind: "finished" }, skipped, () => finish(store, targetDay, now, input.finished, written, skipped));
-        await guarded({ kind: "not_today" }, skipped, () => putOff(store, targetDay, now, input.notToday.map((c) => c.candidateId), known, written, skipped));
-        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, input.dismiss, known, read.inputs.jira.asks, written, skipped));
-        await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
+        await guarded({ kind: "not_today" }, skipped, () => putOff(store, targetDay, now, onTarget.notToday.map((c) => c.candidateId), known, written, skipped));
+        await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, onTarget.dismiss, known, read.inputs.jira.asks, written, skipped));
+        if (!reviewOnly) await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         eveningRetired(asked.evening, skipped);
-        await guarded({ kind: "context" }, skipped, () => contextLines(store, targetDay, now, input.context, written, skipped));
-        await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, input.overlaps, written, skipped));
-        if (!failedCalendar(read)) await recordFocus(store, targetDay, read, now);
+        // A review run on its target day reads "tomorrow" as the day after it, as Plan my day does.
+        await guarded({ kind: "context" }, skipped, () => contextLines(store, targetDay, now, onTarget.context, written, skipped, { tomorrow: targetDay === dayKey(now) }));
+        await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, onTarget.overlaps, written, skipped));
+        if (!reviewOnly && !failedCalendar(read)) await recordFocus(store, targetDay, read, now);
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
         // The label holds the time of the first wind-down, which the nudge bar shows; a re-run keeps it.
         // A day keeps open while a hold given on it remains, or one given elsewhere covers an item that lives on it.
@@ -656,8 +678,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
     // A morning Review goes straight on to today's plan: its steps run here, with what he already
     // answered (the lines written, a vague yes's included), so the reply asks the plan's questions and
     // never whether to plan. When they fail, the writes stand and the nextCall is left to make.
+    // A review passes only the lines it wrote, so Plan my day asks about the lines it skipped.
     const kept = result.written.filter((entry) => (entry.kind === "keep" || entry.kind === "carry") && entry.id).map((entry) => entry.id ?? "");
-    const answered = { keep: [ ...new Set([ ...asked.keep, ...asked.carry ].map((line) => line.lineId).concat(kept)) ] };
+    const answered = { keep: [ ...new Set((reviewOnly ? [] : [ ...asked.keep, ...asked.carry ]).map((line) => line.lineId).concat(kept)) ] };
     try {
         const catchup = await planDay(deps, { date: targetDay, step: "catchup" });
         const inputs = await planDay(deps, { date: targetDay, step: "inputs", answered });
@@ -666,6 +689,31 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
     } catch {
         return result;
     }
+}
+
+/**
+ * The answers a review writes on `targetDay`: the keep lines it asks, the Context lines he gives,
+ * and the moves of the items it forwards there (`moved`) or that an earlier run forwarded there (a
+ * followed copy on `targetDay`). Every other answer about the target day is skipped as `review_only`,
+ * a keep answer that names one of the `carries` lines as a carry.
+ */
+function reviewAnswers(input: ReturnType<typeof windDownAnswers>, targetDay: string, moved: ReadonlyMap<string, unknown>, carries: ReadonlySet<string>, skipped: Skipped[]): ReturnType<typeof windDownAnswers> {
+    const forwarded = (ref: { listItemId: string }) => moved.has(ref.listItemId) || input.follows.get(ref.listItemId)?.period === targetDay;
+    const carried = (ref: { lineId: string }) => carries.has(ref.lineId);
+    leftForPlanDay(skipped, [
+        ...input.accept.map((ref) => ({ kind: "accept", id: ref.candidateId })),
+        ...input.notToday.map((ref) => ({ kind: "not_today", id: ref.candidateId })),
+        ...input.dismiss.map((ref) => ({ kind: "dismiss", id: ref.candidateId })),
+        ...input.move.filter((ref) => !forwarded(ref)).map((ref) => ({ kind: "move", id: ref.listItemId })),
+        ...[ ...input.keep.filter(carried), ...input.carry ].map((ref) => ({ kind: "carry", id: ref.lineId })),
+        ...input.overlaps.map((ref) => ({ kind: "overlap", id: ref.overlapId, text: ref.take }))
+    ]);
+    return { ...input, accept: [], move: input.move.filter(forwarded), keep: input.keep.filter((ref) => !carried(ref)), carry: [], notToday: [], dismiss: [], overlaps: [] };
+}
+
+/** Skips each of `entries` as `review_only`, for Plan my day to take on the day it plans. */
+function leftForPlanDay(skipped: Skipped[], entries: Omit<Skipped, "reason" | "detail">[]) {
+    for (const entry of entries) skipped.push({ ...entry, reason: "review_only", detail: t("caius.say.review_only_detail") });
 }
 
 /**
@@ -1806,6 +1854,8 @@ interface Refs {
  * a listItemId of the list, a candidate's id or the id of an item the call moved here, found on the
  * list by its key or, for an item whose copy has a new id, by its text without the forward links;
  * of several copies with that text, the one whose back link points at the note it came from.
+ * `first` is the first of the item's own list; `before` and `after` go through `placeTasks`, so an
+ * item of another time block puts it in that block, next to that item.
  */
 async function placeOnList(store: NoteStore, date: string, now: Date, entry: { kind: string; id: string }, item: string, place: { first?: boolean; before?: string; after?: string }, refs: Refs, written: Written[], skipped: Skipped[]) {
     const by = place.before ?? place.after;
@@ -1835,7 +1885,9 @@ async function placeOnList(store: NoteStore, date: string, now: Date, entry: { k
         return;
     }
     const where = place.first ? { first: true } : place.before !== undefined ? { before: anchor } : { after: anchor };
-    const [ result ] = await moveTasks(store, [ { noteId, listItemId: task.listItemId, ...where } ]);
+    const [ result ] = place.first
+        ? await moveTasks(store, [ { noteId, listItemId: task.listItemId, first: true } ])
+        : await placeTasks(store, [ { noteId, listItemId: task.listItemId, ...where } ]);
     const other = tasks.find((t) => t.listItemId === anchor)?.text;
     record(written, skipped, { ...entry, text: task.text, detail: place.first ? "first" : place.before !== undefined ? "before" : "after", ...(other ? { anchor: other } : {}) }, result);
 }
