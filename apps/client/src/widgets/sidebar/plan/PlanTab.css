@@ -3,6 +3,11 @@
     flex-direction: column;
     flex-shrink: 0;
 
+    .plan-sub-count {
+        font-size: 0.9em;
+        color: var(--muted-text-color);
+    }
+
     .plan-period-bar {
         display: flex;
         flex-direction: column;

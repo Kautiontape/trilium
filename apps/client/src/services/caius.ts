@@ -122,6 +122,8 @@ export interface CaiusPlan {
     /** A day's On deck: tasks intended for it, tracked but not on the list until planned. */
     onDeck?: CaiusPlanTask[];
     suggested: CaiusPlanTask[];
+    /** The day's Meetings lines (`HH:MM Title (…)`), whose clocks a parent can be pinned to. */
+    meetings?: string[];
     dismissed: string[];
     capacity: {
         plannedMinutes: number;

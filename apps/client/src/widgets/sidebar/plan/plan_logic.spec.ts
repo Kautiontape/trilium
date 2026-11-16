@@ -6,7 +6,7 @@ import { buildNote } from "../../../test/easy-froca";
 import {
     acceptSections, capacityStatus, closeCandidates, closeFates, endsSoon, fateTarget, groupFates,
     isCloseable, listedFates, onDeckTasks, parsePeriodKey, periodKey, periodOfNote, sourceLabel, splitReason, stepPeriod, taskLabel,
-    unestimatedTasks, type ViewedPeriod
+    subItemCount, subItemsOf, unestimatedTasks, type ViewedPeriod
 } from "./plan_logic";
 
 vi.mock("../../../services/i18n", async () => {
@@ -281,6 +281,48 @@ function planOf(tasks: CaiusPlanTask[], critical: CaiusPlanTask[] = []): CaiusPl
         }
     };
 }
+
+describe("sub-items", () => {
+    const parent = task({ listItemId: "p", text: "Caius fixes", section: "On deck" });
+    const subs = [
+        task({ listItemId: "p1", text: "One", parent: "Caius fixes", parentListItemId: "p", state: "done" }),
+        task({ listItemId: "p2", text: "Two", parent: "Caius fixes", parentListItemId: "p" }),
+        task({ listItemId: "p3", text: "Three", parent: "Caius fixes", parentListItemId: "p", state: "in_progress" }),
+        task({ listItemId: "p4", text: "Four", parent: "Caius fixes", parentListItemId: "p", state: "cancelled" })
+    ];
+
+    it("keeps a done parent's open sub-item in On deck, and a live parent's sub-items under it", () => {
+        const done = { ...parent, state: "done" as const };
+        const decked = { ...planOf([]), onDeck: [ done, ...subs ] };
+        expect(onDeckTasks(decked).map((t) => t.listItemId)).toEqual([ "p2", "p3" ]);
+        expect(onDeckTasks({ ...planOf([]), onDeck: [ parent, ...subs ] }).map((t) => t.listItemId))
+            .toEqual([ "p" ]);
+    });
+
+    it("counts a parent's direct sub-items as done over total, or as open for a done parent", () => {
+        const [ listed ] = [ ...subItemsOf([ parent, ...subs ]).entries() ];
+        expect(listed[0]).toBe(parent);
+        expect(listed[1].map((t) => t.listItemId)).toEqual([ "p1", "p2", "p3" ]);
+        expect(subItemCount(parent, listed[1])).toBe("1/3");
+        expect(subItemCount({ ...parent, state: "done" }, listed[1])).toBe("2 open");
+        expect(subItemCount({ ...parent, state: "done" }, [ listed[1][0] ])).toBe("1/1");
+    });
+
+    it("lists nothing for a parent with an estimate of its own or pinned to a meeting", () => {
+        const kids = [
+            task({ listItemId: "k1", text: "K1", parent: "P", parentListItemId: "p" }),
+            task({ listItemId: "k2", text: "K2", parent: "P", parentListItemId: "p", estMinutes: 10 })
+        ];
+        const ids = (p: CaiusPlan) => unestimatedTasks(p).map((t) => t.listItemId);
+        const own = planOf([ task({ listItemId: "p", text: "P", estMinutes: 15 }), ...kids ]);
+        expect(ids(own)).toEqual([]);
+        const bare = planOf([ task({ listItemId: "p", text: "P" }), ...kids ]);
+        expect(ids(bare)).toEqual([ "k1" ]);
+        const pinned = planOf([ task({ listItemId: "p", text: "09:00 P", at: "09:00" }), ...kids ]);
+        expect(ids(pinned)).toEqual([ "k1" ]);
+        expect(ids({ ...pinned, meetings: [ "09:00 Standup (Ana)" ] })).toEqual([]);
+    });
+});
 
 describe("endsSoon", () => {
     it("marks a Context line that lapses before the next workday", () => {

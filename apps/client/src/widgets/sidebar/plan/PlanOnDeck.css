@@ -1,0 +1,17 @@
+.plan-tab .plan-on-deck {
+    .plan-parent-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .plan-sub-items {
+        margin: 0;
+        padding-inline-start: 28px;
+        list-style: none;
+
+        .done a {
+            text-decoration: line-through;
+        }
+    }
+}
