@@ -97,6 +97,7 @@ import {
     type SetStateInput,
     type ShowInput,
     type SkipCatchupInput,
+    type StartDayInput,
     type WindDownApplyInput,
     type WindDownInput
 } from "./schemas.js";
@@ -112,7 +113,7 @@ import type { CalendarEvent, InputError } from "./inputs/types.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { showView } from "./views.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
-import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
+import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, startDayOn, TERRAIN_TITLE } from "./writes.js";
 
 export { routeInputs } from "./schemas.js";
 
@@ -573,6 +574,8 @@ export function createCaiusService(
             withBlobIds((await contextKeepOn(store, date, lines, { dryRun, now: await todayHeld() })).map((result) => withDiff(result)))),
 
         /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
+        /** Starts today's calendar date early (or takes it back), at the standing note's own rollover. */
+        startDay: ({ back }: StartDayInput) => withCaiusLock("caius_start_day", async () => startDayOn(store, caiusNow(), rolloverOf(readRhythm((await readStanding()).markdown)), back)),
         skipCatchup: ({ date }: SkipCatchupInput) => withCaiusLock("caius_skip_catchup", () => skipCatchupOn(store, date)),
 
         /**

@@ -425,6 +425,10 @@ const skipCatchup = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD, whose catch-up is skipped")
 });
 
+const startDay = z.object({
+    back: z.boolean().optional().describe("true: take the early start back, so the day before is today again until the rollover")
+});
+
 const refresh = z.boolean().optional().describe("Fetch Jira and the calendar again instead of reusing what was read for that day in the last 15 minutes");
 
 const winddown = z.object({
@@ -455,6 +459,7 @@ export const toolInputs = {
     contextKeep,
     briefWrite,
     skipCatchup,
+    startDay,
     finished,
     winddown,
     planday,
@@ -517,6 +522,7 @@ export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
 export type SkipCatchupInput = z.infer<typeof skipCatchup>;
+export type StartDayInput = z.infer<typeof startDay>;
 export type FinishedInput = z.infer<typeof finished>;
 export type NudgeInput = z.infer<typeof nudge>;
 export type WindDownInput = z.infer<typeof winddown>;

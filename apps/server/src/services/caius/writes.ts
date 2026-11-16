@@ -17,13 +17,14 @@ import {
     PERIODS,
     renderDayTerrain,
     type StoreNote,
-    suggestedTasks
+    suggestedTasks,
+    workdayKey
 } from "@triliumnext/caius";
 
-import { SKIP_CATCHUP_LABEL } from "./brief.js";
+import { SKIP_CATCHUP_LABEL, STARTED_LABEL } from "./brief.js";
 import { dateLabel, dayKey, localDay } from "./daily.js";
 import type { ContextAddInput, HeaderDay } from "./schemas.js";
-import { putAttachment, setLabel } from "./store.js";
+import { putAttachment, removeLabel, setLabel } from "./store.js";
 import type { DayWeather } from "./weather.js";
 
 export const TERRAIN_TITLE = "terrain.svg";
@@ -63,6 +64,43 @@ export async function skipCatchupOn(store: NoteStore, date: string) {
     const labelled = note.attributes.some((a) => a.type === "label" && a.name === SKIP_CATCHUP_LABEL && a.value === date);
     if (!labelled) setLabel(note.noteId, SKIP_CATCHUP_LABEL, date);
     return { date, noteId: note.noteId, status: labelled ? "unchanged" : "updated", created: !existing };
+}
+
+/**
+ * Starts the calendar date of `at` early: labels its day note `#caiusStarted=<at>`, so the rollover
+ * is 00:00 that night. `rollover` is the standing note's own, in minutes. Outside midnight to the
+ * rollover it writes nothing. With `back`, removes the label, so the day before is today again.
+ */
+export async function startDayOn(store: NoteStore, at: Date, rollover: number, back = false) {
+    const date = localIso(at).slice(0, 10);
+    if (back) {
+        const note = await findPeriodNote(store, "day", date);
+        const values = (note?.attributes ?? []).filter((a) => a.type === "label" && a.name === STARTED_LABEL).map((a) => a.value);
+        if (note) for (const value of values) removeLabel(note.noteId, STARTED_LABEL, value);
+        return { status: values.length ? "updated" : "unchanged", ...dayOf(workdayKey(at, rollover)) };
+    }
+    if (at.getHours() * 60 + at.getMinutes() >= rollover) {
+        const today = dayOf(workdayKey(at, rollover));
+        const until = `${String(Math.floor(rollover / 60)).padStart(2, "0")}:${String(rollover % 60).padStart(2, "0")}`;
+        return { status: "skipped", reason: "not_small_hours", ...today, detail: `A day starts early only between 00:00 and ${until}; ${today.dateLabel} is today.` };
+    }
+    const existing = await findPeriodNote(store, "day", date);
+    const note = existing ?? await store.calendarDay(date);
+    if (note.isProtected) {
+        return { date, error: "bad_request", detail: `The day note for ${date} is protected` };
+    }
+    const started = note.attributes.some((a) => a.type === "label" && a.name === STARTED_LABEL);
+    if (!started) setLabel(note.noteId, STARTED_LABEL, localIso(at));
+    return { status: started ? "unchanged" : "updated", ...dayOf(date), noteId: note.noteId, created: !existing };
+}
+
+function dayOf(date: string) {
+    return { date, dateLabel: dateLabel(date) ?? date };
+}
+
+function localIso(at: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
 /**

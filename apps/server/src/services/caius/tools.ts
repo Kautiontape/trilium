@@ -174,6 +174,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.skipCatchup, service.skipCatchup)
         },
 
+        caius_start_day: {
+            description: "Between midnight and the rollover, make today's calendar date the day Caius plans (\"It's Monday now\"): labels its day note #caiusStarted with the time, so that night's rollover is 00:00. back: true takes it back. Outside those hours it writes nothing (not_small_hours). One call, nothing to ask.",
+            inputSchema: toolInputs.startDay,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.startDay, service.startDay)
+        },
+
         caius_finished: {
             description: "Record that the user says tickets are finished when they are not tasks to tick: labels today's day note #caiusFinished=<key>, so Wind down and Plan my day leave them out of the candidates for 30 days, and caius_add won't suggest them. Also dismisses their Suggested items on day notes from today on. Use it whenever the user says a ticket is done that isn't on the list. No dry run: the user's word is the yes.",
             inputSchema: toolInputs.finished,
