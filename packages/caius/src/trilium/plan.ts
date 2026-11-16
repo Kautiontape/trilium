@@ -9,7 +9,7 @@ import { parse } from 'node-html-parser';
 import { now as clock } from '../clock.js';
 import { proseKind } from './sections.js';
 import { scanDocs } from '../index/index.js';
-import { findItem, newListItemId, tokenZoneStart } from './html-util.js';
+import { descriptionOf, findItem, newListItemId, tokenZoneStart } from './html-util.js';
 import { addUnder, liftOut, nestNew, nestUnder, type NestResult } from './nest-html.js';
 import { scanTokens } from '../core/index.js';
 import { loadJournal, loadStateSymbols } from './journal.js';
@@ -42,7 +42,7 @@ import {
 } from './plan-html.js';
 import { DISMISSED_LABEL, PERIODS, dismissedKeys, findPeriodNote, isPeriodKey, type PeriodKind } from './plan-read.js';
 import type { StateSymbols } from './markdown.js';
-import { AREAS, withArea, type Area } from './areas.js';
+import { AREAS, markedArea, withArea, type Area } from './areas.js';
 
 export interface AddRequest {
   /** Exactly one of date (YYYY-MM-DD), week (YYYY-Www) or month (YYYY-MM). */
@@ -654,7 +654,7 @@ export async function placeTasks(api: NoteStore, reqs: PlaceRequest[], opts: Pla
           const key = parentKey(req.under);
           members = group.filter((q) => typeof q.under === 'object' && parentKey(q.under) === key);
           const pid = newId();
-          r = nestNew(after, members.map((q) => q.listItemId), parentMarkup(pid, req.under), states);
+          r = nestNew(after, members.map((q) => q.listItemId), parentMarkup(pid, req.under, req.under.area ?? sharedArea(after, members.map((q) => q.listItemId))), states);
           if (r.ok) for (const q of members) parents.set(q, pid);
         } else if (typeof req.under === 'string') {
           r = nestUnder(after, req.listItemId, req.under, states);
@@ -732,10 +732,21 @@ function nestProblem(id: string, req: PlaceRequest): string | null {
 
 const parentKey = (u: NewParent) => JSON.stringify([u.text, u.est ?? null, u.area ?? null]);
 
-function parentMarkup(id: string, u: NewParent): string {
+function parentMarkup(id: string, u: NewParent, area: Area | null): string {
   const est = u.est === undefined ? '' : ` ~${parseEstimate(u.est)}`;
   const text = escapeHtml(u.text.trim());
-  return itemMarkup(id, (u.area === undefined ? text : withArea(text, u.area)) + est);
+  return itemMarkup(id, (area === null ? text : withArea(text, area)) + est);
+}
+
+/** The area marker every item of `ids` carries in `html`, or null when they differ or one has none. */
+function sharedArea(html: string, ids: string[]): Area | null {
+  const root = parse(html, { comment: true });
+  const areas = ids.map((id) => {
+    const li = findItem(root, id);
+    return li ? markedArea((descriptionOf(li)?.text ?? '').trim()) : null;
+  });
+  const [first] = areas;
+  return first && areas.every((a) => a === first) ? first : null;
 }
 
 /** The id of the task whose sub-list holds `id`, or undefined. */

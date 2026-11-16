@@ -648,4 +648,20 @@ describe('nesting writes', () => {
     expect(out.map((r) => 'reason' in r && r.reason)).toEqual(['too_deep', 'not_found', 'other_note', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'too_deep']);
     expect(puts(f.log)).toEqual([]);
   });
+  it('gives a new parent the area its items share unless an area is given', async () => {
+    const marked = '<h3>Work</h3>' + ul(li('g1', '🌱 Dig'), li('g2', '🌱 Plant'), li('r1', '🔋 Nap'), li('x1', 'Plain'));
+    const parentOfFirst = async (ids: string[], under: { text: string; area?: 'foundation' }) => {
+      const f = fakeTrilium(seed(marked));
+      const out = await placeTasks(f.api, ids.map((listItemId) => ({ noteId: 'd', listItemId, under })), base);
+      const pid = out[0]?.status === 'moved' ? out[0].parentListItemId : undefined;
+      const text = new RegExp(`data-list-item-id="${pid}"[^]*?description">([^<]*)`).exec(f.html.d ?? '')?.[1];
+      return { text, view: await readPlan(f.api, 'day', DAY, now) };
+    };
+    const shared = await parentOfFirst(['g1', 'g2'], { text: 'Garden' });
+    expect(shared.text).toBe('🌱 Garden');
+    expect(shared.view.sections.flatMap((s) => s.tasks).find((t) => t.text.includes('Garden'))).toMatchObject({ area: 'growth' });
+    expect((await parentOfFirst(['g1', 'r1'], { text: 'Garden' })).text).toBe('Garden');
+    expect((await parentOfFirst(['g1', 'x1'], { text: 'Garden' })).text).toBe('Garden');
+    expect((await parentOfFirst(['g1', 'g2'], { text: 'Garden', area: 'foundation' })).text).toBe('Garden');
+  });
 });
