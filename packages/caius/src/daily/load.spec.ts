@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { critical, fakeTrilium, li, periodNote, ul } from '../trilium/helpers.js';
 import { readPlan, type PlanTask } from '../trilium/plan-read.js';
-import { dayLoad, liveMinutes } from './load.js';
+import { dayLoad, liveMinutes, parentsOf } from './load.js';
 
 const task = (over: Partial<PlanTask>): PlanTask => ({
   noteId: 'd', listItemId: null, state: 'open', text: 't', estMinutes: null, parent: null, parentListItemId: null,
@@ -20,6 +20,26 @@ describe('liveMinutes', () => {
     ];
     expect(liveMinutes(tasks)).toBe(10 + 30 + 30);
     expect(liveMinutes(tasks, 'growth')).toBe(0);
+  });
+
+  it('counts a task of the same words as a parent by its own estimate, by row or by the nearest earlier one', () => {
+    const byId = [
+      task({ listItemId: 's1', text: 'Standup', estMinutes: 30 }),
+      task({ listItemId: 's2', text: 'Standup' }),
+      task({ listItemId: 's2a', text: 'Notes', parent: 'Standup', parentListItemId: 's2', estMinutes: 10 }),
+    ];
+    expect(liveMinutes(byId)).toBe(30 + 10);
+    const idless = [
+      task({ text: 'Standup', estMinutes: 30 }),
+      task({ text: 'Standup' }),
+      task({ text: 'Notes', parent: 'Standup', estMinutes: 10 }),
+    ];
+    expect(liveMinutes(idless)).toBe(30 + 10);
+    const parents = parentsOf(idless);
+    expect(parents.get(idless[2])).toBe(idless[1]);
+    expect(parents.size).toBe(1);
+    const otherNote = [task({ noteId: 'x', text: 'Standup' }), task({ noteId: 'y', text: 'Notes', parent: 'Standup' })];
+    expect(parentsOf(otherNote).size).toBe(0);
   });
 
   it('equals the plan read\'s foundation minutes', async () => {

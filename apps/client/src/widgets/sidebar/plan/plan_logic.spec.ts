@@ -119,6 +119,15 @@ describe("plan tasks", () => {
         expect(unestimatedTasks({ ...evening, period: "week" }).map((t) => t.listItemId)).toEqual([ "f", "g", "r" ]);
     });
 
+    it("matches a sub-item to its parent by row, so a twin of the parent's words stays listed", () => {
+        const twins = planOf([
+            task({ listItemId: "s1", text: "Standup" }),
+            task({ listItemId: "s2", text: "Standup" }),
+            task({ listItemId: "s2a", text: "Notes", parent: "Standup", parentListItemId: "s2" })
+        ]);
+        expect(unestimatedTasks(twins).map((t) => t.listItemId)).toEqual([ "s1", "s2a" ]);
+    });
+
     it("leaves empty to-dos out of the unestimated list, as the capacity does", () => {
         const blank = planOf([
             task({ listItemId: "x1", text: "Real" }),

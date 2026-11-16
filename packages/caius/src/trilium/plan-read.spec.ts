@@ -154,6 +154,12 @@ describe('readPlan (day)', () => {
     expect(capacity).toMatchObject({ plannedMinutes: 120, estimatedCount: 1, unestimatedCount: 0, totalMinutes: 120 });
   });
 
+  it('keeps a task whose words a parent shares counted on its own', async () => {
+    const html = '<h3>Work</h3>' + ul(li('s1', 'Standup ~15m'), li('s2', 'Standup', { sub: ul(li('s2a', 'Notes ~10m')) }));
+    const { capacity } = await readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] }).api, 'day', '2026-10-26', now);
+    expect(capacity).toMatchObject({ plannedMinutes: 25, estimatedCount: 2, unestimatedCount: 0, totalMinutes: 25 });
+  });
+
   it('gives noteId null for a missing note and never creates one', async () => {
     const f = fakeTrilium(seed);
     const v = await readPlan(f.api, 'day', '2026-10-27', now);

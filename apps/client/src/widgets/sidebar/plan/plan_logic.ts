@@ -1,3 +1,5 @@
+import { parentsOf } from "@triliumnext/caius/src/daily/load.js";
+
 import type FNote from "../../../entities/fnote";
 import {
     dayKey, isSuggested, monthKey, nextMonthKey, nextWeekKey, tomorrowKey, weekKey
@@ -166,8 +168,8 @@ export function closeCandidates(plan: CaiusPlan) {
  */
 export function unestimatedTasks(plan: CaiusPlan) {
     const live = planTasks(plan).filter((task) => isLive(task) && task.text.trim() !== "");
-    const parents = new Set(live.filter((task) => task.parent !== null).map((task) => task.parent));
-    return live.filter((task) => !parents.has(task.text) && task.estMinutes === null
+    const parents = new Set(parentsOf(live).values());
+    return live.filter((task) => !parents.has(task) && task.estMinutes === null
         && (plan.period !== "day" || task.area === "foundation"));
 }
 

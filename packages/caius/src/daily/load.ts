@@ -8,7 +8,10 @@ import type { PlanTask } from '../trilium/plan-read.js';
 export const DEFAULT_ESTIMATE = 30;
 
 type Range = { min: number; max: number };
-type Countable = Pick<PlanTask, 'state' | 'text' | 'estMinutes' | 'parent'> & { area?: Area };
+type Countable = Pick<PlanTask, 'state' | 'text' | 'estMinutes' | 'parent' | 'listItemId' | 'parentListItemId'> & {
+  noteId?: string;
+  area?: Area;
+};
 
 export interface DayLoad {
   foundation: { minutes: number; focus: Range; over: boolean; overMinutes: number };
@@ -25,10 +28,28 @@ export interface DayLoad {
  */
 export function liveMinutes(tasks: Countable[], area?: Area): number {
   const live = tasks.filter((t) => (t.state === 'open' || t.state === 'in_progress') && t.text.trim() !== '');
-  const parents = new Set(live.filter((t) => t.parent !== null).map((t) => t.parent));
+  const parents = new Set(parentsOf(live).values());
   return live
-    .filter((t) => !parents.has(t.text) && (area === undefined || t.area === area))
+    .filter((t) => !parents.has(t) && (area === undefined || t.area === area))
     .reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0);
+}
+
+/**
+ * Each sub-item of `tasks` mapped to its parent task: the task of the same note whose `listItemId`
+ * is its `parentListItemId`, or, without that id, the nearest earlier task of the note with the
+ * words in `parent`.
+ */
+export function parentsOf<T extends Countable>(tasks: T[]): Map<T, T> {
+  const parents = new Map<T, T>();
+  for (const [index, task] of tasks.entries()) {
+    const parent = task.parentListItemId !== null
+      ? tasks.find((t) => t.noteId === task.noteId && t.listItemId === task.parentListItemId)
+      : task.parent !== null
+        ? tasks.slice(0, index).findLast((t) => t.noteId === task.noteId && t.text === task.parent)
+        : undefined;
+    if (parent !== undefined) parents.set(task, parent);
+  }
+  return parents;
 }
 
 /** The day's load from its minutes. On deck never counts toward `over`; `recharge` is a count of things. */

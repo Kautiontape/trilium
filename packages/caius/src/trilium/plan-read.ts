@@ -204,7 +204,7 @@ export async function duplicateWarnings(api: NoteReader, periods: { period: Peri
 }
 
 /** The scanner's view of a doc's full text (Suggested items included), one PlanTask per task line. */
-export function planTasks(doc: TriliumDoc, now: Date): { tasks: (PlanTask & { line: number; horizon: string | null; live: boolean })[] } {
+export function planTasks(doc: TriliumDoc, now: Date): { tasks: Scanned[] } {
   const result = scanDocs([{ path: doc.path, text: doc.fullText, mtime: doc.mtime }], TRILIUM_CONFIG, now);
   const headings = headingsByLine(doc.fullText);
   const stacks = headingStacks(doc.fullText);
@@ -227,11 +227,15 @@ export function planTasks(doc: TriliumDoc, now: Date): { tasks: (PlanTask & { li
       line: t.line,
       horizon: doc.suggested.has(t.line) ? null : t.horizon,
       live: t.live,
+      parentLine: t.parentRowid === null ? null : (byRowid.get(t.parentRowid)?.line ?? null),
     })),
   };
 }
 
-const strip = ({ line: _l, horizon: _h, live: _v, ...task }: PlanTask & { line: number; horizon: string | null; live: boolean }): PlanTask => task;
+/** A `PlanTask` with what `buildPlanView` needs and the public view drops. */
+type Scanned = PlanTask & { line: number; horizon: string | null; live: boolean; parentLine: number | null };
+
+const strip = ({ line: _l, horizon: _h, live: _v, parentLine: _p, ...task }: Scanned): PlanTask => task;
 
 export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, dismissed: string[], now: Date): PlanView {
   const all = planTasks(doc, now).tasks;
@@ -257,9 +261,9 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   // A live task with live sub-items counts through its sub-items, not twice. An empty to-do is a
   // blank checkbox, not a task, and neither counts nor makes its parent a parent.
   const countable = main.filter((t) => t.live && t.text.trim() !== '');
-  const parents = new Set(countable.filter((t) => t.parent !== null).map((t) => t.parent));
+  const parents = new Set(countable.map((t) => t.parentLine));
   // Only a day's Growth and Recharge are apart from its work; a week's or month's are planned time.
-  const leaves = countable.filter((t) => !parents.has(t.text));
+  const leaves = countable.filter((t) => !parents.has(t.line));
   const apart = (t: { area: Area }) => period === 'day' && t.area !== 'foundation';
   const evening = leaves.filter(apart);
   const counted = leaves.filter((t) => !apart(t));
@@ -268,8 +272,8 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
   const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
   const unestimated = counted.length - estimated.length;
   const deckCountable = deck.filter((t) => t.live && t.text.trim() !== '');
-  const deckParents = new Set(deckCountable.filter((t) => t.parent !== null).map((t) => t.parent));
-  const onDeckMinutes = deckCountable.filter((t) => !deckParents.has(t.text)).reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0);
+  const deckParents = new Set(deckCountable.map((t) => t.parentLine));
+  const onDeckMinutes = deckCountable.filter((t) => !deckParents.has(t.line)).reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0);
   const horizons: Record<string, number> = {};
   for (const t of [...main, ...deck].filter((x) => x.live)) horizons[t.horizon ?? 'none'] = (horizons[t.horizon ?? 'none'] ?? 0) + 1;
 
