@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { acceptTasks, addTasks, dismissTasks, EVENING_REASON, moveTasks, placeTasks, setAreas, setEstimates, setStates } from './plan.js';
-import { parseSource, taskKeys, textHash } from './keys.js';
+import { keyConfig, parseSource, setKeyConfig, taskKeys, textHash } from './keys.js';
 import { readPlan } from './plan-read.js';
 import { fakeTrilium, li, periodNote, STATES, TEMPLATE, ul } from './helpers.js';
 
@@ -13,40 +13,66 @@ const seed = (html: string, extra: Record<string, [ReturnType<typeof periodNote>
   d: [periodNote('d', 'dateNote', DAY), html] as [ReturnType<typeof periodNote>, string],
   ...extra,
 });
+const SITE = 'https://example.atlassian.net/browse/';
+beforeEach(() => setKeyConfig({ projects: ['ZAP'], browseBase: SITE }));
+afterEach(() => setKeyConfig({ projects: [], browseBase: null }));
 const puts = (log: string[]) => log.filter((l) => l.startsWith('put') || l.startsWith('label') || l.startsWith('create'));
 
 describe('keys', () => {
-  it('finds Jira keys in text and browse urls, and falls back to a text hash', () => {
-    expect(taskKeys('Review ZAP-12 feedback', [])).toEqual(['ZAP-12']);
-    expect(taskKeys('x', ['https://zeroedin.atlassian.net/browse/SUR-5/', 'https://m.example/a#f'])).toEqual(['SUR-5', 'https://zeroedin.atlassian.net/browse/SUR-5', 'https://m.example/a']);
-    expect(taskKeys('Fix UTF-8 bug', [])).toEqual([textHash('Fix UTF-8 bug')]);
+  const BASE = 'https://example.atlassian.net/browse/';
+
+  it('finds bare keys only for the given projects, and falls back to a text hash', () => {
+    expect(taskKeys('Fix ABC-1 and UTF-8', [], ['ABC'])).toEqual(['ABC-1']);
+    expect(taskKeys('Fix ABC-1 and UTF-8', [], [])).toEqual([textHash('Fix ABC-1 and UTF-8')]);
+    expect(taskKeys('Fix UTF-8 bug', [], ['ABC'])).toEqual([textHash('Fix UTF-8 bug')]);
+    expect(taskKeys('Fix UTF-8 bug', [], [])).toEqual([textHash('Fix UTF-8 bug')]);
+    expect(taskKeys('x', [`${BASE}QRS-9/`, 'https://m.example/a#f'], ['ABC'])).toEqual(['QRS-9', `${BASE}QRS-9`, 'https://m.example/a']);
     expect(textHash('Call  the Plumber! ~30m')).toBe(textHash('call the plumber'));
   });
+  it('reads the projects from the config when none are passed', () => {
+    setKeyConfig({ projects: [], browseBase: null });
+    expect(keyConfig()).toEqual({ projects: [], browseBase: null });
+    expect(taskKeys('Review ABC-12 feedback', [])).toEqual([textHash('Review ABC-12 feedback')]);
+    setKeyConfig({ projects: ['ABC'], browseBase: null });
+    expect(taskKeys('Review ABC-12 feedback', [])).toEqual(['ABC-12']);
+  });
   it('parses sources', () => {
-    expect(parseSource('ZAP-1')).toMatchObject({ url: 'https://zeroedin.atlassian.net/browse/ZAP-1', label: 'ZAP-1', jira: 'ZAP-1' });
+    expect(parseSource('ABC-1', BASE)).toMatchObject({ url: `${BASE}ABC-1`, label: 'ABC-1', jira: 'ABC-1' });
+    expect(parseSource('ABC-1', null)).toEqual({ keys: ['ABC-1'], url: null, label: 'ABC-1', jira: 'ABC-1' });
     expect(parseSource('https://mail.example/t/1')).toMatchObject({ label: 'mail.example', jira: null });
     expect(parseSource('not a source')).toBeNull();
+    setKeyConfig({ projects: [], browseBase: BASE });
+    expect(parseSource('ABC-1')).toMatchObject({ url: `${BASE}ABC-1`, keys: ['ABC-1', `${BASE}ABC-1`] });
   });
 });
 
 describe('addTasks', () => {
+  it('writes a source key as text when there is no browse base', async () => {
+    setKeyConfig({ projects: [], browseBase: null });
+    const f = fakeTrilium(seed('<h3>Work</h3>'));
+    const [r] = await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Review ABC-12', source: 'ABC-12' }, { date: DAY, section: 'Work', text: 'Other <b>', source: 'XYZ-3' }], base);
+    expect(r).toMatchObject({ status: 'added', key: 'ABC-12' });
+    expect(f.html.d).toContain('Review ABC-12</span>');
+    expect(f.html.d).toContain('Other &lt;b&gt; XYZ-3</span>');
+    expect(f.html.d).not.toContain('<a ');
+  });
   it('adds under a header, writes the source as a link and the estimate last, and guards the write', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>' + ul(li('e1', 'Existing'))));
     const [r] = await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Reply to Pat', source: 'ZAP-7', est: '30m' }], base);
     expect(r).toMatchObject({ status: 'added', writtenNoteId: 'd', key: 'ZAP-7' });
-    expect(f.html.d).toContain('Reply to Pat <a href="https://zeroedin.atlassian.net/browse/ZAP-7">ZAP-7</a> ~30m</span>');
+    expect(f.html.d).toContain('Reply to Pat <a href="https://example.atlassian.net/browse/ZAP-7">ZAP-7</a> ~30m</span>');
     expect(puts(f.log)).toEqual(['put d']);
   });
   it('turns a Jira key already in the text into the link', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>'));
     await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Look at ZAP-7 today', source: 'ZAP-7' }], base);
-    expect(f.html.d).toContain('Look at <a href="https://zeroedin.atlassian.net/browse/ZAP-7">ZAP-7</a> today');
+    expect(f.html.d).toContain('Look at <a href="https://example.atlassian.net/browse/ZAP-7">ZAP-7</a> today');
   });
   it('puts the source link before tokens already in the text, and the estimate stays last', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>'));
     await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Plan it ~45m !!', source: 'https://m.example/x' }, { date: DAY, section: 'Work', text: 'Other !', source: 'ZAP-8', est: '20m' }], base);
     expect(f.html.d).toContain('Plan it <a href="https://m.example/x">m.example</a> ~45m !!</span>');
-    expect(f.html.d).toContain('Other <a href="https://zeroedin.atlassian.net/browse/ZAP-8">ZAP-8</a> ! ~20m</span>');
+    expect(f.html.d).toContain('Other <a href="https://example.atlassian.net/browse/ZAP-8">ZAP-8</a> ! ~20m</span>');
   });
   it('is read back with its estimate and importance (tokens trailing after the link)', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>'));
@@ -93,7 +119,7 @@ describe('addTasks', () => {
 
   describe('dedupe', () => {
     const journal = {
-      other: [periodNote('other', 'dateNote', '2026-10-20'), '<h3>Work</h3>' + ul(li('eo1', 'Check <a href="https://zeroedin.atlassian.net/browse/ZAP-1">ZAP-1</a>'), li('eo2', 'Read <a href="https://mail.example/t/9">the thread</a>'), li('eo3', 'Finished ZAP-2', { checked: true }), li('eo4', 'Plain words only'))] as [ReturnType<typeof periodNote>, string],
+      other: [periodNote('other', 'dateNote', '2026-10-20'), '<h3>Work</h3>' + ul(li('eo1', 'Check <a href="https://example.atlassian.net/browse/ZAP-1">ZAP-1</a>'), li('eo2', 'Read <a href="https://mail.example/t/9">the thread</a>'), li('eo3', 'Finished ZAP-2', { checked: true }), li('eo4', 'Plain words only'))] as [ReturnType<typeof periodNote>, string],
     };
     const run = async (req: Parameters<typeof addTasks>[1][number], more = {}) => {
       const f = fakeTrilium(seed('<h3>Work</h3>', { ...journal, ...more }));
@@ -249,7 +275,7 @@ describe('acceptTasks', () => {
     expect(g.html.d).toMatch(/<h2>☑️ Tasks<\/h2><ul[^>]*><li data-list-item-id="e1">.*<h\d>Evening<\/h\d><ul[^>]*><li data-list-item-id="es1">.*<h2>Suggested<\/h2>/s);
   });
   it('turns an accepted suggestion into a plain task: its key link and title, then its estimate as a token', async () => {
-    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-111">ZAP-111</a>';
+    const link = '<a href="https://example.atlassian.net/browse/ZAP-111">ZAP-111</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
       li('es1', `Get ${link} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
       li('es2', 'Get Book the venue done: because the quote expires Friday (~15m)'),
@@ -261,12 +287,12 @@ describe('acceptTasks', () => {
     const plan = await readPlan(f.api, 'day', DAY, now);
     expect(plan.sections[0]!.tasks.map((t) => [t.text, t.estMinutes])).toEqual([
       ['One', null],
-      [`[ZAP-111](https://zeroedin.atlassian.net/browse/ZAP-111) Check the invoice export in QA`, 45],
+      [`[ZAP-111](https://example.atlassian.net/browse/ZAP-111) Check the invoice export in QA`, 45],
       ['Book the venue', 15],
     ]);
   });
   it("turns an accepted ask into a plain task: 'Answer X's question on KEY: because Y (~15m)' keeps its words and its estimate as a token", async () => {
-    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-105">ZAP-105</a>';
+    const link = '<a href="https://example.atlassian.net/browse/ZAP-105">ZAP-105</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
       li('es1', `Answer Jordan Placeholder's question on ${link}: because Jordan Placeholder asked on Sunday (~15m)`),
     );
@@ -277,7 +303,7 @@ describe('acceptTasks', () => {
     expect(plan.sections[0]?.tasks.map((t) => t.estMinutes)).toEqual([null, 15]);
   });
   it('unwraps a suggestion that CKEditor saved with non-breaking spaces', async () => {
-    const link = '<a href="https://zeroedin.atlassian.net/browse/ZAP-2">ZAP-2</a>';
+    const link = '<a href="https://example.atlassian.net/browse/ZAP-2">ZAP-2</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
       li('es1', `Get&nbsp;${link} Fix done:&nbsp;because it waits (~30m)`),
       li('es2', 'Get Book the venue done: because it waits (~15m)&nbsp;'),
@@ -316,7 +342,7 @@ describe('acceptTasks', () => {
 });
 
 describe('dismissTasks', () => {
-  const html = '<h3>Work</h3>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(li('es1', 'Look at <a href="https://zeroedin.atlassian.net/browse/ZAP-9">ZAP-9</a>'), li('es2', 'No key here'));
+  const html = '<h3>Work</h3>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(li('es1', 'Look at <a href="https://example.atlassian.net/browse/ZAP-9">ZAP-9</a>'), li('es2', 'No key here'));
 
   it('removes the item and labels the note with its source key; text-only items use a hash', async () => {
     const f = fakeTrilium(seed(html));

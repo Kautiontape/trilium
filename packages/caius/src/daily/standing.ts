@@ -61,6 +61,20 @@ export function sectionOf(markdown: string | null, name: string): string | null 
 }
 
 /**
+ * The Jira project prefixes the Rhythm section names: the capitalised words after `Jira:` (or
+ * `Jira projects:`) on one line, which can be a list item and bold. Deduplicated, in order; empty
+ * when no line says so.
+ */
+export function readJiraProjects(markdown: string | null): string[] {
+  const projects: string[] = [];
+  for (const line of (sectionOf(markdown, 'Rhythm') ?? '').split('\n')) {
+    const rest = /^\s*(?:[-*+]\s+)?(?:\*\*|__)?Jira(?:\s+projects)?(?:\*\*|__)?\s*:(?:\*\*|__)?(.*)$/i.exec(line)?.[1];
+    for (const word of rest?.match(/\b[A-Z][A-Z0-9]+\b/g) ?? []) if (!projects.includes(word)) projects.push(word);
+  }
+  return projects;
+}
+
+/**
  * The day's span from the standing note's Rhythm section: the time on the line that names standup
  * (or when work starts), the time after "bedtime", and the time after "work ends" (or "end of
  * work"). An end of work or a bedtime without am or pm that falls at or before an earlier point of

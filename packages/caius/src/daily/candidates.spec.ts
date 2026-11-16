@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fakeTrilium, li, periodNote, ul } from '../trilium/helpers.js';
 import { loadJournal } from '../trilium/journal.js';
+import { setKeyConfig } from '../trilium/keys.js';
 import { dayCandidates, keysOf, liveKeys, type JiraLike } from './candidates.js';
+
+beforeEach(() => setKeyConfig({ projects: ['ZAP'], browseBase: 'https://example.atlassian.net/browse/' }));
+afterEach(() => setKeyConfig({ projects: [], browseBase: null }));
 
 const ticket = (key: string, o: { updated?: string; overridden?: true } = {}) => ({
   key, summary: `Summary of ${key}`, status: 'Dev Verify', url: `https://example.atlassian.net/browse/${key}`, updated: o.updated ?? '2026-11-05T10:00:00.000-0500', ...(o.overridden ? { overridden: o.overridden } : {}),
