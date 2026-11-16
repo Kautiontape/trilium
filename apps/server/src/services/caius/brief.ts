@@ -59,6 +59,8 @@ export const WOUND_DOWN_LABEL = "caiusWoundDown";
 export const WEATHER_LABEL = "caiusWeather";
 /** On a day note: Plan my day's catch-up of the last workday is skipped for that day. */
 export const SKIP_CATCHUP_LABEL = "caiusSkipCatchup";
+/** On a day note: the day was started early, at `YYYY-MM-DDTHH:mm:ss`, so the rollover that night is 00:00. */
+export const STARTED_LABEL = "caiusStarted";
 /** On a brief: the groups of the day's list and the meetings' short names its drawing uses, as JSON (`DrawnNames`). */
 export const GROUPS_LABEL = "caiusGroups";
 /** Children of a brief that the old push script labels; they are pages of a brief, never the brief. */
