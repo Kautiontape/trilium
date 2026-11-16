@@ -667,6 +667,27 @@ describe("isCaiusEnabled", () => {
         expect(caiusNow().getDate()).toBe(2);
     });
 
+    it("keeps the standing rollover while a started night counts, and ends it with the night", async () => {
+        vi.useFakeTimers({ toFake: [ "Date" ] });
+        try {
+            vi.setSystemTime(new Date(2026, 10, 9, 3, 0));
+            h.getWithSilentNotFound.mockResolvedValueOnce({
+                enabled: true, now: "2026-11-09T03:00:00", rollover: "00:00", started: "2026-11-09T02:50:00", rhythmRollover: "04:00"
+            });
+            await isCaiusEnabled();
+            const started = caiusNow();
+            expect([ started.getMonth(), started.getDate(), started.getHours() ]).toEqual([ 10, 9, 3 ]);
+            expect(caiusClockMinutes(started)).toBe(3 * 60);
+
+            vi.setSystemTime(new Date(2026, 10, 10, 1, 0));
+            const next = caiusNow();
+            expect([ next.getMonth(), next.getDate() ]).toEqual([ 10, 9 ]);
+            expect(caiusClockMinutes(next)).toBe(25 * 60);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("reads enabled: false, which the server answers when the service fails to load", async () => {
         h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: false, detail: "Cannot find module" });
         await expect(isCaiusEnabled()).resolves.toBe(false);
