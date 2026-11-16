@@ -3,13 +3,14 @@
  * read under the lock, so a bare key counts only for a configured project.
  */
 
-import { dayCapacity } from "@triliumnext/caius";
+import { dayCapacity, setKeyConfig } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, JiraInputs } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
 import { createBeccaStore, createChildNote } from "./store.js";
+import type { NoteStore } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -99,3 +100,27 @@ describe("the Jira site from JIRA_BASE_URL", () => {
     });
 });
 
+describe("when the standing note cannot be read", () => {
+    it("still links a source key to the site when the first read fails", async () => {
+        setKeyConfig({ projects: [], browseBase: null });
+        let failed = false;
+        const unreadable: NoteStore = {
+            ...store,
+            search: (query: string) => {
+                if (query.includes("assistantContext") && !failed) {
+                    failed = true;
+                    return Promise.reject(new Error("search failed"));
+                }
+                return store.search(query);
+            }
+        };
+        const failing = [ ...createCaiusTools(unreadable, async () => undefined, stubInputs) ].find(([ n ]) => n === "caius_add")?.[1];
+        if (!failing) throw new Error("Tool caius_add not registered");
+
+        const date = "2026-11-11";
+        await dayWith(date, []);
+        const added = await cls.init(() => failing.execute({ items: [ { date, area: "foundation", text: "Answer the thread", source: "ABC-30" } ] })) as any;
+        expect(added.results[0].status).toBe("added");
+        expect(await dayHtml(date)).toContain("https://example.atlassian.net/browse/ABC-30");
+    });
+});

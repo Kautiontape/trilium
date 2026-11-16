@@ -159,7 +159,7 @@ export function createCaiusService(
     const feeds = createFeedCache(clockMs, INPUTS_TTL_MS);
     const readDayCalendar: CalendarReader = calendarOf ?? ((date) => readCalendar({ fetch: globalThis.fetch, env: process.env, feeds }, date));
 
-    let standingRead: { html: string; markdown: string } | undefined;
+    let jiraLine: { html: string; projects: string[] } | undefined;
 
     /**
      * `store.ts`'s `withCaiusLock`, then `syncKeys()` as the first step under the lock, so every
@@ -172,30 +172,40 @@ export function createCaiusService(
         });
     }
 
-    /** Sets the key config from the standing note's `Jira:` line and `JIRA_BASE_URL`. */
+    /**
+     * Sets the key config from the standing note's `Jira:` line and `JIRA_BASE_URL`. The site comes
+     * from the environment on every call; a failed read keeps the last projects, and the line is
+     * parsed again only when the note's HTML changed.
+     */
     async function syncKeys(): Promise<void> {
-        // A failed read keeps the last config: a call that needs the standing note fails on its own read, and the others go on.
-        const standing = await readStanding().catch(() => undefined);
-        if (!standing) return;
-        const { markdown } = standing;
+        const found = await standingHtml().catch(() => undefined);
+        if (found && "html" in found) {
+            if (jiraLine?.html !== found.html) {
+                jiraLine = { html: found.html, projects: readJiraProjects(markdownExportService.toMarkdown(found.html)) };
+            }
+        } else if (found) {
+            jiraLine = undefined;
+        }
         const site = process.env.JIRA_BASE_URL?.replace(/\/+$/, "");
-        setKeyConfig({ projects: readJiraProjects(markdown), browseBase: site ? `${site}/browse/` : null });
+        setKeyConfig({ projects: jiraLine?.projects ?? [], browseBase: site ? `${site}/browse/` : null });
     }
 
-    /** The standing note (`#assistantContext`) as markdown, converted again only when it changed. */
+    /** The standing note (`#assistantContext`) as markdown. */
     async function readStanding(): Promise<Standing> {
+        const found = await standingHtml();
+        return "html" in found ? { markdown: markdownExportService.toMarkdown(found.html) } : { markdown: null, missing: found.missing };
+    }
+
+    /** The standing note's HTML, or why there is none to read. */
+    async function standingHtml(): Promise<{ html: string } | { missing: string }> {
         const [ note ] = (await store.search(`#${STANDING_LABEL}`)).filter((n) => n.attributes.some((a) => a.type === "label" && a.name === STANDING_LABEL));
         if (!note) {
-            return { markdown: null, missing: t("caius.daily.standing_missing") };
+            return { missing: t("caius.daily.standing_missing") };
         }
         if (note.type !== "text" || note.isProtected) {
-            return { markdown: null, missing: t("caius.daily.standing_unreadable") };
+            return { missing: t("caius.daily.standing_unreadable") };
         }
-        const html = await store.content(note.noteId);
-        if (standingRead?.html !== html) {
-            standingRead = { html, markdown: markdownExportService.toMarkdown(html) };
-        }
-        return { markdown: standingRead.markdown };
+        return { html: await store.content(note.noteId) };
     }
 
     /**
