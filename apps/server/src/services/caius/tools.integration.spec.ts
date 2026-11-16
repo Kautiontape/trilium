@@ -3,7 +3,7 @@ import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { caiusService, routeInputs } from "./service.js";
-import { createBeccaStore, createChildNote } from "./store.js";
+import { createBeccaStore } from "./store.js";
 import { caiusTools, createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -272,11 +272,6 @@ describe("caius tools", () => {
         const OTHER_DAY = "2031-05-13";
         const JIRA = "<a href=\"https://jira.example.com/browse/ABC-12\">ABC-12</a>";
         let noteId = "";
-        beforeAll(() => cls.init(async () => {
-            const state = createChildNote("_taskStates", "Rescheduled", "");
-            await store.addLabel(state, "stateId", "_rescheduled");
-            await store.addLabel(state, "markdownSymbol", ">");
-        }));
         const reword = (listItemId: string, text: string, id = noteId) => call("caius_reword", { items: [{ noteId: id, listItemId, text }] });
         const reset = () => cls.init(async () => {
             noteId = (await store.calendarDay(REWORD_DAY)).noteId;

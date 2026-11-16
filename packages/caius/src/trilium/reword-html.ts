@@ -32,6 +32,7 @@ export function rewordTask(
   if (!span) return { ok: false, reason: 'not_found' };
   if (inProseSection(root, li)) return { ok: false, reason: 'not_live' };
   if (isSuggestedName(sectionOf(root, li))) return { ok: false, reason: 'suggested' };
+  if (li.getAttribute('data-trilium-task-state') === '_rescheduled') return { ok: false, reason: 'moved' };
   const state = itemState(li, states);
   if (state === 'rescheduled') return { ok: false, reason: 'moved' };
   if (state === 'cancelled') return { ok: false, reason: 'cancelled' };

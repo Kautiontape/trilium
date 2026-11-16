@@ -100,6 +100,12 @@ describe('rewordTask', () => {
     expect(r.ok && spanOf(r.html, 't1')).toBe('Migrate A to B ~30m');
   });
 
+  it('reads a _rescheduled item as moved even when the symbols do not list it', () => {
+    const html = doc(li('r1', 'Moved', { state: '_rescheduled' }));
+    const r = rewordTask(html, 'r1', 'New', new Map([['_todo', ' ']]));
+    expect(r).toEqual({ ok: false, reason: 'moved' });
+  });
+
   it('reports unchanged for the same words', () => {
     const html = doc(li('t1', `🌱 09:00 Same words ${FROM} ~30m`));
     const r = rewordTask(html, 't1', 'Same words', STATES);
