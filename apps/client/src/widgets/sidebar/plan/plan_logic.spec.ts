@@ -146,6 +146,21 @@ describe("plan tasks", () => {
         expect(unestimatedTasks(parent).map((t) => t.listItemId)).toEqual([ "p" ]);
     });
 
+    it("keeps a parent of done sub-items a parent, and one of dropped sub-items a task", () => {
+        const sub = (listItemId: string, parentListItemId: string, state: CaiusPlanTask["state"]) =>
+            task({ listItemId, text: `Sub ${listItemId}`, state, parent: "P", parentListItemId });
+        const finished = planOf([
+            task({ listItemId: "p", text: "P" }), sub("p1", "p", "done"), sub("p2", "p", "done")
+        ]);
+        expect(unestimatedTasks(finished)).toEqual([]);
+        const half = planOf([
+            task({ listItemId: "q", text: "P" }), sub("q1", "q", "done"), sub("q2", "q", "open")
+        ]);
+        expect(unestimatedTasks(half).map((t) => t.listItemId)).toEqual([ "q2" ]);
+        const dropped = planOf([ task({ listItemId: "r", text: "P" }), sub("r1", "r", "cancelled") ]);
+        expect(unestimatedTasks(dropped).map((t) => t.listItemId)).toEqual([ "r" ]);
+    });
+
     it("tells a sub-item's parent by its id, not by its text", () => {
         // Two live tasks and a done one share a name; only the done one has a live sub-item.
         const emails = planOf([

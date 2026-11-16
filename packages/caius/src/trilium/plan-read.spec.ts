@@ -144,6 +144,21 @@ describe('readPlan (day)', () => {
     expect(v.capacity.areas.growth.minutes).toBe(50);
   });
 
+  it('keeps a parent a parent once its sub-items are done, on the list and On deck', async () => {
+    const family = (id: string, ticked: boolean) =>
+      ul(li(id, 'Review', { sub: ul(li(`${id}a`, 'Read ~10m', { checked: true }), li(`${id}b`, 'Comment ~20m', { checked: ticked })) }));
+    const read = async (ticked: boolean) => {
+      const html = '<h3>Work</h3>' + family('p1', ticked) + '<h3>On deck</h3>' + family('p2', ticked);
+      return (await readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] }).api, 'day', '2026-10-26', now)).capacity;
+    };
+    const open = await read(false);
+    expect(open).toMatchObject({ totalMinutes: 20, plannedMinutes: 20, estimatedCount: 1, unestimatedCount: 0, onDeckMinutes: 20 });
+    expect(open.areas.foundation.minutes).toBe(20);
+    const done = await read(true);
+    expect(done).toMatchObject({ totalMinutes: 0, plannedMinutes: 0, estimatedCount: 0, unestimatedCount: 0, onDeckMinutes: 0 });
+    expect(done.areas.foundation.minutes).toBe(0);
+  });
+
   it('leaves empty to-do items out of capacity', async () => {
     const html = '<h3>Work</h3>' + ul(li('t1', 'Estimated ~45m'), li('t2', 'No estimate'), li('t3', '   '));
     const f = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] });

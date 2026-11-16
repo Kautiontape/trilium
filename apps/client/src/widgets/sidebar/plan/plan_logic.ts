@@ -197,16 +197,17 @@ export function closeCandidates(plan: CaiusPlan) {
 
 /**
  * The live tasks that leave the plan without an estimate, as `capacity.unestimatedCount` counts
- * them through `countUnits`: a task without sub-items, or the unestimated sub-items of a parent
- * with no estimate of its own. A parent with an estimate, or pinned to the clock of one of
- * `plan.meetings`, lists none. An empty to-do is not a task, and on a day a Growth or Recharge
- * task is not work.
+ * them through `countUnits` over the plan's tasks in every state: a task without sub-items, or the
+ * unestimated live sub-items of a parent with no estimate of its own. A parent with an estimate,
+ * pinned to the clock of one of `plan.meetings`, or with every sub-item done, lists none. An empty
+ * to-do is not a task, and on a day a Growth or Recharge task is not work.
  */
 export function unestimatedTasks(plan: CaiusPlan) {
-    const live = planTasks(plan).filter((task) => isLive(task) && task.text.trim() !== "");
-    const parents = parentsOf(live);
+    const tasks = planTasks(plan);
+    const live = tasks.filter((task) => isLive(task) && task.text.trim() !== "");
+    const parents = parentsOf(tasks);
     const owed = new Set<CaiusPlanTask>();
-    for (const { task, unestimated } of countUnits(live, { meetings: plan.meetings, parents })) {
+    for (const { task, unestimated } of countUnits(tasks, { meetings: plan.meetings, parents })) {
         if (unestimated === 0 || (plan.period === "day" && task.area !== "foundation")) {
             continue;
         }

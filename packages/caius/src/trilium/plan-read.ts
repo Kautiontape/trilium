@@ -242,8 +242,6 @@ export function planTasks(doc: TriliumDoc, now: Date): { tasks: Scanned[] } {
 /** A `PlanTask` with what `buildPlanView` needs and the public view drops. */
 type Scanned = PlanTask & { line: number; horizon: string | null; live: boolean; parentLine: number | null };
 
-const isLive = (t: { live: boolean; text: string }) => t.live && t.text.trim() !== '';
-
 /** Each sub-item of `tasks` mapped to its parent by the parent's row, so repeated words never confuse two tasks. */
 function parentMap(tasks: Scanned[]): Map<Scanned, Scanned> {
   const byLine = new Map(tasks.map((t) => [t.line, t]));
@@ -277,20 +275,18 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
 
   const top3 = main.filter((t) => !t.critical && t.parent === null && t.live).slice(0, 3).map(strip);
 
-  // Units count by `countUnits`; a day's Growth and Recharge are apart from its work, a week's or month's are planned time.
-  const liveMain = main.filter(isLive);
-  const mainParents = parentMap(liveMain);
-  const opts = { meetings: doc.meetings, parents: mainParents };
-  const units = countUnits(liveMain, opts);
+  // Units count by `countUnits` over every state, so a parent of done sub-items stays a parent.
+  // A day's Growth and Recharge are apart from its work; a week's or month's are planned time.
+  const opts = { meetings: doc.meetings, parents: parentMap(main) };
+  const units = countUnits(main, opts);
   const apart = (t: { area: Area }) => period === 'day' && t.area !== 'foundation';
   const evening = units.filter((u) => apart(u.task));
   const counted = units.filter((u) => !apart(u.task));
   const sum = (list: typeof units, key: 'minutes' | 'estimated' | 'unestimated') => list.reduce((n, u) => n + u[key], 0);
   const unestimated = sum(counted, 'unestimated');
   const totalMinutes = sum(counted, 'minutes');
-  const minutesOf = (area: Area) => liveMinutes(liveMain, area, opts);
-  const liveDeck = deck.filter(isLive);
-  const onDeckMinutes = sum(countUnits(liveDeck, { meetings: doc.meetings, parents: parentMap(liveDeck) }), 'minutes');
+  const minutesOf = (area: Area) => liveMinutes(main, area, opts);
+  const onDeckMinutes = sum(countUnits(deck, { meetings: doc.meetings, parents: parentMap(deck) }), 'minutes');
   const horizons: Record<string, number> = {};
   for (const t of [...main, ...deck].filter((x) => x.live)) horizons[t.horizon ?? 'none'] = (horizons[t.horizon ?? 'none'] ?? 0) + 1;
 

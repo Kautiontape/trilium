@@ -35,24 +35,27 @@ export interface Unit<T extends Countable = Countable> {
 export interface CountOptions<T extends Countable = Countable> {
   /** The day's meeting lines (`09:30 Standup (Ana)`); a parent pinned to one of their clocks counts 0. */
   meetings?: string[];
-  /** Each sub-item mapped to its parent, as `parentsOf` returns; default is `parentsOf` over the live tasks. */
+  /** Each sub-item mapped to its parent, as `parentsOf` returns; default is `parentsOf` over `tasks`. */
   parents?: Map<T, T>;
 }
 
 /**
- * The counted units of `tasks`: each live, non-empty task whose parent is not live. A task without
- * live sub-items counts its estimate, else `DEFAULT_ESTIMATE`. A parent pinned to a meeting's clock
- * counts 0, one with an estimate of its own counts that, and any other counts the sum of its live
- * sub-items by the same rules.
+ * The counted units of `tasks`, which holds the list's tasks in every state: each live, non-empty
+ * task whose parent is not live. A task is a parent when a non-empty sub-item of it is open, in
+ * progress or done; any other task counts its estimate, else `DEFAULT_ESTIMATE`. A parent pinned to
+ * a meeting's clock counts 0, one with an estimate of its own counts that, and any other counts the
+ * sum of its live sub-items by the same rules, 0 when none is live.
  */
 export function countUnits<T extends Countable>(tasks: T[], opts: CountOptions<T> = {}): Unit<T>[] {
-  const live = tasks.filter(isLive);
-  const liveSet = new Set(live);
-  const parents = opts.parents ?? parentsOf(live);
+  const parents = opts.parents ?? parentsOf(tasks);
+  const liveSet = new Set(tasks.filter(isLive));
+  const isParent = new Set<T>();
   const children = new Map<T, T[]>();
   const units: T[] = [];
-  for (const task of live) {
+  for (const task of tasks) {
     const parent = parents.get(task);
+    if (parent !== undefined && keepsParent(task)) isParent.add(parent);
+    if (!liveSet.has(task)) continue;
     if (parent === undefined || !liveSet.has(parent)) {
       units.push(task);
     } else {
@@ -62,9 +65,8 @@ export function countUnits<T extends Countable>(tasks: T[], opts: CountOptions<T
   const clocks = new Set((opts.meetings ?? []).map(clockKey).filter((c) => c !== null));
 
   const count = (task: T): Omit<Unit<T>, 'task'> => {
-    const kids = children.get(task) ?? [];
     const own = task.estMinutes;
-    if (kids.length === 0) {
+    if (!isParent.has(task)) {
       return own !== null
         ? { minutes: own, estimated: 1, unestimated: 0 }
         : { minutes: DEFAULT_ESTIMATE, estimated: 0, unestimated: 1 };
@@ -73,7 +75,7 @@ export function countUnits<T extends Countable>(tasks: T[], opts: CountOptions<T
     if (at !== null && clocks.has(at)) return { minutes: 0, estimated: 0, unestimated: 0 };
     if (own !== null) return { minutes: own, estimated: 1, unestimated: 0 };
     const sum = { minutes: 0, estimated: 0, unestimated: 0 };
-    for (const kid of kids) {
+    for (const kid of children.get(task) ?? []) {
       const c = count(kid);
       sum.minutes += c.minutes;
       sum.estimated += c.estimated;
@@ -85,9 +87,9 @@ export function countUnits<T extends Countable>(tasks: T[], opts: CountOptions<T
 }
 
 /**
- * Minutes of the live work, of one `area` when given: the sum of `countUnits`, each unit in its own
- * area (a family counts in its parent's). An empty to-do is a blank checkbox and counts nothing, nor
- * makes its parent a parent.
+ * Minutes of the live work, of one `area` when given: the sum of `countUnits` over `tasks` in every
+ * state, each unit in its own area (a family counts in its parent's). An empty to-do is a blank
+ * checkbox and counts nothing, nor makes its parent a parent.
  */
 export function liveMinutes<T extends Countable>(tasks: T[], area?: Area, opts?: CountOptions<T>): number {
   return countUnits(tasks, opts)
@@ -148,6 +150,11 @@ export function dayLoad(
 
 function isLive(t: Countable): boolean {
   return (t.state === 'open' || t.state === 'in_progress') && t.text.trim() !== '';
+}
+
+/** Whether the sub-item `t` makes its parent a parent: it is non-empty and open, in progress or done. */
+function keepsParent(t: Countable): boolean {
+  return (t.state === 'open' || t.state === 'in_progress' || t.state === 'done') && t.text.trim() !== '';
 }
 
 /** `HH:MM` of a leading clock in `text`, hour padded to two digits; null when there is none. */

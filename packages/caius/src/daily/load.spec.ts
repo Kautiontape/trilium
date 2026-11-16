@@ -97,6 +97,38 @@ describe('countUnits', () => {
     const tasks = [task({ text: 'X' }), task({ text: 'Y', estMinutes: 10 })];
     const parents = new Map([[tasks[1]!, tasks[0]!]]);
     expect(liveMinutes(tasks, undefined, { parents })).toBe(10);
+    const x = task({ text: 'X' });
+    const doneY = task({ text: 'Y', state: 'done', estMinutes: 10 });
+    expect(liveMinutes([x, doneY], undefined, { parents: new Map([[doneY, x]]) })).toBe(0);
+  });
+
+  it('keeps a parent a parent once its sub-items are done: 20, then 10, then 0 as two 10m sub-items are ticked', () => {
+    const ticked = (n: number) => [
+      task({ text: 'Fix' }),
+      sub('a', 'Fix', { estMinutes: 10, state: n > 0 ? 'done' : 'open' }),
+      sub('b', 'Fix', { estMinutes: 10, state: n > 1 ? 'done' : 'open' }),
+    ];
+    expect([0, 1, 2].map((n) => liveMinutes(ticked(n)))).toEqual([20, 10, 0]);
+    const fix = task({ text: 'Fix' });
+    const allDone = [fix, sub('a', 'Fix', { state: 'done', estMinutes: 10 }), sub('b', 'Fix', { state: 'done' })];
+    expect(countUnits(allDone).map((u) => [u.task.text, u.minutes, u.estimated, u.unestimated])).toEqual([['Fix', 0, 0, 0]]);
+    expect(unitMinutes(fix, allDone)).toBe(0);
+  });
+
+  it('counts a meeting parent with every answer done as 0, and a parent of its own estimate with every sub-item done as that', () => {
+    const meetings = ['09:30 Standup (Ana)'];
+    const answered = [task({ text: '9:30 Standup', at: '9:30' }), sub('Ask Ana', '9:30 Standup', { state: 'done', estMinutes: 10 })];
+    expect(liveMinutes(answered, undefined, { meetings })).toBe(0);
+    const own = [task({ text: 'Fix', estMinutes: 15 }), sub('a', 'Fix', { state: 'done', estMinutes: 10 })];
+    expect(countUnits(own).map((u) => [u.minutes, u.estimated, u.unestimated])).toEqual([[15, 1, 0]]);
+  });
+
+  it('counts a parent whose sub-items are only cancelled, moved or empty as a task of its own', () => {
+    for (const state of ['cancelled', 'tombstone'] as const) {
+      const tasks = [task({ text: 'Fix' }), sub('a', 'Fix', { state, estMinutes: 10 })];
+      expect(countUnits(tasks).map((u) => [u.task.text, u.minutes, u.estimated, u.unestimated])).toEqual([['Fix', 30, 0, 1]]);
+    }
+    expect(liveMinutes([task({ text: 'Fix' }), sub('  ', 'Fix', { state: 'done' })])).toBe(30);
   });
 });
 
