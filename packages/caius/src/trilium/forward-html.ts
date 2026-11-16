@@ -337,7 +337,7 @@ export function scheduledMarksOf(span: HTMLElement): ScheduledMark[] {
   const marks: ScheduledMark[] = [];
   for (const em of span.querySelectorAll('em')) {
     const link = em.querySelector('a[href^="#root/"]');
-    const found = link ? { nodes: [em], link, written: true } : savedMark(em);
+    const found = link ? (writtenMark(em, link) ? { nodes: [em], link, written: true } : undefined) : savedMark(em);
     const noteId = found && NOTE_HREF.exec(found.link.getAttribute('href') ?? '')?.[1];
     if (!found || !noteId || !MARK_WORD.test(em.text) || /^from\s/.test(found.link.text.trim())) continue;
     const first = found.nodes[0];
@@ -346,6 +346,13 @@ export function scheduledMarksOf(span: HTMLElement): ScheduledMark[] {
     marks.push({ nodes: found.nodes, start: first.range[0], end: last.range[1], written: found.written, noteId, label: found.link.text.trim() });
   }
   return marks;
+}
+
+/** Whether an `em` holds only the word, then the link, then at most whitespace. */
+function writtenMark(em: HTMLElement, link: HTMLElement): boolean {
+  const text = em.text;
+  const at = text.indexOf(link.text);
+  return at >= 0 && MARK_WORD_ONLY.test(text.slice(0, at)) && !text.slice(at + link.text.length).trim();
 }
 
 /** An `em` that holds only the word, with the link that follows it past any space. */

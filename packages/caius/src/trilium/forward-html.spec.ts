@@ -344,4 +344,14 @@ describe('scheduledMarksOf', () => {
     expect(marksIn('Call <em>scheduled</em> for later <a href="#root/tue">Tue 3 Nov</a>')).toEqual([]);
     expect(marksIn('Call <em>scheduled</em> <a href="#root/mon">from Mon 2 Nov</a>')).toEqual([]);
   });
+
+  it('finds no mark when the italic holds other words, so a copy keeps the phrase', () => {
+    const phrase = '<em>scheduled in <a href="#root/q4">Q4 planning</a></em>';
+    expect(marksIn(`Prep ${phrase}`)).toEqual([]);
+    expect(marksIn('Prep <em>scheduled <a href="#root/q4">Q4</a> for later</em>')).toEqual([]);
+    const src = ul(li('eone', `Prep ${phrase}`));
+    const r = insertCopy('', src, 'eone', { ...copy, newId: () => 'enew' });
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toContain(phrase);
+  });
 });
