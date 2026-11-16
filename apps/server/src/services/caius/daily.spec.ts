@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, fitted, MAX_REPLY_CHARS, withoutMoveLinks } from "./daily.js";
+import { carryQuestion, fitted, MAX_REPLY_CHARS, namedDays, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -38,5 +38,23 @@ describe("the words Caius writes", () => {
         for (const group of [ "daily", "brief", "say" ] as const) {
             for (const text of strings(catalogue.caius[group])) expect(text, group).not.toMatch(/\b(?:still|outstanding|unanswered|waiting)\b/i);
         }
+    });
+});
+
+describe("namedDays", () => {
+    it("counts weeks, days and months from the target day in a catch-up review, and from the date otherwise", () => {
+        const review = namedDays("2026-11-10", "2026-11-16");
+        expect(review.weeks).toEqual([ { week: "2026-W47" }, { week: "2026-W48" } ]);
+        expect(review.days.filter((day) => "ref" in day && "week" in day).map((day) => [ day.ref, "week" in day ? day.week : "" ])).toEqual([ [ "w1", "2026-W47" ], [ "w2", "2026-W48" ] ]);
+        const dates = review.days.flatMap((day) => "date" in day ? [ day.date ] : []);
+        expect(dates).toEqual([ "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-23", "2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27" ]);
+        expect(review.months).toEqual([ { month: "2026-11" }, { month: "2026-12" }, { month: "2027-01" } ]);
+
+        const plain = namedDays("2026-11-13", "2026-11-16");
+        expect(plain.weeks).toEqual([ { week: "2026-W46" }, { week: "2026-W47" } ]);
+        expect(plain.days.flatMap((day) => "date" in day ? [ day.date ] : [])).toEqual([ "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20" ]);
+
+        const old = namedDays("2026-10-27", "2026-11-16");
+        expect(old.days.flatMap((day) => "date" in day ? [ day.date ] : [])[0]).toBe("2026-11-16");
     });
 });

@@ -301,20 +301,30 @@ export function windDownTarget(date: string, now: Date): string {
 }
 
 /**
+ * Whether a wind-down of `date` is a catch-up review: its next workday is before `targetDay`, as when
+ * the catch-up's Review winds down an older day.
+ */
+export function catchUpReview(date: string, targetDay: string): boolean {
+    return dayKey(nextWorkday(localDay(date))) < targetDay;
+}
+
+/**
  * The days, weeks and months he can name in an answer, so a day he says maps to a date without the
- * agent working one out: the workdays from `first` to the end of the week after `date`'s, those two
- * ISO weeks, and `date`'s month and the next two. Each day has a ref (`d1`), and `days` ends with the
- * two weeks as he names them, `w1` "later this week" and `w2` "next week". Each gets its display
- * string from `withDateLabels`.
+ * agent working one out: the workdays from `first` to the end of the week after the anchor's, those
+ * two ISO weeks, and the anchor's month and the next two. The anchor is `date`, or `first` when
+ * `catchUpReview(date, first)`. Each day has a ref (`d1`), and `days` ends with the two weeks as he
+ * names them, `w1` "later this week" and `w2` "next week". Each gets its display string from
+ * `withDateLabels`.
  */
 export function namedDays(date: string, first: string): { days: NamedDay[]; weeks: { week: string }[]; months: { month: string }[] } {
-    const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(date))).start);
+    const anchor = catchUpReview(date, first) ? first : date;
+    const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(anchor))).start);
     const end = dayKey(new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 11));
     const days: { date: string }[] = [];
     for (let at = localDay(first); dayKey(at) <= end; at = nextWorkday(at)) days.push({ date: dayKey(at) });
     const weeks = [ 0, 7 ].map((offset) => ({ week: isoWeekKey(new Date(monday.getTime() + offset * 86_400_000)) }));
     const months = [ 0, 1, 2 ].map((offset) => {
-        const at = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + offset, 1));
+        const at = new Date(Date.UTC(Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7)) - 1 + offset, 1));
         return { month: at.toISOString().slice(0, 7) };
     });
     const [ thisWeek, nextWeek ] = weeks;
