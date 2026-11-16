@@ -23,6 +23,9 @@ export const DEFAULT_STATE_SYMBOLS: StateSymbols = new Map([
   ['cancelled', '-'],
 ]);
 
+// The fork's Rescheduled state id; read as `>` even when the states don't list it.
+const RESCHEDULED_STATE_ID = '_rescheduled';
+
 const INDENT = '    '; // matches DEFAULT_CONFIG.indent.tab_width
 
 // A list item's Trilium id rides through turndown as a private-use sentinel right
@@ -88,7 +91,7 @@ function convert(html: string, states: StateSymbols): string {
         prefix = `${start + Array.prototype.indexOf.call(parent.children, li)}. `;
       } else if (/\btodo-list\b/.test(parent?.getAttribute('class') ?? '')) {
         const state = li.getAttribute('data-trilium-task-state');
-        const symbol = state ? states.get(state) : undefined;
+        const symbol = state ? (states.get(state) ?? (state === RESCHEDULED_STATE_ID ? '>' : undefined)) : undefined;
         if (symbol) prefix = `- [${symbol}] `;
         else prefix = ownCheckboxChecked(li) ? '- [x] ' : '- [ ] ';
       }

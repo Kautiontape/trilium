@@ -18,7 +18,7 @@ export interface TrailCopy {
     noteId: string;
     listItemId: string | null;
     state: string;
-    /** True for a tombstone or a copy marked `_scheduled [..](#root/..)_`; false for where the task lives now. */
+    /** True for a tombstone; false for where the task lives now. */
     movedOn: boolean;
 }
 

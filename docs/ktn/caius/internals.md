@@ -39,7 +39,7 @@ Week labels are ISO weeks. A periodic note's direct children that are not period
 
 ### Task states
 
-Day notes use CKEditor to-do lists. The fork stores extra states as `data-trilium-task-state` on the `<li>`, defined by the notes under `_taskStates`, each with a `markdownSymbol`. Caius reads the symbols from `_taskStates` at scan time. Shawn's are none ` `, Doing `/`, Done `x`, Rescheduled `>` (id `_rescheduled`), Cancelled `-` and Maybe `?`. The first five are Caius's states. Maybe stays outside the grammar, so `[?]` items are not indexed.
+Day notes use CKEditor to-do lists. The fork stores extra states as `data-trilium-task-state` on the `<li>`, defined by the notes under `_taskStates`, each with a `markdownSymbol`. Caius reads the symbols from `_taskStates` at scan time. An item in the `_rescheduled` state reads as Rescheduled (`>`, a tombstone) even when the symbols don't list it, so the state alone decides whether a line moved on. Shawn's are none ` `, Doing `/`, Done `x`, Rescheduled `>` (id `_rescheduled`), Cancelled `-` and Maybe `?`. The first five are Caius's states. Maybe stays outside the grammar, so `[?]` items are not indexed.
 
 The note's HTML becomes markdown only to be parsed: text is not escaped (so `~2h` stays a token and a typed `[>]` is still a marker), and a nested list sits directly under its parent line. Nothing is ever written back through markdown.
 

@@ -172,6 +172,13 @@ describe("a moved task reopened with a click, the state unknown", () => {
         expect((await statesOn(mon)).map(([ words, state ]: string[]) => [ words.replace(/\s*_scheduled.*$/, ""), state ])).toEqual([ [ "Ring the plumber", "done" ] ]);
         expect(await statesOn(tue)).toEqual([ [ "Ring the plumber", "open" ] ]);
     });
+
+    it("counts the line ticked done as done, not moved on", async () => {
+        const all = await cls.init(() => trails(store, new Date(`${tue}T12:00:00`)));
+        expect(trailOf(all, copy)?.copies.map((c) => [ c.period, c.movedOn ])).toEqual([ [ mon, false ], [ tue, false ] ]);
+        const yesterday = await cls.init(() => yesterdayOf(store, tue, new Date(`${tue}T09:00:00`)));
+        expect({ done: yesterday.done, moved: yesterday.moved, open: yesterday.open }).toEqual({ done: 1, moved: 0, open: 0 });
+    });
 });
 
 // Last: the state note stays for the rest of the file.

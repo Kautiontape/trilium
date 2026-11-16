@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseDocument } from '../core/index.js';
-import { htmlToMarkdown, htmlToMarkdownWithIds } from './markdown.js';
+import { DEFAULT_STATE_SYMBOLS, htmlToMarkdown, htmlToMarkdownWithIds } from './markdown.js';
 
 const STATES = new Map([
   ['doing', '/'],
@@ -110,5 +110,14 @@ describe('htmlToMarkdown on a moved task\'s "scheduled" mark', () => {
     expect(moved('Ring the plumber scheduled <a href="#root/tue">Tue 3 Nov</a>').markdown).toBe('- [>] Ring the plumber scheduled [Tue 3 Nov](#root/tue)');
     expect(moved('Ring the plumber <em>scheduled <a href="#root/tue">Tue 3 Nov</a></em> and <a href="#root/x">a b</a>').markdown)
       .toBe('- [>] Ring the plumber _scheduled [Tue 3 Nov](#root/tue)_ and [a b](#root/x)');
+  });
+});
+
+describe('htmlToMarkdown on a _rescheduled item the states do not list', () => {
+  const moved = `<ul class="todo-list">${todo('Moved task', { state: '_rescheduled', checked: true })}</ul>`;
+
+  it('reads it as Rescheduled, and lets a listed symbol win', () => {
+    expect(htmlToMarkdown(moved, DEFAULT_STATE_SYMBOLS)).toBe('- [>] Moved task');
+    expect(htmlToMarkdown(moved, new Map([['_rescheduled', '~']]))).toBe('- [~] Moved task');
   });
 });

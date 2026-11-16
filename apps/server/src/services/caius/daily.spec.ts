@@ -33,10 +33,10 @@ describe("withoutMoveLinks", () => {
 });
 
 describe("movedOn", () => {
-    it("is true for a tombstone and a done line with a mark; an open or doing line with a mark, or a bare one, is open", () => {
+    it("is true for a tombstone only: a mark on a done, open or doing line does not move it", () => {
         const mark = "Ring the plumber _scheduled [Tue 3 Nov](#root/tue)_";
         expect(movedOn({ state: "tombstone", text: "Ring the plumber" })).toBe(true);
-        expect(movedOn({ state: "done", text: mark })).toBe(true);
+        expect(movedOn({ state: "done", text: mark })).toBe(false);
         expect(movedOn({ state: "open", text: mark })).toBe(false);
         expect(movedOn({ state: "in_progress", text: mark })).toBe(false);
         expect(movedOn({ state: "done", text: "Ring the plumber" })).toBe(false);

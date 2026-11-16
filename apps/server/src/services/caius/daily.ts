@@ -229,11 +229,10 @@ export function fromOf(text: string): string | null {
 export const SCHEDULED = /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/;
 
 /**
- * A task that moved on from its note: a tombstone, or a done line carrying a forward's
- * `_scheduled [..](#root/..)_` mark, which is how a moved line reads when the symbols don't list
- * Rescheduled. An open or doing line with a mark is open: the state wins.
+ * A task that moved on from its note: a tombstone. A Rescheduled line reads as one whatever the
+ * state symbols list, and a line reopened by a click is open even when it keeps its mark.
  */
-export const movedOn = (task: { state: string; text: string }): boolean => task.state === "tombstone" || (task.state === "done" && SCHEDULED.test(task.text));
+export const movedOn = (task: { state: string }): boolean => task.state === "tombstone";
 
 /**
  * A copy's key: the note it came from and its words without an estimate, which a moved source keeps
