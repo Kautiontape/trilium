@@ -49,7 +49,7 @@ import {
     ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, caiusClockMinutes, caiusNow, type CaiusItemResult, caiusWrite, describeSkip,
     flushEditors,
     forgetCaiusStatus, isCaiusEnabled, movesCaiusClock, openPeriodNoteIds, refreshCaiusClock, RELOAD_TIMEOUT_MS,
-    startCaiusConversation
+    startCaiusConversation, wasCaiusEnabled
 } from "./caius.js";
 import type LoadResults from "./load_results.js";
 
@@ -756,6 +756,44 @@ describe("refreshCaiusClock", () => {
         await refreshCaiusClock();
         expect(caiusNow().getDate()).toBe(8);
         expect(h.getWithSilentNotFound).toHaveBeenCalledTimes(3);
+    });
+
+    it("follows the latest answer when an older one arrives after it", async () => {
+        const answers: ((status: unknown) => void)[] = [];
+        h.getWithSilentNotFound.mockImplementation(
+            () => new Promise((resolve) => answers.push(resolve))
+        );
+        const first = isCaiusEnabled();
+        const refresh = refreshCaiusClock();
+        const [ resolveFirst, resolveSecond ] = answers;
+
+        resolveSecond({
+            enabled: true, rollover: "00:00", started: "2026-11-09T01:20:00", rhythmRollover: "04:00"
+        });
+        await refresh;
+        expect(caiusNow().getDate()).toBe(9);
+
+        resolveFirst({ enabled: true, rollover: "04:00" });
+        await expect(first).resolves.toBe(true);
+        expect(caiusNow().getDate()).toBe(9);
+    });
+
+    it("keeps the latest answer and its cache when an older request fails after it", async () => {
+        const answers: { resolve: (status: unknown) => void; reject: (error: unknown) => void }[] = [];
+        h.getWithSilentNotFound.mockImplementation(
+            () => new Promise((resolve, reject) => answers.push({ resolve, reject }))
+        );
+        const first = isCaiusEnabled();
+        const refresh = refreshCaiusClock();
+
+        answers[1].resolve({ enabled: true });
+        await refresh;
+        answers[0].reject("offline");
+
+        await expect(first).resolves.toBe(true);
+        await expect(isCaiusEnabled()).resolves.toBe(true);
+        expect(wasCaiusEnabled()).toBe(true);
+        expect(h.getWithSilentNotFound).toHaveBeenCalledTimes(2);
     });
 });
 

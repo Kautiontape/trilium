@@ -241,6 +241,9 @@ export function caiusClockMinutes(now: Date) {
 let statusRequest: Promise<boolean> | null = null;
 let lastKnownEnabled = false;
 
+/** The number of the latest `fetchStatus()`; an older request leaves the clock and cache alone. */
+let statusGeneration = 0;
+
 /**
  * Whether the server runs Caius. The answer is fetched once per session; a failed request answers
  * `false` and is asked again on the next call. A 404 (the standalone and Capacitor builds have no
@@ -265,8 +268,9 @@ export function forgetCaiusStatus() {
 }
 
 /**
- * Asks the server for the status again, and resolves once `caiusNow()` follows the new answer: a
- * day started early or taken back (`#caiusStarted`) and the standing note's rollover change it.
+ * Asks the server for the status again, and resolves once the request has answered, whether or
+ * not it succeeded: `caiusNow()` then follows a day started early or taken back (`#caiusStarted`)
+ * and the standing note's rollover, and after a failure keeps its last answer.
  */
 export async function refreshCaiusClock() {
     forgetCaiusStatus();
@@ -289,9 +293,14 @@ export function movesCaiusClock(loadResults: LoadResults) {
 /** The label of the standing note, which the server finds it by. */
 const STANDING_LABEL = "assistantContext";
 
-async function fetchStatus() {
+async function fetchStatus(): Promise<boolean> {
+    const generation = ++statusGeneration;
     try {
         const status = await server.getWithSilentNotFound<CaiusStatus>("caius/status");
+        if (generation !== statusGeneration) {
+            return isCaiusEnabled();
+        }
+
         lastKnownEnabled = status?.enabled === true;
         const serverNow = status?.now ? new Date(status.now).getTime() : NaN;
         clockOffset = Number.isNaN(serverNow) ? 0 : serverNow - Date.now();
@@ -299,6 +308,10 @@ async function fetchStatus() {
         rolloverMinutes = rollover ? Number(rollover[1]) * 60 + Number(rollover[2]) : 4 * 60;
         started = status?.started ?? null;
     } catch {
+        if (generation !== statusGeneration) {
+            return isCaiusEnabled();
+        }
+
         lastKnownEnabled = false;
         statusRequest = null;
     }
