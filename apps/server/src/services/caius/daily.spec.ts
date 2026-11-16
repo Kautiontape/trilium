@@ -2,7 +2,7 @@ import { htmlToMarkdown } from "@triliumnext/caius";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, copyKey, fitted, isReview, MAX_REPLY_CHARS, movedOn, namedDays, plainText, withoutMoveLinks } from "./daily.js";
+import { areaAskIds, carryQuestion, copyKey, fitted, isReview, MAX_REPLY_CHARS, movedOn, namedDays, plainText, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -72,6 +72,17 @@ describe("a moved task's \"scheduled\" mark as the editor saves it", () => {
     it("leaves a bare italic \"scheduled\" as it is", () => {
         const text = textOf("<em>scheduled</em>");
         expect(withoutMoveLinks(text)).toBe("Ring the plumber _scheduled_");
+    });
+});
+
+describe("areaAskIds", () => {
+    it("records the words only when a task has some", () => {
+        expect(areaAskIds("x1", "")).toEqual([ "area:x1" ]);
+        expect(areaAskIds("x1", "[from Mon 16 Nov](#root/abc)")).toEqual([ "area:x1" ]);
+        const [ id, words ] = areaAskIds("x1", "Call the printer");
+        expect(id).toBe("area:x1");
+        expect(words).toMatch(/^area:~[0-9a-f]{10}$/);
+        expect(areaAskIds("x2", "Call the printer [from Mon 16 Nov](#root/abc)")[1]).toBe(words);
     });
 });
 

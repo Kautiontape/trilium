@@ -324,6 +324,6 @@ describe("caius_plan_apply on a day that hasn't started", () => {
         expect(await call("caius_plan_apply", { ...said, date: "2026-11-06" })).toMatchObject({ error: "not_today", dateLabel: "Fri 6 Nov" });
         const result = await call("caius_plan_apply", { ...said, date: "2026-11-06", early: true });
         expect(result.error).toBeUndefined();
-        expect((await call("caius_plan", { period: "day", date: "2026-11-06" })).context.map((line: any) => line.text)).toContain("The office is closed on Friday");
+        expect((await call("caius_context", { date: "2026-11-06" })).context.map((line: any) => line.text)).toContain("The office is closed on Friday");
     });
 });

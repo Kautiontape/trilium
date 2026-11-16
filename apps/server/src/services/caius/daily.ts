@@ -711,10 +711,12 @@ function workMinutes(facts: { plan: PlanView }): number {
 export const HEAVY_ID = "heavy";
 /**
  * The `#caiusAsked` values that record a task's area question as answered: one for the task's id
- * and one for its words, so a copy forwarded to the next day (a new id) is not asked again.
+ * and one for its words, so a copy forwarded to the next day (a new id) is not asked again. A task
+ * with no words has only its id.
  */
 export function areaAskIds(listItemId: string, text: string): string[] {
     const words = sameText(bareText(plainText(withoutMoveLinks(text))));
+    if (!words) return [ `area:${listItemId}` ];
     return [ `area:${listItemId}`, `area:~${createHash("sha1").update(words).digest("hex").slice(0, 10)}` ];
 }
 
