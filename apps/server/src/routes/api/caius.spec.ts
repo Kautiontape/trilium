@@ -189,6 +189,23 @@ describe("Caius routes", () => {
             .expect(200);
     });
 
+    it("applies a reword alone through apply, behind the same version check", async () => {
+        const day = await cls.init(() => store.calendarDay("2031-05-12"));
+        await cls.init(() => store.putContent(day.noteId, `<h3>Work</h3>${ul(li("r1", "Ana's old words"))}`));
+        const reword = { noteId: day.noteId, listItemId: "r1", text: "New words for Ana" };
+
+        const stale = await post("/api/caius/apply", { rewords: [ reword ], expectedBlobId: "oldBlob" }).expect(200);
+        expect(stale.body.results.map((r: { status: string; reason?: string }) => [ r.status, r.reason ])).toEqual([ [ "skipped", "stale" ] ]);
+        expect(await store.content(day.noteId)).not.toContain("New words for Ana");
+
+        const applied = await post("/api/caius/apply", { rewords: [ reword ] }).expect(200);
+        expect(applied.body.results.map((r: { status: string }) => r.status)).toEqual([ "updated" ]);
+        expect(await store.content(day.noteId)).toContain("New words for Ana");
+
+        const empty = await post("/api/caius/apply", {}).expect(400);
+        expect(JSON.stringify(empty.body)).toContain("Give at least one forward, drop or reword");
+    });
+
     it("assigns missing list item ids, as a dry run unless told otherwise", async () => {
         const dry = await post("/api/caius/assign-ids", { dryRun: true }).expect(200);
         expect(dry.body).toMatchObject({ dryRun: true, notes: 1, added: 1, results: [{ noteId: noteIds.older, items: ["Older task"] }] });

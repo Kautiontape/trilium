@@ -6,7 +6,7 @@ import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
 
 import type { PlanTask } from "../lib/caius.js";
-import { held, taskKey } from "../lib/store.js";
+import { held, rewording, taskKey } from "../lib/store.js";
 import { Est, haptic, StateGlyph } from "./ui.js";
 
 /**
@@ -81,7 +81,8 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
     };
 
     const shownState = heldState === "dismissed" ? "cancelled" : task.state;
-    const { text, forwardedTo, area: marked } = displayText(task.text);
+    const { text: ownText, forwardedTo, area: marked } = displayText(task.text);
+    const text = rewording.value[taskKey(task)] ?? ownText;
     const area = task.area && task.area !== "foundation" ? task.area : marked;
     const view = isViewTask(task) ? task : null;
     const slips = view ? slipLabel(view.slips) : null;

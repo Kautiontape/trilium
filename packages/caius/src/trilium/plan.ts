@@ -122,6 +122,9 @@ export type PlanSkip =
   /** Nesting under a sub-item. */
   | 'too_deep'
   | 'unreadable'
+  | 'moved'
+  | 'cancelled'
+  | 'suggested'
   /** Reported by a host that checks the note's version before it calls the library. */
   | 'stale';
 
@@ -155,10 +158,10 @@ export interface PlanOptions {
   newId?: () => string;
 }
 
-type Done<R> = PlanResult<R>;
+export type Done<R> = PlanResult<R>;
 
-const skip = <R>(req: R, reason: PlanSkip, detail?: string): Done<R> => ({ ...req, status: 'skipped', reason, detail }) as Done<R>;
-const failed = <R>(req: R, e: unknown): Done<R> =>
+export const skip = <R>(req: R, reason: PlanSkip, detail?: string): Done<R> => ({ ...req, status: 'skipped', reason, detail }) as Done<R>;
+export const failed = <R>(req: R, e: unknown): Done<R> =>
   ({ ...req, status: 'failed', error: e instanceof Error ? e.message : String(e) }) as Done<R>;
 
 async function eachSequentially<Q, R>(reqs: Q[], fn: (req: Q) => Promise<Done<Q>>): Promise<Done<Q>[]> {
@@ -336,13 +339,13 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
 
 // ---- accept / dismiss ----------------------------------------------------
 
-async function loadNote(api: NoteStore, noteId: string): Promise<{ note: StoreNote } | { problem: string }> {
+export async function loadNote(api: NoteStore, noteId: string): Promise<{ note: StoreNote } | { problem: string }> {
   const note = await api.note(noteId);
   const problem = usable(note);
   return problem ? { problem } : { note };
 }
 
-const validItem = (r: ItemRequest | AcceptRequest | MoveRequest) => !!r.noteId && !!r.listItemId;
+export const validItem = (r: ItemRequest | AcceptRequest | MoveRequest) => !!r.noteId && !!r.listItemId;
 
 /**
  * The reason a Suggested evening item gives, "X: because the evening has nothing planned (~45m)":

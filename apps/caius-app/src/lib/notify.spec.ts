@@ -18,6 +18,7 @@ function today(overrides: Partial<TodayData> = {}, state: "unplanned" | "planned
         rhythm: { start: "09:30", end: "23:00", workEnd: "17:30", rollover: "04:00", noon: "12:00", targets: { foundation: { min: 180, max: 240 }, growth: { min: 60, max: 120 } }, from: { start: "rhythm", end: "rhythm", workEnd: "rhythm", rollover: "rhythm", noon: "default", targets: "default" } },
         nudge: { date: "2026-11-04", lastWorkday: "2026-11-03", state } as TodayData["nudge"],
         asOf: "2026-11-04T08:00:00.000Z",
+        started: null,
         offline: false,
         ...overrides
     };

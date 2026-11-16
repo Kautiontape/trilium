@@ -17,7 +17,7 @@ export default {
         try {
             const caius = await loadCaius();
             const now = caius.caiusDevNow();
-            return { enabled: true, ...(now ? { now } : {}), rollover: await caius.caiusService.rollover().catch(() => undefined) };
+            return { enabled: true, ...(now ? { now } : {}), ...(await caius.caiusService.clock().catch(() => ({}))) };
         } catch (e) {
             return { enabled: false, detail: messageOf(e) };
         }

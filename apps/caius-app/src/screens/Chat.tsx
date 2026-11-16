@@ -412,7 +412,7 @@ function useChat(kind: ChatKind, date: string, restore?: string): Chat {
         }
         setState("ready");
         const blocks = reply?.content;
-        if (Array.isArray(blocks) && blocks.some((b) => b.type === "tool_call" && /apply|set_state|forward|add|accept|dismiss|skip/.test(b.toolCall.toolName))) {
+        if (Array.isArray(blocks) && blocks.some((b) => b.type === "tool_call" && /apply|set_state|forward|add|accept|dismiss|skip|reword|start_day/.test(b.toolCall.toolName))) {
             revision.value++;
             void refreshToday();
         }

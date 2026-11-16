@@ -14,7 +14,7 @@ import { acceptFromSwipe, dismissSuggestion, ForwardSheet, markDone, startDoing,
 import { TaskRow } from "../components/TaskRow.js";
 import { Button, Card, Est, Icon, openSheet } from "../components/ui.js";
 import type { PlanTask } from "../lib/caius.js";
-import { clockMinutes, dayLabel, dayMinutes, duration, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
+import { clockMinutes, dayLabel, dayMinutes, duration, flipOffer, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
 import { api, appNow, held, outbox, refreshing, refreshToday, runWrite, serverStatus, taskKey, today, type TodayData, todayError } from "../lib/store.js";
 
 /**
@@ -39,6 +39,7 @@ export function Today() {
             {data.offline && <p class="banner">{todayError.value ?? "Offline."} Actions are off until it's back.</p>}
             <TerrainView data={data} now={now} />
             <NudgeCard data={data} now={now} />
+            <DayFlip data={data} now={now} />
             <NowCard data={data} now={now} />
             <CapacityCard data={data} />
             <TaskLists data={data} />
@@ -92,7 +93,7 @@ function TerrainView({ data, now }: { data: TodayData; now: Date }) {
                 label: bareText(t.text), minutes: unitMinutes(t, listed, { meetings: data.plan.meetings }), block: t.block, area: t.area, at: t.at
             }));
         const groups = groupTasks(tasks, data.plan.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
-        const nowMinutes = dayMinutes(now, data.rhythm);
+        const nowMinutes = dayMinutes(now, data.rhythm, data.started);
         const start = clockMinutes(data.rhythm.start) ?? 600;
         const laid = layoutGroups(
             { start: data.rhythm.start, end: data.rhythm.end, workEnd: data.rhythm.workEnd, notBefore: nowMinutes > start ? `${String(Math.floor(nowMinutes / 60)).padStart(2, "0")}:${String(nowMinutes % 60).padStart(2, "0")}` : undefined },
@@ -143,7 +144,7 @@ function NudgeCard({ data, now }: { data: TodayData; now: Date }) {
     const state = data.nudge?.state;
     const catchup = data.catchup;
     const pendingCatchup = catchup && !catchup.data.skipped && catchup.data.tasks.length > 0 && state !== "planned" && state !== "wound_down";
-    const minutes = dayMinutes(now, data.rhythm);
+    const minutes = dayMinutes(now, data.rhythm, data.started);
     const offline = data.offline;
 
     if (pendingCatchup && catchup) {
@@ -194,11 +195,27 @@ function NudgeCard({ data, now }: { data: TodayData; now: Date }) {
     return null;
 }
 
+/** Between midnight and the rollover: the button that starts the new day early, or takes it back. */
+export function DayFlip({ data, now }: { data: TodayData; now: Date }) {
+    const offer = flipOffer(now, data.rhythm, data.started);
+    if (!offer) {
+        return null;
+    }
+    const back = offer.kind === "back";
+    return (
+        <div class="nudge-quiet rituals-row">
+            <Button disabled={data.offline} onClick={() => void runWrite(() => api().startDay(back))}>
+                {back ? `Back to ${offer.day}` : `Start ${offer.day} now`}
+            </Button>
+        </div>
+    );
+}
+
 // ---- Now ---------------------------------------------------------------------------------------
 
 /** The next task in his order that fits before the next meeting; the one he is Doing comes first. */
 function NowCard({ data, now }: { data: TodayData; now: Date }) {
-    const minutes = dayMinutes(now, data.rhythm);
+    const minutes = dayMinutes(now, data.rhythm, data.started);
     const workEnd = clockMinutes(data.rhythm.workEnd) ?? 18 * 60;
     const listed = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ];
     const order = topLevelOf(listed)

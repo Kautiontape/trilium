@@ -5,7 +5,7 @@
  * entry points never call one another, since the lock is not re-entrant. Each store write commits
  * in its own transaction behind a compare-and-swap, and gives any list item without an id one.
  *
- * Items of accept, dismiss, set state, set area and forward can carry the `expectedBlobId` of their note,
+ * Items of accept, dismiss, set state, set area, reword and forward can carry the `expectedBlobId` of their note,
  * which the routes accept and the tools don't: an item whose note has changed since is skipped as
  * `stale` with the note's current `blobId`, and the library never sees it.
  */
@@ -23,6 +23,7 @@ import {
     diffSummary,
     dismissTasks,
     duplicateWarnings,
+    effectiveRollover,
     ensureListItemIds,
     findPeriodNote,
     forwardTasks,
@@ -49,6 +50,7 @@ import {
     readPlan,
     scanDocs,
     placeTasks,
+    rewordTasks,
     setAreas,
     setEstimates,
     setMeetings,
@@ -91,17 +93,19 @@ import {
     type PlanDayInput,
     type PlanInput,
     type PlaceInput,
+    type RewordInput,
     type SetAreaInput,
     type SetEstimateInput,
     type SetStateInput,
     type ShowInput,
     type SkipCatchupInput,
+    type StartDayInput,
     type WindDownApplyInput,
     type WindDownInput
 } from "./schemas.js";
 import { type ApplyDeps, planApply, windDownApply } from "./apply.js";
 import { blockFor } from "./filing.js";
-import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, PLANNED_AT_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
+import { DECLINED_LABEL, type DrawnNames, drawnNamesOf, findBrief, PLANNED_AT_LABEL, STARTED_LABEL, WOUND_DOWN_LABEL, writeBrief } from "./brief.js";
 import { catchupOf, type DayFrame, type DayRead, dayLabels, dayPeriods, drawnTitle, failedCalendar, groupCells, groupsFrom, listPicks, mainTasks, notToday, planDay, rolloverOf, type Standing, type StepDeps, windDown, withTaken, workBlocks } from "./daily.js";
 import { dayCapacityOf, statedFocus } from "./day-read.js";
 import { createFeedCache, readCalendar } from "./inputs/calendar.js";
@@ -112,7 +116,7 @@ import { refOf } from "./refs.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { showView } from "./views.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
-import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, TERRAIN_TITLE } from "./writes.js";
+import { clockText, contextAddOn, contextKeepOn, drawHeader, finishedOn, localIso, skipCatchupOn, startDayOn, TERRAIN_TITLE } from "./writes.js";
 
 export { routeInputs } from "./schemas.js";
 
@@ -191,23 +195,42 @@ export function createCaiusService(
     }
 
     /**
+     * The standing note with its Rhythm and the Caius clock as its workday sees them. Before the
+     * real rollover, a `#caiusStarted` label on today's day note makes the rollover 00:00
+     * (`effectiveRollover`), and the Rhythm carries that figure so every `rolloverOf(rhythm)`
+     * follows. The clock is read once. The note reads are reads, so the caller needs no lock to
+     * read, but holds it where it goes on to write.
+     */
+    async function clockRead(): Promise<{ standing: Standing; rhythm: ReturnType<typeof readRhythm>; started: string | null; now: Date }> {
+        const standing = await readStanding();
+        const at = caiusNow();
+        const read = readRhythm(standing.markdown);
+        const real = rolloverOf(read);
+        const started = at.getHours() * 60 + at.getMinutes() < real
+            ? (await dayLabels(store, localIso(at).slice(0, 10), STARTED_LABEL))[0] ?? null
+            : null;
+        const rollover = effectiveRollover(real, started, at);
+        const rhythm = { ...read, rollover: clockText(rollover) };
+        return { standing, rhythm, started, now: workdayNow(at, rollover) };
+    }
+
+    /**
      * `caius_inputs` for a day, cached, with the Context in force passed along, the ticket keys its
      * week items and Context lines name and `extraKeys`, and the work window from the standing note's Rhythm. The
      * notes are read under the lock, the sources outside it.
      */
     async function dayRead(date: string, refresh = false, extraKeys: string[] = []): Promise<DayRead> {
-        const { context, standing, week, closed, declined } = await withCaiusLock("caius_day_read", async () => {
-            const standing = await readStanding();
-            const now = workdayNow(caiusNow(), rolloverOf(readRhythm(standing.markdown)));
+        const { context, standing, rhythm, week, closed, declined } = await withCaiusLock("caius_day_read", async () => {
+            const { standing, rhythm, now } = await clockRead();
             return {
                 context: (await gatherContext(store, date)).context,
                 standing,
+                rhythm,
                 week: await weekTasks(isoWeekKey(new Date(`${date}T00:00:00Z`)), now),
                 closed: await closedNow(now),
                 declined: await dayLabels(store, date, DECLINED_LABEL)
             };
         });
-        const rhythm = readRhythm(standing.markdown);
         const lines = context.map((line) => line.text);
         const keys = [ ...new Set([ ...week.flatMap((task) => keysOf(task.text)), ...lines.flatMap((line) => keysOf(line)), ...extraKeys ]) ]
             .filter((key) => /^[A-Z][A-Z0-9]+-\d+$/.test(key))
@@ -222,12 +245,11 @@ export function createCaiusService(
      * the lock, the calendar outside it.
      */
     async function dayFrame(date: string): Promise<DayFrame> {
-        const { context, standing, declined } = await withCaiusLock("caius_day_frame", async () => ({
+        const { context, rhythm, declined } = await withCaiusLock("caius_day_frame", async () => ({
             context: (await gatherContext(store, date)).context,
-            standing: await readStanding(),
+            rhythm: (await clockRead()).rhythm,
             declined: await dayLabels(store, date, DECLINED_LABEL)
         }));
-        const rhythm = readRhythm(standing.markdown);
         const { events, errors } = await cachedCalendar(date);
         const capacity = dayCapacity(events, { workStart: rhythm.start, workEnd: rhythm.workEnd });
         return { inputs: withTaken({ calendar: events, capacity, errors }, declined, rhythm), context, rhythm };
@@ -276,7 +298,7 @@ export function createCaiusService(
 
     /** `today()` for a call that already holds the lock. */
     async function todayHeld(): Promise<Date> {
-        return workdayNow(caiusNow(), rolloverOf(readRhythm((await readStanding()).markdown)));
+        return (await clockRead()).now;
     }
 
     /** The keys he closed lately (`closedKeys`); none without a Journal. The caller holds the lock. */
@@ -349,8 +371,18 @@ export function createCaiusService(
 
         ticket,
 
-        /** When the day rolls over, `HH:MM`, from the standing note's Rhythm. A read, so it takes no lock and the status never waits on a write. */
-        rollover: async () => readRhythm((await readStanding()).markdown).rollover,
+        /**
+         * When the day rolls over now, `HH:MM`. While `#caiusStarted` moves the rollover to 00:00
+         * the answer also carries that label's value and `rhythmRollover`, the standing note's own
+         * rollover, so a client that caches the status can work out the rollover on a later night.
+         * A read, so it takes no lock and the status never waits on a write.
+         */
+        clock: async () => {
+            const { standing, rhythm, started } = await clockRead();
+            const rhythmRollover = readRhythm(standing.markdown).rollover;
+            const moved = !!started && rhythm.rollover !== rhythmRollover;
+            return { rollover: rhythm.rollover, ...(moved ? { started, rhythmRollover } : {}) };
+        },
 
         /**
          * A period's plan. A day's capacity carries the one over figure (`dayCapacityOf`), from its
@@ -490,6 +522,10 @@ export function createCaiusService(
                 : item)), { dryRun }))).map((r) => presentResult(r, html))
         )),
 
+        reword: ({ items, dryRun, html }: RewordInput) => withCaiusLock("caius_reword", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => rewordTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
+
         setEstimate: ({ items, dryRun, html }: SetEstimateInput) => withCaiusLock("caius_set_estimate", async () => withBlobIds(
             (await unlessStale(items, (fresh) => setEstimates(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
@@ -498,19 +534,22 @@ export function createCaiusService(
             (await unlessStale(items, (fresh) => forwardTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
 
-        apply: ({ forwards, drops, expectedBlobId }: ApplyInput) => withCaiusLock("caius_apply", async () => {
+        /** Runs forwards, then state changes, then rewords behind one version check; the results follow that order. */
+        apply: ({ forwards, drops, rewords, expectedBlobId }: ApplyInput) => withCaiusLock("caius_apply", async () => {
             // One version check before the first write: every item is compared with the same token.
             const items = [
                 ...forwards.map((item) => ({ ...item, expectedBlobId })),
-                ...drops.map((item) => ({ ...item, expectedBlobId }))
+                ...drops.map((item) => ({ ...item, expectedBlobId })),
+                ...rewords.map((item) => ({ ...item, expectedBlobId }))
             ];
             return withBlobIds((await unlessStale(items, async (fresh) => {
                 const forwarding = fresh.filter((item): item is typeof forwards[number] => "to" in item);
                 const dropping = fresh.filter((item): item is typeof drops[number] => "state" in item);
-                return [
-                    ...(forwarding.length ? await forwardTasks(store, forwarding, {}) : []),
-                    ...(dropping.length ? await setStatesOf(store, dropping) : [])
-                ];
+                const rewording = fresh.filter((item): item is typeof rewords[number] => "text" in item);
+                const forwarded = forwarding.length ? await forwardTasks(store, forwarding, {}) : [];
+                const dropped = dropping.length ? await setStatesOf(store, dropping) : [];
+                const reworded = rewording.length ? await rewordTasks(store, rewording, {}) : [];
+                return [ ...forwarded, ...dropped, ...reworded ];
             })).map((r) => presentResult(r)));
         }),
 
@@ -547,6 +586,9 @@ export function createCaiusService(
         /** Writes each line he kept to the week note of `date`, the day planned or wound down to. */
         contextKeep: ({ date, lines, dryRun }: ContextKeepInput) => withCaiusLock("caius_context_keep", async () =>
             withBlobIds((await contextKeepOn(store, date, lines, { dryRun, now: await todayHeld() })).map((result) => withDiff(result)))),
+
+        /** Starts today's calendar date early (or takes it back), at the standing note's own rollover. */
+        startDay: ({ back }: StartDayInput) => withCaiusLock("caius_start_day", async () => startDayOn(store, caiusNow(), rolloverOf(readRhythm((await readStanding()).markdown)), back)),
 
         /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
         skipCatchup: ({ date }: SkipCatchupInput) => withCaiusLock("caius_skip_catchup", () => skipCatchupOn(store, date)),
@@ -637,10 +679,8 @@ export function createCaiusService(
          * bars are that list laid out again. The weather is fetched before the lock.
          */
         briefWrite: async ({ latitude, longitude, early, ...input }: BriefWriteInput) => {
-            const { markdown } = await withCaiusLock("caius_standing", readStanding);
-            const rhythm = readRhythm(markdown);
+            const { rhythm, now } = await withCaiusLock("caius_standing", clockRead);
             const rollover = rolloverOf(rhythm);
-            const now = workdayNow(caiusNow(), rollover);
             const later = notToday(input.date, currentKey("day", now), early);
             if (later) return later;
             const place = await placeOf({ latitude, longitude });
@@ -712,12 +752,6 @@ export function caiusNow(env: Record<string, string | undefined> = process.env):
 export function caiusDevNow(env: Record<string, string | undefined> = process.env): string | undefined {
     const at = clockOverride(env);
     return at ? localIso(at) : undefined;
-}
-
-/** A moment as local `YYYY-MM-DDTHH:mm:ss`. */
-function localIso(at: Date): string {
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
 /**

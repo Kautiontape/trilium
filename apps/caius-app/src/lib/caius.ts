@@ -41,6 +41,14 @@ export function caiusApi(conn: Connection) {
         return JSON.parse(res.text) as T;
     };
 
+    const etapiPost = async <T>(path: string, json: unknown): Promise<T> => {
+        const res = await request({ method: "POST", url: `${conn.url}/etapi/${path}`, headers: { Authorization: `Bearer ${conn.token}` }, json });
+        if (res.status !== 200) {
+            throw new HttpError(res.status, res.text);
+        }
+        return JSON.parse(res.text) as T;
+    };
+
     return {
         plan: (period: PeriodKind, date?: string) => tool<PlanView>("caius_plan", date ? { period, date } : { period }),
         open: (lane?: Lane, limit?: number) => tool<OpenResult>("caius_open", { ...(lane ? { lane } : {}), ...(limit ? { limit } : {}) }),
@@ -48,8 +56,14 @@ export function caiusApi(conn: Connection) {
         setState: (items: (TaskRef & { state: "done" | "doing" | "cancelled"; reason?: string })[]) =>
             tool<WriteResult>("caius_set_state", { items }),
         forward: (items: (TaskRef & { to: string; onDeck?: boolean; critical?: boolean })[]) => tool<WriteResult>("caius_forward", { items }),
+        startDay: async (back?: boolean): Promise<WriteResult> => {
+            const answer = await tool<NonNullable<WriteResult["results"]>[number] & { error?: string }>("caius_start_day", back ? { back: true } : {});
+            return answer.error ? { error: answer.detail ?? answer.error } : { results: [ answer ] };
+        },
         add: (items: AddItem[]) => tool<WriteResult>("caius_add", { items }),
         accept: (items: (TaskRef & { section?: string; critical?: boolean })[]) => tool<WriteResult>("caius_accept", { items }),
+        /** Replaces tasks' words, keeping their ids, states, markers and links the new words don't drop. */
+        reword: (items: (TaskRef & { text: string })[]) => etapiPost<WriteResult>("caius/apply", { rewords: items }),
         dismiss: (items: TaskRef[]) => tool<WriteResult>("caius_dismiss", { items }),
         context: (date: string) => tool<{ date: string; context: ContextLine[] }>("caius_context", { date }),
         skipCatchup: (date: string) => tool<unknown>("caius_skip_catchup", { date }),
@@ -143,6 +157,8 @@ export interface CaiusStatus {
     now?: string;
     /** When the day rolls over, `HH:MM`. */
     rollover?: string;
+    /** The `#caiusStarted` time, `YYYY-MM-DDTHH:mm:ss`, while the day was started early. */
+    started?: string;
 }
 
 export type Nudge = { date: string; lastWorkday: string } & (

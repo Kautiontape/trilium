@@ -13,7 +13,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { lineIdOf } from "./daily.js";
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, removeLabel } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -400,5 +400,34 @@ describe("a review asks nothing Plan my day asks", () => {
         expect(tuesday).toContain("Ana is out Tue 17 Nov");
         const monday = (await call("caius_context", { date: TODAY })).context.map((line: any) => line.text);
         expect(monday).not.toContain("Ana is out tomorrow");
+    });
+});
+
+describe("a review on a day started early", () => {
+    const SUNDAY = "2026-11-15";
+    const started = async (on: boolean) => cls.init(async () => {
+        const monday = await store.calendarDay(TODAY);
+        if (on) await store.addLabel(monday.noteId, "caiusStarted", `${TODAY}T03:00:00`);
+        else for (const value of await labelsOf(TODAY, "caiusStarted")) removeLabel(monday.noteId, "caiusStarted", value);
+    });
+
+    afterEach(() => started(false));
+
+    it("Mon 03:00 with #caiusStarted: Monday is today, so a wind-down of Fri 13 is a review and leaves Monday to Plan my day", async () => {
+        at(`${TODAY}T03:00`);
+        await started(true);
+        expect((await call("caius_plan", { period: "day" })).key).toBe(TODAY);
+        const open = await call("caius_winddown", { date: FRIDAY, step: "open" });
+        expect(open.targetDay).toBe(TODAY);
+        expect(open.next).not.toBe("next");
+        const applied = await call("caius_winddown_apply", { date: FRIDAY, notToday: [ { candidateId: "ABC-23" } ] });
+        expect(applied.skipped).toContainEqual(expect.objectContaining({ kind: "not_today", reason: "review_only" }));
+    });
+
+    it("Mon 03:00: a wind-down of Sunday is a review only once Monday is started", async () => {
+        at(`${TODAY}T03:00`);
+        expect((await call("caius_winddown", { date: SUNDAY, step: "open" })).next).toBe("next");
+        await started(true);
+        expect((await call("caius_winddown", { date: SUNDAY, step: "open" })).next).not.toBe("next");
     });
 });

@@ -16,7 +16,10 @@ export interface TodayData {
     label: string;
     plan: PlanView;
     catchup: CatchupStep | null;
+    /** The standing note's own Rhythm, with its real rollover, which bounds when Start or Back is offered. */
     rhythm: Rhythm;
+    /** The `#caiusStarted` time while the day was started early, else null. */
+    started: string | null;
     /** The nudge state; null on a server without the phone routes. */
     nudge: Nudge | null;
     /** When this was read, ISO. */
@@ -38,6 +41,8 @@ export const outbox = signal<Capture[]>(readLocalList<Capture>("outbox"));
 export const snack = signal<Snack | null>(null);
 /** Tasks with a write held behind Undo, by `noteId/listItemId`, and the state they show meanwhile. */
 export const held = signal<Record<string, HeldState>>({});
+/** The new words of a task whose reword is held behind Undo or on its way, by `noteId/listItemId`. */
+export const rewording = signal<Record<string, string>>({});
 /** Bumped after every write, so open lists read again. */
 export const revision = signal(0);
 
@@ -69,18 +74,47 @@ export function api(): CaiusApi {
 export async function probeServer() {
     const status = await api().status();
     serverStatus.value = status;
-    if (status?.now) {
-        clockOffset = new Date(status.now).getTime() - Date.now();
-    }
+    applyClock(status);
     return status;
 }
 
-/** Reads Today from the server; offline, shows the last snapshot with actions off. */
-export async function refreshToday() {
-    if (refreshing.value) {
-        return;
+function applyClock(status: CaiusStatus | null) {
+    if (status?.now) {
+        clockOffset = new Date(status.now).getTime() - Date.now();
     }
+}
+
+let reading: Promise<void> | null = null;
+let followUp: Promise<void> | null = null;
+
+/**
+ * Reads Today from the server; offline, shows the last snapshot with actions off. The promise
+ * settles after a read that started after this call: while one runs, callers share one follow-up.
+ */
+export function refreshToday(): Promise<void> {
+    if (!reading) {
+        return startRead();
+    }
+    followUp ??= reading.then(() => {
+        followUp = null;
+        return startRead();
+    });
+    return followUp;
+}
+
+function startRead(): Promise<void> {
     refreshing.value = true;
+    const read: Promise<void> = readToday().finally(() => {
+        reading = null;
+        if (!followUp) {
+            refreshing.value = false;
+        }
+    });
+    reading = read;
+    return read;
+}
+
+async function readToday() {
     try {
         if (serverStatus.value === undefined) {
             await probeServer();
@@ -88,16 +122,22 @@ export async function refreshToday() {
         await flushOutbox();
         const caius = api();
         const plan = await caius.plan("day");
-        const [ catchup, nudge ] = await Promise.all([
+        const [ catchup, nudge, status ] = await Promise.all([
             caius.catchup(plan.key).catch(() => null),
-            serverStatus.value ? caius.nudge(plan.key).catch(() => null) : Promise.resolve(null)
+            serverStatus.value ? caius.nudge(plan.key).catch(() => null) : Promise.resolve(null),
+            caius.status().catch(() => null)
         ]);
+        if (status) {
+            serverStatus.value = status;
+            applyClock(status);
+        }
         const data: TodayData = {
             key: plan.key,
             label: catchup?.dateLabel ?? plan.key,
             plan,
             catchup,
             rhythm: readRhythm(catchup?.standing ?? null),
+            started: startedOn(plan.key, (status ?? serverStatus.value)?.started),
             nudge,
             asOf: appNow().toISOString(),
             offline: false
@@ -110,12 +150,15 @@ export async function refreshToday() {
         if (e instanceof UnreachableError) {
             const snapshot = readLocal<TodayData | null>("snapshot", null);
             if (snapshot?.plan) {
-                today.value = { ...snapshot, offline: true };
+                today.value = { ...snapshot, started: snapshot.started ?? null, offline: true };
             }
         }
-    } finally {
-        refreshing.value = false;
     }
+}
+
+/** The `#caiusStarted` stamp when it is dated on `key`, the day the plan is for; else null. */
+function startedOn(key: string, started: string | null | undefined) {
+    return started && started.slice(0, 10) === key ? started : null;
 }
 
 /** A user-facing sentence for an error, in Caius's words where there is one. */
@@ -148,6 +191,12 @@ interface HeldWrite {
     send: () => Promise<void>;
 }
 
+/** A hold's hooks on its row: `clear` removes only what this hold's `show` put there. */
+interface HeldRow {
+    show: () => void;
+    clear: () => void;
+}
+
 let pending: HeldWrite | null = null;
 
 /**
@@ -156,16 +205,46 @@ let pending: HeldWrite | null = null;
  * held write sends the first at once.
  */
 export function holdWrite(task: TaskRef, state: HeldState, text: string, send: () => Promise<unknown>) {
-    void flushHeld();
     const key = taskKey(task);
-    held.value = { ...held.value, [key]: state };
+    hold(key, text, send, {
+        show: () => {
+            held.value = { ...held.value, [key]: state };
+        },
+        clear: () => {
+            if (held.value[key] === state) {
+                held.value = without(held.value, key);
+            }
+        }
+    });
+}
+
+/**
+ * Holds a reword like `holdWrite`, but the row stays live: `rewording` carries the new words for
+ * it to show until the write has been sent or Undo cancels it.
+ */
+export function holdReword(task: TaskRef, words: string, send: () => Promise<unknown>) {
+    const key = taskKey(task);
+    hold(key, `Edited: ${words}`, send, {
+        show: () => {
+            rewording.value = { ...rewording.value, [key]: words };
+        },
+        clear: () => {
+            if (rewording.value[key] === words) {
+                rewording.value = without(rewording.value, key);
+            }
+        }
+    });
+}
+
+function hold(key: string, text: string, send: () => Promise<unknown>, row: HeldRow) {
+    void flushHeld();
+    row.show();
     const write: HeldWrite = {
         key,
         timer: setTimeout(() => void flushHeld(), 4000),
         send: async () => {
             await runWrite(send);
-            const { [key]: _gone, ...rest } = held.value;
-            held.value = rest;
+            row.clear();
         }
     };
     pending = write;
@@ -177,13 +256,17 @@ export function holdWrite(task: TaskRef, state: HeldState, text: string, send: (
                 if (pending === write) {
                     clearTimeout(write.timer);
                     pending = null;
-                    const { [key]: _undone, ...rest } = held.value;
-                    held.value = rest;
+                    row.clear();
                 }
                 snack.value = null;
             }
         }
     };
+}
+
+function without<T>(record: Record<string, T>, key: string): Record<string, T> {
+    const { [key]: _gone, ...rest } = record;
+    return rest;
 }
 
 /** Sends the write held behind Undo now: when its time is up, or the app goes to the background. */
@@ -214,7 +297,7 @@ export async function runWrite(send: () => Promise<unknown>): Promise<boolean> {
         return false;
     } finally {
         revision.value++;
-        void refreshToday();
+        await refreshToday();
     }
 }
 
@@ -225,8 +308,8 @@ export function defaultCaptureTarget(data: TodayData, now = appNow()): CaptureTa
     const woundDown = data.nudge?.state === "wound_down";
     const workEnd = clockMinutes(settings.value.workEndOverride || data.rhythm.workEnd) ?? 18 * 60;
     // Before the rollover the workday is still the day before, so 00:10 is past its work end.
-    const workday = dayMinutes(now, data.rhythm) >= 24 * 60 ? new Date(now.getTime() - 86_400_000) : now;
-    const pastWork = data.key === localKey(workday) && dayMinutes(now, data.rhythm) >= workEnd;
+    const workday = dayMinutes(now, data.rhythm, data.started) >= 24 * 60 ? new Date(now.getTime() - 86_400_000) : now;
+    const pastWork = data.key === localKey(workday) && dayMinutes(now, data.rhythm, data.started) >= workEnd;
     return { kind: "onDeck", date: woundDown || pastWork ? nextWorkdayKey(data.key) : data.key };
 }
 

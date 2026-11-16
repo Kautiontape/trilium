@@ -205,10 +205,21 @@ export function tokenZoneStart(text: string): number {
   return scanTokens(`X${text}`).text.length - 1;
 }
 
-/** The same boundary inside a description's inner HTML: tokens live in the text after the last tag. */
+/**
+ * The same boundary inside a description's inner HTML, as an offset into it: tokens live in the
+ * text after the last tag. Each entity but `&nbsp;` counts as one character; `&nbsp;` stays
+ * as its six characters, so callers that read it as a space mask it first.
+ */
 export function tokenZoneStartInHtml(innerHtml: string): number {
   const tail = innerHtml.lastIndexOf('>') + 1;
-  const decoded = innerHtml.slice(tail).replace(/&amp;/g, '&');
-  const rest = decoded.slice(0, tokenZoneStart(decoded));
-  return tail + rest.length + (rest.split('&').length - 1) * 4;
+  const widths: number[] = [];
+  let decoded = '';
+  for (const part of innerHtml.slice(tail).matchAll(/&(?!nbsp;)(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);|[^]/gi)) {
+    const raw = part[0];
+    decoded += raw === '&amp;' ? '&' : raw.length > 1 && raw.startsWith('&') && raw.endsWith(';') ? '_' : raw;
+    widths.push(raw.length);
+  }
+  let offset = tail;
+  for (const width of widths.slice(0, tokenZoneStart(decoded))) offset += width;
+  return offset;
 }

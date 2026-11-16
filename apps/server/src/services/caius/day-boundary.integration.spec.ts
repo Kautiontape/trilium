@@ -3,13 +3,14 @@
  * Rhythm it is still the day he started, and a bedtime after midnight counts on from 24:00.
  */
 
-import { dayCapacity } from "@triliumnext/caius";
+import { dayCapacity, findPeriodNote } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
-import { createBeccaStore, createChildNote } from "./store.js";
+import { caiusService } from "./service.js";
+import { createBeccaStore, createChildNote, removeLabel } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -173,5 +174,87 @@ describe("the drawing", () => {
         const note = await cls.init(() => store.calendarDay(MON));
         const drawn = await call("caius_header", { noteId: note.noteId, start: "10:00", end: "25:00", workEnd: "18:00", events: [], groups: [ { start: "22:00", end: "24:30", name: "Late", count: 1 } ] });
         expect(drawn.attachmentId).toBeTruthy();
+    });
+});
+
+describe("a day started early", () => {
+    const STARTED = `${NEXT_MON}T03:00:00`;
+    const mondayId = () => cls.init(async () => (await store.calendarDay(NEXT_MON)).noteId);
+    const start = () => cls.init(async () => store.addLabel(await mondayId(), "caiusStarted", STARTED));
+    const key = async () => (await call("caius_plan", { period: "day" })).key;
+    const clock = () => cls.init(() => caiusService.clock());
+
+    afterEach(() => cls.init(async () => removeLabel(await mondayId(), "caiusStarted", STARTED)));
+
+    it("Mon 03:00 without the label: still Sunday, at the standing rollover", async () => {
+        at(`${NEXT_MON}T03:00`);
+        expect(await key()).toBe("2026-11-08");
+        expect(await clock()).toEqual({ rollover: "04:00" });
+        expect(await call("caius_planday", { date: NEXT_MON, step: "catchup" })).toMatchObject({ error: "not_today" });
+    });
+
+    it("Mon 03:00 with the label: Monday is today, and the plan starts from standup, not from 27:00", async () => {
+        await start();
+        at(`${NEXT_MON}T03:00`);
+        expect(await key()).toBe(NEXT_MON);
+        expect(await clock()).toEqual({ rollover: "00:00", started: STARTED, rhythmRollover: "04:00" });
+        expect((await call("caius_planday", { date: NEXT_MON, step: "catchup" })).error).toBeUndefined();
+        const offer = await call("caius_planday", { date: NEXT_MON, step: "inputs" });
+        expect(offer.error).toBeUndefined();
+        expect(offer.data.planFrom).toBeUndefined();
+    });
+
+    it("Mon 04:30 with the label: as without it", async () => {
+        await start();
+        at(`${NEXT_MON}T04:30`);
+        expect(await key()).toBe(NEXT_MON);
+        expect(await clock()).toEqual({ rollover: "04:00" });
+    });
+
+    it("Tue 01:00 with the label still on Monday's note: still Monday, at 04:00", async () => {
+        await start();
+        at("2026-11-10T01:00");
+        expect(await key()).toBe(NEXT_MON);
+        expect(await clock()).toEqual({ rollover: "04:00" });
+    });
+});
+
+describe("caius_start_day", () => {
+    const STARTED = `${NEXT_MON}T03:00:00`;
+    const NEW_MON = "2026-11-23";
+    const startedOn = (date: string) => cls.init(async () => (await findPeriodNote(store, "day", date))?.attributes.filter((a) => a.name === "caiusStarted").map((a) => a.value) ?? []);
+    const key = async () => (await call("caius_plan", { period: "day" })).key;
+
+    afterEach(() => cls.init(async () => {
+        for (const date of [ NEXT_MON, NEW_MON ]) {
+            const note = await findPeriodNote(store, "day", date);
+            if (note) for (const value of await startedOn(date)) removeLabel(note.noteId, "caiusStarted", value);
+        }
+    }));
+
+    it("starts Monday at 03:00, is idempotent, and takes it back", async () => {
+        at(`${NEXT_MON}T03:00`);
+        expect(await call("caius_start_day", {})).toMatchObject({ status: "updated", date: NEXT_MON, created: false });
+        expect(await startedOn(NEXT_MON)).toEqual([ STARTED ]);
+        expect(await key()).toBe(NEXT_MON);
+        expect(await call("caius_start_day", {})).toMatchObject({ status: "unchanged", date: NEXT_MON });
+
+        expect(await call("caius_start_day", { back: true })).toMatchObject({ status: "updated", date: "2026-11-08" });
+        expect(await startedOn(NEXT_MON)).toEqual([]);
+        expect(await key()).toBe("2026-11-08");
+        expect(await call("caius_start_day", { back: true })).toMatchObject({ status: "unchanged", date: "2026-11-08" });
+    });
+
+    it("writes nothing outside midnight to the rollover", async () => {
+        for (const stamp of [ `${NEXT_MON}T05:00`, "2026-11-08T22:00" ]) {
+            at(stamp);
+            expect(await call("caius_start_day", {}), stamp).toMatchObject({ status: "skipped", reason: "not_small_hours" });
+            expect(await startedOn(NEXT_MON), stamp).toEqual([]);
+        }
+    });
+
+    it("makes a missing day note", async () => {
+        at(`${NEW_MON}T02:00`);
+        expect(await call("caius_start_day", {})).toMatchObject({ status: "updated", date: NEW_MON, created: true });
     });
 });

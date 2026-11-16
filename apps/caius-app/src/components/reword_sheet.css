@@ -1,0 +1,7 @@
+.reword-sheet-text {
+    min-height: 88px;
+    padding: var(--s3);
+    resize: none;
+    font-size: 18px;
+    line-height: 24px;
+}

@@ -133,6 +133,11 @@ const estimateItem = z.object({
     minutes: z.number().int().min(5).max(600).describe("The estimate in whole minutes, 5 to 600")
 });
 
+const rewordItem = z.object({
+    ...taskRef,
+    text: z.string().trim().min(1).describe("The task's new words only. Its id, state, area marker, estimate, from and scheduled links stay; a leading HH:MM replaces its clock. A link stays on its text when that text is still in the words")
+});
+
 const forwardItem = z.object({
     ...taskRef,
     to: z.string().refine(
@@ -457,6 +462,10 @@ const skipCatchup = z.object({
     date: periodKey("day").describe("The day being planned, YYYY-MM-DD, whose catch-up is skipped")
 });
 
+const startDay = z.object({
+    back: z.boolean().optional().describe("true: take the early start back, so the day before is today again until the rollover")
+});
+
 const refresh = z.boolean().optional().describe("Fetch Jira and the calendar again instead of reusing what was read for that day in the last 15 minutes");
 
 const winddown = z.object({
@@ -487,6 +496,7 @@ export const toolInputs = {
     contextKeep,
     briefWrite,
     skipCatchup,
+    startDay,
     finished,
     winddown,
     planday,
@@ -499,6 +509,7 @@ export const toolInputs = {
     setArea: writes(areaItem),
     place: writes(placeItem),
     setEstimate: writes(estimateItem),
+    reword: writes(rewordItem),
     show,
     forward: writes(forwardItem),
     header
@@ -520,18 +531,22 @@ export const routeInputs = {
     setArea: writes(areaItem.safeExtend(version)),
     place: writes(placeItem.safeExtend(version)),
     setEstimate: writes(estimateItem.safeExtend(version)),
+    reword: writes(rewordItem.safeExtend(version)),
     forward: writes(forwardItem.safeExtend(version)),
-    /** The Plan tab's Close: forwards, then state changes, behind one version check. */
+    /** The Plan tab's Close and the phone's Edit: forwards, then state changes, then rewords, behind one version check. */
     apply: z.object({
         forwards: z.array(forwardItem).default([]),
         drops: z.array(stateItem).default([]),
+        rewords: z.array(rewordItem).default([]),
         expectedBlobId: version.expectedBlobId
-    }).refine((input) => input.forwards.length + input.drops.length > 0, "Give at least one forward or drop")
-        .refine(
-            ({ expectedBlobId, forwards, drops }) => expectedBlobId === undefined
-                || new Set([ ...forwards, ...drops ].map(({ noteId }) => noteId)).size === 1,
-            "An expectedBlobId versions one note, so every forward and drop must be in one note"
-        )
+    }).refine(
+        (input) => input.forwards.length + input.drops.length + input.rewords.length > 0,
+        "Give at least one forward, drop or reword"
+    ).refine(
+        ({ expectedBlobId, forwards, drops, rewords }) => expectedBlobId === undefined
+            || new Set([ ...forwards, ...drops, ...rewords ].map(({ noteId }) => noteId)).size === 1,
+        "An expectedBlobId versions one note, so every forward, drop and reword must be in one note"
+    )
 };
 
 export type InputsInput = z.infer<typeof inputs>;
@@ -549,6 +564,7 @@ export type HeaderInput = z.infer<typeof header>;
 export type HeaderDay = z.infer<typeof headerDay>;
 export type BriefWriteInput = z.infer<typeof briefWrite>;
 export type SkipCatchupInput = z.infer<typeof skipCatchup>;
+export type StartDayInput = z.infer<typeof startDay>;
 export type FinishedInput = z.infer<typeof finished>;
 export type NudgeInput = z.infer<typeof nudge>;
 export type WindDownInput = z.infer<typeof winddown>;
@@ -562,5 +578,6 @@ export type SetStateInput = z.infer<typeof routeInputs.setState>;
 export type SetAreaInput = z.infer<typeof routeInputs.setArea>;
 export type PlaceInput = z.infer<typeof routeInputs.place>;
 export type SetEstimateInput = z.infer<typeof routeInputs.setEstimate>;
+export type RewordInput = z.infer<typeof routeInputs.reword>;
 export type ForwardInput = z.infer<typeof routeInputs.forward>;
 export type ApplyInput = z.infer<typeof routeInputs.apply>;
