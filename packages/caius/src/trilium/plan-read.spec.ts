@@ -242,3 +242,14 @@ describe('period search', () => {
     expect(seen).toEqual(['#dateNote="2026-10-26"', '#weekNote="2026-W44"']);
   });
 });
+
+describe('readPlan on a reopened moved line', () => {
+  it('reads the estimate written before its "scheduled" mark', async () => {
+    const mark = '<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>';
+    const html = '<h2>Tasks</h2>' + ul(li('r1', `Write it ~30m ${mark}`), li('r2', 'Plain'));
+    const f = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] });
+    const v = await readPlan(f.api, 'day', '2026-10-26', now);
+    const tasks = v.sections.flatMap((s) => s.tasks);
+    expect(tasks.find((t) => t.listItemId === 'r1')).toMatchObject({ state: 'open', estMinutes: 30 });
+  });
+});

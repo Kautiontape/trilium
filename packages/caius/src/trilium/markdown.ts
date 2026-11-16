@@ -9,8 +9,8 @@
 
 import { parse } from 'node-html-parser';
 import TurndownService from 'turndown';
-import { scheduledMarksOf } from './forward-html.js';
-import { apply, descriptionOf, type Edit } from './html-util.js';
+import { scheduledMarksOf, type ScheduledMark } from './forward-html.js';
+import { apply, descriptionOf, spanEnd, tokenZoneStartInHtml, type Edit } from './html-util.js';
 import { escapeHtml } from './plan-html.js';
 
 /** Task state id (the `stateId` label) → its single-character markdown symbol. */
@@ -111,22 +111,50 @@ function convert(html: string, states: StateSymbols): string {
 }
 
 /**
- * `html` with each saved "scheduled" mark of a task rewritten as Caius writes it,
- * `<em>scheduled <a href="#root/ID">label</a></em>`, so the scan reads every saved form alike.
+ * `html` with each "scheduled" mark of a task written as Caius writes it,
+ * `<em>scheduled <a href="#root/ID">label</a></em>`, and placed ahead of the description's token
+ * zone (`~30m`, `!`, `*date`), so the scan reads every saved form alike and still reads the tokens.
  */
 function withWrittenMarks(html: string): string {
   if (!html.includes('scheduled')) return html;
   const edits: Edit[] = [];
   for (const li of parse(html, { comment: true }).querySelectorAll('li')) {
     const span = descriptionOf(li);
-    if (!span) continue;
-    for (const mark of scheduledMarksOf(span)) {
-      if (mark.written) continue;
-      const label = escapeHtml(mark.label.replace(/\s+/g, ' '));
-      edits.push({ start: mark.start, end: mark.end, text: `<em>scheduled <a href="#root/${mark.noteId}">${label}</a></em>` });
+    const marks = span ? scheduledMarksOf(span) : [];
+    if (!span || !marks.length) continue;
+    const inner = span.innerHTML;
+    const innerStart = spanEnd(html, span) - inner.length;
+    // Each mark's cut includes the spaces before it; `at` is where it sits once every mark is gone.
+    const cuts = marks.map((mark) => {
+      const start = mark.start - (/(?:\s|&nbsp;)*$/.exec(html.slice(innerStart, mark.start))?.[0].length ?? 0);
+      return { mark, start, end: mark.end };
+    });
+    const zone = tokenZoneStartInHtml(apply(inner, cuts.map((c) => ({ start: c.start - innerStart, end: c.end - innerStart, text: '' }))));
+    let removed = 0;
+    let keptLength = 0;
+    const moved: string[] = [];
+    for (const { mark, start, end } of cuts) {
+      const at = start - innerStart - removed;
+      removed += end - start;
+      if (at <= zone) {
+        keptLength += end - start;
+        if (!mark.written) edits.push({ start: mark.start, end: mark.end, text: writtenForm(mark) });
+        continue;
+      }
+      edits.push({ start, end, text: '' });
+      moved.push(` ${mark.written ? html.slice(mark.start, mark.end) : writtenForm(mark)}`);
+    }
+    if (moved.length) {
+      const point = innerStart + zone + keptLength;
+      edits.push({ start: point, end: point, text: moved.join('') });
     }
   }
   return apply(html, edits);
+}
+
+function writtenForm(mark: ScheduledMark): string {
+  const label = escapeHtml(mark.label.replace(/\s+/g, ' '));
+  return `<em>scheduled <a href="#root/${mark.noteId}">${label}</a></em>`;
 }
 
 /** The item's own checkbox (in its label), not one in a nested sub-list. */

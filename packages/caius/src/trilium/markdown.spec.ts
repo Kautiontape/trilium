@@ -122,7 +122,6 @@ describe('htmlToMarkdown on a _rescheduled item the states do not list', () => {
   });
 });
 
-// These pin the output on harder notes; the pass skips a note without a mark, so they pass either way.
 describe('htmlToMarkdownWithIds on a saved mark in harder notes', () => {
   const saved = (label: string) => `<em>scheduled </em><a href="#root/tue"><em>${label}</em></a>`;
   const written = (label: string) => `_scheduled [${label}](#root/tue)_`;
@@ -167,5 +166,25 @@ describe('htmlToMarkdownWithIds on a saved mark in harder notes', () => {
     expect(out.markdown).toBe(`- [>] One ${written('Tue 3 Nov')}\n- [>] Two ${written('Wed 4 Nov')}`);
     expect([...out.itemIds]).toEqual([[0, 't1'], [1, 't2']]);
     expect([...out.critical]).toEqual([]);
+  });
+});
+
+describe('htmlToMarkdown on a mark after the trailing tokens', () => {
+  const MARKS = {
+    written: '<em>scheduled <a href="#root/tue">Tue 3 Nov</a></em>',
+    saved: '<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>',
+  };
+  const line = (text: string, state?: string) =>
+    htmlToMarkdown(`<ul class="todo-list">${todo(text, { state, checked: state === '_rescheduled' })}</ul>`, STATES);
+
+  it.each(Object.entries(MARKS))('places the %s mark ahead of the tokens, open or moved', (_shape, mark) => {
+    expect(line(`Write it ~30m ${mark}`)).toBe('- [ ] Write it _scheduled [Tue 3 Nov](#root/tue)_ ~30m');
+    expect(line(`Write it ~30m ${mark}`, '_rescheduled')).toBe('- [>] Write it _scheduled [Tue 3 Nov](#root/tue)_ ~30m');
+    expect(line(`Write it ~30m ! ${mark}`)).toBe('- [ ] Write it _scheduled [Tue 3 Nov](#root/tue)_ ~30m !');
+  });
+
+  it('leaves a mark already before the tokens, and a line without tokens, where they are', () => {
+    expect(line(`Write it ${MARKS.saved} ~30m`)).toBe('- [ ] Write it _scheduled [Tue 3 Nov](#root/tue)_ ~30m');
+    expect(line(`Write it ${MARKS.saved}`)).toBe('- [ ] Write it _scheduled [Tue 3 Nov](#root/tue)_');
   });
 });
