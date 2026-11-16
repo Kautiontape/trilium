@@ -57,8 +57,8 @@ export function caiusApi(conn: Connection) {
             tool<WriteResult>("caius_set_state", { items }),
         forward: (items: (TaskRef & { to: string; onDeck?: boolean; critical?: boolean })[]) => tool<WriteResult>("caius_forward", { items }),
         startDay: async (back?: boolean): Promise<WriteResult> => {
-            const answer = await tool<NonNullable<WriteResult["results"]>[number]>("caius_start_day", back ? { back: true } : {});
-            return { results: [ answer ] };
+            const answer = await tool<NonNullable<WriteResult["results"]>[number] & { error?: string }>("caius_start_day", back ? { back: true } : {});
+            return answer.error ? { error: answer.detail ?? answer.error } : { results: [ answer ] };
         },
         add: (items: AddItem[]) => tool<WriteResult>("caius_add", { items }),
         accept: (items: (TaskRef & { section?: string; critical?: boolean })[]) => tool<WriteResult>("caius_accept", { items }),
