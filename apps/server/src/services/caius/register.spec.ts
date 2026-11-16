@@ -62,7 +62,7 @@ it("offers the caius skill only while it is registered, and names every tool the
     for (const rule of [
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
-        "Call `caius_winddown` step `open`, then each step its answer's `next` names (`next`, then `context`). When `open` answers `next: null`, the day is a review: the message covers only its leftovers, since Plan my day sets up the next day.",
+        "Call `caius_winddown` step `open`, then each step its answer's `next` names (`next`, then `context`). When `open` skips `next`, the day is a review: the message covers its leftovers and any keep question, since Plan my day sets up the next day.",
         "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
         "A weekday he names counts from the day the ritual sets up (Plan my day's `date`, Wind down's `targetDay`), not the clock: that day's own weekday name is that day, any other is the next one after it.",
         "A task you bring into a day laid out in blocks needs its block: put it there with `caius_place` (or `block` on `caius_add`) and say which in one clause.",
