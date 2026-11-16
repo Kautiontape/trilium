@@ -13,7 +13,7 @@ vi.mock("../lib/store.js", async (importOriginal) => ({
     runWrite: async (send: () => Promise<unknown>) => { await send(); return true; }
 }));
 
-const { DayFlip } = await import("./DayFlip.js");
+const { DayFlip } = await import("./Today.js");
 
 let root: HTMLElement;
 

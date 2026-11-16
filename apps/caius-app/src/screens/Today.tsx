@@ -8,12 +8,11 @@ import { useLayoutEffect, useMemo, useRef } from "preact/hooks";
 
 import { openRitual, openSettings } from "../app-state.js";
 import { AreaMeter } from "../components/AreaMeter.js";
-import { DayFlip } from "../components/DayFlip.js";
 import { acceptFromSwipe, dismissSuggestion, ForwardSheet, markDone, startDoing, TaskSheet } from "../components/sheets.js";
 import { TaskRow } from "../components/TaskRow.js";
 import { Button, Card, Est, Icon, openSheet } from "../components/ui.js";
 import type { PlanTask } from "../lib/caius.js";
-import { clockMinutes, dayLabel, dayMinutes, duration, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
+import { clockMinutes, dayLabel, dayMinutes, duration, flipOffer, hhmm, nextWorkdayKey, parseMeeting } from "../lib/day.js";
 import { api, appNow, held, outbox, refreshing, refreshToday, runWrite, serverStatus, taskKey, today, type TodayData, todayError } from "../lib/store.js";
 
 /**
@@ -194,6 +193,22 @@ function NudgeCard({ data, now }: { data: TodayData; now: Date }) {
         );
     }
     return null;
+}
+
+/** Between midnight and the rollover: the button that starts the new day early, or takes it back. */
+export function DayFlip({ data, now }: { data: TodayData; now: Date }) {
+    const offer = flipOffer(now, data.rhythm, data.started);
+    if (!offer) {
+        return null;
+    }
+    const back = offer.kind === "back";
+    return (
+        <div class="nudge-quiet rituals-row">
+            <Button disabled={data.offline} onClick={() => void runWrite(() => api().startDay(back))}>
+                {back ? `Back to ${offer.day}` : `Start ${offer.day} now`}
+            </Button>
+        </div>
+    );
 }
 
 // ---- Now ---------------------------------------------------------------------------------------
