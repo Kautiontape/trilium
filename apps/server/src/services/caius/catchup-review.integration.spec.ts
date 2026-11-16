@@ -9,6 +9,7 @@ import { dayCapacity } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { lineIdOf } from "./daily.js";
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
 import { createBeccaStore } from "./store.js";
@@ -23,6 +24,7 @@ const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>
 const bullets = (...items: string[]) => `<ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
 
 const REVIEWED = "2026-11-10";
+const FRIDAY = "2026-11-13";
 const TODAY = "2026-11-16";
 
 const ticket = (key: string, summary: string): JiraTicket => ({
@@ -117,28 +119,21 @@ describe("a catch-up review writes only the reviewed day", () => {
         at(`${TODAY}T19:00`);
         const open = await call("caius_winddown", { date: REVIEWED, step: "open" });
         expect(open.data.items.map((item: any) => item.listItemId)).toEqual([ "cr-done", "cr-fwd", "cr-drop", "cr-area" ]);
-        const next = await call("caius_winddown", { date: REVIEWED, step: "next", refresh: true });
-        expect(next.data.candidates.map((c: any) => c.candidateId)).toEqual(expect.arrayContaining([ "ABC-21", "ABC-22", "ABC-23" ]));
-        expect(next.data.list.map((item: any) => item.listItemId)).toEqual([ "cr-list" ]);
-        expect(next.data.onDeck.map((item: any) => item.listItemId)).toEqual([ "cr-deck" ]);
-        const context = await call("caius_winddown", { date: REVIEWED, step: "context" });
-        const carry = context.data.noticed.find((line: any) => line.line === "Ben covers the on-call rotation");
-        expect(carry).toMatchObject({ kind: "carry" });
+        // The review's next and context steps show nothing of Monday, so the call names Monday's items and the carry line by id.
+        const carry = { lineId: lineIdOf("Ben covers the on-call rotation") };
 
-        // Each item is named by the ref its step gave it, as the agent names it.
+        // Each open item is named by the ref its step gave it, as the agent names it.
         const [ done, forward, drop, area ] = open.data.items.map((item: any) => item.ref);
-        const [ list ] = next.data.list.map((item: any) => item.ref);
-        const [ deck ] = next.data.onDeck.map((item: any) => item.ref);
         const answers = {
             date: REVIEWED,
             done: [ done ],
             fates: [ { listItemId: forward, to: TODAY }, { listItemId: drop, drop: "not needed" } ],
-            areas: [ { item: area, area: "growth" }, { item: list, area: "recharge" }, { item: deck, area: "recharge" } ],
+            areas: [ { item: area, area: "growth" }, { item: "cr-list", area: "recharge" }, { item: "cr-deck", area: "recharge" } ],
             accept: [ { candidateId: "ABC-21" } ],
             notToday: [ { candidateId: "ABC-23" } ],
-            carry: [ { lineId: carry.lineId } ],
+            carry: [ carry ],
             context: [ "Ana is out Tuesday" ],
-            move: [ { listItemId: forward, first: true }, { listItemId: list, after: area } ]
+            move: [ { listItemId: forward, first: true }, { listItemId: "cr-list", after: area } ]
         };
         const applied = await call("caius_winddown_apply", answers);
         expect(applied.written).toEqual(expect.arrayContaining([
@@ -194,9 +189,7 @@ describe("a catch-up review writes only the reviewed day", () => {
             await store.putContent(reviewed.noteId, `<h2>☑️ Tasks</h2>${ul(li("cm-1", "Water the plants"))}`);
         });
         at(`${TODAY}T09:00`);
-        const context = await call("caius_winddown", { date: "2026-11-12", step: "context" });
-        const carry = context.data.noticed.find((line: any) => line.line === "Ana reviews the release notes");
-        expect(carry).toMatchObject({ kind: "carry" });
+        const carry = { lineId: lineIdOf("Ana reviews the release notes") };
 
         const review = await call("caius_winddown_apply", { date: "2026-11-12", done: [ "cm-1" ], carry: [ { lineId: carry.lineId } ] });
         expect(review.skipped).toEqual([ expect.objectContaining({ kind: "carry", id: carry.lineId, reason: "review_only" }) ]);
@@ -209,8 +202,6 @@ describe("a catch-up review writes only the reviewed day", () => {
 const weekOf = (step: any, ref: string) => step.data.days.find((day: any) => day.ref === ref)?.week;
 
 describe("a wind-down of a day before today is a review", () => {
-    const FRIDAY = "2026-11-13";
-
     beforeAll(async () => {
         await cls.init(async () => {
             const friday = await store.calendarDay(FRIDAY);
@@ -251,5 +242,44 @@ describe("a wind-down of a day before today is a review", () => {
         expect(await labelsOf(TODAY, "caiusNotToday")).toEqual([]);
         const plan = await call("caius_plan", { period: "day", date: TODAY });
         expect(plan.sections.flatMap((s: any) => s.tasks).map((task: any) => task.text).join("\n")).not.toContain("ABC-21");
+    });
+});
+
+describe("a review asks nothing Plan my day asks", () => {
+    const WEDNESDAY = "2026-11-11";
+    const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
+
+    it("Mon 08:00, Review of Fri 13: the open step is the last, and the next and context steps ask nothing", async () => {
+        calendars[TODAY] = [ event("11:00", "12:00", "Design sync"), event("11:30", "12:30", "Vendor call") ];
+        at(`${TODAY}T08:00`);
+        const open = await call("caius_winddown", { date: FRIDAY, step: "open" });
+        expect(open.next).toBeNull();
+        for (const step of [ "next", "context" ]) {
+            const answer = await call("caius_winddown", { date: FRIDAY, step, refresh: true });
+            expect(answer, step).toMatchObject({ question: null, next: null });
+            expect(answer.data, step).toEqual({ summary: "Plan my day sets up Monday." });
+        }
+        delete calendars[TODAY];
+    });
+
+    it("Mon 19:00, Review of Wed 11: a dismissal in his words or a bare yes is no check, and the answers about Monday are left for Plan my day", async () => {
+        await cls.init(async () => {
+            const wednesday = await store.calendarDay(WEDNESDAY);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("wd-done", "Sort the receipts ~15m"))}`);
+        });
+        at(`${TODAY}T19:00`);
+        const dismissed = await call("caius_winddown_apply", { date: WEDNESDAY, said: "dismiss ABC-22", done: [ "wd-done" ], notToday: [ { candidateId: "ABC-23" } ] });
+        expect(dismissed.check).toBeUndefined();
+        expect(dismissed.written).toContainEqual(expect.objectContaining({ kind: "done", id: "wd-done", status: "written" }));
+        expect(dismissed.skipped).toEqual([ expect.objectContaining({ kind: "not_today", id: "ABC-23", reason: "review_only" }) ]);
+
+        await cls.init(async () => {
+            const wednesday = await store.calendarDay(WEDNESDAY);
+            const before = await store.content(wednesday.noteId);
+            await store.putContent(wednesday.noteId, before.replace("</ul>", `${li("wd-left", "Return the cables ~15m")}</ul>`));
+        });
+        const yes = await call("caius_winddown_apply", { date: WEDNESDAY, said: "yes" });
+        expect(yes.check).toBeUndefined();
+        expect(yes.written).toContainEqual(expect.objectContaining({ kind: "fate", id: "wd-left", detail: TODAY, status: "written" }));
     });
 });

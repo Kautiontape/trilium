@@ -254,7 +254,8 @@ describe("skip is not dismiss", () => {
         const note = await cls.init(async () => store.note((await call("caius_plan", { period: "day", date: MON })).noteId));
         expect(note.attributes.filter((a) => a.name === "caiusNotToday").map((a) => a.value).sort()).toEqual([ "ZAP-105", "ZAP-110" ]);
         expect(note.attributes.filter((a) => a.name === "caiusDismissed")).toEqual([]);
-        // Monday itself no longer offers them, nor its Suggested holds them.
+        // Friday evening's wind-down no longer offers them for Monday, nor does Monday's Suggested hold them.
+        at("2026-10-30T18:00");
         const forMonday = await call("caius_winddown", { date: "2026-10-30", step: "next" });
         expect(forMonday.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-110");
         expect(forMonday.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-105");

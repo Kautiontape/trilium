@@ -450,12 +450,13 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const hasAnswer = !!asked.asOffered || [
             asked.done, asked.fates, asked.accept, asked.move, asked.keep, asked.carry, asked.finished, asked.notToday, asked.dismiss, asked.areas, asked.context, asked.overlaps
         ].some((answers) => answers.length > 0);
-        const offered = [
-            ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`),
-            ...open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)))
+        const parks = open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)));
+        // A review offers nothing for the target day, so his words are checked only against the reviewed day's offers.
+        const offered = reviewOnly ? parks : [
+            ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`), ...parks
         ];
         const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...finishedChecks(input.unmatched), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
-            ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
+            ...(reviewOnly ? [] : [ ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ]) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
         // A review answers none of these questions, so Plan my day still asks them.
         if (!reviewOnly) {

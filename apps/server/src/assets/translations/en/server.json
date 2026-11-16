@@ -680,6 +680,7 @@
       "yesterday_not_wound_down": "It wasn't wound down.",
       "yesterday_empty": "{{- day}} had nothing on its list.",
       "nothing_open": "Nothing is open: the day's list is closed and nothing has slipped.",
+      "review_sets_up": "Plan my day sets up {{- day}}.",
       "park": "'{{- task}}' has been carried {{count}} times. Park it in {{- month}}?",
       "over": "{{- day}} is over by about {{hours}} h. Which of these can wait?",
       "overlap": "{{- first}} overlaps {{- second}} at {{time}}. Which one do you take?",

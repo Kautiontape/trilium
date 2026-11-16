@@ -141,8 +141,11 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
-        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay, review), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay, review), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, review ? null : "next");
     }
+
+    // A review leaves the target day to Plan my day, so its next and context steps ask nothing.
+    if (review) return reply(await deps.locked("caius_winddown", deps.standing), { summary: t("caius.daily.review_sets_up", { day: weekdayName(targetDay) }) }, null, null);
 
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
