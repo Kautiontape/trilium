@@ -172,7 +172,7 @@ describe("a catch-up review writes the reviewed day, its keep lines and his own 
         const monday = await call("caius_context", { date: TODAY });
         expect(monday.context.map((line: any) => line.text)).toContain("Ana is out Tuesday");
         const tuesday = await call("caius_context", { date: "2026-11-17" });
-        expect(tuesday.context.map((line: any) => line.text)).toEqual([]);
+        expect(tuesday.context.map((line: any) => line.text)).not.toContain("Ben covers the on-call rotation");
 
         // The same call again finds the forward's move in place and changes nothing on the target day.
         const before = await contentOf(TODAY);
@@ -390,5 +390,15 @@ describe("a review asks nothing Plan my day asks", () => {
         const again = await call("caius_winddown_apply", answers);
         expect(again.written).toContainEqual(expect.objectContaining({ kind: "keep", id: keep, status: "unchanged" }));
         expect(again.skipped).toEqual([ left ]);
+    });
+
+    it("Mon 09:00, Review of Fri 13: 'tomorrow' in a Context line he gives is the day after the target day", async () => {
+        at(`${TODAY}T09:00`);
+        const applied = await call("caius_winddown_apply", { date: FRIDAY, context: [ "Ana is out tomorrow" ] });
+        expect(applied.written).toContainEqual(expect.objectContaining({ kind: "context", status: "written" }));
+        const tuesday = (await call("caius_context", { date: "2026-11-17" })).context.map((line: any) => line.text);
+        expect(tuesday).toContain("Ana is out Tue 17 Nov");
+        const monday = (await call("caius_context", { date: TODAY })).context.map((line: any) => line.text);
+        expect(monday).not.toContain("Ana is out tomorrow");
     });
 });

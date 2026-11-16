@@ -635,7 +635,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "dismiss" }, skipped, () => dismiss(store, targetDay, now, onTarget.dismiss, known, read.inputs.jira.asks, written, skipped));
         if (!reviewOnly) await guarded({ kind: "suggested" }, skipped, () => shelve(store, targetDay, now, candidates, input, written, skipped));
         eveningRetired(asked.evening, skipped);
-        await guarded({ kind: "context" }, skipped, () => contextLines(store, targetDay, now, onTarget.context, written, skipped));
+        // A review run on its target day reads "tomorrow" as the day after it, as Plan my day does.
+        await guarded({ kind: "context" }, skipped, () => contextLines(store, targetDay, now, onTarget.context, written, skipped, { tomorrow: targetDay === dayKey(now) }));
         await guarded({ kind: "overlap" }, skipped, () => takeOverlaps(store, targetDay, now, read, onTarget.overlaps, written, skipped));
         if (!reviewOnly && !failedCalendar(read)) await recordFocus(store, targetDay, read, now);
         // The day is closed only when every item got its fate, so a later catch-up looks no further back.
