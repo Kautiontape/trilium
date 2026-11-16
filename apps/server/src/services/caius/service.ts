@@ -22,8 +22,8 @@ import {
     DEFAULT_WORK_END,
     diffSummary,
     dismissTasks,
-    effectiveRollover,
     duplicateWarnings,
+    effectiveRollover,
     ensureListItemIds,
     findPeriodNote,
     forwardTasks,
@@ -93,8 +93,8 @@ import {
     type PlanDayInput,
     type PlanInput,
     type PlaceInput,
-    type SetAreaInput,
     type RewordInput,
+    type SetAreaInput,
     type SetEstimateInput,
     type SetStateInput,
     type ShowInput,
@@ -115,7 +115,7 @@ import type { CalendarEvent, InputError } from "./inputs/types.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { showView } from "./views.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
-import { contextAddOn, contextKeepOn, drawHeader, finishedOn, skipCatchupOn, startDayOn, TERRAIN_TITLE } from "./writes.js";
+import { clockText, contextAddOn, contextKeepOn, drawHeader, finishedOn, localIso, skipCatchupOn, startDayOn, TERRAIN_TITLE } from "./writes.js";
 
 export { routeInputs } from "./schemas.js";
 
@@ -209,8 +209,7 @@ export function createCaiusService(
             ? (await dayLabels(store, localIso(at).slice(0, 10), STARTED_LABEL))[0] ?? null
             : null;
         const rollover = effectiveRollover(real, started, at);
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const rhythm = { ...read, rollover: `${pad(Math.floor(rollover / 60))}:${pad(rollover % 60)}` };
+        const rhythm = { ...read, rollover: clockText(rollover) };
         return { standing, rhythm, started, now: workdayNow(at, rollover) };
     }
 
@@ -585,9 +584,10 @@ export function createCaiusService(
         contextKeep: ({ date, lines, dryRun }: ContextKeepInput) => withCaiusLock("caius_context_keep", async () =>
             withBlobIds((await contextKeepOn(store, date, lines, { dryRun, now: await todayHeld() })).map((result) => withDiff(result)))),
 
-        /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
         /** Starts today's calendar date early (or takes it back), at the standing note's own rollover. */
         startDay: ({ back }: StartDayInput) => withCaiusLock("caius_start_day", async () => startDayOn(store, caiusNow(), rolloverOf(readRhythm((await readStanding()).markdown)), back)),
+
+        /** Labels the day note `#caiusSkipCatchup=<date>`, so Plan my day treats its catch-up as done. */
         skipCatchup: ({ date }: SkipCatchupInput) => withCaiusLock("caius_skip_catchup", () => skipCatchupOn(store, date)),
 
         /**
@@ -749,12 +749,6 @@ export function caiusNow(env: Record<string, string | undefined> = process.env):
 export function caiusDevNow(env: Record<string, string | undefined> = process.env): string | undefined {
     const at = clockOverride(env);
     return at ? localIso(at) : undefined;
-}
-
-/** A moment as local `YYYY-MM-DDTHH:mm:ss`. */
-function localIso(at: Date): string {
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
 /**

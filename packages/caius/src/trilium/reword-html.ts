@@ -3,9 +3,9 @@ import { parseClock } from '../inputs/capacity.js';
 import { clockOf, stripMarker } from './areas.js';
 import { backLinkOf } from './forward-html.js';
 import { apply, descriptionOf, findItem, inProseSection, isTask, itemState, sectionOf, spanEnd, tokenZoneStart, tokenZoneStartInHtml } from './html-util.js';
+import { taskKeys } from './keys.js';
 import type { StateSymbols } from './markdown.js';
 import { escapeHtml } from './plan-html.js';
-import { taskKeys } from './keys.js';
 import { isSuggestedName } from './sections.js';
 
 export type RewordProblem = 'not_found' | 'not_live' | 'moved' | 'cancelled' | 'suggested' | 'empty';

@@ -81,7 +81,7 @@ export async function startDayOn(store: NoteStore, at: Date, rollover: number, b
     }
     if (at.getHours() * 60 + at.getMinutes() >= rollover) {
         const today = dayOf(workdayKey(at, rollover));
-        const until = `${String(Math.floor(rollover / 60)).padStart(2, "0")}:${String(rollover % 60).padStart(2, "0")}`;
+        const until = clockText(rollover);
         return { status: "skipped", reason: "not_small_hours", ...today, detail: `A day starts early only between 00:00 and ${until}; ${today.dateLabel} is today.` };
     }
     const existing = await findPeriodNote(store, "day", date);
@@ -98,9 +98,15 @@ function dayOf(date: string) {
     return { date, dateLabel: dateLabel(date) ?? date };
 }
 
-function localIso(at: Date): string {
+/** A moment as local `YYYY-MM-DDTHH:mm:ss`. */
+export function localIso(at: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
+
+/** Minutes after midnight as `HH:MM`. */
+export function clockText(minutes: number): string {
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
 /**
