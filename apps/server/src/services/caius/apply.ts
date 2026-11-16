@@ -1909,9 +1909,9 @@ async function nestAll(store: NoteStore, date: string, now: Date, nests: PlanApp
 }
 
 /**
- * The task of the day's main list, or of its On deck, that `id` names, sub-items too: the item itself, the copy of an
- * item the call moved here (`refs.moved`, by its back link and keys), or the task that carries a
- * candidate's keys, a live one first.
+ * The task of the day's main list, or of its On deck, that `id` names, sub-items too: the item
+ * itself, the copy of an item the call moved here (`refs.moved`, by its back link and keys), or the
+ * task that carries a candidate's keys, a live one first.
  */
 function onDay(plan: Awaited<ReturnType<typeof readPlan>>, id: string, refs: Refs) {
     const tasks = [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ];
