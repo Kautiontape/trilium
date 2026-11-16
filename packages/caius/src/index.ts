@@ -33,6 +33,8 @@ export type { AddRequest, AcceptRequest, CommitRequest, ItemRequest, MoveRequest
 export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './trilium/keys.js';
 export { ON_DECK, placeInDay, placeTask, setTaskArea, setTaskEstimate, setTaskState, takeOnDeck, takeSuggested } from './trilium/plan-html.js';
 export type { AreaProblem, DayPlace, EstimateProblem, PlaceProblem, StateAction, Target } from './trilium/plan-html.js';
+export { addUnder, liftOut, nestNew, nestUnder } from './trilium/nest-html.js';
+export type { NestFailure, NestProblem, NestResult } from './trilium/nest-html.js';
 export { now as caiusClock, clockOverride } from './clock.js';
 export { nextWorkday, lastWorkday, workdayKey, workdayNow, workdayMinutes, workdayClock, DEFAULT_ROLLOVER } from './workday.js';
 export { contextNotes, gatherContext } from './trilium/context.js';

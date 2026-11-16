@@ -27,3 +27,5 @@ export type { AddRequest, AcceptRequest, ItemRequest, PlanResult, PlanOptions, P
 export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './keys.js';
 export { ON_DECK, placeTask, setTaskState, takeOnDeck, takeSuggested } from './plan-html.js';
 export type { StateAction, Target } from './plan-html.js';
+export { addUnder, liftOut, nestNew, nestUnder } from './nest-html.js';
+export type { NestFailure, NestProblem, NestResult } from './nest-html.js';
