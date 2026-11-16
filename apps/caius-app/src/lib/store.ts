@@ -41,6 +41,8 @@ export const outbox = signal<Capture[]>(readLocalList<Capture>("outbox"));
 export const snack = signal<Snack | null>(null);
 /** Tasks with a write held behind Undo, by `noteId/listItemId`, and the state they show meanwhile. */
 export const held = signal<Record<string, HeldState>>({});
+/** The new words of a task whose reword is held behind Undo or on its way, by `noteId/listItemId`. */
+export const rewording = signal<Record<string, string>>({});
 /** Bumped after every write, so open lists read again. */
 export const revision = signal(0);
 
@@ -169,16 +171,42 @@ let pending: HeldWrite | null = null;
  * held write sends the first at once.
  */
 export function holdWrite(task: TaskRef, state: HeldState, text: string, send: () => Promise<unknown>) {
-    void flushHeld();
     const key = taskKey(task);
-    held.value = { ...held.value, [key]: state };
+    hold(key, text, send, {
+        show: () => {
+            held.value = { ...held.value, [key]: state };
+        },
+        clear: () => {
+            held.value = without(held.value, key);
+        }
+    });
+}
+
+/**
+ * Holds a reword like `holdWrite`, but the row stays live: `rewording` carries the new words for
+ * it to show until the write has been sent or Undo cancels it.
+ */
+export function holdReword(task: TaskRef, words: string, send: () => Promise<unknown>) {
+    const key = taskKey(task);
+    hold(key, `Edited: ${words}`, send, {
+        show: () => {
+            rewording.value = { ...rewording.value, [key]: words };
+        },
+        clear: () => {
+            rewording.value = without(rewording.value, key);
+        }
+    });
+}
+
+function hold(key: string, text: string, send: () => Promise<unknown>, row: { show: () => void; clear: () => void }) {
+    void flushHeld();
+    row.show();
     const write: HeldWrite = {
         key,
         timer: setTimeout(() => void flushHeld(), 4000),
         send: async () => {
             await runWrite(send);
-            const { [key]: _gone, ...rest } = held.value;
-            held.value = rest;
+            row.clear();
         }
     };
     pending = write;
@@ -190,13 +218,17 @@ export function holdWrite(task: TaskRef, state: HeldState, text: string, send: (
                 if (pending === write) {
                     clearTimeout(write.timer);
                     pending = null;
-                    const { [key]: _undone, ...rest } = held.value;
-                    held.value = rest;
+                    row.clear();
                 }
                 snack.value = null;
             }
         }
     };
+}
+
+function without<T>(record: Record<string, T>, key: string): Record<string, T> {
+    const { [key]: _gone, ...rest } = record;
+    return rest;
 }
 
 /** Sends the write held behind Undo now: when its time is up, or the app goes to the background. */

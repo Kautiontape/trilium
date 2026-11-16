@@ -11,6 +11,7 @@ import { cancelReminder, inQuietHours, scheduleReminder } from "../lib/notify.js
 import { originView, type OriginView } from "../lib/origin.js";
 import { reminderChoices, whenLabel } from "../lib/remind.js";
 import { api, appNow, connection, holdWrite, messageOf, refOf, reminders, runWrite, saveReminders, settings, snack, today } from "../lib/store.js";
+import { RewordSheet } from "./RewordSheet.js";
 import { displayText } from "./TaskRow.js";
 import { Button, Chip, closeSheet, haptic, openSheet, SheetAction, SheetTitle } from "./ui.js";
 
@@ -116,6 +117,7 @@ export function TaskSheet({ task, periodKey, suggested }: { task: PlanTask; peri
                     <SheetAction glyph="alarm" label="Remind me" detail="▸" onClick={() => openSheet(<RemindSheet task={task} periodKey={periodKey} />)} />
                 </>
             )}
+            {!offline && !suggested && (live || task.state === "done") && <SheetAction glyph="edit_square" label="Edit" onClick={() => openSheet(<RewordSheet task={task} />)} />}
             <SheetAction glyph="help" label="Why is this here?" onClick={() => openSheet(<ExplainSheet task={task} />)} />
             {conn && <SheetAction glyph="open_in_new" label="Open in Trilium" onClick={() => openInTrilium(conn.url, task.noteId)} />}
             {!offline && !suggested && live && <SheetAction glyph="close" tone="berry" label="Drop…" onClick={() => openSheet(<DropSheet task={task} />)} />}
