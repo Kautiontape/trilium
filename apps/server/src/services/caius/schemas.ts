@@ -258,12 +258,16 @@ const nestAnswers = z.array(z.object({
         .describe(`The tasks to put under it, in order, each by ${NAMED}: an item of his list (l…), a candidate (c…, taken first when the call doesn't accept it) or a catch-up item (o…, the day's copy once the catch-up moves it in the same call)`),
     under: z.union([
         z.string().trim().min(1).describe(`A task of his list: ${NAMED}`),
-        z.object({
+        z.object({ listItemId: z.string().trim().min(1).optional(), ref: z.string().trim().min(1).optional(), text: z.string().optional() })
+            .refine((task) => task.listItemId !== undefined || task.ref !== undefined)
+            .transform((task) => task.listItemId ?? task.ref ?? "")
+            .describe("A task of his list as the inputs step's data.nests offers it ({ listItemId, ref, text }): the same as its ref"),
+        z.strictObject({
             text: z.string().trim().min(1).describe("The new parent's words, such as \"09:30 Standup\" or \"Caius fixes\""),
             est: z.string().trim().refine((est) => parseEstimate(est) !== null, "Must look like 15m, 2h or 1h30m").optional()
                 .describe("The new parent's estimate, such as 15m, which covers the tasks under it")
         })
-    ]).describe("Where they go: a task of his list, the items becoming its last sub-items, or { text, est? }, a new parent made where the first item stood")
+    ], { error: "under is a task of his list (an id or l… ref, or the { listItemId, ref, text } object the step offered) or a new parent { text, est? } with no other keys" }).describe("Where they go: a task of his list, the items becoming its last sub-items, or { text, est? }, a new parent made where the first item stood")
 })).default([])
     .describe("Only the nests he said yes to, from the inputs step's data.nests or one Caius proposed: each one's items become sub-items of one task, written after the accepts and moves. Every item must be in the day's note: one still on another day is skipped other_note, and only the catch-up or a forward brings it here");
 /** His reply word for word, which the apply reads the fates he named from and checks a dismissal against. */

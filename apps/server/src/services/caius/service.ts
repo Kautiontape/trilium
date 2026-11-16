@@ -857,12 +857,18 @@ async function filedItem(store: NoteStore, { block, area, ...given }: AddInput["
 
 /**
  * The list item id that `under` names in note `noteId`: `under` itself when it is an id there, else the id whose
- * `l…` ref it is. An unmatched value goes to the library as given, which answers `not_found` or `other_note`.
+ * `l…` ref it is, else the id of that ref in another Journal note, which the library then names as `other_note`.
+ * An unmatched value goes to the library as given, which answers `not_found`.
  */
 async function underIdOf(store: NoteStore, noteId: string, under: string): Promise<string> {
     const ids = [ ...(await store.content(noteId)).matchAll(/data-list-item-id="([^"]+)"/g) ].map((m) => m[1]);
     if (ids.includes(under)) return under;
-    return ids.find((id) => refOf("l", id) === under.trim().toLowerCase()) ?? under;
+    const ref = under.trim().toLowerCase();
+    const here = ids.find((id) => refOf("l", id) === ref);
+    if (here !== undefined) return here;
+    const docs = (await loadJournal(store)).docs;
+    const elsewhere = docs.flatMap((doc) => [ ...doc.itemIds.values() ]).find((id) => refOf("l", id) === ref);
+    return elsewhere ?? under;
 }
 
 /** The heading of a day note's main task list, which a task filed by area alone falls under when the note has no Morning. */

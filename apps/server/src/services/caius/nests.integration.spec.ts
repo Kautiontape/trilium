@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs } from "./inputs/types.js";
 import { refOf } from "./refs.js";
-import type { InputsInput } from "./schemas.js";
+import { type InputsInput, toolInputs } from "./schemas.js";
 import { createBeccaStore, createChildNote } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
@@ -131,6 +131,7 @@ describe("caius_planday inputs: nests", () => {
 describe("caius_plan_apply: nest", () => {
     const LIST_DAY = "2035-03-05";
     const ASK_DAY = "2035-04-04";
+    const OBJECT_DAY = "2035-04-11";
     const OLD_DAY = "2035-06-07";
     const NEXT_DAY = "2035-06-08";
     const prose = { headline: "A day of fixes", sections: [] };
@@ -143,12 +144,22 @@ describe("caius_plan_apply: nest", () => {
                 li("n1", "Fix the login bug"), li("n2", "Fix the export bug"), li("n3", "Write the report ~20m"), li("n4", "Plan the sprint")
             )}`);
             ids.ask = await dayNote(ASK_DAY, `<h3>Work</h3>${ul(li("w1", "09:30 Standup"), li("w2", "Write the report ~20m"))}`);
+            ids.object = await dayNote(OBJECT_DAY, `<h3>Work</h3>${ul(li("u1", "09:30 Standup"), li("u2", "Write the report ~20m"))}`);
             ids.old = await dayNote(OLD_DAY, `<h3>Work</h3>${ul(li("v1", "Renew the passport"))}`);
             ids.next = await dayNote(NEXT_DAY, `<h3>Work</h3>${ul(li("x1", "Call the bank"))}`);
         });
         calendars[ASK_DAY] = [ {
             start: "09:30", end: "09:45", title: "Standup", attendees: [ "ana.lopez@example.com", "Ben Ortiz" ], allDay: false, declined: false, source: [ 0 ]
         } ];
+        calendars[OBJECT_DAY] = calendars[ASK_DAY];
+        jiraByDate[OBJECT_DAY] = {
+            handoff: [],
+            asks: [ {
+                ticket: { key: "ABC-22", summary: "Summary ABC-22", status: "Dev Verify", resolution: null, url: "https://example.atlassian.net/browse/ABC-22", assignee: "Me", updated: "2035-04-10T10:00:00.000-0400" },
+                author: "Ana Lopez", created: "2035-04-10T09:00:00.000-0400", commentId: "3", excerpt: "Can you look?"
+            } ],
+            done: []
+        };
         jiraByDate[ASK_DAY] = {
             handoff: [],
             asks: [ {
@@ -220,6 +231,27 @@ describe("caius_plan_apply: nest", () => {
         expect(again.written.filter((entry: any) => entry.status !== "unchanged")).toEqual([]);
         expect(again.written.filter((entry: any) => entry.kind === "nest")).toEqual([ expect.objectContaining({ status: "unchanged", parentListItemId: "w1" }) ]);
         expect(await snapshot()).toEqual(before);
+    });
+
+    it("takes the offer's under object as the task it names, and makes no second parent", async () => {
+        const offered = await planday(OBJECT_DAY);
+        const [ offer ] = offered.data.nests;
+        expect(offer.under).toEqual({ listItemId: "u1", ref: expect.any(String), text: "Standup" });
+        const schema = toolInputs.planApply;
+        const asked = (under: unknown, items: string[]) => ({ date: OBJECT_DAY, said: "yes", nest: [ { items, under } ], brief: prose });
+
+        const parsed = schema.parse(asked(offer.under, offer.items.map((item: any) => item.ref)));
+        expect(parsed.nest[0]?.under).toBe("u1");
+        const result = await call("caius_plan_apply", parsed);
+        expect(result.skipped).toEqual([]);
+        expect(result.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "nest", status: "written", parentListItemId: "u1" }) ]));
+        expect(await content(ids.object)).toMatch(/<li data-list-item-id="u1">(?:(?!<\/li>).)*<ul class="todo-list"><li [^>]*>(?:(?!<\/li>).)*ABC-22/);
+        expect(result.written.filter((entry: any) => entry.kind === "nest").map((entry: any) => entry.parentListItemId)).toEqual([ "u1" ]);
+
+        expect(schema.parse(asked({ ref: offer.under.ref }, [ "u2" ])).nest[0]?.under).toBe(offer.under.ref);
+        const refused = schema.safeParse(asked({ text: "Group", note: "x" }, [ "u2" ]));
+        expect(refused.success).toBe(false);
+        expect(schema.safeParse(asked({ text: "Group", est: "15m" }, [ "u2" ])).success).toBe(true);
     });
 
     it("skips a task of another day's note as other_note and forwards nothing, until the catch-up moves it here", async () => {

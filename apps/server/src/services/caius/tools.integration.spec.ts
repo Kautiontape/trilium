@@ -333,6 +333,8 @@ describe("caius tools", () => {
 
             await reset();
             expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p3", under: "t1" }] })).results[0]).toMatchObject({ status: "skipped", reason: "other_note" });
+            expect((await call("caius_place", { items: [{ noteId: blockNote, listItemId: "p3", under: refOf("l", "t1") }] })).results[0]).toMatchObject({ status: "skipped", reason: "other_note" });
+            expect((await call("caius_add", { items: [{ date: BLOCK_DAY, text: "Answer Cy", under: refOf("l", "t1") }] })).results[0]).toMatchObject({ status: "skipped", reason: "other_note" });
         });
 
         it("caius_set_state answers parentComplete when a tick closes a parent's last open sub-item", async () => {
