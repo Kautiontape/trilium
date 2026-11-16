@@ -87,3 +87,28 @@ describe('htmlToMarkdownWithIds', () => {
     expect(ids).toEqual(['eaaa', 'ebbb', 'eccc']);
   });
 });
+
+describe('htmlToMarkdown on a moved task\'s "scheduled" mark', () => {
+  const MARKS: Record<string, [string, string]> = {
+    'as written': ['<em>scheduled <a href="#root/tue">Tue 3 Nov</a></em>', 'Tue 3 Nov'],
+    'as the editor saves it': ['<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>', 'Tue 3 Nov'],
+    'as a saved reference link': ['<em>scheduled&nbsp;</em><a class="reference-link" href="#root/tue">03 - Tuesday</a>', '03 - Tuesday'],
+    'after the Markdown round trip': ['<em>scheduled</em> <a href="#root/tue"><em>Tue 3 Nov</em></a>', 'Tue 3 Nov'],
+    'as a reference link after the round trip': ['<em>scheduled</em>&nbsp;<a class="reference-link" href="#root/tue">03 - Tuesday</a>', '03 - Tuesday'],
+  };
+  const moved = (text: string) => htmlToMarkdownWithIds(`<ul class="todo-list">${todo(text, { state: '_rescheduled', checked: true }).replace('<li ', '<li data-list-item-id="t1" ')}</ul>`, STATES);
+
+  it.each(Object.entries(MARKS))('reads the mark %s as written, with the item id kept', (_shape, [mark, label]) => {
+    const out = moved(`Ring the plumber ${mark}`);
+    expect(out.markdown).toBe(`- [>] Ring the plumber _scheduled [${label}](#root/tue)_`);
+    expect(out.markdown).not.toContain('\u00a0');
+    expect(out.itemIds.get(0)).toBe('t1');
+  });
+
+  it('leaves a bare "scheduled", his own word and other #root/ links as they are', () => {
+    expect(moved('Ring the plumber <em>scheduled</em>').markdown).toBe('- [>] Ring the plumber _scheduled_');
+    expect(moved('Ring the plumber scheduled <a href="#root/tue">Tue 3 Nov</a>').markdown).toBe('- [>] Ring the plumber scheduled [Tue 3 Nov](#root/tue)');
+    expect(moved('Ring the plumber <em>scheduled <a href="#root/tue">Tue 3 Nov</a></em> and <a href="#root/x">a b</a>').markdown)
+      .toBe('- [>] Ring the plumber _scheduled [Tue 3 Nov](#root/tue)_ and [a b](#root/x)');
+  });
+});

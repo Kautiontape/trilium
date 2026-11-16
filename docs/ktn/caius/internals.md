@@ -141,7 +141,7 @@ Forwarding moves a task the way you do by hand. The old item becomes Rescheduled
 
 ### Plain internal links
 
-The links written into forwarded tasks (`scheduled Tue 27 Oct`, `from Mon 26 Oct`) are **plain internal links**, `<a href="#root/<noteId>">text</a>`, not `reference-link` anchors. CKEditor treats a `reference-link` as a live reference: when the note is opened and saved it replaces the link text with the target note's title (`27 - Tuesday`) and loses the italic around it. A plain link keeps its text and its italic through the editor. Both readers still understand the old reference-link markup in notes written earlier.
+The links written into forwarded tasks (`scheduled Tue 27 Oct`, `from Mon 26 Oct`) are **plain internal links**, `<a href="#root/<noteId>">text</a>`, not `reference-link` anchors. CKEditor treats a `reference-link` as a live reference: when the note is opened and saved it replaces the link text with the target note's title (`27 - Tuesday`) and loses the italic around it. The editor keeps a plain link's text and target but saves the mark as `<em>scheduled </em><a href="#root/…"><em>Tue 27 Oct</em></a>`. It saves an old reference link as `<em>scheduled&nbsp;</em><a class="reference-link" …>27 - Tuesday</a>`, and the LLM note tools' Markdown round trip moves the space out of the italic. Every reader takes each of these forms (`scheduledMarksOf` in `forward-html.ts`). The scan rewrites a saved mark as Caius writes it before it converts the note, so the parser sees `_scheduled [Tue 27 Oct](#root/…)_` whatever the editor saved, and the note is never changed. A bare italic "scheduled" with no link is not a mark.
 
 ### Finding the item
 

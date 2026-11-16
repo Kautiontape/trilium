@@ -7,7 +7,11 @@
 // stays a task marker, and `~`/`!` tokens stay tokens), and a nested list sits
 // directly under its parent line with no blank line between.
 
+import { parse } from 'node-html-parser';
 import TurndownService from 'turndown';
+import { scheduledMarksOf } from './forward-html.js';
+import { apply, descriptionOf, type Edit } from './html-util.js';
+import { escapeHtml } from './plan-html.js';
 
 /** Task state id (the `stateId` label) → its single-character markdown symbol. */
 export type StateSymbols = ReadonlyMap<string, string>;
@@ -100,7 +104,25 @@ function convert(html: string, states: StateSymbols): string {
     replacement: (content) => `\n${content.replace(/\n+$/, '')}`,
   });
 
-  return td.turndown(html);
+  return td.turndown(withWrittenMarks(html));
+}
+
+/**
+ * `html` with each saved "scheduled" mark of a task rewritten as Caius writes it,
+ * `<em>scheduled <a href="#root/ID">label</a></em>`, so the scan reads every saved form alike.
+ */
+function withWrittenMarks(html: string): string {
+  const edits: Edit[] = [];
+  for (const li of parse(html, { comment: true }).querySelectorAll('li')) {
+    const span = descriptionOf(li);
+    if (!span) continue;
+    for (const mark of scheduledMarksOf(span)) {
+      if (mark.written) continue;
+      const label = escapeHtml(mark.label.replace(/\s+/g, ' '));
+      edits.push({ start: mark.start, end: mark.end, text: `<em>scheduled <a href="#root/${mark.noteId}">${label}</a></em>` });
+    }
+  }
+  return apply(html, edits);
 }
 
 /** The item's own checkbox (in its label), not one in a nested sub-list. */
