@@ -319,6 +319,16 @@ describe("sub-items", () => {
         expect(ids(task({ listItemId: "s", text: "Solo" }), parent, subs[1])).toEqual([ "s", "p" ]);
     });
 
+    it("lists a task nested under a sub-item, and a done sub-item parent of a live one", () => {
+        const ids = (...onDeck: CaiusPlanTask[]) =>
+            onDeckTasks({ ...planOf([]), onDeck }).map((t) => t.listItemId);
+        const a = task({ listItemId: "A", text: "Alpha" });
+        const b = task({ listItemId: "B", text: "Beta", parent: "Alpha", parentListItemId: "A" });
+        const c = task({ listItemId: "C", text: "Gamma", parent: "Beta", parentListItemId: "B" });
+        expect(ids(a, { ...b, state: "done" }, c)).toEqual([ "A", "C" ]);
+        expect(ids({ ...a, state: "done" }, { ...b, state: "done" }, c)).toEqual([ "B" ]);
+    });
+
     it("counts a parent's direct sub-items as done over total, or as open for a done parent", () => {
         const [ listed ] = [ ...subItemsOf([ parent, ...subs ]).entries() ];
         expect(listed[0]).toBe(parent);

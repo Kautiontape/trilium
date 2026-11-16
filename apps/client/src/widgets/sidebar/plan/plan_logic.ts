@@ -147,9 +147,9 @@ export function planTasks(plan: CaiusPlan) {
 }
 
 /**
- * The tasks of a day's On deck that get a row, in order: a parent that is live, or done with a live
- * sub-item; a live task without a parent; and a live sub-item whose parent is neither, as a task of
- * its own. A sub-item of a listed parent stays under it.
+ * The tasks of a day's On deck that get a row, in order. A task is a row when it is live, or done
+ * with a live sub-item, and its parent is not a row; a sub-item of a row stays under it, and one
+ * whose parent is not a row, for instance a cancelled one, is a row of its own.
  */
 export function onDeckTasks(plan: CaiusPlan) {
     const onDeck = plan.onDeck ?? [];
@@ -161,13 +161,16 @@ export function onDeckTasks(plan: CaiusPlan) {
         }
     }
 
-    const isListedParent = (task: CaiusPlanTask) =>
-        isLive(task) || (task.state === "done" && withLiveSub.has(task));
-
-    return onDeck.filter((task) => {
+    const rows = new Set<CaiusPlanTask>();
+    for (const task of onDeck) {
         const parent = parents.get(task);
-        return parent ? isLive(task) && !isListedParent(parent) : isListedParent(task);
-    });
+        const listable = isLive(task) || (task.state === "done" && withLiveSub.has(task));
+        if (listable && !(parent && rows.has(parent))) {
+            rows.add(task);
+        }
+    }
+
+    return onDeck.filter((task) => rows.has(task));
 }
 
 /**
