@@ -30,6 +30,7 @@ import {
     overlapPairs,
     openTasks,
     PERIODS,
+    placeTasks,
     readPlan,
     scanDocs,
     setAreas,
@@ -1844,6 +1845,8 @@ interface Refs {
  * a listItemId of the list, a candidate's id or the id of an item the call moved here, found on the
  * list by its key or, for an item whose copy has a new id, by its text without the forward links;
  * of several copies with that text, the one whose back link points at the note it came from.
+ * `first` is the first of the item's own list; `before` and `after` go through `placeTasks`, so an
+ * item of another time block puts it in that block, next to that item.
  */
 async function placeOnList(store: NoteStore, date: string, now: Date, entry: { kind: string; id: string }, item: string, place: { first?: boolean; before?: string; after?: string }, refs: Refs, written: Written[], skipped: Skipped[]) {
     const by = place.before ?? place.after;
@@ -1873,7 +1876,9 @@ async function placeOnList(store: NoteStore, date: string, now: Date, entry: { k
         return;
     }
     const where = place.first ? { first: true } : place.before !== undefined ? { before: anchor } : { after: anchor };
-    const [ result ] = await moveTasks(store, [ { noteId, listItemId: task.listItemId, ...where } ]);
+    const [ result ] = place.first
+        ? await moveTasks(store, [ { noteId, listItemId: task.listItemId, first: true } ])
+        : await placeTasks(store, [ { noteId, listItemId: task.listItemId, ...where } ]);
     const other = tasks.find((t) => t.listItemId === anchor)?.text;
     record(written, skipped, { ...entry, text: task.text, detail: place.first ? "first" : place.before !== undefined ? "before" : "after", ...(other ? { anchor: other } : {}) }, result);
 }
