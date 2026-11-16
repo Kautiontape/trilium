@@ -133,9 +133,9 @@ describe("carryListItemIds", () => {
     });
 
     it("matches at a similarity of exactly 0.5 and not below", () => {
-        // abcde / abcxy: 2 common of 4 + 4 bigrams = 4/8. abcdef / abcxyz: 2 of 5 + 5 = 4/10.
+        // abcde / abcxy: 2 common of 4 + 4 bigrams = 4/8. abcde / abcxyz: 2 of 4 + 5 = 4/9.
         const at = carryListItemIds(withIds([["e1", "abcde"]]), list(["abcxy"]), counter());
-        const below = carryListItemIds(withIds([["e1", "abcdef"]]), list(["abcxyz"]), counter());
+        const below = carryListItemIds(withIds([["e1", "abcde"]]), list(["abcxyz"]), counter());
 
         expect(idsOf(at)).toEqual(["e1"]);
         expect(idsOf(below)).toEqual(["fresh1"]);
