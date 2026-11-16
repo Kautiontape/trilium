@@ -283,23 +283,35 @@ describe("a review asks nothing Plan my day asks", () => {
         expect(yes.written).toContainEqual(expect.objectContaining({ kind: "fate", id: "wd-left", detail: TODAY, status: "written" }));
     });
 
-    it("Mon 19:00, Review of Wed 11: a keep line and a dismissal passed anyway are left for Plan my day", async () => {
+    it("Mon 19:00, Review of Wed 11: the keep line of its Context is asked and kept; a carry and a dismissal are left for Plan my day", async () => {
         await cls.init(async () => {
             const wednesday = await store.calendarDay(WEDNESDAY);
             const before = await store.content(wednesday.noteId);
             await store.putContent(wednesday.noteId, `<h3>Context</h3>${bullets("ABC-30 is open (until Thu 12 Nov)")}${before}`);
         });
         at(`${TODAY}T19:00`);
+        const open = await call("caius_winddown", { date: WEDNESDAY, step: "open" });
+        expect(open.next).toBe("context");
+        const next = await call("caius_winddown", { date: WEDNESDAY, step: "next" });
+        expect(next).toMatchObject({ question: null, next: "context" });
+        const context = await call("caius_winddown", { date: WEDNESDAY, step: "context" });
+        expect(context).toMatchObject({ question: "Keep 'ABC-30 is open'?", next: null });
+        expect(context.data.noticed).toEqual([ expect.objectContaining({ kind: "keep", line: "ABC-30 is open" }) ]);
+
         const keep = lineIdOf("ABC-30 is open");
-        const applied = await call("caius_winddown_apply", { date: WEDNESDAY, keep: [ { lineId: keep } ], dismiss: [ { candidateId: "ABC-22" } ] });
+        const carry = lineIdOf("Ben covers the on-call rotation");
+        const applied = await call("caius_winddown_apply", { date: WEDNESDAY, said: "keep it", keep: [ { lineId: context.data.noticed[0].ref } ], carry: [ { lineId: carry } ], dismiss: [ { candidateId: "ABC-22" } ] });
+        expect(applied.written).toContainEqual(expect.objectContaining({ kind: "keep", id: keep, status: "written" }));
         const later = { reason: "review_only", detail: expect.stringContaining("Plan my day") };
         expect(applied.skipped).toEqual([
             { kind: "dismiss", id: "ABC-22", text: expect.stringContaining("ABC-22"), ...later },
-            { kind: "keep", id: keep, text: "ABC-30 is open", ...later }
+            { kind: "carry", id: carry, text: "Ben covers the on-call rotation", ...later }
         ]);
+        expect(applied.say).toContain("'ABC-30' is kept");
+        expect(await labelsOf(WEDNESDAY, "caiusAsked")).toEqual([ keep ]);
         expect(await labelsOf(TODAY, "caiusDismissed")).toEqual([]);
-        const week = await call("caius_context", { date: TODAY });
-        expect(week.context.map((line: any) => line.text)).not.toContain("ABC-30 is open");
+        const monday = await call("caius_context", { date: TODAY });
+        expect(monday.context.map((line: any) => line.text)).toContain("ABC-30 is open");
     });
 
     it("Mon 19:00, Review of Thu 12: a meeting of Monday's overlap in his words is no check, and an overlap answer is left for Plan my day", async () => {
@@ -323,5 +335,22 @@ describe("a review asks nothing Plan my day asks", () => {
         expect(answered.skipped).toEqual([ { kind: "overlap", id: overlap.overlapId, text: "Design sync", reason: "review_only", detail: expect.stringContaining("Plan my day") } ]);
         expect(await labelsOf(TODAY, "caiusDeclined")).toEqual([]);
         delete calendars[TODAY];
+    });
+
+    it("Mon 19:00, Review of Mon 9: a bare yes with a keep line on offer is a check, and asOffered takes the keep line and no carry", async () => {
+        const NINTH = "2026-11-09";
+        await cls.init(async () => {
+            const ninth = await store.calendarDay(NINTH);
+            await store.putContent(ninth.noteId, `<h3>Context</h3>${bullets("ABC-31 is open (until Tue 10 Nov)")}`);
+        });
+        at(`${TODAY}T19:00`);
+        const yes = await call("caius_winddown_apply", { date: NINTH, said: "yes" });
+        expect(yes.check).toEqual([ expect.objectContaining({ missing: "asOffered", item: "ABC-31 is open" }) ]);
+
+        const offered = await call("caius_winddown_apply", { date: NINTH, said: "yes", asOffered: true });
+        expect(offered.check).toBeUndefined();
+        expect(offered.written.filter((entry: any) => entry.kind === "keep" || entry.kind === "carry"))
+            .toEqual([ expect.objectContaining({ kind: "keep", id: lineIdOf("ABC-31 is open"), status: "written" }) ]);
+        expect(offered.skipped).toEqual([]);
     });
 });

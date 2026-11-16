@@ -437,12 +437,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...[ ...asked.notToday, ...asked.dismiss ].map((c) => c.candidateId),
             ...candidatesNamed(pools.candidates, [ ...asked.done, ...asked.finished, ...asked.fates.map((fate) => fate.listItemId) ])
         ]);
-        const answers: WindDownApplyInput = asked.asOffered && !reviewOnly ? {
+        // A review takes only its keep lines as offered: its other offers are the target day's.
+        const keep = asked.keep.length ? asked.keep : lines.keep.map((line) => ({ lineId: line.lineId }));
+        const answers: WindDownApplyInput = !asked.asOffered ? asked : reviewOnly ? { ...asked, keep } : {
             ...asked,
             accept: asked.accept.length ? asked.accept : candidates.filter((c) => !put.has(c.candidateId) && c.kind !== "project").map((c) => ({ candidateId: c.candidateId })),
-            keep: asked.keep.length ? asked.keep : lines.keep.map((line) => ({ lineId: line.lineId })),
+            keep,
             carry: asked.carry.length ? asked.carry : lines.carry.map((line) => ({ lineId: line.lineId }))
-        } : asked;
+        };
         const input = windDownAnswers(answers, pools, skipped, table, copies, collided);
         // His words only check the call: when they seem to give an item a place the call doesn't, nothing is written.
         const byEntry = new Map([ ...table.values() ].map((entry) => [ entry.id, entry ]));
@@ -451,16 +453,16 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             asked.done, asked.fates, asked.accept, asked.move, asked.keep, asked.carry, asked.finished, asked.notToday, asked.dismiss, asked.areas, asked.context, asked.overlaps
         ].some((answers) => answers.length > 0);
         const parks = open.items.filter((item) => item.listItemId && stale.has(item.listItemId)).map((item) => plainText(withoutMoveLinks(item.text)));
-        // A review offers nothing for the target day, so his words are checked only against the reviewed day's offers.
-        const offered = reviewOnly ? parks : [
+        // A review offers only the reviewed day's parks and keep lines, so his words are checked against those alone.
+        const offered = reviewOnly ? [ ...lines.keep.map((line) => line.line), ...parks ] : [
             ...candidates.map((c) => c.text), ...[ ...lines.keep, ...lines.carry ].map((line) => line.line), ...asks.overlaps.map((pair) => `${pair.first} / ${pair.second}`), ...parks
         ];
         const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...finishedChecks(input.unmatched), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
             ...(reviewOnly ? [] : [ ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ]) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
-        // A review answers none of these questions, so none is recorded as asked.
+        // A review asks only the keep lines, so only they are recorded as asked.
+        await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...(reviewOnly ? [] : lines.carry) ].map((line) => line.lineId));
         if (!reviewOnly) {
-            await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
             // The next step's questions are about the next workday, so they are answered on its note.
             await labelDay(store, targetDay, ASKED_LABEL, nextAsked(asks));
             await labelDay(store, targetDay, ASK_SEEN_LABEL, offeredAsks);
@@ -688,9 +690,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 }
 
 /**
- * The answers a review writes on `targetDay`: the moves of the items it forwards there
- * (`moved`), or that an earlier run forwarded there (a followed copy on `targetDay`). Every other
- * answer about the target day is skipped as `review_only`.
+ * The answers a review writes on `targetDay`: the keep lines it asks, and the moves of the items
+ * it forwards there (`moved`) or that an earlier run forwarded there (a followed copy on
+ * `targetDay`). Every other answer about the target day is skipped as `review_only`.
  */
 function reviewAnswers(input: ReturnType<typeof windDownAnswers>, targetDay: string, moved: ReadonlyMap<string, unknown>, skipped: Skipped[]): ReturnType<typeof windDownAnswers> {
     const forwarded = (ref: { listItemId: string }) => moved.has(ref.listItemId) || input.follows.get(ref.listItemId)?.period === targetDay;
@@ -699,12 +701,11 @@ function reviewAnswers(input: ReturnType<typeof windDownAnswers>, targetDay: str
         ...input.notToday.map((ref) => ({ kind: "not_today", id: ref.candidateId })),
         ...input.dismiss.map((ref) => ({ kind: "dismiss", id: ref.candidateId })),
         ...input.move.filter((ref) => !forwarded(ref)).map((ref) => ({ kind: "move", id: ref.listItemId })),
-        ...input.keep.map((ref) => ({ kind: "keep", id: ref.lineId })),
         ...input.carry.map((ref) => ({ kind: "carry", id: ref.lineId })),
         ...input.context.map((text) => ({ kind: "context", text })),
         ...input.overlaps.map((ref) => ({ kind: "overlap", id: ref.overlapId, text: ref.take }))
     ]);
-    return { ...input, accept: [], move: input.move.filter(forwarded), keep: [], carry: [], notToday: [], dismiss: [], context: [], overlaps: [] };
+    return { ...input, accept: [], move: input.move.filter(forwarded), carry: [], notToday: [], dismiss: [], context: [], overlaps: [] };
 }
 
 /** Skips each of `entries` as `review_only`, for Plan my day to take on the day it plans. */

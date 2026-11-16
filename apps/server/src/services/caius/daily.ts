@@ -116,9 +116,9 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
     });
 
     if (step === "open") {
-        const { standing, open, held } = await deps.locked("caius_winddown", async () => {
+        const { standing, open, held, keep } = await deps.locked("caius_winddown", async () => {
             const items = await stillOpen(deps.store, date, targetDay);
-            return { standing: await deps.standing(), open: items, held: await allHeld(deps.store) };
+            return { standing: await deps.standing(), open: items, held: await allHeld(deps.store), keep: review ? await keepLines(deps.store, date, targetDay) : [] };
         });
         // Jira is asked about the items' own tickets, so an item it calls done can be named as such.
         const keys = open.items.map((item) => keysOf(item.text)[0]).filter((key): key is string => !!key && JIRA_KEY.test(key));
@@ -141,11 +141,18 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
-        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay, review), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, review ? null : "next");
+        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay, review), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, !review ? "next" : keep.length ? "context" : null);
     }
 
-    // A review leaves the target day to Plan my day, so its next and context steps ask nothing.
-    if (review) return reply(await deps.locked("caius_winddown", deps.standing), { summary: t("caius.daily.review_sets_up", { day: weekdayName(targetDay) }) }, null, null);
+    // A review leaves the target day to Plan my day: it asks only the keep lines of the reviewed day's Context.
+    if (review) {
+        const { standing, keep } = await deps.locked("caius_winddown", async () => ({ standing: await deps.standing(), keep: await keepLines(deps.store, date, targetDay) }));
+        if (step === "context" && keep.length) {
+            const noticed = withRefs(keep, "x", (line) => line.lineId);
+            return reply(standing, { targetWeek: isoWeekKey(utcDay(targetDay)), keepDate: targetDay, noticed }, keep.map((line) => line.question).join(" "), null);
+        }
+        return reply(standing, { summary: t("caius.daily.review_sets_up", { day: weekdayName(targetDay) }) }, null, step === "next" && keep.length ? "context" : null);
+    }
 
     const read = await deps.dayRead(targetDay, refresh);
     if (step === "next") {
@@ -260,19 +267,29 @@ export function nextAsked(asks: ReturnType<typeof nextAsks>): string[] {
 
 /**
  * The lines the wind-down of `date` asks about, neither asked that day nor on the last workday:
- * `keep`, a line in force today that lapses before `targetDay` and keeps a ticket open (Jira's own
- * answer is not consulted, since `done` leaves out every key a Context line calls open), and `carry`,
- * a line `targetDay` won't read. The caller holds the lock.
+ * `keep` (`keepLines`) and `carry`, a line in force today that `targetDay` won't read. The caller
+ * holds the lock.
  */
 export async function closingLines(store: NoteStore, date: string, targetDay: string, read: DayRead) {
     const today = await gatherContext(store, date);
     const asked = await askedAbout(store, date);
-    const keep = today.context
+    return { keep: await keepLines(store, date, targetDay), carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
+}
+
+/**
+ * The keep lines of `date`, neither asked that day nor on the last workday: each a line in force
+ * that day that lapses before `targetDay` and keeps a ticket open (Jira's own answer is not
+ * consulted, since `done` leaves out every key a Context line calls open). They need no read of
+ * `targetDay`. The caller holds the lock.
+ */
+async function keepLines(store: NoteStore, date: string, targetDay: string) {
+    const today = await gatherContext(store, date);
+    const asked = await askedAbout(store, date);
+    return today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)
         .map((line) => ({ kind: "keep" as const, line: line.text, lineId: lineIdOf(line.text), until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
         .filter((line) => line.keys.length && !asked.has(line.lineId))
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
-    return { keep, carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
 }
 
 /**
