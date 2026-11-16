@@ -794,7 +794,7 @@ function picksFor(plan: Awaited<ReturnType<typeof readPlan>>, reasons: Map<strin
     });
 }
 
-/** A headline for a new order of the picks, from the drawing's labels: "ZAP-101 first, then ZAP-110 and ZAP-111." */
+/** A headline for a new order of the picks, from the drawing's labels: "QRS-101 first, then QRS-110 and QRS-111." */
 function orderHeadline(header: ReturnType<typeof headerOf>): string | undefined {
     const labels = header.work.filter((block) => block.start < header.workEnd && block.label).map((block) => block.label);
     const [ first, ...rest ] = labels;
@@ -1270,7 +1270,7 @@ function doneOf(said: string[], finished: string[], pools: Named[][], settled: N
 
 const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
-/** The task an accepted ask becomes: "Answer Jordan's question on ZAP-105". */
+/** The task an accepted ask becomes: "Answer Jordan's question on QRS-105". */
 const ANSWER_TASK = /^Answer .+'s question on [A-Z][A-Z0-9]+-\d+/;
 
 /**

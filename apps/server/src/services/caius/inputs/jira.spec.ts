@@ -53,16 +53,16 @@ describe("caius_inputs Jira", () => {
 
         expect(errors).toEqual([]);
         expect(result.handoff.map((t) => [ t.key, t.daysInStatus ])).toEqual([
-            [ "ZAP-101", 6 ],   // the changelog's last move into Dev Verify
-            [ "ZAP-103", 3 ],
-            [ "ZAP-110", 2 ],   // no changelog entry: statuscategorychangedate
-            [ "ZAP-111", 3 ]    // QA Testing
+            [ "QRS-101", 6 ],   // the changelog's last move into Dev Verify
+            [ "QRS-103", 3 ],
+            [ "QRS-110", 2 ],   // no changelog entry: statuscategorychangedate
+            [ "QRS-111", 3 ]    // QA Testing
         ]);
         expect(result.handoff[0]).toMatchObject({
             summary: "Verify the export retry on staging",
             status: "Dev Verify",
             resolution: null,
-            url: "https://example.atlassian.net/browse/ZAP-101",
+            url: "https://example.atlassian.net/browse/QRS-101",
             assignee: "Sam Example",
             updated: "2026-10-26T20:30:00.000Z"
         });
@@ -76,12 +76,12 @@ describe("caius_inputs Jira", () => {
     it("keeps comments that mention or ask the user after their own last comment", async () => {
         const { jira } = await run(fakeJira().doFetch);
 
-        // ZAP-105: the 13 Oct question is old, the 22 Oct comment is the user's own, the 25 Oct
-        // update neither asks nor mentions. ZAP-106's question came before the user's reply.
+        // QRS-105: the 13 Oct question is old, the 22 Oct comment is the user's own, the 25 Oct
+        // update neither asks nor mentions. QRS-106's question came before the user's reply.
         expect(jira.asks.map((a) => [ a.ticket.key, a.author, a.created, a.commentId ])).toEqual([
-            [ "ZAP-105", "Riley Sample", "2026-10-24T15:20:00.000Z", "3" ],
-            [ "ZAP-105", "Jordan Placeholder", "2026-10-25T18:00:00.000Z", "4" ],
-            [ "ZAP-104", "Riley Sample", "2026-10-26T19:30:00.000Z", "2" ]
+            [ "QRS-105", "Riley Sample", "2026-10-24T15:20:00.000Z", "3" ],
+            [ "QRS-105", "Jordan Placeholder", "2026-10-25T18:00:00.000Z", "4" ],
+            [ "QRS-104", "Riley Sample", "2026-10-26T19:30:00.000Z", "2" ]
         ]);
         expect(jira.asks[0].excerpt.length).toBeGreaterThan(190);
         expect(jira.asks[0].excerpt.length).toBeLessThanOrEqual(200);
@@ -92,13 +92,13 @@ describe("caius_inputs Jira", () => {
 
     it("reports tickets Jira calls done, and lets a Context line reopen one", async () => {
         const plain = await run(fakeJira().doFetch);
-        // ZAP-107 is Done too, but neither a hand-off nor the subject of an ask.
-        expect(plain.jira.done).toEqual([ "ZAP-103", "ZAP-104" ]);
+        // QRS-107 is Done too, but neither a hand-off nor the subject of an ask.
+        expect(plain.jira.done).toEqual([ "QRS-103", "QRS-104" ]);
 
-        const reopened = await run(fakeJira().doFetch, ENV, [ "zap-103 is open; Jira's Done is a mistake", "ZAP-102 was reopened" ]);
-        expect(reopened.jira.done).toEqual([ "ZAP-104" ]);
-        expect(reopened.jira.handoff.find((t) => t.key === "ZAP-103")?.overridden).toBe(true);
-        expect(reopened.jira.handoff.find((t) => t.key === "ZAP-101")?.overridden).toBeUndefined();
+        const reopened = await run(fakeJira().doFetch, ENV, [ "qrs-103 is open; Jira's Done is a mistake", "QRS-102 was reopened" ]);
+        expect(reopened.jira.done).toEqual([ "QRS-104" ]);
+        expect(reopened.jira.handoff.find((t) => t.key === "QRS-103")?.overridden).toBe(true);
+        expect(reopened.jira.handoff.find((t) => t.key === "QRS-101")?.overridden).toBeUndefined();
     });
 
     it("answers an error entry and empty lists for a 401, a missing setting or a timeout, without leaking the token", async () => {
@@ -148,34 +148,34 @@ describe("caius_inputs Jira under strain", () => {
             keySearches.push(jql);
             if (fail) return new Response("{}", { status: 400 });
             return new Response(JSON.stringify({ isLast: true, issues: [
-                { key: "ZAP-120", fields: { status: { name: "Closed", statusCategory: { key: "done" } }, resolution: null } },
-                { key: "ZAP-121", fields: { status: { name: "In Progress", statusCategory: { key: "indeterminate" } }, resolution: null } },
-                { key: "ZAP-122", fields: { status: { name: "Dev Verify", statusCategory: { key: "indeterminate" } }, resolution: { name: "Won't Do" } } },
-                { key: "ZAP-2590", fields: { status: { name: "Done", statusCategory: { key: "done" } }, resolution: { name: "Done" } } }
+                { key: "QRS-120", fields: { status: { name: "Closed", statusCategory: { key: "done" } }, resolution: null } },
+                { key: "QRS-121", fields: { status: { name: "In Progress", statusCategory: { key: "indeterminate" } }, resolution: null } },
+                { key: "QRS-122", fields: { status: { name: "Dev Verify", statusCategory: { key: "indeterminate" } }, resolution: { name: "Won't Do" } } },
+                { key: "QRS-2590", fields: { status: { name: "Done", statusCategory: { key: "done" } }, resolution: { name: "Done" } } }
             ] }));
         });
         const read = (fetchImpl: typeof fetch, keys?: string[]) => readInputs(
-            { date: "2026-10-27", context: [ "ZAP-2590 is open" ], keys },
+            { date: "2026-10-27", context: [ "QRS-2590 is open" ], keys },
             { fetch: fetchImpl, env: ENV, now: () => NOW }
         );
 
-        const result = await read(named(false), [ "zap-120", "ZAP-121", "ZAP-122", "ZAP-2590", "ZAP-120", "a1b2c3", "ZAP-1) OR (project = X" ]);
-        expect(keySearches).toEqual([ "key in (ZAP-120, ZAP-121, ZAP-122, ZAP-2590) ORDER BY key" ]);
-        expect(result.jira.done).toEqual([ "ZAP-103", "ZAP-104", "ZAP-120", "ZAP-122" ]);
+        const result = await read(named(false), [ "qrs-120", "QRS-121", "QRS-122", "QRS-2590", "QRS-120", "a1b2c3", "QRS-1) OR (project = X" ]);
+        expect(keySearches).toEqual([ "key in (QRS-120, QRS-121, QRS-122, QRS-2590) ORDER BY key" ]);
+        expect(result.jira.done).toEqual([ "QRS-103", "QRS-104", "QRS-120", "QRS-122" ]);
         expect(result.errors.filter((e) => e.source === "jira")).toEqual([]);
 
         keySearches.length = 0;
-        expect((await read(named(false), [ "a1b2c3" ])).jira.done).toEqual([ "ZAP-103", "ZAP-104" ]);
+        expect((await read(named(false), [ "a1b2c3" ])).jira.done).toEqual([ "QRS-103", "QRS-104" ]);
         expect(keySearches).toEqual([]);
 
-        const failed = await read(named(true), [ "ZAP-120" ]);
+        const failed = await read(named(true), [ "QRS-120" ]);
         expect(failed.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "done_partial" } ]);
-        expect(failed.jira.done).toEqual([ "ZAP-103", "ZAP-104" ]);
+        expect(failed.jira.done).toEqual([ "QRS-103", "QRS-104" ]);
     });
 
     it("splits a key search Jira rejects into tens, then single keys, dropping only the keys it rejects alone", async () => {
         const keySearches: string[][] = [];
-        const unknown = (key: string) => key === "ZAP-999" || Number(key.slice(4)) >= 300;
+        const unknown = (key: string) => key === "QRS-999" || Number(key.slice(4)) >= 300;
         const rejectingUnknown = withFixtures((url) => {
             const jql = url.searchParams.get("jql") ?? "";
             if (url.pathname !== "/rest/api/3/search/jql" || !jql.startsWith("key in")) return undefined;
@@ -183,24 +183,24 @@ describe("caius_inputs Jira under strain", () => {
             keySearches.push(keys);
             if (keys.some(unknown)) return new Response("{}", { status: 400 });
             return new Response(JSON.stringify({ isLast: true, issues: keys.map((key) => ({
-                key, fields: { status: { name: key === "ZAP-120" ? "Done" : "In Progress", statusCategory: { key: key === "ZAP-120" ? "done" : "indeterminate" } }, resolution: null }
+                key, fields: { status: { name: key === "QRS-120" ? "Done" : "In Progress", statusCategory: { key: key === "QRS-120" ? "done" : "indeterminate" } }, resolution: null }
             })) }));
         });
         const read = (keys: string[]) => readInputs({ date: "2026-10-27", keys }, { fetch: rejectingUnknown, env: ENV, now: () => NOW });
 
-        const named = [ "ZAP-120", "ZAP-999", ...Array.from({ length: 10 }, (_, i) => `ZAP-${130 + i}`) ];
+        const named = [ "QRS-120", "QRS-999", ...Array.from({ length: 10 }, (_, i) => `QRS-${130 + i}`) ];
         const result = await read(named);
-        expect(result.jira.done).toEqual([ "ZAP-103", "ZAP-104", "ZAP-120" ]);
+        expect(result.jira.done).toEqual([ "QRS-103", "QRS-104", "QRS-120" ]);
         expect(result.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "done_partial" } ]);
         expect(keySearches.map((keys) => keys.length)).toEqual([ 12, 10, 2, ...Array<number>(10).fill(1) ]);
         expect(keySearches.slice(3).map(([ key ]) => key)).toEqual(named.slice(0, 10));
 
         keySearches.length = 0;
-        const recovered = await read([ "ZAP-120", ...Array.from({ length: 10 }, (_, i) => `ZAP-${300 + i}`) ]);
-        expect(recovered.jira.done).toContain("ZAP-120");
+        const recovered = await read([ "QRS-120", ...Array.from({ length: 10 }, (_, i) => `QRS-${300 + i}`) ]);
+        expect(recovered.jira.done).toContain("QRS-120");
 
         keySearches.length = 0;
-        const everyKeyUnknown = await read(Array.from({ length: 100 }, (_, i) => `ZAP-${300 + i}`));
+        const everyKeyUnknown = await read(Array.from({ length: 100 }, (_, i) => `QRS-${300 + i}`));
         expect(keySearches.length).toBeLessThanOrEqual(MAX_KEY_SEARCHES);
         expect(everyKeyUnknown.errors.filter((e) => e.source === "jira")).toEqual([ { source: "jira", error: "done_partial" } ]);
     });
@@ -219,7 +219,7 @@ describe("caius_inputs Jira under strain", () => {
         expect(isInputWarning("involved_narrowed")).toBe(true);
         expect(involvedJql).toHaveLength(2);
         expect(involvedJql[1]).toBe("(assignee = currentUser() OR watcher = currentUser()) AND updated >= -8d ORDER BY updated DESC");
-        expect(narrowed.jira.asks.map((a) => a.ticket.key)).toContain("ZAP-104");
+        expect(narrowed.jira.asks.map((a) => a.ticket.key)).toContain("QRS-104");
 
         involvedJql.length = 0;
         const rejected = await runWith(rejecting(true));
@@ -229,17 +229,17 @@ describe("caius_inputs Jira under strain", () => {
 
     it("keeps going when one ticket's comments or changelog fail, and says so once each", async () => {
         const result = await runWith(withFixtures((url) =>
-            /ZAP-105\/comment$|ZAP-101\/changelog$/.test(url.pathname) ? new Response("{}", { status: 500 }) : undefined
+            /QRS-105\/comment$|QRS-101\/changelog$/.test(url.pathname) ? new Response("{}", { status: 500 }) : undefined
         ));
         const jiraErrors = result.errors.filter((e) => e.source === "jira").map((e) => e.error).sort();
         expect(jiraErrors).toEqual([ "asks_partial", "handoff_partial" ]);
-        expect(result.jira.asks.map((a) => a.ticket.key)).toEqual([ "ZAP-104" ]);
-        expect(result.jira.handoff.find((t) => t.key === "ZAP-101")?.daysInStatus).toBeNull();
-        expect(result.jira.handoff.find((t) => t.key === "ZAP-103")?.daysInStatus).toBe(3);
+        expect(result.jira.asks.map((a) => a.ticket.key)).toEqual([ "QRS-104" ]);
+        expect(result.jira.handoff.find((t) => t.key === "QRS-101")?.daysInStatus).toBeNull();
+        expect(result.jira.handoff.find((t) => t.key === "QRS-103")?.daysInStatus).toBe(3);
     });
 
     it("names a cap that bites, fetching comments four at a time", async () => {
-        const many = Array.from({ length: 90 }, (_, i) => ({ key: `ZAP-${500 + i}`, fields: { summary: "x", status: { name: "In Progress" }, updated: "2026-10-26T10:00:00.000-0400" } }));
+        const many = Array.from({ length: 90 }, (_, i) => ({ key: `QRS-${500 + i}`, fields: { summary: "x", status: { name: "In Progress" }, updated: "2026-10-26T10:00:00.000-0400" } }));
         let inFlight = 0;
         let peak = 0;
         const result = await runWith((async (input: URL) => {
@@ -273,9 +273,9 @@ describe("Jira helpers", () => {
     });
 
     it("reads a ticket key together with the word open, not reopened", () => {
-        expect([ ...overriddenKeys([ "ZAP-2590 is open", "SUR-7 and CM-12: open", "ZIS-3 reopened", "no key here, open" ]) ]).toEqual([ "ZAP-2590", "SUR-7", "CM-12" ]);
-        expect([ ...overriddenKeys([ "ZAP-1 is not open", "ZAP-2 isn't open", "ZAP-3 is no longer open", "ZAP-4 isn’t open", "ZAP-5 is NOT open" ]) ]).toEqual([]);
-        expect([ ...overriddenKeys([ "ZAP-6 is open, not blocked" ]) ]).toEqual([ "ZAP-6" ]);
+        expect([ ...overriddenKeys([ "QRS-2590 is open", "DEF-7 and ABC-12: open", "XYZ-3 reopened", "no key here, open" ]) ]).toEqual([ "QRS-2590", "DEF-7", "ABC-12" ]);
+        expect([ ...overriddenKeys([ "QRS-1 is not open", "QRS-2 isn't open", "QRS-3 is no longer open", "QRS-4 isn’t open", "QRS-5 is NOT open" ]) ]).toEqual([]);
+        expect([ ...overriddenKeys([ "QRS-6 is open, not blocked" ]) ]).toEqual([ "QRS-6" ]);
     });
 
     it("flattens Atlassian Document Format to one line", () => {
@@ -302,7 +302,7 @@ describe("Jira helpers", () => {
 
 describe("readTicket", () => {
     const issue = {
-        key: "ZAP-105",
+        key: "QRS-105",
         fields: {
             summary: "Confirm the staging bucket name",
             status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
@@ -315,7 +315,7 @@ describe("readTicket", () => {
     const withIssue = (found: unknown) => {
         const base = fakeJira();
         const doFetch = (async (input: URL, init?: never) => {
-            if (/issue\/ZAP-\d+$/.test(input.pathname)) return found ? json(found) : json({}, 404);
+            if (/issue\/QRS-\d+$/.test(input.pathname)) return found ? json(found) : json({}, 404);
             if (input.pathname.endsWith("/changelog")) return json({ total: 0, values: [] });
             return base.doFetch(input, init);
         }) as unknown as typeof fetch;
@@ -325,16 +325,16 @@ describe("readTicket", () => {
 
     it("reads the ticket with its days in status, assignee, last comment and the asks of the user", async () => {
         const jira = withIssue(issue);
-        const result = await readTicket(deps(jira.doFetch), "zap-105");
+        const result = await readTicket(deps(jira.doFetch), "qrs-105");
 
         expect(result).toMatchObject({
-            key: "ZAP-105",
+            key: "QRS-105",
             summary: "Confirm the staging bucket name",
             status: "In Progress",
             assignee: "Sam Example",
             daysInStatus: 3,
             done: false,
-            url: "https://example.atlassian.net/browse/ZAP-105",
+            url: "https://example.atlassian.net/browse/QRS-105",
             lastComment: { author: "Riley Sample", created: "2026-10-25T19:00:00.000Z" }
         });
         if ("error" in result) throw new Error(result.error);
@@ -342,10 +342,10 @@ describe("readTicket", () => {
     });
 
     it("answers not_found for a missing ticket, not_configured without settings and bad_request for a bad key", async () => {
-        expect(await readTicket(deps(withIssue(undefined).doFetch), "ZAP-999")).toEqual({ error: "not_found" });
-        expect(await readTicket(deps(withIssue(issue).doFetch, { ...ENV, JIRA_TOKEN: undefined }), "ZAP-105")).toEqual({ error: "not_configured" });
-        expect(await readTicket(deps(withIssue(issue).doFetch), "zap 105")).toEqual({ error: "bad_request" });
+        expect(await readTicket(deps(withIssue(undefined).doFetch), "QRS-999")).toEqual({ error: "not_found" });
+        expect(await readTicket(deps(withIssue(issue).doFetch, { ...ENV, JIRA_TOKEN: undefined }), "QRS-105")).toEqual({ error: "not_configured" });
+        expect(await readTicket(deps(withIssue(issue).doFetch), "qrs 105")).toEqual({ error: "bad_request" });
         const denied = (async () => json({}, 401)) as unknown as typeof fetch;
-        expect(await readTicket(deps(denied), "ZAP-105")).toEqual({ error: "http_401" });
+        expect(await readTicket(deps(denied), "QRS-105")).toEqual({ error: "http_401" });
     });
 });

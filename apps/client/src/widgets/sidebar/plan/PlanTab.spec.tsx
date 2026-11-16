@@ -645,13 +645,13 @@ describe("PlanTab", () => {
         api.plan.mockResolvedValue({
             ...dayPlan(),
             suggested: [
-                planTask({ listItemId: "s1", text: "Get [ZAP-101](https://jira/ZAP-101) Verify the export done: because sitting in Dev Verify for 6 days (~30m)", section: "Suggested" }),
-                planTask({ listItemId: "s2", text: "ZAP-111", section: "Suggested" })
+                planTask({ listItemId: "s1", text: "Get [QRS-101](https://jira/QRS-101) Verify the export done: because sitting in Dev Verify for 6 days (~30m)", section: "Suggested" }),
+                planTask({ listItemId: "s2", text: "QRS-111", section: "Suggested" })
             ]
         });
         const tab = await mount();
 
-        expect(texts(tab, "#plan-suggested .plan-task-text")).toEqual([ "Get ZAP-101 Verify the export done (~30m)", "ZAP-111" ]);
+        expect(texts(tab, "#plan-suggested .plan-task-text")).toEqual([ "Get QRS-101 Verify the export done (~30m)", "QRS-111" ]);
         expect(texts(tab, "#plan-suggested .plan-task-reason")).toEqual([ "because sitting in Dev Verify for 6 days" ]);
     });
 
@@ -660,7 +660,7 @@ describe("PlanTab", () => {
         api.context.mockResolvedValue({
             date: "2026-10-27",
             context: [
-                { text: "[ZAP-2590](https://jira/ZAP-2590) is open", period: "week", key: "2026-W44", noteId: "week44" },
+                { text: "[QRS-2590](https://jira/QRS-2590) is open", period: "week", key: "2026-W44", noteId: "week44" },
                 { text: "Jaco out", until: "2026-10-27", period: "day", key: "2026-10-26", noteId: "yesterday" },
                 { text: "Release frozen", until: "2026-11-13", period: "day", key: "2026-10-27", noteId: "today" }
             ]
@@ -670,9 +670,9 @@ describe("PlanTab", () => {
         expect(api.context).toHaveBeenCalledWith("2026-10-27");
         const cards = [ ...tab.querySelectorAll("[id^=plan-]") ].map((card) => card.id);
         expect(cards.indexOf("plan-context")).toBe(cards.indexOf("plan-capacity") + 1);
-        expect(texts(tab, "#plan-context .plan-context-text")).toEqual([ "ZAP-2590 is open", "Jaco out", "Release frozen" ]);
+        expect(texts(tab, "#plan-context .plan-context-text")).toEqual([ "QRS-2590 is open", "Jaco out", "Release frozen" ]);
         expect(texts(tab, "#plan-context li")).toEqual([
-            "ZAP-2590 is open",
+            "QRS-2590 is open",
             "Jaco outuntil Tue 27 Octends soon",
             "Release frozenuntil Fri 13 Nov"
         ]);

@@ -54,13 +54,13 @@ describe("stepReply", () => {
         const inputs = {
             ritual: "plan" as const, step: "inputs", data: {
                 onDeck: [ { text: "Sketch the copy", fate: { list: true } }, { text: "Write the report", fate: { forward: "2026-W45", forwardLabel: "the week of Mon 2 Nov" } } ],
-                candidates: [ { text: "Get ZAP-2041 reviewed", kind: "jira", sourceLabel: "Jira" } ],
+                candidates: [ { text: "Get QRS-2041 reviewed", kind: "jira", sourceLabel: "Jira" } ],
                 unmarked: [ { ref: "u1", text: "The ballot" }, { ref: "u2", text: "Vincent relink" }, { ref: "u3", text: "Pay the invoice" } ]
             }
         };
         expect(stepReply(inputs, {})).toEqual([
             `On deck: "Sketch the copy" goes on today's list; "Write the report" goes to the week of Mon 2 Nov.`,
-            `Candidates: "Get ZAP-2041 reviewed": not taken, goes to Suggested.`
+            `Candidates: "Get QRS-2041 reviewed": not taken, goes to Suggested.`
         ]);
         expect(stepReply(inputs, { areas: { 0: "growth", 1: "recharge", 2: "foundation" } }).slice(2)).toEqual([
             "The ballot is Growth.", "Vincent relink is Recharge.", "Pay the invoice is work."
@@ -75,7 +75,7 @@ describe("stepPicks", () => {
     const inputs = {
         ritual: "plan" as const, step: "inputs", data: {
             onDeck: [ { text: "Sketch the copy", fate: { list: true } }, { text: "Write the report", fate: { forward: "2026-11-03", forwardLabel: "Tue 3 Nov", onDeck: true } } ],
-            candidates: [ { text: "Get ZAP-2041 reviewed", kind: "jira" }, { text: "Clean up the branch notes", kind: "week" } ],
+            candidates: [ { text: "Get QRS-2041 reviewed", kind: "jira" }, { text: "Clean up the branch notes", kind: "week" } ],
             unmarked: [ { ref: "u1", text: "The ballot" } ]
         }
     };
@@ -90,7 +90,7 @@ describe("stepPicks", () => {
         expect(total).toBe(5);
         expect(picks.map(({ what, choice }) => [ what, choice ])).toEqual([
             [ "Write the report", "Drop: Sam has it" ],
-            [ "Get ZAP-2041 reviewed", "Take" ],
+            [ "Get QRS-2041 reviewed", "Take" ],
             [ "The ballot", "Growth" ]
         ]);
     });

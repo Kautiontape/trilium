@@ -262,7 +262,7 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** The keys that a Context line calls open, such as "ZAP-2590 is open; Jira's Done is a mistake". */
+/** The keys that a Context line calls open, such as "QRS-2590 is open; Jira's Done is a mistake". */
 export function overriddenKeys(context: string[]): Set<string> {
     const keys = new Set<string>();
     for (const line of context) {

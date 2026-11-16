@@ -18,7 +18,7 @@ describe('base URL', () => {
     });
     const api = etapiClient('http://localhost:37840', 'secret');
     await api.note('abc');
-    await api.addLabel('abc', 'caiusDismissed', 'ZAP-1');
+    await api.addLabel('abc', 'caiusDismissed', 'QRS-1');
     await api.calendarWeek('2026-W44');
     expect(calls.map((c) => c.url)).toEqual([
       'http://localhost:37840/etapi/notes/abc',
@@ -26,7 +26,7 @@ describe('base URL', () => {
       'http://localhost:37840/etapi/calendar/weeks/2026-W44',
     ]);
     expect(calls.every((c) => (c.init?.headers as Record<string, string>).Authorization === 'Bearer secret')).toBe(true);
-    expect(JSON.parse(calls[1]!.init!.body as string)).toEqual({ noteId: 'abc', type: 'label', name: 'caiusDismissed', value: 'ZAP-1', isInheritable: false });
+    expect(JSON.parse(calls[1]!.init!.body as string)).toEqual({ noteId: 'abc', type: 'label', name: 'caiusDismissed', value: 'QRS-1', isInheritable: false });
     expect(calls.some((c) => c.url.includes('secret'))).toBe(false);
   });
 
@@ -68,7 +68,7 @@ describe('write headers against a server that mimics express.text() and express.
     try {
       const api = etapiClient(`http://127.0.0.1:${port}`, 'tok');
       await api.putContent('n1', '<p>é</p>');
-      await api.addLabel('n1', 'caiusDismissed', 'ZAP-1');
+      await api.addLabel('n1', 'caiusDismissed', 'QRS-1');
       expect(seen.map((s) => [s.method, s.url, s.type])).toEqual([
         ['PUT', '/etapi/notes/n1/content', 'text/plain'],
         ['POST', '/etapi/attributes', 'application/json'],

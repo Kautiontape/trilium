@@ -370,17 +370,17 @@ describe("endsSoon", () => {
 
 describe("splitReason", () => {
     it("splits a Suggested line into what to do, with its size, and why", () => {
-        expect(splitReason("Get ZAP-101 Verify the export retry done: because sitting in Dev Verify for 6 days (~30m)")).toEqual({
-            title: "Get ZAP-101 Verify the export retry done (~30m)",
+        expect(splitReason("Get QRS-101 Verify the export retry done: because sitting in Dev Verify for 6 days (~30m)")).toEqual({
+            title: "Get QRS-101 Verify the export retry done (~30m)",
             reason: "because sitting in Dev Verify for 6 days"
         });
         expect(splitReason("Get the review done: because Sam asked on Tuesday (~1h30m)"))
             .toEqual({ title: "Get the review done (~1h30m)", reason: "because Sam asked on Tuesday" });
-        expect(splitReason("Get ZAP-110 done because it blocks the release"))
-            .toEqual({ title: "Get ZAP-110 done", reason: "because it blocks the release" });
+        expect(splitReason("Get QRS-110 done because it blocks the release"))
+            .toEqual({ title: "Get QRS-110 done", reason: "because it blocks the release" });
 
         // The formats without a reason stay on one line.
-        for (const text of [ "ZAP-101 — Verify the export retry on staging", "ZAP-111", "ZAP-111 (QA Testing, 3 days)", "Because of the freeze" ]) {
+        for (const text of [ "QRS-101 — Verify the export retry on staging", "QRS-111", "QRS-111 (QA Testing, 3 days)", "Because of the freeze" ]) {
             expect(splitReason(text)).toEqual({ title: text, reason: null });
         }
     });

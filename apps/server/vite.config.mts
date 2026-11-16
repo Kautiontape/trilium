@@ -24,7 +24,8 @@ export default defineConfig(() => ({
       // resolve, so any env var assigned there is too late for module-load
       // constants in transitively-imported files.
       TRILIUM_ENV: "dev",
-      TRILIUM_PUBLIC_SERVER: "http://localhost:4200"
+      TRILIUM_PUBLIC_SERVER: "http://localhost:4200",
+      JIRA_BASE_URL: "https://example.atlassian.net"
     },
     include: [
       '{src,spec}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',

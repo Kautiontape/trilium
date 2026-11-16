@@ -17,7 +17,7 @@ import { TRILIUM_CONFIG } from './config.js';
 import type { NoteChange } from './forward.js';
 import { inspectItem } from './forward-html.js';
 import type { StoreNote, NoteStore } from './store.js';
-import { JIRA_BASE, markdownLinks, parseEstimate, parseSource, taskKeys } from './keys.js';
+import { markdownLinks, parseEstimate, parseSource, taskKeys } from './keys.js';
 import {
   asListTask,
   escapeHtml,
@@ -219,9 +219,12 @@ function describe(req: AddRequest, source: NonNullable<ReturnType<typeof parseSo
   let body = escapeHtml(raw.slice(0, cut));
   const tokens = escapeHtml(raw.slice(cut));
   if (source) {
-    const link = `<a href="${escapeHtml(source.url)}">${escapeHtml(source.label)}</a>`;
-    // A Jira key already in the text becomes the link; otherwise the link follows the text.
-    body = source.jira && body.includes(source.jira) ? body.replace(source.jira, link) : `${body} ${link}`;
+    // Without a url the key stays plain text. A Jira key already in the text becomes the link; otherwise the link follows the text.
+    const label = escapeHtml(source.label);
+    const link = source.url === null ? label : `<a href="${escapeHtml(source.url)}">${label}</a>`;
+    const inText = source.jira !== null && body.includes(source.jira);
+    if (!inText) body = `${body} ${link}`;
+    else if (source.url !== null) body = body.replace(source.jira ?? '', link);
   }
   const hasEst = scanTokens(raw).tokens.some((t) => t.kind === 'estimate');
   return body + tokens + (est && !hasEst ? ` ~${est}` : '');
@@ -775,5 +778,3 @@ function parentIdOf(html: string, id: string): string | undefined {
   const holder = findItem(parse(html, { comment: true }), id)?.parentNode?.parentNode;
   return holder instanceof HTMLElement ? holder.getAttribute('data-list-item-id') : undefined;
 }
-
-export { JIRA_BASE };

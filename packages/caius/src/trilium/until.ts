@@ -10,7 +10,7 @@ export interface ContextLine {
 
 /**
  * A Context line's text as two copies of it compare: lower case, spacing collapsed and trailing
- * punctuation dropped, so "ZAP-2590 is open." and "zap-2590 is  open" are one line.
+ * punctuation dropped, so "QRS-2590 is open." and "qrs-2590 is  open" are one line.
  */
 export function sameContext(text: string): string {
   return text.replace(/\s+/g, ' ').trim().replace(/[\s.!?,;:…]+$/, '').toLowerCase();

@@ -70,14 +70,14 @@ describe('briefBodyHtml', () => {
     const html = briefBodyHtml({
       headerNoteId: 'hdr',
       picksTitle: 'Get done today',
-      picks: ['Get ZAP-1 done: because it waits (~30m)', 'a < b'],
+      picks: ['Get QRS-1 done: because it waits (~30m)', 'a < b'],
       sections: [
         { title: 'Follow up', html: '<p>Ask Sam.</p>' },
         { title: 'Heads-up', html: '<p>Shipped.</p>' },
       ],
     });
     expect(html).toBe(
-      INCLUDE + '<h2>Get done today</h2><ul><li>Get ZAP-1 done: because it waits (~30m)</li><li>a &lt; b</li></ul>'
+      INCLUDE + '<h2>Get done today</h2><ul><li>Get QRS-1 done: because it waits (~30m)</li><li>a &lt; b</li></ul>'
       + '<h2>Follow up</h2><p>Ask Sam.</p><h2>Heads-up</h2><p>Shipped.</p>',
     );
   });

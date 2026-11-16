@@ -78,7 +78,7 @@ export function liveKeys(docs: TriliumDoc[], now: Date): Map<string, string[]> {
 export const CLOSED_DAYS = 14;
 /** Days a ticket Shawn called finished keeps its key off every list. */
 export const FINISHED_DAYS = 30;
-/** On a day note: Shawn said the ticket is finished, as `#caiusFinished=ZAP-101`. */
+/** On a day note: Shawn said the ticket is finished, as `#caiusFinished=QRS-101`. */
 export const FINISHED_LABEL = 'caiusFinished';
 
 /**

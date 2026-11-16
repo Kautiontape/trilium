@@ -229,7 +229,7 @@ describe("caius tools under concurrent calls", () => {
         const flaky: NoteStore = {
             ...store,
             async search(query, ancestorNoteId) {
-                if (fail) {
+                if (fail && query !== "#assistantContext") {
                     fail = false;
                     throw new Error("search failed");
                 }

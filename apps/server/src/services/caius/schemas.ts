@@ -26,7 +26,7 @@ const version = {
 const dryRun = z.boolean().optional().describe("Report what would change without writing anything");
 const html = z.boolean().optional().describe("On a dry run, return each note's full before and after HTML instead of a summary of the change");
 
-/** A Suggested line in its one format, `Get ZAP-1 Check the export done: because it waits (~30m)`. */
+/** A Suggested line in its one format, `Get QRS-1 Check the export done: because it waits (~30m)`. */
 const SUGGESTED_LINE = /^Get \S.* done: because \S.* \(~\d+m\)$/;
 const SUGGESTED_SHAPE = "A Suggested item takes key, title, because and minutes, written as \"Get KEY title done: because why (~30m)\"; text is accepted only in that shape";
 
@@ -42,7 +42,7 @@ const addItem = z.object({
     suggested: z.boolean().optional().describe("Add the task to the Suggested section, from key, title, because and minutes"),
     onDeck: z.boolean().optional().describe("A day only: add the task to the day's On deck section, for something he would like to do that day (\"I'd like to do X Thursday\"). Tracked, but not on his list until Plan my day puts it there. For something he needs to do that day, give a section or critical instead"),
     text: z.string().optional().describe("The task text. Not for a Suggested item, unless already in its \"Get KEY title done: because why (~30m)\" shape."),
-    key: z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase()).optional()
+    key: z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as QRS-101").transform((key) => key.toUpperCase()).optional()
         .describe("Suggested: the Jira key, linked in the line"),
     title: z.string().trim().min(1).optional().describe("Suggested: what to get done, such as \"Check the invoice export in QA\""),
     because: z.string().trim().min(1).optional().describe("Suggested: why today, such as \"sitting in QA Testing for 3 days\""),
@@ -173,7 +173,7 @@ const headerDay = z.object({
 
 /** A group of the day's list an answer names: a short name and the tasks in it. */
 const groupAnswer = z.object({
-    name: z.string().trim().min(1).max(NAME_LENGTH).describe(`A name of ${NAME_LENGTH} characters at most for the run of work, such as "Board", "Sec. fixes" or "ZAP bugs"`),
+    name: z.string().trim().min(1).max(NAME_LENGTH).describe(`A name of ${NAME_LENGTH} characters at most for the run of work, such as "Board", "Sec. fixes" or "QRS bugs"`),
     items: z.array(z.string().trim().min(1)).min(1).describe("Its tasks, each by its ref in the step data (l… on his list, o… from the catch-up, c… a candidate taken in this answer), ticket key or words")
 });
 const groupAnswers = z.array(groupAnswer).max(6)
@@ -218,7 +218,7 @@ const briefWrite = z.object({
         markdown: z.string().describe("The section's body as markdown")
     })).describe("The sections after the picks, in order"),
     header: headerDay.describe("The drawing, as caius_header takes it without noteId"),
-    followUps: z.array(z.object({ key: z.string().regex(/^[A-Z][A-Z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101"), commentId: z.string() })).optional()
+    followUps: z.array(z.object({ key: z.string().regex(/^[A-Z][A-Z0-9]+-\d+$/, "Must be a Jira key such as QRS-101"), commentId: z.string() })).optional()
         .describe("The asks the brief step offered, as given. With a Follow up that has text, all are recorded so they aren't raised again for 7 days"),
     ...coordinates,
     dryRun
@@ -412,7 +412,7 @@ const show = z.object({
     from: periodKey("day").optional().describe("days: the first day, YYYY-MM-DD. Defaults to today."),
     count: z.number().int().optional().describe("days: how many days, 2 to 7. Defaults to 5."),
     item: z.object(taskRef).optional().describe("item: the task, by its noteId and listItemId"),
-    key: z.string().optional().describe("item: a ticket key such as ZAP-101, with or without a task that names it"),
+    key: z.string().optional().describe("item: a ticket key such as QRS-101, with or without a task that names it"),
     area: z.enum(AREAS as [ "foundation", "growth", "recharge" ]).optional().describe("day: the area to open the view on. Defaults to the area that is over."),
     period: z.string().optional().describe("slipping: only tasks that moved on from a day in this day, week or month, such as 2026-W45")
 });
@@ -438,7 +438,7 @@ const meetings = z.object({
 const contextAdd = z.object({
     date: periodKey("day").optional().describe("The day note to add the line to, YYYY-MM-DD: for a fact about that one day. A line that names a ticket, a state, a span of days or one weekday (that day alone) goes to a week note instead (next week's for \"next week\"), unless it has a clock time or a part of today."),
     week: periodKey("week").optional().describe("The ISO week note to add the line to, YYYY-Www: the default for a fact about the state of things"),
-    text: z.string().trim().min(1).describe("The line, such as \"ZAP-2590 is open\""),
+    text: z.string().trim().min(1).describe("The line, such as \"QRS-2590 is open\""),
     until: periodKey("day").optional().describe("The last day the line holds, YYYY-MM-DD; written as (until Fri 6 Nov)"),
     dryRun
 }).refine((input) => (input.date === undefined) !== (input.week === undefined), "Give exactly one of date or week");
@@ -446,15 +446,15 @@ const contextAdd = z.object({
 const contextKeep = z.object({
     date: periodKey("day").describe("The day being planned (Plan my day) or wound down to (Wind down's next workday), YYYY-MM-DD: the step's data.keepDate. The lines go to that day's ISO week note."),
     lines: z.array(z.object({
-        text: z.string().trim().min(1).describe("The line, such as \"ZAP-2590 is open\""),
+        text: z.string().trim().min(1).describe("The line, such as \"QRS-2590 is open\""),
         until: periodKey("day").optional().describe("The last day the line holds, YYYY-MM-DD")
     })).min(1).describe("The lines the user wants kept"),
     dryRun
 });
 
 const finished = z.object({
-    keys: z.array(z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as ZAP-101").transform((key) => key.toUpperCase()))
-        .min(1).describe("The tickets he says are finished, such as [\"ZAP-101\"]"),
+    keys: z.array(z.string().regex(/^[A-Za-z][A-Za-z0-9]+-\d+$/, "Must be a Jira key such as QRS-101").transform((key) => key.toUpperCase()))
+        .min(1).describe("The tickets he says are finished, such as [\"QRS-101\"]"),
     note: z.string().optional().describe("The day or week note to record it on, by noteId. Defaults to today's day note.")
 });
 

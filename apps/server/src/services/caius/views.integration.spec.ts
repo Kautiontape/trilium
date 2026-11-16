@@ -29,7 +29,7 @@ const event = (start: string, end: string, title: string): CalendarEvent => ({ s
 
 const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li>"
     + "<li>The day runs to bedtime, and the evening is planned too. Bedtime: 23:00. Evening: something away from screens, a chore or a Recharge item.</li>"
-    + "<li>Capacity: 180–240 work minutes a day, and 45–60 minutes in the evening.</li></ul>";
+    + "<li>Capacity: 180–240 work minutes a day, and 45–60 minutes in the evening.</li><li>Jira: QRS</li></ul>";
 
 const MON = "2034-03-06";
 const TUE = "2034-03-07";
@@ -52,8 +52,8 @@ const ticketCard = (key: string, summary: string): TicketCard => ({
     ]
 });
 const tickets: Record<string, TicketCard> = {
-    "ZAP-4101": ticketCard("ZAP-4101", "Write the export spec"),
-    "ZAP-4200": ticketCard("ZAP-4200", "Fix the export")
+    "QRS-4101": ticketCard("QRS-4101", "Write the export spec"),
+    "QRS-4200": ticketCard("QRS-4200", "Fix the export")
 };
 
 const inputsOf = async (): Promise<CaiusInputs> => {
@@ -106,7 +106,7 @@ beforeAll(async () => {
     await dayWith(TUE, `<h3>Meetings</h3>${ul(li("d-meet", "10:00 Standup (Ana)"), li("d-meet2", "14:00 Vendor sync"))}`
         + critical(li("d-rent", "Pay the rent ~10m"))
         + `<h3>Work</h3>${ul(
-            li("d-spec", "Write the export spec ZAP-4101 ~2h"),
+            li("d-spec", "Write the export spec QRS-4101 ~2h"),
             li("d-parent", "Plan the demo", ul(li("d-sub1", "Draft the slides ~45m"), li("d-sub2", "Book the room ~15m"))),
             li("d-big", "Rebuild the archive ~1h30m"),
             doneLi("d-donep", "Sort the invoices", ul(li("d-orphan", "File the last one ~20m")))
@@ -114,7 +114,7 @@ beforeAll(async () => {
         + `<h3>Personal</h3>${ul(li("d-growth", "🌱 Read a chapter ~1h"), li("d-charge", "🔋 Walk round the park ~30m"))}`
         + `<h2>On deck</h2>${ul(li("d-deck", "Tidy the backlog ~1h"))}`);
     await forward(mon, [ "m-plumber" ], TUE);
-    const added = await run(() => service.contextAdd({ week: WEEK, text: "ZAP-4101 is blocked", until: FRI }));
+    const added = await run(() => service.contextAdd({ week: WEEK, text: "QRS-4101 is blocked", until: FRI }));
     expect(added.results[0]).toMatchObject({ status: "added" });
 });
 
@@ -156,7 +156,7 @@ describe("the day view", () => {
         expect(data.meetingLines).toEqual(day.plan.meetings);
         expect(data.meetingLines).toHaveLength(2);
         expect(data.unplacedMinutes).toBe(day.layout.unplaced.reduce((n, u) => n + u.minutes, 0));
-        expect(data.context).toContainEqual({ text: expect.stringContaining("ZAP-4101 is blocked"), until: FRI, untilLabel: "Fri 10 Mar" });
+        expect(data.context).toContainEqual({ text: expect.stringContaining("QRS-4101 is blocked"), until: FRI, untilLabel: "Fri 10 Mar" });
 
         const words = data.tasks.map(plain);
         expect(words[0]).toBe("Pay the rent");
@@ -173,8 +173,8 @@ describe("the day view", () => {
         expect(row("Pay the rent")).toMatchObject({ critical: true, place: "list", slips: 0 });
         expect(row("Tidy the backlog")).toMatchObject({ place: "onDeck" });
         expect(row("Ring the plumber")).toMatchObject({ slips: 1 });
-        expect(row("Write the export spec")?.ticket).toEqual({ key: "ZAP-4101" });
-        expect(data.tasks.filter((t) => t.ticket).map(plain)).toEqual([ "Write the export spec ZAP-4101" ]);
+        expect(row("Write the export spec")?.ticket).toEqual({ key: "QRS-4101" });
+        expect(data.tasks.filter((t) => t.ticket).map(plain)).toEqual([ "Write the export spec QRS-4101" ]);
         expect(row("Draft the slides")).toMatchObject({ parentListItemId: "d-parent", parent: "Plan the demo" });
     });
 
@@ -267,33 +267,33 @@ describe("the item view", () => {
     });
 
     it("gives a key no task names the ticket alone", async () => {
-        const view = await shown("item", { key: "zap-4200" });
+        const view = await shown("item", { key: "qrs-4200" });
         expect(view.data).toMatchObject({ task: null, trail: [], origin: null });
         expect(view.data.ticket).toEqual({
-            key: "ZAP-4200", summary: "Fix the export", status: "In Review", daysInStatus: 3, assignee: "Sam Lee",
-            url: "https://jira.example.com/browse/ZAP-4200", done: false,
+            key: "QRS-4200", summary: "Fix the export", status: "In Review", daysInStatus: 3, assignee: "Sam Lee",
+            url: "https://jira.example.com/browse/QRS-4200", done: false,
             lastComment: { author: "Sam Lee", created: "2034-03-06T12:00:00.000Z", excerpt: "Pushed a fix." },
             ask: { author: "Riley", created: "2034-03-06T09:00:00.000Z", excerpt: "Can you look?" }
         });
-        expect(view.title).toBe("ZAP-4200 Fix the export");
-        expect(view.sentence).toBe("ZAP-4200: In Review for 3 days; last comment from Sam Lee.");
-        expect(await shown("item", { key: "ZAP-4999" })).toMatchObject({ data: { task: null, ticket: { key: "ZAP-4999", error: "not_found" } } });
+        expect(view.title).toBe("QRS-4200 Fix the export");
+        expect(view.sentence).toBe("QRS-4200: In Review for 3 days; last comment from Sam Lee.");
+        expect(await shown("item", { key: "QRS-4999" })).toMatchObject({ data: { task: null, ticket: { key: "QRS-4999", error: "not_found" } } });
         expect(await show({ view: "item" })).toMatchObject({ error: "bad_request" });
         expect(await show({ view: "item", item: { noteId: "nope", listItemId: "nope" } })).toMatchObject({ error: "not_found" });
     });
 
     it("gives a key a task names both, with the Context lines naming it and what was said about it", async () => {
         const tuesday = await dayId(TUE);
-        expect(await run(() => service.finished({ keys: [ "ZAP-4101" ] }))).not.toHaveProperty("error");
-        await run(() => store.addLabel(tuesday, "caiusNotToday", "ZAP-4101"));
-        await run(() => store.addLabel(tuesday, "caiusDismissed", "ZAP-4101"));
+        expect(await run(() => service.finished({ keys: [ "QRS-4101" ] }))).not.toHaveProperty("error");
+        await run(() => store.addLabel(tuesday, "caiusNotToday", "QRS-4101"));
+        await run(() => store.addLabel(tuesday, "caiusDismissed", "QRS-4101"));
         const old = await dayId("2034-01-02");
-        await run(() => store.addLabel(old, "caiusDismissed", "ZAP-4101"));
+        await run(() => store.addLabel(old, "caiusDismissed", "QRS-4101"));
 
-        const view = await shown("item", { key: "ZAP-4101" });
-        expect(view.data.task).toMatchObject({ noteId: tuesday, listItemId: "d-spec", ticket: { key: "ZAP-4101", status: "In Review" } });
-        expect(view.data.ticket).toMatchObject({ key: "ZAP-4101", status: "In Review" });
-        expect(view.data.context).toEqual([ { text: expect.stringContaining("ZAP-4101 is blocked"), until: FRI, untilLabel: "Fri 10 Mar" } ]);
+        const view = await shown("item", { key: "QRS-4101" });
+        expect(view.data.task).toMatchObject({ noteId: tuesday, listItemId: "d-spec", ticket: { key: "QRS-4101", status: "In Review" } });
+        expect(view.data.ticket).toMatchObject({ key: "QRS-4101", status: "In Review" });
+        expect(view.data.context).toEqual([ { text: expect.stringContaining("QRS-4101 is blocked"), until: FRI, untilLabel: "Fri 10 Mar" } ]);
         expect(view.data.dispositions).toEqual([
             { kind: "dismissed", until: "2034-03-21" },
             { kind: "finished", until: "2034-04-06" },
@@ -302,8 +302,8 @@ describe("the item view", () => {
 
         // The task's own ids lead to its key's ticket too.
         const byIds = await shown("item", { item: { noteId: tuesday, listItemId: "d-spec" } });
-        expect(byIds.data.ticket).toMatchObject({ key: "ZAP-4101" });
-        expect(byIds.sentence).toContain("ZAP-4101: In Review for 3 days");
+        expect(byIds.data.ticket).toMatchObject({ key: "QRS-4101" });
+        expect(byIds.sentence).toContain("QRS-4101: In Review for 3 days");
     });
 });
 

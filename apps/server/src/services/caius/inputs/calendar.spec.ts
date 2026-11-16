@@ -149,7 +149,7 @@ describe("caius_inputs calendar", () => {
         const feedDown = await run("2026-10-27", ENV, fakeNetwork({ [FEEDS[0]]: () => new Response("no", { status: 403 }) }));
         expect(feedDown.errors).toEqual([ { source: "calendar", error: "feed_0_http_403" } ]);
         expect(summary(feedDown.calendar)).toEqual([ "08:00-09:00 Dentist", "12:00-12:30 Corporate Team Meeting", "16:00-17:00 Vendor Demo" ]);
-        expect(feedDown.jira.handoff.map((t) => t.key)).toEqual([ "ZAP-101" ]);
+        expect(feedDown.jira.handoff.map((t) => t.key)).toEqual([ "QRS-101" ]);
 
         const badFeed = await run("2026-10-27", ENV, fakeNetwork({ [FEEDS[1]]: () => new Response("not a calendar") }));
         expect(badFeed.errors).toEqual([ { source: "calendar", error: "feed_1_parse" } ]);

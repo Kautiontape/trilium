@@ -24,7 +24,8 @@ export type { PlanView, PlanTask, PlanSection, Capacity, PeriodKind } from './pl
 export { buildDoc } from './journal.js';
 export { addTasks, acceptTasks, dismissTasks, EVENING_REASON, setStates } from './plan.js';
 export type { AddRequest, AcceptRequest, ItemRequest, PlanResult, PlanOptions, PlanSkip } from './plan.js';
-export { taskKeys, parseSource, parseEstimate, textHash, JIRA_BASE } from './keys.js';
+export { taskKeys, parseSource, parseEstimate, textHash, setKeyConfig, keyConfig } from './keys.js';
+export type { KeyConfig } from './keys.js';
 export { ON_DECK, placeTask, setTaskState, takeOnDeck, takeSuggested } from './plan-html.js';
 export type { StateAction, Target } from './plan-html.js';
 export { addUnder, liftOut, nestNew, nestUnder } from './nest-html.js';

@@ -1,7 +1,7 @@
 {
   "issues": [
     {
-      "key": "ZAP-101",
+      "key": "QRS-101",
       "fields": {
         "summary": "Verify the export retry on staging",
         "status": {
@@ -19,7 +19,7 @@
       }
     },
     {
-      "key": "ZAP-102",
+      "key": "QRS-102",
       "fields": {
         "summary": "Tidy the settings form",
         "status": {

@@ -1,7 +1,7 @@
 {
   "issues": [
     {
-      "key": "ZAP-103",
+      "key": "QRS-103",
       "fields": {
         "summary": "Rotate the webhook signing key",
         "status": {
@@ -21,7 +21,7 @@
       }
     },
     {
-      "key": "ZAP-110",
+      "key": "QRS-110",
       "fields": {
         "summary": "Review the import mapper change",
         "status": {
@@ -39,7 +39,7 @@
       }
     },
     {
-      "key": "ZAP-111",
+      "key": "QRS-111",
       "fields": {
         "summary": "Check the invoice export in QA",
         "status": {

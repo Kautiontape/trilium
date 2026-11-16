@@ -93,7 +93,7 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
 
 /**
  * The one question about items held from an earlier call, by their texts: "Which do you mean:
- * ZAP-111 or ZAP-101?", "What about ZAP-101?" for one, or null for none. The catch-up step asks it too.
+ * QRS-111 or QRS-101?", "What about QRS-101?" for one, or null for none. The catch-up step asks it too.
  */
 export function heldQuestion(held: HeldItem[]): string | null {
     // Items held on several days are told apart by their day.

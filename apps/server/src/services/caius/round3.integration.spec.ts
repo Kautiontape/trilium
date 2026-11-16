@@ -81,19 +81,19 @@ afterEach(() => {
 });
 
 describe("a Context line he gave is settled until the week boundary", () => {
-    it("Mon 17:30 to Fri 17:20: 'ZAP-2590 is open' goes to Week 45 and no step asks about it until Friday's carry", async () => {
+    it("Mon 17:30 to Fri 17:20: 'QRS-2590 is open' goes to Week 45 and no step asks about it until Friday's carry", async () => {
         at(`${MON}T17:30`);
-        const monday = await call("caius_winddown_apply", { date: MON, context: [ "ZAP-2590 is open" ] });
-        expect(monday.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "context", text: "ZAP-2590 is open", status: "written" }) ]));
+        const monday = await call("caius_winddown_apply", { date: MON, context: [ "QRS-2590 is open" ] });
+        expect(monday.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "context", text: "QRS-2590 is open", status: "written" }) ]));
 
         const unasked = (answer: any, when: string) => {
-            expect(answer.question ?? "", when).not.toContain("ZAP-2590");
+            expect(answer.question ?? "", when).not.toContain("QRS-2590");
             expect(answer.data.carry ?? answer.data.noticed, when).toEqual([]);
         };
         at(`${TUE}T09:35`);
         const tuesday = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
         unasked(tuesday, "Tue 09:35");
-        expect(tuesday.data.context.map((c: any) => c.text)).toEqual([ "ZAP-2590 is open" ]);
+        expect(tuesday.data.context.map((c: any) => c.text)).toEqual([ "QRS-2590 is open" ]);
         await call("caius_plan_apply", { date: TUE, brief: prose });
         at(`${TUE}T11:05`);
         unasked(await call("caius_planday", { date: TUE, step: "inputs", refresh: true }), "Tue 11:05");
@@ -106,12 +106,12 @@ describe("a Context line he gave is settled until the week boundary", () => {
 
         at(`${FRI}T17:20`);
         const friday = await call("caius_winddown", { date: FRI, step: "context" });
-        expect(friday.data.noticed).toEqual([ expect.objectContaining({ kind: "carry", line: "ZAP-2590 is open" }) ]);
-        expect(friday.question).toContain("Carry 'ZAP-2590 is open' into next week?");
+        expect(friday.data.noticed).toEqual([ expect.objectContaining({ kind: "carry", line: "QRS-2590 is open" }) ]);
+        expect(friday.question).toContain("Carry 'QRS-2590 is open' into next week?");
     });
 });
 
-const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+const qrs = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
 /** The day's main list and evening, as the plan reads them. */
 async function listed(date: string) {
     const plan = await call("caius_plan", { period: "day", date });
@@ -119,49 +119,49 @@ async function listed(date: string) {
 }
 
 describe("accept takes a position", () => {
-    it("Wed 09:40 'yes, 101 first': the week's ZAP-101 goes to the top of his list, not the end", async () => {
+    it("Wed 09:40 'yes, 101 first': the week's QRS-101 goes to the top of his list, not the end", async () => {
         await cls.init(async () => {
             const wednesday = await store.calendarDay(WED);
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("w105", `${zap("ZAP-105", "Confirm the staging bucket name")} ~30m`), li("w111", `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`))}`
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("w105", `${qrs("QRS-105", "Confirm the staging bucket name")} ~30m`), li("w111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`
                 + `<h3>Evening</h3>${ul(li("wlau", "Laundry"))}`);
             const week = await store.calendarWeek("2026-W45");
-            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("k101", `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`))}`);
+            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("k101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
         });
         at(`${WED}T09:40`);
         const inputs = await call("caius_planday", { date: WED, step: "inputs", refresh: true });
-        expect(inputs.data.candidates).toEqual([ expect.objectContaining({ candidateId: "ZAP-101", kind: "week" }) ]);
+        expect(inputs.data.candidates).toEqual([ expect.objectContaining({ candidateId: "QRS-101", kind: "week" }) ]);
         expect(inputs.data.list).toEqual([
-            { listItemId: "w105", text: "ZAP-105 Confirm the staging bucket name", area: "foundation", block: null, at: null, ref: refOf("l", "w105") },
-            { listItemId: "w111", text: "ZAP-111 Check the invoice export in QA", area: "foundation", block: null, at: null, ref: refOf("l", "w111") },
+            { listItemId: "w105", text: "QRS-105 Confirm the staging bucket name", area: "foundation", block: null, at: null, ref: refOf("l", "w105") },
+            { listItemId: "w111", text: "QRS-111 Check the invoice export in QA", area: "foundation", block: null, at: null, ref: refOf("l", "w111") },
             // On a note with no Morning or Afternoon, an unmarked task under Evening reads as Recharge.
             { listItemId: "wlau", text: "Laundry", area: "recharge", block: "evening", at: null, ref: refOf("l", "wlau") }
         ]);
-        const applied = await call("caius_plan_apply", { date: WED, accept: [ { candidateId: "ZAP-101", first: true } ], brief: prose });
+        const applied = await call("caius_plan_apply", { date: WED, accept: [ { candidateId: "QRS-101", first: true } ], brief: prose });
         expect(applied.skipped).toEqual([]);
         expect(await listed(WED)).toEqual([
-            "[ZAP-101](https://example.atlassian.net/browse/ZAP-101) Verify the export retry on staging",
-            "[ZAP-105](https://example.atlassian.net/browse/ZAP-105) Confirm the staging bucket name",
-            "[ZAP-111](https://example.atlassian.net/browse/ZAP-111) Check the invoice export in QA",
+            "[QRS-101](https://example.atlassian.net/browse/QRS-101) Verify the export retry on staging",
+            "[QRS-105](https://example.atlassian.net/browse/QRS-105) Confirm the staging bucket name",
+            "[QRS-111](https://example.atlassian.net/browse/QRS-111) Check the invoice export in QA",
             "Laundry"
         ]);
     });
 
     it("Tue 'add 120 after 105', then 'runbook first': a Suggested ticket goes after the task he names, and his own task moves to the top", async () => {
         const DAY = "2026-11-10";
-        jira.handoff.push({ ...ticket("ZAP-120", { status: "QA Testing" }), daysInStatus: 3 });
+        jira.handoff.push({ ...ticket("QRS-120", { status: "QA Testing" }), daysInStatus: 3 });
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t105", `${zap("ZAP-105", "Confirm the staging bucket name")} ~30m`), li("trun", "Write the runbook ~30m"))}`
-                + `<h3>Evening</h3>${ul(li("tlau", "Laundry"))}<h2>Suggested</h2>${ul(li("ts120", `Get ${zap("ZAP-120", "Check the invoice export in QA")} done: because sitting in QA Testing for 3 days (~30m)`))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t105", `${qrs("QRS-105", "Confirm the staging bucket name")} ~30m`), li("trun", "Write the runbook ~30m"))}`
+                + `<h3>Evening</h3>${ul(li("tlau", "Laundry"))}<h2>Suggested</h2>${ul(li("ts120", `Get ${qrs("QRS-120", "Check the invoice export in QA")} done: because sitting in QA Testing for 3 days (~30m)`))}`);
         });
         at(`${DAY}T09:35`);
-        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "ZAP-120", after: "t105" } ], brief: prose });
+        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "QRS-120", after: "t105" } ], brief: prose });
         expect(applied.skipped).toEqual([]);
-        expect(await listed(DAY)).toEqual([ expect.stringContaining("ZAP-105"), expect.stringContaining("ZAP-120"), "Write the runbook", "Laundry" ]);
+        expect(await listed(DAY)).toEqual([ expect.stringContaining("QRS-105"), expect.stringContaining("QRS-120"), "Write the runbook", "Laundry" ]);
 
         const moved = await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "trun", first: true } ], brief: prose });
         expect(moved.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "move", id: "trun", status: "written" }) ]));
-        expect(await listed(DAY)).toEqual([ "Write the runbook", expect.stringContaining("ZAP-105"), expect.stringContaining("ZAP-120"), "Laundry" ]);
+        expect(await listed(DAY)).toEqual([ "Write the runbook", expect.stringContaining("QRS-105"), expect.stringContaining("QRS-120"), "Laundry" ]);
 
         // A move works within any work list, the evening's included; an item that is on no list is refused.
         const evening = await call("caius_plan_apply", { date: DAY, move: [ { listItemId: "tlau", first: true } ], brief: prose });
@@ -201,20 +201,20 @@ describe("a place can name what the same call writes", () => {
     it("Plan my day 'move them all, 302 first': an item the catch-up moves goes first", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2027-02-22");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("t301", `${zap("ZAP-301", "Check the export")} ~30m`), li("tmemo", "Write the memo ~30m"), li("t302", `${zap("ZAP-302", "Verify the retry")} ~30m`))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("t301", `${qrs("QRS-301", "Check the export")} ~30m`), li("tmemo", "Write the memo ~30m"), li("t302", `${qrs("QRS-302", "Verify the retry")} ~30m`))}`);
             const tuesday = await store.calendarDay("2027-02-23");
             await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("tmorn", "Morning thing ~30m"))}`);
         });
         at("2027-02-23T09:40");
         const applied = await call("caius_plan_apply", { date: "2027-02-23", catchup: "move_all", move: [ { listItemId: "t302", first: true } ], brief: prose });
         expect(applied.skipped).toEqual([]);
-        expect(await listed("2027-02-23")).toEqual([ expect.stringContaining("ZAP-302"), "Morning thing", expect.stringContaining("ZAP-301"), "Write the memo" ]);
+        expect(await listed("2027-02-23")).toEqual([ expect.stringContaining("QRS-302"), "Morning thing", expect.stringContaining("QRS-301"), "Write the memo" ]);
     });
 
     it("Wind down '305 tomorrow, first' and '311 after 305': items the fates move are placed on the next workday", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2027-03-01");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("s305", `${zap("ZAP-305", "Confirm the bucket")} ~30m`), li("s311", `${zap("ZAP-311", "Check the invoice")} ~30m`), li("sdesk", "Tidy the desk"))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("s305", `${qrs("QRS-305", "Confirm the bucket")} ~30m`), li("s311", `${qrs("QRS-311", "Check the invoice")} ~30m`), li("sdesk", "Tidy the desk"))}`);
             const tuesday = await store.calendarDay("2027-03-02");
             await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("sold", "Already there"))}`);
         });
@@ -225,39 +225,39 @@ describe("a place can name what the same call writes", () => {
             move: [ { listItemId: "s305", first: true }, { listItemId: "s311", after: "s305" } ]
         });
         expect(wound.skipped).toEqual([]);
-        expect(await listed("2027-03-02")).toEqual([ expect.stringContaining("ZAP-305"), expect.stringContaining("ZAP-311"), "Already there" ]);
+        expect(await listed("2027-03-02")).toEqual([ expect.stringContaining("QRS-305"), expect.stringContaining("QRS-311"), "Already there" ]);
         // The desk he didn't name goes on Tuesday's On deck, as proposed.
         expect((await call("caius_plan", { period: "day", date: "2027-03-02" })).onDeck.map((t: any) => String(t.text).split(" [")[0])).toEqual([ "Tidy the desk" ]);
     });
 
     it("accept [{321, after: 320}, {320}]: a candidate taken later in the call is a place", async () => {
         const DAY = "2027-03-03";
-        jira.handoff.push({ ...ticket("ZAP-320"), daysInStatus: 2 }, { ...ticket("ZAP-321"), daysInStatus: 2 });
+        jira.handoff.push({ ...ticket("QRS-320"), daysInStatus: 2 }, { ...ticket("QRS-321"), daysInStatus: 2 });
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("own", "Own task ~30m"))}`);
         });
         at(`${DAY}T09:40`);
-        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "ZAP-321", after: "ZAP-320" }, { candidateId: "ZAP-320" } ], brief: prose });
+        const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "QRS-321", after: "QRS-320" }, { candidateId: "QRS-320" } ], brief: prose });
         expect(applied.skipped).toEqual([]);
-        expect(await listed(DAY)).toEqual([ "Own task", expect.stringContaining("ZAP-320"), expect.stringContaining("ZAP-321") ]);
+        expect(await listed(DAY)).toEqual([ "Own task", expect.stringContaining("QRS-320"), expect.stringContaining("QRS-321") ]);
     });
 });
 
 describe("several firsts keep his order", () => {
     it("accept [{331, first}, {330, first}] and a move first after them: 331, 330, then the moved task, then the rest", async () => {
         const DAY = "2027-03-04";
-        jira.handoff.push({ ...ticket("ZAP-330"), daysInStatus: 2 }, { ...ticket("ZAP-331"), daysInStatus: 2 });
+        jira.handoff.push({ ...ticket("QRS-330"), daysInStatus: 2 }, { ...ticket("QRS-331"), daysInStatus: 2 });
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("vown", "Own task ~30m"), li("vlast", "Last task ~30m"))}`);
         });
         at(`${DAY}T09:40`);
         const applied = await call("caius_plan_apply", {
-            date: DAY, accept: [ { candidateId: "ZAP-331", first: true }, { candidateId: "ZAP-330", first: true } ], move: [ { listItemId: "vlast", first: true } ], brief: prose
+            date: DAY, accept: [ { candidateId: "QRS-331", first: true }, { candidateId: "QRS-330", first: true } ], move: [ { listItemId: "vlast", first: true } ], brief: prose
         });
         expect(applied.skipped).toEqual([]);
-        expect(await listed(DAY)).toEqual([ expect.stringContaining("ZAP-331"), expect.stringContaining("ZAP-330"), "Last task", "Own task" ]);
+        expect(await listed(DAY)).toEqual([ expect.stringContaining("QRS-331"), expect.stringContaining("QRS-330"), "Last task", "Own task" ]);
     });
 });
 
@@ -267,13 +267,13 @@ describe("the header is drawn from the note as it ends", () => {
         calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("19:00", "20:30", "Climbing gym") ];
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h130", `${zap("ZAP-130", "Verify the export retry")} ~30m`))}`
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h130", `${qrs("QRS-130", "Verify the export retry")} ~30m`))}`
                 + `<h3>Evening</h3>${ul(li("hlau", "Laundry <a href=\"#root/abc\">from Tue 10 Nov</a>"))}`);
         });
         at(`${DAY}T09:40`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(inputs.data.list.map((item: any) => item.listItemId)).toEqual([ "h130", "hlau" ]);
-        const applied = await call("caius_plan_apply", { date: DAY, forward: [ { listItemId: "hlau", to: "2026-11-12" } ], brief: { ...prose, groups: [ { name: "Export", items: [ "ZAP-130" ] }, { name: "Home", items: [ "Laundry" ] } ] } });
+        const applied = await call("caius_plan_apply", { date: DAY, forward: [ { listItemId: "hlau", to: "2026-11-12" } ], brief: { ...prose, groups: [ { name: "Export", items: [ "QRS-130" ] }, { name: "Home", items: [ "Laundry" ] } ] } });
         expect(applied.skipped).toEqual([]);
         // Laundry left his list in the same call, so its group is gone and the item that named it comes back.
         expect(applied.ungrouped).toEqual([ "Laundry" ]);
@@ -314,7 +314,7 @@ describe("the header is drawn from the note as it ends", () => {
         const DAY = "2026-11-18";
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g140", `${zap("ZAP-140", "Ship the fix")} ~30m`))}<h3>Evening</h3>${ul(li("glau", "Laundry"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g140", `${qrs("QRS-140", "Ship the fix")} ~30m`))}<h3>Evening</h3>${ul(li("glau", "Laundry"))}`);
         });
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
@@ -331,8 +331,8 @@ describe("the header is drawn from the note as it ends", () => {
         const OLD = "2027-02-10";
         const DAY = "2027-02-11";
         await cls.init(async () => {
-            await store.putContent((await store.calendarDay(OLD)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u1", `${zap("ZAP-170", "Ship it")} ~30m`))}`);
-            await store.putContent((await store.calendarDay(DAY)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u2", `${zap("ZAP-171", "Ship that")} ~30m`))}`);
+            await store.putContent((await store.calendarDay(OLD)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u1", `${qrs("QRS-170", "Ship it")} ~30m`))}`);
+            await store.putContent((await store.calendarDay(DAY)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u2", `${qrs("QRS-171", "Ship that")} ~30m`))}`);
         });
         errorsByDate[DAY] = [ { source: "calendar", error: "feed_0_timeout" } ];
         at(`${DAY}T09:00`);
@@ -398,11 +398,11 @@ describe("capacity is one honest number", () => {
         event("13:30", "15:00", "Design Workshop"), event("15:00", "16:00", "Interview Panel")
     ];
 
-    it("Thu 09:30, 5 h of meetings: the step's one capacity block, no push for more work, and 'ZAP-150 fits; that's the day.'", async () => {
+    it("Thu 09:30, 5 h of meetings: the step's one capacity block, no push for more work, and 'QRS-150 fits; that's the day.'", async () => {
         calendars[DAY] = heavy;
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${zap("ZAP-150", "Verify the export retry on staging")} ~30m`))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${qrs("QRS-150", "Verify the export retry on staging")} ~30m`))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
         });
         at(`${DAY}T09:30`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
@@ -412,7 +412,7 @@ describe("capacity is one honest number", () => {
         });
         expect(inputs.data.forwardSuggestion).toBeNull();
         expect(inputs.question).toBeNull();
-        expect(inputs.data.summary).toBe("ZAP-150 fits; that's the day.");
+        expect(inputs.data.summary).toBe("QRS-150 fits; that's the day.");
 
         at("2026-11-18T18:00");
         const before = await call("caius_winddown", { date: "2026-11-18", step: "next" });
@@ -425,7 +425,7 @@ describe("capacity is one honest number", () => {
     it("Thu 09:30, over the focus target on a heavy day: the move question, and no summary", async () => {
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${zap("ZAP-150", "Verify the export retry on staging")} ~1h`), li("c102", "Write the runbook ~1h30m"))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${qrs("QRS-150", "Verify the export retry on staging")} ~1h`), li("c102", "Write the runbook ~1h30m"))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
         });
         at(`${DAY}T09:30`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });

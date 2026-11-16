@@ -18,7 +18,7 @@ const li = (id: string, text: string) =>
     `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox" disabled="disabled">`
     + `<span class="todo-list__label__description">${text}</span></label></li>`;
 const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>`;
-const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+const qrs = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
 
 const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
     key, summary: `Summary ${key}`, status: "Code Review", resolution: null, url: `https://example.atlassian.net/browse/${key}`,
@@ -35,7 +35,7 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
 
 const tools = createCaiusTools(undefined, async () => ({ code: 3, label: "Overcast" }), stubInputs);
 
-const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Location for the weather: 39.95, -75.17</li></ul>"
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Location for the weather: 39.95, -75.17</li><li>Jira: QRS</li></ul>"
     + "<h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
 
 function call(name: string, args: object): Promise<any> {
@@ -79,9 +79,9 @@ async function monday(date: string) {
     await cls.init(async () => {
         const day = await store.calendarDay(date);
         await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-            li(`${date}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`),
-            li(`${date}-110`, `${zap("ZAP-110", "Review the import mapper change")} ~30m`),
-            li(`${date}-111`, `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`)
+            li(`${date}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`),
+            li(`${date}-110`, `${qrs("QRS-110", "Review the import mapper change")} ~30m`),
+            li(`${date}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`)
         )}`);
     });
 }
@@ -107,21 +107,21 @@ describe("a correction after the apply", () => {
     it("Mon 17:30: '111 was later this week, not tomorrow' is a second apply that moves only 111 to the week, adds the Context line, and repeats without change", async () => {
         const MON = "2026-11-02";
         const TUE = "2026-11-03";
-        const FIX = "111 was later this week, not tomorrow. and don't dismiss 105. also ZAP-2590 is open, Jira's Done is wrong";
+        const FIX = "111 was later this week, not tomorrow. and don't dismiss 105. also QRS-2590 is open, Jira's Done is wrong";
         await monday(MON);
-        jira.handoff.push({ ...ticket("ZAP-111", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
+        jira.handoff.push({ ...ticket("QRS-111", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
         at(`${MON}T17:30`);
         // Tuesday's evening has the bag, a Recharge task added with its area and block.
         await call("caius_add", { items: [ { date: TUE, area: "recharge", block: "evening", text: "Pack the climbing gym bag" } ] });
-        const first = await call("caius_winddown_apply", { date: MON, said: "110 is done.", done: [ "ZAP-110" ] });
+        const first = await call("caius_winddown_apply", { date: MON, said: "110 is done.", done: [ "QRS-110" ] });
         expect(first.skipped).toEqual([]);
         // The evening's bag on Tuesday's list, the two tickets on its On deck.
         expect((await tasksOf("day", TUE)).map((task: any) => task.text)).toEqual([
-            "🔋 Pack the climbing gym bag", "ZAP-101 Verify the export retry on staging", "ZAP-111 Check the invoice export in QA"
+            "🔋 Pack the climbing gym bag", "QRS-101 Verify the export retry on staging", "QRS-111 Check the invoice export in QA"
         ]);
 
         at(`${MON}T17:31`);
-        const fix = await call("caius_winddown_apply", { date: MON, said: FIX, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
+        const fix = await call("caius_winddown_apply", { date: MON, said: FIX, fates: [ { listItemId: "111", to: "w1" } ], context: [ "QRS-2590 is open" ] });
         expect(fix.skipped).toEqual([]);
         expect(fix.written).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: "fate", detail: "2026-W45", status: "written" }),
@@ -130,14 +130,14 @@ describe("a correction after the apply", () => {
         // 111 left Tuesday for the week; 101 and the bag stay on Tuesday, once each.
         expect(await tasksOf("day", TUE)).toEqual([
             { text: "🔋 Pack the climbing gym bag", state: "open" },
-            { text: "ZAP-101 Verify the export retry on staging", state: "open" },
-            { text: "ZAP-111 Check the invoice export in QA", state: expect.not.stringMatching(/^open$/) }
+            { text: "QRS-101 Verify the export retry on staging", state: "open" },
+            { text: "QRS-111 Check the invoice export in QA", state: expect.not.stringMatching(/^open$/) }
         ]);
-        expect(await tasksOf("week", "2026-W45")).toEqual([ { text: "ZAP-111 Check the invoice export in QA", state: "open" } ]);
-        expect((await call("caius_context", { date: TUE })).context.map((line: any) => line.text)).toContain("ZAP-2590 is open");
+        expect(await tasksOf("week", "2026-W45")).toEqual([ { text: "QRS-111 Check the invoice export in QA", state: "open" } ]);
+        expect((await call("caius_context", { date: TUE })).context.map((line: any) => line.text)).toContain("QRS-2590 is open");
 
         const before = await journal();
-        const again = await call("caius_winddown_apply", { date: MON, said: FIX, fates: [ { listItemId: "111", to: "w1" } ], context: [ "ZAP-2590 is open" ] });
+        const again = await call("caius_winddown_apply", { date: MON, said: FIX, fates: [ { listItemId: "111", to: "w1" } ], context: [ "QRS-2590 is open" ] });
         expect(again.skipped).toEqual([]);
         expect(again.written.filter((entry: any) => entry.status === "written")).toEqual([]);
         expect(await journal()).toEqual(before);
@@ -145,7 +145,7 @@ describe("a correction after the apply", () => {
         // Put off to the week, 111 isn't offered for Tuesday the next morning.
         at(`${TUE}T09:35`);
         const inputs = await call("caius_planday", { date: TUE, step: "inputs", refresh: true });
-        expect(inputs.data.candidates.map((candidate: any) => candidate.candidateId)).not.toContain("ZAP-111");
+        expect(inputs.data.candidates.map((candidate: any) => candidate.candidateId)).not.toContain("QRS-111");
     });
 });
 
@@ -156,7 +156,7 @@ describe("a correction to a day, by key or words", () => {
         const WED = "2027-07-14";
         await cls.init(async () => {
             const day = await store.calendarDay(MON);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MON}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`), li(`${MON}-dave`, "Message Dave about the lights"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MON}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${MON}-dave`, "Message Dave about the lights"))}`);
         });
         at(`${MON}T17:30`);
         await call("caius_winddown_apply", { date: MON, said: "fine", asOffered: true });
@@ -178,7 +178,7 @@ describe("a correction to a day, by key or words", () => {
             expect(result.written.filter((entry: any) => entry.kind === "fate"), `${said} ${status}`).toEqual([ expect.objectContaining({ detail: to, status }) ]);
         }
         expect(await live(TUE)).toEqual([ "Message Dave about the lights" ]);
-        expect(await live(WED)).toEqual([ "ZAP-101 Verify the export retry on staging" ]);
+        expect(await live(WED)).toEqual([ "QRS-101 Verify the export retry on staging" ]);
     });
 });
 
@@ -189,25 +189,25 @@ describe("his words decide", () => {
         at(`${MON}T17:30`);
         const said = "110 is done. 111 later this week.";
         const before = await journal();
-        const checked = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ] });
+        const checked = await call("caius_winddown_apply", { date: MON, said, done: [ "QRS-110" ] });
         expect(checked.written).toEqual([]);
-        expect(checked.check).toEqual([ expect.objectContaining({ item: "ZAP-111 Check the invoice export in QA", said: "111 later this week", missing: "fate" }) ]);
+        expect(checked.check).toEqual([ expect.objectContaining({ item: "QRS-111 Check the invoice export in QA", said: "111 later this week", missing: "fate" }) ]);
         expect(checked.check[0].message).toContain("later this week");
         expect(await journal()).toEqual(before);
 
-        const applied = await call("caius_winddown_apply", { date: MON, said, done: [ "ZAP-110" ], fates: [ { listItemId: "111", to: "w1" } ] });
+        const applied = await call("caius_winddown_apply", { date: MON, said, done: [ "QRS-110" ], fates: [ { listItemId: "111", to: "w1" } ] });
         expect(applied.check).toBeUndefined();
         expect(applied.skipped).toEqual([]);
         expect(applied.written).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: "fate", id: `${MON}-111`, detail: "2026-W47", status: "written" }),
             expect.objectContaining({ kind: "fate", id: `${MON}-101`, detail: "2026-11-17", status: "written" })
         ]));
-        expect((await tasksOf("week", "2026-W47")).map((task: any) => task.text)).toEqual([ "ZAP-111 Check the invoice export in QA" ]);
+        expect((await tasksOf("week", "2026-W47")).map((task: any) => task.text)).toEqual([ "QRS-111 Check the invoice export in QA" ]);
     });
 
     it("his words never move an item: negations, questions and another item's words give a check or nothing, and checked: true writes only the proposed fates", async () => {
         const replies = [
-            "111 not this week", "can't do 101 friday", "should 111 go thursday?", "call mom friday", "message mom tuesday", "ZAP-111 later this week",
+            "111 not this week", "can't do 101 friday", "should 111 go thursday?", "call mom friday", "message mom tuesday", "QRS-111 later this week",
             "dave not tuesday", "I'll message dave tuesday myself, keep it off the list", "111 isn't happening this week"
         ];
         for (const [ i, said ] of replies.entries()) {
@@ -216,8 +216,8 @@ describe("his words decide", () => {
             await cls.init(async () => {
                 const day = await store.calendarDay(MON);
                 await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-                    li(`${MON}-101`, `${zap("ZAP-101", "Verify the export retry on staging")} ~30m`),
-                    li(`${MON}-111`, `${zap("ZAP-111", "Check the invoice export in QA")} ~30m`),
+                    li(`${MON}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`),
+                    li(`${MON}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`),
                     li(`${MON}-dave`, "Message Dave about the lights"),
                     li(`${MON}-plumber`, "Call the plumber")
                 )}`);
@@ -239,23 +239,23 @@ describe("his words decide", () => {
         });
         const handoff = (key: string) => jira.handoff.push({ ...ticket(key, { summary: "Tidy the gate" }), daysInStatus: 2 });
         const DAY = "2026-11-18";
-        ask("ZAP-105", "c105");
-        handoff("ZAP-120");
+        ask("QRS-105", "c105");
+        handoff("QRS-120");
         at(`${DAY}T09:40`);
         const before = await journal();
         for (const said of [ "fine", "fine. and don't dismiss 105", "do not drop 105" ]) {
-            const refused = await call("caius_plan_apply", { date: DAY, said, dismiss: [ { candidateId: "ZAP-105" } ], brief: prose });
+            const refused = await call("caius_plan_apply", { date: DAY, said, dismiss: [ { candidateId: "QRS-105" } ], brief: prose });
             expect(refused.written, said).toEqual([]);
-            expect(refused.check, said).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-105"), missing: "dismiss" }) ]);
+            expect(refused.check, said).toEqual([ expect.objectContaining({ item: expect.stringContaining("QRS-105"), missing: "dismiss" }) ]);
         }
         // One dismiss word, two dismissals, only one item named: the other is checked.
-        const half = await call("caius_plan_apply", { date: DAY, said: "dismiss 105", dismiss: [ { candidateId: "ZAP-105" }, { candidateId: "ZAP-120" } ], brief: prose });
-        expect(half.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-120"), missing: "dismiss" }) ]);
+        const half = await call("caius_plan_apply", { date: DAY, said: "dismiss 105", dismiss: [ { candidateId: "QRS-105" }, { candidateId: "QRS-120" } ], brief: prose });
+        expect(half.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("QRS-120"), missing: "dismiss" }) ]);
         expect(await journal()).toEqual(before);
 
         // Any words of his that name the item: kill, forget, remove.
         for (const [ i, verb ] of [ "kill", "forget", "remove" ].entries()) {
-            const key = `ZAP-13${i}`;
+            const key = `QRS-13${i}`;
             jira.handoff.length = 0;
             handoff(key);
             const day = `2027-06-${String(7 + i).padStart(2, "0")}`;
@@ -269,7 +269,7 @@ describe("his words decide", () => {
 
 describe("answered in Chat", () => {
     const jordan = (commentId: string, created: string) => jira.asks.push({
-        ticket: ticket("ZAP-205", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created,
+        ticket: ticket("QRS-205", { summary: "Confirm the staging bucket name" }), author: "Jordan Placeholder", created,
         commentId, excerpt: "@Sam Example the rollout note is in the runbook now."
     });
 
@@ -281,29 +281,29 @@ describe("answered in Chat", () => {
         await call("caius_plan_apply", { date: MON, said: "evening just mom", brief: prose });
 
         at(`${TUE}T09:35`);
-        expect((await call("caius_planday", { date: TUE, step: "inputs", refresh: true })).data.followUps.map((f: any) => f.key)).toEqual([ "ZAP-205" ]);
-        const said = "111 not today. answered jordan in chat. ZAP-2590 is open, Jira's Done is wrong";
+        expect((await call("caius_planday", { date: TUE, step: "inputs", refresh: true })).data.followUps.map((f: any) => f.key)).toEqual([ "QRS-205" ]);
+        const said = "111 not today. answered jordan in chat. QRS-2590 is open, Jira's Done is wrong";
         // The agent's round-5 call: no dismiss, only his words.
-        const checked = await call("caius_plan_apply", { date: TUE, said, context: [ "ZAP-2590 is open" ], brief: prose });
+        const checked = await call("caius_plan_apply", { date: TUE, said, context: [ "QRS-2590 is open" ], brief: prose });
         expect(checked.written).toEqual([]);
-        expect(checked.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-205"), said: "answered jordan in chat", missing: "answered" }) ]);
-        const planned = await call("caius_plan_apply", { date: TUE, said, dismiss: [ { candidateId: "ZAP-205", answered: true } ], context: [ "ZAP-2590 is open" ], brief: prose });
-        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-205", status: "written" }) ]));
-        expect(await cls.init(() => store.content(planned.briefNoteId))).not.toContain("ZAP-205");
+        expect(checked.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("QRS-205"), said: "answered jordan in chat", missing: "answered" }) ]);
+        const planned = await call("caius_plan_apply", { date: TUE, said, dismiss: [ { candidateId: "QRS-205", answered: true } ], context: [ "QRS-2590 is open" ], brief: prose });
+        expect(planned.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "QRS-205", status: "written" }) ]));
+        expect(await cls.init(() => store.content(planned.briefNoteId))).not.toContain("QRS-205");
 
         at(`${TUE}T11:05`);
         expect((await call("caius_planday", { date: TUE, step: "inputs", refresh: true })).data.followUps).toEqual([]);
         const refreshed = await call("caius_plan_apply", { date: TUE, said: "", brief: prose });
-        expect(await cls.init(() => store.content(refreshed.briefNoteId))).not.toContain("ZAP-205");
+        expect(await cls.init(() => store.content(refreshed.briefNoteId))).not.toContain("QRS-205");
 
         at("2026-12-09T09:45");
         const later = await call("caius_planday", { date: "2026-12-09", step: "inputs", refresh: true });
         expect(later.data.followUps).toEqual([]);
-        expect(later.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-205");
+        expect(later.data.candidates.map((c: any) => c.candidateId)).not.toContain("QRS-205");
 
         // A newer comment is a new ask: offered again, first as a candidate.
         jordan("c206", "2026-12-08T15:00:00.000-0500");
-        expect((await call("caius_planday", { date: "2026-12-09", step: "inputs", refresh: true })).data.candidates.map((c: any) => c.candidateId)).toContain("ZAP-205");
+        expect((await call("caius_planday", { date: "2026-12-09", step: "inputs", refresh: true })).data.candidates.map((c: any) => c.candidateId)).toContain("QRS-205");
     });
 
     it("his words never close a follow-up: 'haven't answered jordan yet' is checked, 'I answered nothing in chat' closes nothing, and a plain dismissal lasts 14 days", async () => {
@@ -312,24 +312,24 @@ describe("answered in Chat", () => {
         });
         const MON = "2027-05-17";
         const TUE = "2027-05-18";
-        ask("ZAP-705", "c705");
+        ask("QRS-705", "c705");
         at(`${MON}T09:40`);
         await call("caius_plan_apply", { date: MON, said: "no", brief: prose });
         at(`${TUE}T09:35`);
         const yet = await call("caius_plan_apply", { date: TUE, said: "haven't answered riley yet, will do after lunch", brief: prose });
         expect(yet.written).toEqual([]);
-        expect(yet.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-705"), missing: "answered" }) ]);
+        expect(yet.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("QRS-705"), missing: "answered" }) ]);
         const kept = await call("caius_plan_apply", { date: TUE, said: "haven't answered riley yet, will do after lunch", checked: true, brief: prose });
         expect(kept.written.map((entry: any) => entry.kind)).not.toContain("dismiss");
         const nothing = await call("caius_plan_apply", { date: TUE, said: "I answered nothing in chat", brief: prose });
         expect(nothing.check).toBeUndefined();
         expect(nothing.written.map((entry: any) => entry.kind)).not.toContain("dismiss");
-        expect(await answeredValues()).not.toContain("ZAP-705:c705");
+        expect(await answeredValues()).not.toContain("QRS-705:c705");
 
         // 'responded to riley' with the answered flag records it; a plain 'drop' does not.
-        const responded = await call("caius_plan_apply", { date: TUE, said: "responded to riley", dismiss: [ { candidateId: "ZAP-705", answered: true } ], brief: prose });
+        const responded = await call("caius_plan_apply", { date: TUE, said: "responded to riley", dismiss: [ { candidateId: "QRS-705", answered: true } ], brief: prose });
         expect(responded.check).toBeUndefined();
-        expect(await answeredValues()).toContain("ZAP-705:c705");
+        expect(await answeredValues()).toContain("QRS-705:c705");
     });
 });
 
@@ -403,9 +403,9 @@ describe("the header follows the drawing", () => {
     const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
     const headerOf = (noteId: string) => cls.init(() => store.content(noteId));
     const handoffs = () => jira.handoff.push(
-        { ...ticket("ZAP-310", { summary: "Review the import mapper change", status: "Code Review" }), daysInStatus: 2 },
-        { ...ticket("ZAP-311", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 },
-        { ...ticket("ZAP-301", { summary: "Verify the export retry on staging", status: "Dev Verify" }), daysInStatus: 6 }
+        { ...ticket("QRS-310", { summary: "Review the import mapper change", status: "Code Review" }), daysInStatus: 2 },
+        { ...ticket("QRS-311", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 },
+        { ...ticket("QRS-301", { summary: "Verify the export retry on staging", status: "Dev Verify" }), daysInStatus: 6 }
     );
 
     it("Mon 09:40 'put 101 first': the headline is rewritten, and the row keeps the drawing's group and times", async () => {
@@ -426,7 +426,7 @@ describe("the header follows the drawing", () => {
         expect(moved.skipped).toEqual([]);
         const header = await headerOf(planned.headerNoteId);
         expect(header).not.toContain("Clear the review");
-        expect(header).toContain("ZAP-301 first, then ZAP-310 and ZAP-311.");
+        expect(header).toContain("QRS-301 first, then QRS-310 and QRS-311.");
         // With no groups given, his one heading is one group, around Sprint Planning.
         expect(header).toContain("<tr><td><p><strong>10:15 to 12:45</strong></p><p>Tasks</p></td></tr>");
 
@@ -442,11 +442,11 @@ describe("the header follows the drawing", () => {
         calendars[TUE] = [ event("09:30", "09:45", "Team Standup"), event("10:00", "10:30", "Weekly Planning Sync"), event("11:00", "11:30", "Customer Call") ];
         await cls.init(async () => {
             const day = await store.calendarDay(TUE);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-101", `${zap("ZAP-401", "Verify the export retry on staging")} ~30m`), li("t-dave", "Message Dave ~30m"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-101", `${qrs("QRS-401", "Verify the export retry on staging")} ~30m`), li("t-dave", "Message Dave ~30m"))}`);
         });
         at(`${TUE}T09:35`);
         const planned = await call("caius_plan_apply", { date: TUE, said: "", brief: {
-            headline: "Verify the export retry and message Dave.", groups: [ { name: "Export", items: [ "ZAP-401" ] }, { name: "Calls", items: [ "Dave" ] } ],
+            headline: "Verify the export retry and message Dave.", groups: [ { name: "Export", items: [ "QRS-401" ] }, { name: "Calls", items: [ "Dave" ] } ],
             meetings: [ { title: "Team Standup", name: "Standup" }, { title: "Weekly Planning Sync", name: "Sync" } ], sections: []
         } });
         expect(planned.skipped).toEqual([]);
@@ -469,15 +469,15 @@ describe("fix round 1: the review's remaining scenarios", () => {
 
     it("I6 'answered jordan in chat, 120 not today' with 120 dismissed too: 120 is checked, nothing is written", async () => {
         const DAY = "2027-11-24";
-        jordanAsk("ZAP-415", "c415", "2027-11-22T15:00:00.000-0500");
-        jira.handoff.push({ ...ticket("ZAP-120", { summary: "Tidy the gate" }), daysInStatus: 2 });
+        jordanAsk("QRS-415", "c415", "2027-11-22T15:00:00.000-0500");
+        jira.handoff.push({ ...ticket("QRS-120", { summary: "Tidy the gate" }), daysInStatus: 2 });
         at(`${DAY}T09:40`);
         const before = await journal();
         const result = await call("caius_plan_apply", {
-            date: DAY, said: "answered jordan in chat, 120 not today", dismiss: [ { candidateId: "ZAP-415", answered: true }, { candidateId: "ZAP-120" } ], brief: prose
+            date: DAY, said: "answered jordan in chat, 120 not today", dismiss: [ { candidateId: "QRS-415", answered: true }, { candidateId: "QRS-120" } ], brief: prose
         });
         expect(result.written).toEqual([]);
-        expect(result.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("ZAP-120"), missing: "dismiss" }) ]);
+        expect(result.check).toEqual([ expect.objectContaining({ item: expect.stringContaining("QRS-120"), missing: "dismiss" }) ]);
         expect(await journal()).toEqual(before);
     });
 
@@ -513,7 +513,7 @@ describe("fix round 1: the review's phrases", () => {
     });
 
     it("I2: none of the review's replies closes Jordan's follow-up without a dismiss: a check or nothing, never a dismissal or an answered record", async () => {
-        jordanAsk("ZAP-105", "c1105", "2028-01-02T15:00:00.000-0500");
+        jordanAsk("QRS-105", "c1105", "2028-01-02T15:00:00.000-0500");
         at("2028-01-03T09:40");
         await call("caius_plan_apply", { date: "2028-01-03", said: "no", brief: prose });
         at("2028-01-04T09:35");
@@ -523,7 +523,7 @@ describe("fix round 1: the review's phrases", () => {
         ]) {
             const result = await call("caius_plan_apply", { date: "2028-01-04", said, brief: prose });
             expect(result.written.map((entry: any) => entry.kind), said).not.toContain("dismiss");
-            expect(await answeredValues(), said).not.toContain("ZAP-105:c1105");
+            expect(await answeredValues(), said).not.toContain("QRS-105:c1105");
         }
     });
 
@@ -544,7 +544,7 @@ describe("fix round 1: the review's phrases", () => {
 
     it("I5: a dismissal his reply names is written whatever word he uses; one named only in a negated clause is checked first", async () => {
         for (const [ i, said ] of [ "got back to jordan", "took care of jordan", "dealt with jordan's question" ].entries()) {
-            const key = `ZAP-81${i}`;
+            const key = `QRS-81${i}`;
             const day = `2028-01-${String(10 + i).padStart(2, "0")}`;
             jira.asks.length = 0;
             jordanAsk(key, `c81${i}`, "2028-01-09T15:00:00.000-0500");
@@ -554,13 +554,13 @@ describe("fix round 1: the review's phrases", () => {
             expect(result.written, said).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: key, status: "written" }) ]));
         }
         jira.asks.length = 0;
-        jira.handoff.push({ ...ticket("ZAP-805", { summary: "Ship the widget" }), daysInStatus: 2 });
+        jira.handoff.push({ ...ticket("QRS-805", { summary: "Ship the widget" }), daysInStatus: 2 });
         at("2028-01-17T09:40");
         const said = "805 won't happen, take it off";
-        const checked = await call("caius_plan_apply", { date: "2028-01-17", said, dismiss: [ { candidateId: "ZAP-805" } ], brief: prose });
+        const checked = await call("caius_plan_apply", { date: "2028-01-17", said, dismiss: [ { candidateId: "QRS-805" } ], brief: prose });
         expect(checked.check).toEqual([ expect.objectContaining({ missing: "dismiss" }) ]);
-        const written = await call("caius_plan_apply", { date: "2028-01-17", said, checked: true, dismiss: [ { candidateId: "ZAP-805" } ], brief: prose });
-        expect(written.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-805", status: "written" }) ]));
+        const written = await call("caius_plan_apply", { date: "2028-01-17", said, checked: true, dismiss: [ { candidateId: "QRS-805" } ], brief: prose });
+        expect(written.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "QRS-805", status: "written" }) ]));
     });
 });
 
@@ -688,24 +688,24 @@ describe("'fine' takes what was offered through asOffered", () => {
     it("a bare 'fine' is a check that writes nothing; with asOffered it accepts the candidates in the order shown, in Plan my day and in a wind-down", async () => {
         const DAY = "2027-03-01";
         jira.handoff.push(
-            { ...ticket("ZAP-501", { summary: "Check the report" }), daysInStatus: 2 },
-            { ...ticket("ZAP-502", { summary: "Fix the gate" }), daysInStatus: 3 }
+            { ...ticket("QRS-501", { summary: "Check the report" }), daysInStatus: 2 },
+            { ...ticket("QRS-502", { summary: "Fix the gate" }), daysInStatus: 3 }
         );
         at(`${DAY}T09:40`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
-        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-501", "ZAP-502" ]);
+        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-501", "QRS-502" ]);
         const checked = await call("caius_plan_apply", { date: DAY, said: "fine", brief: prose });
         expect(checked.check).toEqual([ expect.objectContaining({ missing: "asOffered" }) ]);
         expect(checked.written).toEqual([]);
         expect(await tasksOf("day", DAY)).toEqual([]);
         const planned = await call("caius_plan_apply", { date: DAY, said: "fine", asOffered: true, brief: prose });
         expect(planned.skipped).toEqual([]);
-        expect((await tasksOf("day", DAY)).map((task: any) => task.text)).toEqual([ "ZAP-501 Check the report", "ZAP-502 Fix the gate" ]);
+        expect((await tasksOf("day", DAY)).map((task: any) => task.text)).toEqual([ "QRS-501 Check the report", "QRS-502 Fix the gate" ]);
 
-        jira.handoff.push({ ...ticket("ZAP-503", { summary: "Ship the fix" }), daysInStatus: 1 });
+        jira.handoff.push({ ...ticket("QRS-503", { summary: "Ship the fix" }), daysInStatus: 1 });
         at(`${DAY}T17:30`);
         await call("caius_winddown_apply", { date: DAY, said: "501 and 502 are done, the rest is fine", done: [ "501", "502" ], asOffered: true });
-        expect((await tasksOf("day", "2027-03-02")).map((task: any) => task.text)).toEqual([ "ZAP-503 Ship the fix" ]);
+        expect((await tasksOf("day", "2027-03-02")).map((task: any) => task.text)).toEqual([ "QRS-503 Ship the fix" ]);
     });
 });
 
@@ -718,11 +718,11 @@ describe("a bare yes to the heavy day's move", () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h-spec", "Write the spec ~1h"), li("h-review", "Review the plan ~1h30m"))}`);
         });
-        jira.handoff.push({ ...ticket("ZAP-950", { summary: "Check the gate" }), daysInStatus: 2 });
+        jira.handoff.push({ ...ticket("QRS-950", { summary: "Check the gate" }), daysInStatus: 2 });
         at(`${DAY}T09:40`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(inputs.data.forwardSuggestion).toMatchObject({ listItemId: "h-review" });
-        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-950" ]);
+        expect(inputs.data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-950" ]);
         const checked = await call("caius_plan_apply", { date: DAY, said: "yes", brief: prose });
         expect(checked.check).toEqual([ expect.objectContaining({ missing: "asOffered" }) ]);
         expect(checked.written).toEqual([]);
@@ -761,22 +761,22 @@ describe("a correction after the plan", () => {
     it("Tue 09:40 'oh, I answered jordan in chat' after the plan: one more plan apply with said, the answer and the brief again; a bare one is refused; a repeat changes nothing", async () => {
         const DAY = "2027-03-09";
         jira.asks.push({
-            ticket: ticket("ZAP-605", { summary: "Confirm the bucket" }), author: "Jordan Placeholder", created: "2027-03-01T15:00:00.000-0500",
+            ticket: ticket("QRS-605", { summary: "Confirm the bucket" }), author: "Jordan Placeholder", created: "2027-03-01T15:00:00.000-0500",
             commentId: "c605", excerpt: "Is the bucket name right?"
         });
         at("2027-03-08T09:40");
         await call("caius_plan_apply", { date: "2027-03-08", said: "nothing today", brief: prose });
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "no", brief: prose });
-        expect(await cls.init(() => store.content(planned.briefNoteId))).toContain("ZAP-605");
+        expect(await cls.init(() => store.content(planned.briefNoteId))).toContain("QRS-605");
 
-        await expect((async () => call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605", answered: true } ] }))()).rejects.toThrow(/Give brief/);
-        const fixed = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605", answered: true } ], brief: prose });
-        expect(fixed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "ZAP-605", status: "written" }) ]));
-        expect(await cls.init(() => store.content(fixed.briefNoteId))).not.toContain("ZAP-605");
+        await expect((async () => call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "QRS-605", answered: true } ] }))()).rejects.toThrow(/Give brief/);
+        const fixed = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "QRS-605", answered: true } ], brief: prose });
+        expect(fixed.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "dismiss", id: "QRS-605", status: "written" }) ]));
+        expect(await cls.init(() => store.content(fixed.briefNoteId))).not.toContain("QRS-605");
 
         const before = await journal();
-        const again = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "ZAP-605", answered: true } ], brief: prose });
+        const again = await call("caius_plan_apply", { date: DAY, said: "oh, I answered jordan in chat", dismiss: [ { candidateId: "QRS-605", answered: true } ], brief: prose });
         expect(again.written.filter((entry: any) => entry.status === "written")).toEqual([]);
         expect(await journal()).toEqual(before);
     });

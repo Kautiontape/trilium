@@ -6,12 +6,12 @@ const day = { start: '10:00', end: '23:00', workEnd: '18:00' };
 describe('layoutWork', () => {
   it('lays the tasks out in order in the gaps between meetings, labelling a split task once', () => {
     const { work, unplaced } = layoutWork(day, [{ start: '10:00', end: '10:15' }, { start: '12:00', end: '13:00' }], [
-      { label: 'ZAP-1', minutes: 60 },
+      { label: 'QRS-1', minutes: 60 },
       { label: 'Review', minutes: 90 },
       { label: 'Tests', minutes: 30 },
     ]);
     expect(work).toEqual([
-      { start: '10:15', end: '11:15', label: 'ZAP-1' },
+      { start: '10:15', end: '11:15', label: 'QRS-1' },
       { start: '11:15', end: '12:00', label: 'Review' },
       { start: '13:00', end: '13:45', label: '' },
       { start: '13:45', end: '14:15', label: 'Tests' },
@@ -36,11 +36,11 @@ describe('layoutWork', () => {
 
   it('starts no block before notBefore, and no evening task before it either', () => {
     const { work } = layoutWork({ ...day, notBefore: '11:15' }, [{ start: '10:00', end: '10:30' }, { start: '15:00', end: '15:30' }], [
-      { label: 'ZAP-105', minutes: 30 },
+      { label: 'QRS-105', minutes: 30 },
       { label: 'Laundry', minutes: 30, block: 'evening' },
     ]);
     expect(work).toEqual([
-      { start: '11:15', end: '11:45', label: 'ZAP-105' },
+      { start: '11:15', end: '11:45', label: 'QRS-105' },
       { start: '18:00', end: '18:30', label: 'Laundry' },
     ]);
     expect(layoutWork({ ...day, notBefore: '19:00' }, [], [{ label: 'Laundry', minutes: 30, block: 'evening' }]).work)
@@ -52,15 +52,15 @@ describe('layoutGroups', () => {
   it('lays the groups out one after another and answers each span and count, leaving out a group with no time', () => {
     const { groups, work, unplaced } = layoutGroups({ ...day, end: '15:00' }, [{ start: '12:00', end: '13:00' }], [
       { name: 'Board', important: true, tasks: [{ label: 'Clean up', minutes: 90 }] },
-      { name: 'ZAP bugs', tasks: [{ label: 'ZAP-1', minutes: 30 }, { label: 'ZAP-2', minutes: 60 }] },
+      { name: 'QRS bugs', tasks: [{ label: 'QRS-1', minutes: 30 }, { label: 'QRS-2', minutes: 60 }] },
       { name: 'Late', tasks: [{ label: 'Spec', minutes: 60 }] },
     ]);
     expect(groups).toEqual([
       { start: '10:00', end: '11:30', name: 'Board', count: 1, important: true },
-      { start: '11:30', end: '14:00', name: 'ZAP bugs', count: 2 },
+      { start: '11:30', end: '14:00', name: 'QRS bugs', count: 2 },
       { start: '14:00', end: '15:00', name: 'Late', count: 1 },
     ]);
-    expect(work.map((block) => block.label)).toEqual(['Clean up', 'ZAP-1', 'ZAP-2', 'Spec']);
+    expect(work.map((block) => block.label)).toEqual(['Clean up', 'QRS-1', 'QRS-2', 'Spec']);
     expect(unplaced).toEqual([]);
     expect(layoutGroups({ ...day, end: '10:30' }, [], [
       { name: 'One', tasks: [{ label: 'A', minutes: 30 }] },

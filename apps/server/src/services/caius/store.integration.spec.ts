@@ -17,10 +17,10 @@ it("adds a task to a day note on becca and reads the plan back", async () => {
         const day = await store.calendarDay(DAY);
         await store.putContent(day.noteId, "<h3>Work</h3>");
         return addTasks(store, [
-            { date: DAY, section: "Work", text: "Reply to Pat", source: "ZAP-7", est: "30m" },
+            { date: DAY, section: "Work", text: "Reply to Pat", source: "QRS-7", est: "30m" },
         ], { now });
     });
-    expect(added).toMatchObject({ status: "added", key: "ZAP-7" });
+    expect(added).toMatchObject({ status: "added", key: "QRS-7" });
 
     const view = await readPlan(store, "day", DAY, now);
     expect(view.noteId).not.toBeNull();

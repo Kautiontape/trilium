@@ -14,7 +14,7 @@ describe("carryQuestion", () => {
 
 describe("fitted", () => {
     it("cuts a step's longest lists until the reply is under the size the sidebar agent takes, and says how many it left out", () => {
-        const reply = { step: "next", data: { candidates: Array.from({ length: 400 }, (_, i) => ({ text: `Get ZAP-${i} done`, because: "sitting in QA Testing for 3 days" })), overlaps: [ { first: "A", second: "B" } ] } };
+        const reply = { step: "next", data: { candidates: Array.from({ length: 400 }, (_, i) => ({ text: `Get QRS-${i} done`, because: "sitting in QA Testing for 3 days" })), overlaps: [ { first: "A", second: "B" } ] } };
         const fit = fitted(reply);
         expect(JSON.stringify(fit).length).toBeLessThanOrEqual(MAX_REPLY_CHARS);
         expect(fit.data.candidates.length).toBeGreaterThan(100);

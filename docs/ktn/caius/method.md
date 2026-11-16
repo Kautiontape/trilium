@@ -94,7 +94,7 @@ These settled the questions this note first left open.
 - The `[…]` placeholder is replaced by the first real task added to a day, whichever section it lands in. Filling only Suggested leaves the placeholder alone, since the day is still untouched for planning.
 - New headers are created above On deck, else above Suggested, one level under the template's lone `Tasks` title, else at the level already in use. Suggested is created last if missing; Caius never reorders a Suggested section that someone has put elsewhere.
 - Duplicate checks compare against live tasks across the Journal, plus open Suggested items on the same note. Suggested items on other notes don't count, so a stale suggestion cannot block a source forever.
-- Bare Jira keys in task text are recognised only for the projects ZAP, ZIS, SUR and CM (`JIRA_PROJECTS` in `packages/caius/src/trilium/keys.ts`), so `UTF-8` is not a key. A `source` key of any project is accepted, and any `/browse/KEY` link counts.
+- Bare Jira keys in task text are recognised only for the projects on the Jira line of the standing note's Rhythm (`- Jira: ABC, XYZ`), so `UTF-8` is not a key. With no such line, no bare key counts. A `source` key of any project is accepted, and any `/browse/KEY` link counts.
 - `drop` cancels the task's still-live sub-items with it; `done` touches only the item.
 
 ### Not built yet

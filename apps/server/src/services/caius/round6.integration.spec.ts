@@ -19,7 +19,7 @@ const li = (id: string, text: string) =>
     `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox" disabled="disabled">`
     + `<span class="todo-list__label__description">${text}</span></label></li>`;
 const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>`;
-const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+const qrs = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
 
 const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
     key, summary: `Summary ${key}`, status: "Code Review", resolution: null, url: `https://example.atlassian.net/browse/${key}`,
@@ -89,11 +89,11 @@ describe("the header's groups", () => {
         calendars[WED] = [ event("10:00", "10:15", "Daily Standup") ];
         await dayWith(WED, `<h2>☑️ Tasks</h2>${ul(
             li("w-dave", "Message Dave if he knows anyone who will hang lights as a small job"),
-            li("w-111", `${zap("ZAP-611", "Check the invoice export in QA")} ~30m`)
+            li("w-111", `${qrs("QRS-611", "Check the invoice export in QA")} ~30m`)
         )}`);
         at(`${WED}T09:40`);
-        const planned = await call("caius_plan_apply", { date: WED, said: "", brief: { headline: "Message Dave, then ZAP-611.", groups: [
-            { name: "Calls", items: [ "Message Dave" ] }, { name: "QA", items: [ "ZAP-611" ] }
+        const planned = await call("caius_plan_apply", { date: WED, said: "", brief: { headline: "Message Dave, then QRS-611.", groups: [
+            { name: "Calls", items: [ "Message Dave" ] }, { name: "QA", items: [ "QRS-611" ] }
         ], sections: [] } });
         expect(planned.skipped).toEqual([]);
         const header = await contentOf(planned.headerNoteId);
@@ -108,12 +108,12 @@ describe("the header's groups", () => {
 });
 
 describe("a group names a ticket by its whole key", () => {
-    it("a group naming ZAP-811 doesn't take ZAP-81", async () => {
+    it("a group naming QRS-811 doesn't take QRS-81", async () => {
         const DAY = "2030-06-10";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("k-811", `${zap("ZAP-811", "Verify the export retry")} ~30m`), li("k-81", `${zap("ZAP-81", "Tidy the board")} ~30m`))}`);
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("k-811", `${qrs("QRS-811", "Verify the export retry")} ~30m`), li("k-81", `${qrs("QRS-81", "Tidy the board")} ~30m`))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "The export retry, then the board.", groups: [
-            { name: "Export", items: [ "ZAP-811" ] }, { name: "Board", items: [ "ZAP-81" ] }
+            { name: "Export", items: [ "QRS-811" ] }, { name: "Board", items: [ "QRS-81" ] }
         ] } });
         expect(planned.skipped).toEqual([]);
         expect(planned.ungrouped).toBeUndefined();
@@ -127,13 +127,13 @@ describe("a closed day's header", () => {
         const MON = "2028-11-06";
         calendars[MON] = [ event("10:00", "10:15", "Daily Standup"), event("11:00", "12:00", "Sprint Planning") ];
         await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(
-            li("m-101", `${zap("ZAP-601", "Verify the export retry on staging")} ~30m`),
-            li("m-110", `${zap("ZAP-610", "Review the import mapper change")} ~30m`),
-            li("m-111", `${zap("ZAP-611", "Check the invoice export in QA")} ~30m`)
+            li("m-101", `${qrs("QRS-601", "Verify the export retry on staging")} ~30m`),
+            li("m-110", `${qrs("QRS-610", "Review the import mapper change")} ~30m`),
+            li("m-111", `${qrs("QRS-611", "Check the invoice export in QA")} ~30m`)
         )}`);
         at(`${MON}T09:40`);
-        const planned = await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "ZAP-601 first, then ZAP-610 and ZAP-611.", groups: [
-            { name: "Exports", items: [ "ZAP-601", "ZAP-611" ] }, { name: "Mapper", items: [ "ZAP-610" ] }
+        const planned = await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "QRS-601 first, then QRS-610 and QRS-611.", groups: [
+            { name: "Exports", items: [ "QRS-601", "QRS-611" ] }, { name: "Mapper", items: [ "QRS-610" ] }
         ], sections: [] } });
         expect(planned.skipped).toEqual([]);
         const header = await contentOf(planned.headerNoteId);
@@ -146,7 +146,7 @@ describe("a closed day's header", () => {
         expect(wound.written).not.toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "header", detail: MON }) ]));
         expect(await contentOf(planned.headerNoteId)).toBe(header);
         expect(drawing()).toEqual(drawn);
-        expect(header).toContain("ZAP-601 first, then ZAP-610 and ZAP-611.");
+        expect(header).toContain("QRS-601 first, then QRS-610 and QRS-611.");
         for (const name of [ "Exports", "Mapper" ]) expect(String(drawn)).toContain(`>${name}</text>`);
         delete calendars[MON];
     });
@@ -304,10 +304,10 @@ describe("a stale errand", () => {
         const days = [ "2030-04-01", "2030-04-02", "2030-04-03", "2030-04-04", "2030-04-05" ];
         const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
         await carriedThrice(days);
-        jira.handoff.push({ ...ticket("ZAP-901", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
+        jira.handoff.push({ ...ticket("QRS-901", { summary: "Check the invoice export in QA", status: "QA Testing" }), daysInStatus: 3 });
         at(`${THU}T17:30`);
         expect((await call("caius_winddown", { date: THU, step: "open" })).question).toContain("Park it in April?");
-        expect((await call("caius_winddown", { date: THU, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-901" ]);
+        expect((await call("caius_winddown", { date: THU, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-901" ]);
         const checked = await call("caius_winddown_apply", { date: THU, said: "yes" });
         expect(checked.check).toEqual([ expect.objectContaining({ missing: "asOffered", message: "His reply reads as a yes to what was offered. Pass `asOffered: true`, or the specific fields." }) ]);
         expect(checked.written).toEqual([]);
@@ -319,7 +319,7 @@ describe("a stale errand", () => {
         expect(fatesOf(result)).toEqual([ FRI ]);
         expect(await textsOf("month", "2030-04")).toEqual([]);
         // The accepted ticket is on Friday's list; Dave, carried as proposed, waits on its On deck.
-        expect((await textsOf("day", FRI)).map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-901"), DAVE ]);
+        expect((await textsOf("day", FRI)).map((task: any) => task.text)).toEqual([ expect.stringContaining("QRS-901"), DAVE ]);
         expect((await call("caius_plan", { period: "day", date: FRI })).suggested).toEqual([]);
     });
 
@@ -327,11 +327,11 @@ describe("a stale errand", () => {
         const days = [ "2030-08-05", "2030-08-06", "2030-08-07", "2030-08-08", "2030-08-09" ];
         const [ , , , THU, FRI ] = days as [ string, string, string, string, string ];
         await carriedThrice(days);
-        jira.handoff.push({ ...ticket("ZAP-961", { summary: "Check the invoice export", status: "QA Testing" }), daysInStatus: 3 });
+        jira.handoff.push({ ...ticket("QRS-961", { summary: "Check the invoice export", status: "QA Testing" }), daysInStatus: 3 });
         at(`${THU}T17:30`);
         const open = await call("caius_winddown", { date: THU, step: "open" });
         const dave = open.data.items.find((item: any) => item.text.startsWith("Message Dave"));
-        expect((await call("caius_winddown", { date: THU, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-961" ]);
+        expect((await call("caius_winddown", { date: THU, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-961" ]);
         const result = await call("caius_winddown_apply", { date: THU, said: "yes", fates: [ { listItemId: dave.ref, to: dave.park.month } ] });
         expect(result.check).toBeUndefined();
         expect(result.written.map((entry: any) => entry.kind)).not.toContain("accept");
@@ -344,16 +344,16 @@ describe("a stale errand", () => {
         const DAY = "2030-09-02";
         await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("f-1", "Write the release note ~30m"))}`);
         jira.handoff.push(
-            { ...ticket("ZAP-971", { summary: "Check the import", status: "QA Testing" }), daysInStatus: 3 },
-            { ...ticket("ZAP-972", { summary: "Check the export", status: "QA Testing" }), daysInStatus: 3 }
+            { ...ticket("QRS-971", { summary: "Check the import", status: "QA Testing" }), daysInStatus: 3 },
+            { ...ticket("QRS-972", { summary: "Check the export", status: "QA Testing" }), daysInStatus: 3 }
         );
         at(`${DAY}T17:30`);
         await call("caius_winddown", { date: DAY, step: "open" });
-        expect((await call("caius_winddown", { date: DAY, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-971", "ZAP-972" ]);
-        const result = await call("caius_winddown_apply", { date: DAY, said: "971 is finished, the rest is fine", finished: [ "ZAP-971" ], asOffered: true });
+        expect((await call("caius_winddown", { date: DAY, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-971", "QRS-972" ]);
+        const result = await call("caius_winddown_apply", { date: DAY, said: "971 is finished, the rest is fine", finished: [ "QRS-971" ], asOffered: true });
         expect(result.skipped).toEqual([]);
-        expect(result.written.filter((entry: any) => entry.kind === "accept").map((entry: any) => entry.id)).toEqual([ "ZAP-972" ]);
-        expect((await textsOf("day", "2030-09-03")).map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-972"), "Write the release note" ]);
+        expect(result.written.filter((entry: any) => entry.kind === "accept").map((entry: any) => entry.id)).toEqual([ "QRS-972" ]);
+        expect((await textsOf("day", "2030-09-03")).map((task: any) => task.text)).toEqual([ expect.stringContaining("QRS-972"), "Write the release note" ]);
     });
 
     it("a bare yes with only the park on offer and no fate in the call is a check; checked, the item takes its proposed fate", async () => {
@@ -457,7 +457,7 @@ describe("a stale errand", () => {
     it("the plan's top pick is the first task on his list, whatever its area: a Growth chore above the work leads, and an Evening task is no pick", async () => {
         const DAY = "2029-05-07";
         await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Home</h3>${ul(li("p-dave", "🌱 Message Dave about the lights"))}<h3>Chores</h3>${ul(li("p-bins", "🔋 Take the bins out"))}`
-            + `<h3>Work</h3>${ul(li("p-801", `${zap("ZAP-801", "Verify the export retry")} ~30m`), li("p-802", `${zap("ZAP-802", "Check the invoice export")} ~30m`))}<h3>Evening</h3>${ul(li("p-ev", "Call the plumber"))}`);
+            + `<h3>Work</h3>${ul(li("p-801", `${qrs("QRS-801", "Verify the export retry")} ~30m`), li("p-802", `${qrs("QRS-802", "Check the invoice export")} ~30m`))}<h3>Evening</h3>${ul(li("p-ev", "Call the plumber"))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Message Dave first, then the export retry.", acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
@@ -466,7 +466,7 @@ describe("a stale errand", () => {
         expect(planned.topPick).toContain("Message Dave");
         const brief = await contentOf(planned.briefNoteId);
         const picks = /<h2>Get done today<\/h2>(<ul>[\s\S]*?<\/ul>)/.exec(brief)?.[1] ?? "";
-        expect([ ...picks.matchAll(/<li[^>]*>([^<]*)/g) ].map((m) => (m[1] ?? "").slice(0, 12))).toEqual([ "Message Dave", "Take the bin", "ZAP-801 Veri", "ZAP-802 Chec" ]);
+        expect([ ...picks.matchAll(/<li[^>]*>([^<]*)/g) ].map((m) => (m[1] ?? "").slice(0, 12))).toEqual([ "Message Dave", "Take the bin", "QRS-801 Veri", "QRS-802 Chec" ]);
         expect(picks).not.toContain("plumber");
     });
 
@@ -482,21 +482,21 @@ describe("a stale errand", () => {
         expect(await contentOf(planned.briefNoteId)).toContain("Walk the dog");
     });
 
-    it("a task with a ticket is work under any heading: ZAP-821 under Admin chores stays the top pick", async () => {
+    it("a task with a ticket is work under any heading: QRS-821 under Admin chores stays the top pick", async () => {
         const DAY = "2030-06-11";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Admin chores</h3>${ul(li("c-821", `${zap("ZAP-821", "Submit the expense report")} ~15m`))}`
-            + `<h3>Work</h3>${ul(li("c-822", `${zap("ZAP-822", "Fix the export retry")} ~30m`))}`);
+        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Admin chores</h3>${ul(li("c-821", `${qrs("QRS-821", "Submit the expense report")} ~15m`))}`
+            + `<h3>Work</h3>${ul(li("c-822", `${qrs("QRS-822", "Fix the export retry")} ~30m`))}`);
         at(`${DAY}T09:40`);
-        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Expense report on ZAP-821, then the export retry.", acts: [
+        const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Expense report on QRS-821, then the export retry.", acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
         ] } });
-        expect(planned.topPick).toContain("ZAP-821");
+        expect(planned.topPick).toContain("QRS-821");
     });
 
     it("the agent's headline is written as sent, an evening task's words in it or not", async () => {
         const DAY = "2029-05-08";
-        const HEADLINE = "Call Jordan about the ZAP-811 export retry first.";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${zap("ZAP-811", "Verify the export retry")} ~30m`))}<h3>Evening</h3>${ul(li("q-mom", "Call Mom about the flights"))}`);
+        const HEADLINE = "Call Jordan about the QRS-811 export retry first.";
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${qrs("QRS-811", "Verify the export retry")} ~30m`))}<h3>Evening</h3>${ul(li("q-mom", "Call Mom about the flights"))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: HEADLINE, acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
@@ -516,53 +516,53 @@ describe("a candidate the call itself names", () => {
         const DAY = "2031-06-02";
         await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q7-1", "Write the runbook ~30m"))}`);
         jira.handoff.push(
-            { ...ticket("ZAP-975", { summary: "Ship the fix", status: "QA Testing" }), daysInStatus: 2 },
-            { ...ticket("ZAP-976", { summary: "Check the gate", status: "QA Testing" }), daysInStatus: 2 }
+            { ...ticket("QRS-975", { summary: "Ship the fix", status: "QA Testing" }), daysInStatus: 2 },
+            { ...ticket("QRS-976", { summary: "Check the gate", status: "QA Testing" }), daysInStatus: 2 }
         );
         at(`${DAY}T09:40`);
-        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-975", "ZAP-976" ]);
-        const planned = await call("caius_plan_apply", { date: DAY, said: "975 is already done, rest fine", asOffered: true, finished: [ "ZAP-975" ], brief });
+        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-975", "QRS-976" ]);
+        const planned = await call("caius_plan_apply", { date: DAY, said: "975 is already done, rest fine", asOffered: true, finished: [ "QRS-975" ], brief });
         expect(planned.check).toBeUndefined();
-        expect(kindsOf(planned, "accept")).toEqual([ "ZAP-976" ]);
-        expect(kindsOf(planned, "finished")).toEqual([ "ZAP-975" ]);
+        expect(kindsOf(planned, "accept")).toEqual([ "QRS-976" ]);
+        expect(kindsOf(planned, "finished")).toEqual([ "QRS-975" ]);
         const open = await openOn(DAY);
-        expect(open).toEqual([ "Write the runbook", expect.stringContaining("ZAP-976") ]);
-        expect(open.some((text: string) => text.includes("ZAP-975"))).toBe(false);
+        expect(open).toEqual([ "Write the runbook", expect.stringContaining("QRS-976") ]);
+        expect(open.some((text: string) => text.includes("QRS-975"))).toBe(false);
     });
     it("a bare number in finished is the offered ticket's key, in either apply; a number nothing on offer has is a check", async () => {
         const MON = "2031-06-09";
         await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(li("q8-1", "Write the runbook ~30m"))}`);
         jira.handoff.push(
-            { ...ticket("ZAP-981", { summary: "Ship the fix", status: "QA Testing" }), daysInStatus: 2 },
-            { ...ticket("ZAP-982", { summary: "Check the gate", status: "QA Testing" }), daysInStatus: 2 }
+            { ...ticket("QRS-981", { summary: "Ship the fix", status: "QA Testing" }), daysInStatus: 2 },
+            { ...ticket("QRS-982", { summary: "Check the gate", status: "QA Testing" }), daysInStatus: 2 }
         );
         at(`${MON}T17:30`);
         await call("caius_winddown", { date: MON, step: "open" });
-        expect((await call("caius_winddown", { date: MON, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-981", "ZAP-982" ]);
+        expect((await call("caius_winddown", { date: MON, step: "next" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-981", "QRS-982" ]);
         const unmatched = await call("caius_winddown_apply", { date: MON, said: "989 is finished, the rest is fine", asOffered: true, finished: [ "989" ] });
         expect(unmatched.check).toEqual([ expect.objectContaining({ item: "989", missing: "finished" }) ]);
         expect(unmatched.written).toEqual([]);
         const wound = await call("caius_winddown_apply", { date: MON, said: "981 is finished, the rest is fine", asOffered: true, finished: [ "981" ] });
         expect(wound.check).toBeUndefined();
-        expect(kindsOf(wound, "finished")).toEqual([ "ZAP-981" ]);
-        expect(kindsOf(wound, "accept")).toEqual([ "ZAP-982" ]);
+        expect(kindsOf(wound, "finished")).toEqual([ "QRS-981" ]);
+        expect(kindsOf(wound, "accept")).toEqual([ "QRS-982" ]);
         expect((await call("caius_plan", { period: "day", date: "2031-06-10" })).suggested).toEqual([]);
 
         const DAY = "2031-06-16";
         await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q8-2", "Write the runbook ~30m"))}`);
         jira.handoff.length = 0;
         jira.handoff.push(
-            { ...ticket("ZAP-983", { summary: "Ship the patch", status: "QA Testing" }), daysInStatus: 2 },
-            { ...ticket("ZAP-984", { summary: "Check the door", status: "QA Testing" }), daysInStatus: 2 }
+            { ...ticket("QRS-983", { summary: "Ship the patch", status: "QA Testing" }), daysInStatus: 2 },
+            { ...ticket("QRS-984", { summary: "Check the door", status: "QA Testing" }), daysInStatus: 2 }
         );
         at(`${DAY}T09:40`);
-        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "ZAP-983", "ZAP-984" ]);
+        expect((await call("caius_planday", { date: DAY, step: "inputs" })).data.candidates.map((c: any) => c.candidateId)).toEqual([ "QRS-983", "QRS-984" ]);
         const missed = await call("caius_plan_apply", { date: DAY, said: "988 is done, rest fine", asOffered: true, finished: [ "988" ], brief });
         expect(missed.check).toEqual([ expect.objectContaining({ item: "988", missing: "finished" }) ]);
         expect(missed.written).toEqual([]);
         const planned = await call("caius_plan_apply", { date: DAY, said: "983 is done, rest fine", asOffered: true, finished: [ "983" ], brief });
         expect(planned.check).toBeUndefined();
-        expect(kindsOf(planned, "finished")).toEqual([ "ZAP-983" ]);
-        expect(kindsOf(planned, "accept")).toEqual([ "ZAP-984" ]);
+        expect(kindsOf(planned, "finished")).toEqual([ "QRS-983" ]);
+        expect(kindsOf(planned, "accept")).toEqual([ "QRS-984" ]);
     });
 });
