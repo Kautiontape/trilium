@@ -188,3 +188,21 @@ describe('htmlToMarkdown on a mark after the trailing tokens', () => {
     expect(line(`Write it ${MARKS.saved}`)).toBe('- [ ] Write it _scheduled [Tue 3 Nov](#root/tue)_');
   });
 });
+
+describe('htmlToMarkdown on a mark next to a no-break space, and on odd markup', () => {
+  const mark = '<em>scheduled <a href="#root/tue">Tue 3 Nov</a></em>';
+  const line = (text: string) => htmlToMarkdown(`<ul class="todo-list">${todo(text)}</ul>`, STATES).replace(/\s+/g, ' ');
+  const body = '_scheduled [Tue 3 Nov](#root/tue)_';
+
+  it('reads the tokens when the text has a no-break space before them or after the mark', () => {
+    expect(line(`Write it&nbsp;~30m ${mark}`)).toBe(`- [ ] Write it ${body} ~30m`);
+    expect(line(`Write it &nbsp;~30m ${mark}`)).toBe(`- [ ] Write it ${body} ~30m`);
+    expect(line(`Write it ~30m ${mark}&nbsp;`)).toBe(`- [ ] Write it ${body} ~30m`);
+  });
+
+  it('converts a description closed with `</span >` without throwing', () => {
+    const odd = `<ul class="todo-list"><li><label class="todo-list__label"><input type="checkbox" disabled="disabled"><span class="todo-list__label__description">Write it ~30m ${mark}</span ></label></li></ul>`;
+    expect(() => htmlToMarkdown(odd, STATES)).not.toThrow();
+    expect(htmlToMarkdown(odd, STATES)).toContain('Write it');
+  });
+});

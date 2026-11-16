@@ -233,8 +233,8 @@ export function fromOf(text: string): string | null {
 export const movedOn = (task: { state: string }): boolean => task.state === "tombstone";
 
 /**
- * A copy's key: the note it came from and its words without an estimate, which a moved source keeps
- * in its text, or the reason a drop adds to it (`_not needed_`).
+ * A copy's key: the note it came from and its words without an estimate (the copy's own, or one set
+ * after the move) or the reason a drop adds to it (`_not needed_`).
  */
 export const copyKey = (from: string, text: string) => `${from}\n${text.replace(/\s+_[^_]+_$/, "").replace(/\s+~\d+(?:h\d*m?|m)\b/g, "").trim()}`;
 

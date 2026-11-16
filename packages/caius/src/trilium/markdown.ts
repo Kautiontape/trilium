@@ -121,6 +121,8 @@ function withWrittenMarks(html: string): string {
     const span = descriptionOf(li);
     const marks = span ? scheduledMarksOf(span) : [];
     if (!span || !marks.length) continue;
+    // A span closed in some other way (`</span >`) is left as it is: the scan must not throw.
+    if (html.slice(span.range[1] - '</span>'.length, span.range[1]) !== '</span>') continue;
     const inner = span.innerHTML;
     const innerStart = spanEnd(html, span) - inner.length;
     // Each mark's cut includes the spaces before it; `at` is where it sits once every mark is gone.
@@ -128,7 +130,9 @@ function withWrittenMarks(html: string): string {
       const start = mark.start - (/(?:\s|&nbsp;)*$/.exec(html.slice(innerStart, mark.start))?.[0].length ?? 0);
       return { mark, start, end: mark.end };
     });
-    const zone = tokenZoneStartInHtml(apply(inner, cuts.map((c) => ({ start: c.start - innerStart, end: c.end - innerStart, text: '' }))));
+    const bare = apply(inner, cuts.map((c) => ({ start: c.start - innerStart, end: c.end - innerStart, text: '' })));
+    // Masked to the same length, so a `&nbsp;` next to a token reads as the space it is.
+    const zone = tokenZoneStartInHtml(bare.replace(/&nbsp;/g, '      '));
     let removed = 0;
     let keptLength = 0;
     const moved: string[] = [];
