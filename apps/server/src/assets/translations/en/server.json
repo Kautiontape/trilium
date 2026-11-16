@@ -751,6 +751,7 @@
       "first": "{{- item}} is first",
       "before": "{{- item}} is before {{- anchor}}",
       "after": "{{- item}} is after {{- anchor}}",
+      "nested": "{{- items}} went under {{- parent}}",
       "suggested_one": "{{- items}} is in Suggested",
       "suggested_other": "{{- items}} are in Suggested",
       "not_today_one": "{{- items}} is left for another day",
