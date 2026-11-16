@@ -2,14 +2,16 @@
 //
 // Mirrors the Trilium fork's own export rule (trilium-core export/markdown.ts,
 // buildListItemFilter): a todo-list item's `data-trilium-task-state` picks its
-// symbol, otherwise the checkbox does. Two differences, both for the parser's
+// symbol, otherwise the checkbox does. Four differences, all for the parser's
 // sake: text is not markdown-escaped (a literal `[>]` typed into a plain list
-// stays a task marker, and `~`/`!` tokens stay tokens), and a nested list sits
-// directly under its parent line with no blank line between.
+// stays a task marker, and `~`/`!` tokens stay tokens), a nested list sits
+// directly under its parent line with no blank line between, a saved
+// "scheduled" mark is read in its written form and ahead of the token zone,
+// and `_rescheduled` reads as `>` even when the symbols don't list it.
 
 import { parse } from 'node-html-parser';
 import TurndownService from 'turndown';
-import { scheduledMarksOf, type ScheduledMark } from './forward-html.js';
+import { RESCHEDULED_STATE_ID, scheduledMarksOf, type ScheduledMark } from './forward-html.js';
 import { apply, descriptionOf, spanEnd, tokenZoneStartInHtml, type Edit } from './html-util.js';
 import { escapeHtml } from './plan-html.js';
 
@@ -22,9 +24,6 @@ export const DEFAULT_STATE_SYMBOLS: StateSymbols = new Map([
   ['maybe', '?'],
   ['cancelled', '-'],
 ]);
-
-// The fork's Rescheduled state id; read as `>` even when the states don't list it.
-const RESCHEDULED_STATE_ID = '_rescheduled';
 
 const INDENT = '    '; // matches DEFAULT_CONFIG.indent.tab_width
 

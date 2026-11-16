@@ -2,7 +2,8 @@
  * A task moved on, whose source note the desktop editor then saved: its "scheduled" mark is no
  * longer `<em>scheduled <a>…</a></em>` but the shape CKEditor saves (`caius_markup.spec.ts` in the
  * client). The trail, Plan my day's count of yesterday and a wind-down's answers must still read
- * the line as moved and follow it to its copy.
+ * the line as moved and follow it to its copy, with and without a Rescheduled state note in the
+ * test database.
  */
 import { dayCapacity } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
@@ -88,13 +89,12 @@ afterEach(() => {
     vi.unstubAllEnvs();
 });
 
-// The test database has no Rescheduled state note, so a moved line reads as a checked box: its
-// mark is the only sign that it moved.
+// The test database has no Rescheduled state note; the scan still reads `_rescheduled` as moved.
 describe.each([
     [ "as written", "none", "2031-03-31", "2031-04-01" ],
     [ "saved with a plain link", "plain", "2031-04-07", "2031-04-08" ],
     [ "saved with a reference link", "reference", "2031-04-14", "2031-04-15" ]
-] as const)("a task moved on, its mark %s, the state unknown", (_label, shape, mon, tue) => {
+] as const)("a task moved on, its mark %s, no state note", (_label, shape, mon, tue) => {
     let copy: Awaited<ReturnType<typeof moveAndSave>>;
     beforeAll(async () => {
         copy = await moveAndSave(mon, tue, shape);
@@ -120,7 +120,7 @@ describe.each([
 });
 
 // A mark with no link after it is not a mark: the line stays open.
-describe("a task with a bare italic \"scheduled\", the state unknown", () => {
+describe("a task with a bare italic \"scheduled\", no state note", () => {
     const mon = "2031-05-05";
     const tue = "2031-05-06";
 
@@ -143,7 +143,7 @@ describe("a task with a bare italic \"scheduled\", the state unknown", () => {
 
 // One click on a moved line's checkbox clears its state and unticks it but keeps the mark: the
 // state wins, so the line is open.
-describe("a moved task reopened with a click, the state unknown", () => {
+describe("a moved task reopened with a click, no state note", () => {
     const mon = "2031-05-12";
     const tue = "2031-05-13";
     let copy: Awaited<ReturnType<typeof moveAndSave>>;
@@ -181,7 +181,8 @@ describe("a moved task reopened with a click, the state unknown", () => {
     });
 });
 
-// Last: the state note stays for the rest of the file.
+// Last: the state note stays for the rest of the file. The same cases as above with the state
+// listed, to pin that both symbol sets agree.
 describe("the Rescheduled state known", () => {
     beforeAll(() => cls.init(async () => {
         const state = createChildNote("_taskStates", "Rescheduled", "");

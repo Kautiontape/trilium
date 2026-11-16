@@ -1,7 +1,7 @@
 import { HTMLElement, parse, type Node } from 'node-html-parser';
 import { parseClock } from '../inputs/capacity.js';
 import { clockOf, stripMarker } from './areas.js';
-import { backLinkOf, scheduledMarksOf } from './forward-html.js';
+import { backLinkOf, RESCHEDULED_STATE_ID, scheduledMarksOf } from './forward-html.js';
 import { apply, descriptionOf, findItem, inProseSection, isTask, itemState, sectionOf, spanEnd, tokenZoneStart, tokenZoneStartInHtml } from './html-util.js';
 import { taskKeys } from './keys.js';
 import type { StateSymbols } from './markdown.js';
@@ -32,7 +32,7 @@ export function rewordTask(
   if (!span) return { ok: false, reason: 'not_found' };
   if (inProseSection(root, li)) return { ok: false, reason: 'not_live' };
   if (isSuggestedName(sectionOf(root, li))) return { ok: false, reason: 'suggested' };
-  if (li.getAttribute('data-trilium-task-state') === '_rescheduled') return { ok: false, reason: 'moved' };
+  if (li.getAttribute('data-trilium-task-state') === RESCHEDULED_STATE_ID) return { ok: false, reason: 'moved' };
   const state = itemState(li, states);
   if (state === 'rescheduled') return { ok: false, reason: 'moved' };
   if (state === 'cancelled') return { ok: false, reason: 'cancelled' };

@@ -68,7 +68,8 @@ export type InsertResult =
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DEFAULT_STATE_ID = '_rescheduled';
+/** The fork's Rescheduled state id. */
+export const RESCHEDULED_STATE_ID = '_rescheduled';
 const DEFAULT_STATE_TITLE = 'Rescheduled';
 
 /** "2026-10-27" → "Tue 27 Oct", as the step data labels a day. */
@@ -140,7 +141,7 @@ export function inspectItem(
   html: string,
   id: string,
   states: StateSymbols,
-  stateId = DEFAULT_STATE_ID,
+  stateId = RESCHEDULED_STATE_ID,
 ): { ok: true; text: string; section: string | null } | { ok: false; reason: ItemProblem; scheduledTo: string[] } {
   const root = parse(html, { comment: true });
   const found = lookup(root, id, states, stateId);
@@ -154,7 +155,7 @@ export function inspectItem(
  * link points at the target note.
  */
 export function markRescheduled(html: string, id: string, opts: MarkOptions): MarkResult {
-  const stateId = opts.stateId ?? DEFAULT_STATE_ID;
+  const stateId = opts.stateId ?? RESCHEDULED_STATE_ID;
   const root = parse(html, { comment: true });
   const found = lookup(root, id, opts.states, stateId);
   if (!('li' in found)) return { ok: false, ...found };
@@ -234,7 +235,7 @@ function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): stri
  */
 export function insertCopy(targetHtml: string, sourceHtml: string, id: string, opts: CopyOptions & { stateId?: string }): InsertResult {
   const sourceRoot = parse(sourceHtml, { comment: true });
-  const found = lookup(sourceRoot, id, opts.states, opts.stateId ?? DEFAULT_STATE_ID);
+  const found = lookup(sourceRoot, id, opts.states, opts.stateId ?? RESCHEDULED_STATE_ID);
   if (!('li' in found)) return { ok: false, ...found };
   const section = sectionLabel(sourceRoot, found.li);
   const item = buildCopy(sourceHtml, found.li, opts);
