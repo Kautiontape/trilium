@@ -153,4 +153,20 @@ describe('writing On deck', () => {
     const again = await commitTasks(fake.api, [{ noteId: 'a', listItemId: 'd1', after: 't1' }]);
     expect(again[0]).toMatchObject({ status: 'unchanged' });
   });
+
+  it('puts an On deck task after an item of another time block, and refuses an anchor off the list', async () => {
+    const lists = `<h2>☑️ Tasks</h2><h3>Morning</h3>${ul(li('m1', 'Stand-up'))}<h3>Evening</h3>${ul(li('e1', 'Cook'), li('e2', 'Read'))}`;
+    const fake = fakeTrilium(day('a', '2026-11-06', lists + DECK));
+    const results = await commitTasks(fake.api, [
+      { noteId: 'a', listItemId: 'd1', after: 'e1' },
+      { noteId: 'a', listItemId: 'd2', before: 'nope' },
+    ]);
+    expect(results[0]).toMatchObject({ status: 'moved' });
+    expect(results[1]).toMatchObject({ status: 'skipped' });
+    const html = fake.html.a ?? '';
+    expect(html.indexOf('Cook')).toBeLessThan(html.indexOf('Tidy the garage'));
+    expect(html.indexOf('Tidy the garage')).toBeLessThan(html.indexOf('Read<'));
+    expect(html.indexOf('Evening')).toBeLessThan(html.indexOf('Tidy the garage'));
+    expect(html).toContain('Read the RFC');
+  });
 });
