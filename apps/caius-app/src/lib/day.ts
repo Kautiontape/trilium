@@ -1,4 +1,4 @@
-import { DEFAULT_ROLLOVER, nextWorkday, workdayMinutes } from "@triliumnext/caius/src/workday.js";
+import { DEFAULT_ROLLOVER, effectiveRollover, nextWorkday, workdayMinutes } from "@triliumnext/caius/src/workday.js";
 
 /**
  * Dates as keys (`YYYY-MM-DD`, `YYYY-Www`, `YYYY-MM`) and the labels the app shows for them. Which
@@ -120,9 +120,30 @@ export function clockMinutes(clock: string): number | null {
 /**
  * Minutes into the workday at `now`: after midnight and before the rhythm's rollover the workday is
  * still the day before, so 00:10 reads 24:10. Compare these, never `getHours()`, with work end or 15:00.
+ * A day `started` early (the `#caiusStarted` label) counts from midnight instead.
  */
-export function dayMinutes(now: Date, rhythm: { rollover?: string }): number {
-    return workdayMinutes(now, clockMinutes(rhythm.rollover ?? "") ?? DEFAULT_ROLLOVER);
+export function dayMinutes(now: Date, rhythm: { rollover?: string }, started?: string | null): number {
+    return workdayMinutes(now, effectiveRollover(rolloverMinutes(rhythm), started, now));
+}
+
+/**
+ * The flip Today offers between midnight and the Rhythm's rollover: start the new calendar day
+ * early (`start`, naming that day) or go back to the previous one (`back`, naming it). Null outside
+ * that window, which is read off the real clock, not the effective rollover.
+ */
+export function flipOffer(now: Date, rhythm: { rollover?: string }, started: string | null | undefined): { kind: "start" | "back"; day: string } | null {
+    const rollover = rolloverMinutes(rhythm);
+    if (now.getHours() * 60 + now.getMinutes() >= rollover) {
+        return null;
+    }
+    if (effectiveRollover(rollover, started, now) === 0) {
+        return { kind: "back", day: WEEKDAYS[(now.getDay() + 6) % 7] };
+    }
+    return { kind: "start", day: WEEKDAYS[now.getDay()] };
+}
+
+function rolloverMinutes(rhythm: { rollover?: string }) {
+    return clockMinutes(rhythm.rollover ?? "") ?? DEFAULT_ROLLOVER;
 }
 
 export function hhmm(minutes: number) {

@@ -48,6 +48,10 @@ export function caiusApi(conn: Connection) {
         setState: (items: (TaskRef & { state: "done" | "doing" | "cancelled"; reason?: string })[]) =>
             tool<WriteResult>("caius_set_state", { items }),
         forward: (items: (TaskRef & { to: string; onDeck?: boolean; critical?: boolean })[]) => tool<WriteResult>("caius_forward", { items }),
+        startDay: async (back?: boolean): Promise<WriteResult> => {
+            const answer = await tool<NonNullable<WriteResult["results"]>[number]>("caius_start_day", back ? { back: true } : {});
+            return { results: [ answer ] };
+        },
         add: (items: AddItem[]) => tool<WriteResult>("caius_add", { items }),
         accept: (items: (TaskRef & { section?: string; critical?: boolean })[]) => tool<WriteResult>("caius_accept", { items }),
         dismiss: (items: TaskRef[]) => tool<WriteResult>("caius_dismiss", { items }),
@@ -143,6 +147,8 @@ export interface CaiusStatus {
     now?: string;
     /** When the day rolls over, `HH:MM`. */
     rollover?: string;
+    /** The `#caiusStarted` time, `YYYY-MM-DDTHH:mm:ss`, while the day was started early. */
+    started?: string;
 }
 
 export type Nudge = { date: string; lastWorkday: string } & (

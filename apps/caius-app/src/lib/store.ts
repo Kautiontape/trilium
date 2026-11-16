@@ -16,7 +16,10 @@ export interface TodayData {
     label: string;
     plan: PlanView;
     catchup: CatchupStep | null;
+    /** The standing note's own Rhythm, with its real rollover, which bounds when Start or Back is offered. */
     rhythm: Rhythm;
+    /** The `#caiusStarted` time while the day was started early, else null. */
+    started: string | null;
     /** The nudge state; null on a server without the phone routes. */
     nudge: Nudge | null;
     /** When this was read, ISO. */
@@ -69,10 +72,14 @@ export function api(): CaiusApi {
 export async function probeServer() {
     const status = await api().status();
     serverStatus.value = status;
+    applyClock(status);
+    return status;
+}
+
+function applyClock(status: CaiusStatus | null) {
     if (status?.now) {
         clockOffset = new Date(status.now).getTime() - Date.now();
     }
-    return status;
 }
 
 /** Reads Today from the server; offline, shows the last snapshot with actions off. */
@@ -88,16 +95,22 @@ export async function refreshToday() {
         await flushOutbox();
         const caius = api();
         const plan = await caius.plan("day");
-        const [ catchup, nudge ] = await Promise.all([
+        const [ catchup, nudge, status ] = await Promise.all([
             caius.catchup(plan.key).catch(() => null),
-            serverStatus.value ? caius.nudge(plan.key).catch(() => null) : Promise.resolve(null)
+            serverStatus.value ? caius.nudge(plan.key).catch(() => null) : Promise.resolve(null),
+            caius.status().catch(() => null)
         ]);
+        if (status) {
+            serverStatus.value = status;
+            applyClock(status);
+        }
         const data: TodayData = {
             key: plan.key,
             label: catchup?.dateLabel ?? plan.key,
             plan,
             catchup,
             rhythm: readRhythm(catchup?.standing ?? null),
+            started: (status ?? serverStatus.value)?.started ?? null,
             nudge,
             asOf: appNow().toISOString(),
             offline: false
@@ -110,7 +123,7 @@ export async function refreshToday() {
         if (e instanceof UnreachableError) {
             const snapshot = readLocal<TodayData | null>("snapshot", null);
             if (snapshot?.plan) {
-                today.value = { ...snapshot, offline: true };
+                today.value = { ...snapshot, started: snapshot.started ?? null, offline: true };
             }
         }
     } finally {
@@ -225,8 +238,8 @@ export function defaultCaptureTarget(data: TodayData, now = appNow()): CaptureTa
     const woundDown = data.nudge?.state === "wound_down";
     const workEnd = clockMinutes(settings.value.workEndOverride || data.rhythm.workEnd) ?? 18 * 60;
     // Before the rollover the workday is still the day before, so 00:10 is past its work end.
-    const workday = dayMinutes(now, data.rhythm) >= 24 * 60 ? new Date(now.getTime() - 86_400_000) : now;
-    const pastWork = data.key === localKey(workday) && dayMinutes(now, data.rhythm) >= workEnd;
+    const workday = dayMinutes(now, data.rhythm, data.started) >= 24 * 60 ? new Date(now.getTime() - 86_400_000) : now;
+    const pastWork = data.key === localKey(workday) && dayMinutes(now, data.rhythm, data.started) >= workEnd;
     return { kind: "onDeck", date: woundDown || pastWork ? nextWorkdayKey(data.key) : data.key };
 }
 
