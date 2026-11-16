@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { critical, fakeTrilium, li, periodNote, ul } from '../trilium/helpers.js';
 import { readPlan, type PlanTask } from '../trilium/plan-read.js';
-import { dayLoad, liveMinutes, parentsOf } from './load.js';
+import { countUnits, dayLoad, liveMinutes, parentsOf, unitMinutes } from './load.js';
 
 const task = (over: Partial<PlanTask>): PlanTask => ({
   noteId: 'd', listItemId: null, state: 'open', text: 't', estMinutes: null, parent: null, parentListItemId: null,
@@ -9,7 +9,7 @@ const task = (over: Partial<PlanTask>): PlanTask => ({
 });
 
 describe('liveMinutes', () => {
-  it('counts a parent through its live sub-items and an unestimated task at 30', () => {
+  it('counts a parent by its own estimate, a plain task at 30 when unestimated, and skips done and empty ones', () => {
     const tasks = [
       task({ text: 'Parent', estMinutes: 90 }),
       task({ text: 'Step a', parent: 'Parent', estMinutes: 10 }),
@@ -18,7 +18,7 @@ describe('liveMinutes', () => {
       task({ text: 'Done', state: 'done', estMinutes: 60 }),
       task({ text: '  ', estMinutes: 60 }),
     ];
-    expect(liveMinutes(tasks)).toBe(10 + 30 + 30);
+    expect(liveMinutes(tasks)).toBe(90 + 30);
     expect(liveMinutes(tasks, 'growth')).toBe(0);
   });
 
@@ -53,6 +53,50 @@ describe('liveMinutes', () => {
     expect(plan.capacity.areas.foundation.minutes).toBeGreaterThan(0);
     expect(liveMinutes(tasks, 'foundation')).toBe(plan.capacity.areas.foundation.minutes);
     expect(liveMinutes(tasks, 'growth')).toBe(plan.capacity.areas.growth.minutes);
+  });
+});
+
+describe('countUnits', () => {
+  const sub = (text: string, parent: string, over: Partial<PlanTask> = {}) => task({ text, parent, ...over });
+
+  it('counts a parent by its own estimate, else the sum of its live sub-items', () => {
+    const own = [task({ text: 'Fix', estMinutes: 15 }), sub('a', 'Fix', { estMinutes: 10 }), sub('b', 'Fix', { estMinutes: 10 }), sub('c', 'Fix', { estMinutes: 10 })];
+    expect(countUnits(own).map((u) => [u.task.text, u.minutes, u.estimated, u.unestimated])).toEqual([['Fix', 15, 1, 0]]);
+    const summed = [task({ text: 'Fix' }), sub('a', 'Fix', { estMinutes: 10 }), sub('b', 'Fix')];
+    expect(countUnits(summed).map((u) => [u.minutes, u.estimated, u.unestimated])).toEqual([[40, 1, 1]]);
+    expect(unitMinutes(summed[0]!, summed)).toBe(40);
+    expect(unitMinutes(summed[2]!, summed)).toBe(30);
+    expect(unitMinutes(summed[1]!, summed)).toBe(10);
+  });
+
+  it('counts a hand-made deeper nest through its sub-items', () => {
+    const tasks = [
+      task({ listItemId: 'p', text: 'P' }),
+      task({ listItemId: 'q', text: 'Q', parent: 'P', parentListItemId: 'p' }),
+      task({ listItemId: 'r', text: 'R', parent: 'Q', parentListItemId: 'q', estMinutes: 5 }),
+    ];
+    expect(liveMinutes(tasks)).toBe(5);
+  });
+
+  it('counts a meeting parent as 0, but a pinned task without sub-items or a non-meeting parent as usual', () => {
+    const meetings = ['09:30 Standup (Ana)', '11:00'];
+    const standup = [task({ text: '9:30 Standup', at: '9:30', estMinutes: 20 }), sub('Notes', '9:30 Standup', { estMinutes: 10 })];
+    expect(countUnits(standup, { meetings }).map((u) => [u.minutes, u.estimated, u.unestimated])).toEqual([[0, 0, 0]]);
+    expect(liveMinutes([task({ text: '09:30 Standup', at: '09:30' })], undefined, { meetings })).toBe(30);
+    const appointment = [task({ text: '10:30 Appointment', at: '10:30' }), sub('Bring ID', '10:30 Appointment', { estMinutes: 5 })];
+    expect(liveMinutes(appointment, undefined, { meetings })).toBe(5);
+  });
+
+  it('counts a done parent\'s open sub-item on its own, in its own area', () => {
+    const tasks = [task({ text: 'P', state: 'done', area: 'growth' }), sub('a', 'P', { estMinutes: 10, area: 'growth' })];
+    expect(countUnits(tasks).map((u) => [u.task.text, u.minutes])).toEqual([['a', 10]]);
+    expect(liveMinutes(tasks, 'growth')).toBe(10);
+  });
+
+  it('takes the parents map when given', () => {
+    const tasks = [task({ text: 'X' }), task({ text: 'Y', estMinutes: 10 })];
+    const parents = new Map([[tasks[1]!, tasks[0]!]]);
+    expect(liveMinutes(tasks, undefined, { parents })).toBe(10);
   });
 });
 

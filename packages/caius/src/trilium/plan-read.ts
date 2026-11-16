@@ -10,7 +10,7 @@ import { TRILIUM_CONFIG } from './config.js';
 import { headingStacks, headingsByLine, isSuggestedName, normName, sectionKind, type SectionKind } from './sections.js';
 import { AREAS, blockOf, clockOf, headingArea, markedArea, type Area, type Block } from './areas.js';
 import { parentItemId } from './open.js';
-import { DEFAULT_ESTIMATE, liveMinutes } from '../daily/load.js';
+import { countUnits, DEFAULT_ESTIMATE, liveMinutes } from '../daily/load.js';
 import { parseContext, periodSpan, type ContextLine } from './until.js';
 
 export type PeriodKind = 'day' | 'week' | 'month';
@@ -210,8 +210,14 @@ export function planTasks(doc: TriliumDoc, now: Date): { tasks: Scanned[] } {
   const stacks = headingStacks(doc.fullText);
   const timeBlocks = stacks.some((stack) => stack.some((h) => blockOf(h) === 'morning' || blockOf(h) === 'afternoon'));
   const byRowid = new Map(result.tasks.map((t) => [t.rowid, t]));
-  return {
-    tasks: result.tasks.map((t) => ({
+  const areaByRowid = new Map<number, Area>();
+  const tasks: Scanned[] = [];
+  for (const t of result.tasks) {
+    const own = areaOfTask(t.text, stacks[t.line] ?? [], timeBlocks);
+    const inherited = markedArea(t.text) === null && t.parentRowid !== null ? areaByRowid.get(t.parentRowid) : undefined;
+    const area = inherited ?? own;
+    areaByRowid.set(t.rowid, area);
+    tasks.push({
       noteId: doc.noteId,
       listItemId: doc.itemIds.get(t.line) ?? null,
       state: t.state,
@@ -221,19 +227,33 @@ export function planTasks(doc: TriliumDoc, now: Date): { tasks: Scanned[] } {
       parentListItemId: parentItemId(doc, t.parentRowid === null ? undefined : byRowid.get(t.parentRowid)),
       section: headings[t.line] ?? null,
       critical: doc.critical.has(t.line),
-      area: areaOfTask(t.text, stacks[t.line] ?? [], timeBlocks),
+      area,
       block: (stacks[t.line] ?? []).map(blockOf).findLast((b) => b !== null) ?? null,
       at: clockOf(t.text),
       line: t.line,
       horizon: doc.suggested.has(t.line) ? null : t.horizon,
       live: t.live,
       parentLine: t.parentRowid === null ? null : (byRowid.get(t.parentRowid)?.line ?? null),
-    })),
-  };
+    });
+  }
+  return { tasks };
 }
 
 /** A `PlanTask` with what `buildPlanView` needs and the public view drops. */
 type Scanned = PlanTask & { line: number; horizon: string | null; live: boolean; parentLine: number | null };
+
+const isLive = (t: { live: boolean; text: string }) => t.live && t.text.trim() !== '';
+
+/** Each sub-item of `tasks` mapped to its parent by the parent's row, so repeated words never confuse two tasks. */
+function parentMap(tasks: Scanned[]): Map<Scanned, Scanned> {
+  const byLine = new Map(tasks.map((t) => [t.line, t]));
+  const parents = new Map<Scanned, Scanned>();
+  for (const t of tasks) {
+    const parent = t.parentLine === null ? undefined : byLine.get(t.parentLine);
+    if (parent !== undefined) parents.set(t, parent);
+  }
+  return parents;
+}
 
 const strip = ({ line: _l, horizon: _h, live: _v, parentLine: _p, ...task }: Scanned): PlanTask => task;
 
@@ -255,25 +275,22 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
     s.tasks.push(strip(t));
   }
 
-  const isLive = (t: { live: boolean }) => t.live;
-  const top3 = main.filter((t) => !t.critical && t.parent === null && isLive(t)).slice(0, 3).map(strip);
+  const top3 = main.filter((t) => !t.critical && t.parent === null && t.live).slice(0, 3).map(strip);
 
-  // A live task with live sub-items counts through its sub-items, not twice. An empty to-do is a
-  // blank checkbox, not a task, and neither counts nor makes its parent a parent.
-  const countable = main.filter((t) => t.live && t.text.trim() !== '');
-  const parents = new Set(countable.map((t) => t.parentLine));
-  // Only a day's Growth and Recharge are apart from its work; a week's or month's are planned time.
-  const leaves = countable.filter((t) => !parents.has(t.line));
+  // Units count by `countUnits`; a day's Growth and Recharge are apart from its work, a week's or month's are planned time.
+  const liveMain = main.filter(isLive);
+  const mainParents = parentMap(liveMain);
+  const opts = { meetings: doc.meetings, parents: mainParents };
+  const units = countUnits(liveMain, opts);
   const apart = (t: { area: Area }) => period === 'day' && t.area !== 'foundation';
-  const evening = leaves.filter(apart);
-  const counted = leaves.filter((t) => !apart(t));
-  const minutesOf = (area: Area) => liveMinutes(main, area);
-  const estimated = counted.filter((t) => t.estMinutes !== null);
-  const planned = estimated.reduce((n, t) => n + t.estMinutes!, 0);
-  const unestimated = counted.length - estimated.length;
-  const deckCountable = deck.filter((t) => t.live && t.text.trim() !== '');
-  const deckParents = new Set(deckCountable.map((t) => t.parentLine));
-  const onDeckMinutes = deckCountable.filter((t) => !deckParents.has(t.line)).reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0);
+  const evening = units.filter((u) => apart(u.task));
+  const counted = units.filter((u) => !apart(u.task));
+  const sum = (list: typeof units, key: 'minutes' | 'estimated' | 'unestimated') => list.reduce((n, u) => n + u[key], 0);
+  const unestimated = sum(counted, 'unestimated');
+  const totalMinutes = sum(counted, 'minutes');
+  const minutesOf = (area: Area) => liveMinutes(liveMain, area, opts);
+  const liveDeck = deck.filter(isLive);
+  const onDeckMinutes = sum(countUnits(liveDeck, { meetings: doc.meetings, parents: parentMap(liveDeck) }), 'minutes');
   const horizons: Record<string, number> = {};
   for (const t of [...main, ...deck].filter((x) => x.live)) horizons[t.horizon ?? 'none'] = (horizons[t.horizon ?? 'none'] ?? 0) + 1;
 
@@ -288,12 +305,12 @@ export function buildPlanView(period: PeriodKind, key: string, doc: TriliumDoc, 
     suggested: all.filter((t) => isSuggested(t) && t.live).map(strip),
     dismissed,
     capacity: {
-      plannedMinutes: planned,
-      estimatedCount: estimated.length,
+      plannedMinutes: totalMinutes - unestimated * DEFAULT_ESTIMATE,
+      estimatedCount: sum(counted, 'estimated'),
       unestimatedCount: unestimated,
       unestimatedMinutes: unestimated * DEFAULT_ESTIMATE,
-      totalMinutes: planned + unestimated * DEFAULT_ESTIMATE,
-      eveningMinutes: evening.reduce((n, t) => n + (t.estMinutes ?? DEFAULT_ESTIMATE), 0),
+      totalMinutes,
+      eveningMinutes: sum(evening, 'minutes'),
       onDeckMinutes,
       target: TARGETS[period],
       areas: Object.fromEntries(AREAS.map((area) => [
