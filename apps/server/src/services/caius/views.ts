@@ -143,7 +143,7 @@ async function daysView(deps: ViewsDeps, from: string, count: number, now: Date)
 async function itemView(deps: ViewsDeps, input: ShowInput, now: Date): Promise<ShowAnswer> {
     const asked = input.key?.trim().toUpperCase();
     if (asked !== undefined && !JIRA_KEY.test(asked)) {
-        return { error: "bad_request", detail: `"${input.key}" is not a ticket key such as ZAP-101` };
+        return { error: "bad_request", detail: `"${input.key}" is not a ticket key such as QRS-101` };
     }
     if (!input.item && asked === undefined) {
         return { error: "bad_request", detail: "The item view takes item ({ noteId, listItemId }) or key" };
@@ -486,7 +486,7 @@ function taskGist(task: ViewTask, trail: ViewTrailStep[]): string {
     return t("caius.views.item.moved", { task: words, from, now });
 }
 
-/** "ZAP-2640: In Review for 3 days; last comment from Sam." */
+/** "QRS-2640: In Review for 3 days; last comment from Sam." */
 function ticketGist(ticket: ViewTicket | { key: string; error: string }): string {
     if ("error" in ticket) return t("caius.views.item.ticket_unread", { key: ticket.key });
     const status = ticket.daysInStatus === null

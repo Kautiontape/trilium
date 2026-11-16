@@ -49,7 +49,7 @@ export function createCaiusTools(
         },
 
         caius_inputs: {
-            description: "Read the day's outside inputs: Jira tickets handed off to the user (Dev Verify, QA, Code Review) with their age, recent comments that mention or ask the user, which tickets Jira calls done, the day's calendar events from the iCal feeds, and the capacity the meetings leave. Pass the day's Context lines so a line such as \"ZAP-2590 is open\" beats Jira's Done. A source that fails is named in errors and the rest still return. An answer is reused for 15 minutes; pass refresh to read again.",
+            description: "Read the day's outside inputs: Jira tickets handed off to the user (Dev Verify, QA, Code Review) with their age, recent comments that mention or ask the user, which tickets Jira calls done, the day's calendar events from the iCal feeds, and the capacity the meetings leave. Pass the day's Context lines so a line such as \"QRS-2590 is open\" beats Jira's Done. A source that fails is named in errors and the rest still return. An answer is reused for 15 minutes; pass refresh to read again.",
             inputSchema: toolInputs.inputs,
             async: true,
             execute: parsed(toolInputs.inputs, service.inputs)

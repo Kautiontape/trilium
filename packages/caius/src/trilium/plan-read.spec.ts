@@ -91,7 +91,7 @@ const dayHtml =
   ul(li('es1', 'Maybe do this ~2h'));
 
 describe('readPlan (day)', () => {
-  const seed = { d: [periodNote('d', 'dateNote', '2026-10-26', { attributes: [{ type: 'label', name: 'dateNote', value: '2026-10-26' }, { type: 'label', name: 'caiusDismissed', value: 'ZAP-9' }] }), dayHtml] as [ReturnType<typeof periodNote>, string] };
+  const seed = { d: [periodNote('d', 'dateNote', '2026-10-26', { attributes: [{ type: 'label', name: 'dateNote', value: '2026-10-26' }, { type: 'label', name: 'caiusDismissed', value: 'QRS-9' }] }), dayHtml] as [ReturnType<typeof periodNote>, string] };
 
   it('returns critical first, sections in order with kinds, top3, suggested lane and dismissed keys', async () => {
     const v = await readPlan(fakeTrilium(seed).api, 'day', '2026-10-26', now);
@@ -112,7 +112,7 @@ describe('readPlan (day)', () => {
     expect(v.sections[1]!.tasks[0]).toMatchObject({ text: 'Learn it', parentListItemId: null });
     expect(v.top3.map((t) => t.text)).toEqual(['First open', 'Underway', 'Learn it']);
     expect(v.suggested.map((t) => t.text)).toEqual(['Maybe do this']);
-    expect(v.dismissed).toEqual(['ZAP-9']);
+    expect(v.dismissed).toEqual(['QRS-9']);
   });
 
   it('counts capacity from live tasks only, unestimated at 30m, leaving Suggested out', async () => {

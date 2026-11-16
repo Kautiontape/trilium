@@ -71,7 +71,7 @@ beforeAll(async () => {
         const calendarRoot = root ?? (await store.calendarDay(FRIDAY), (await store.search("#calendarRoot"))[0]);
         if (!calendarRoot) throw new Error("no #calendarRoot note");
         await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
-        await store.addLabel(createChildNote("root", "🧭 How I work", "<h2>Rhythm</h2><ul><li>Jira: ZAP</li></ul>"), "assistantContext", "");
+        await store.addLabel(createChildNote("root", "🧭 How I work", "<h2>Rhythm</h2><ul><li>Jira: QRS</li></ul>"), "assistantContext", "");
         const friday = await store.calendarDay(FRIDAY);
         await store.putContent(friday.noteId, `<h3>Work</h3>${ul(li("f1", "Friday thing"))}`);
     });
@@ -140,7 +140,7 @@ describe("the inputs cache", () => {
     });
 
     it("serves caius_inputs from the injected reader through the same cache", async () => {
-        const input = { date: "2026-11-19", context: [ "ZAP-1 is open" ] };
+        const input = { date: "2026-11-19", context: [ "QRS-1 is open" ] };
         const first = await call("caius_inputs", input);
         expect(first).toMatchObject({ date: "2026-11-19", errors: [] });
         expect(inputsCalls.at(-1)).toEqual(input);
@@ -186,10 +186,10 @@ describe("caius_brief_write", () => {
     const brief = {
         date: BRIEF_DAY,
         headline: "Ship the fix, then review",
-        groups: [ { name: "The fix", items: [ "ZAP-101" ] }, { name: "Review", items: [ "the review" ] } ],
+        groups: [ { name: "The fix", items: [ "QRS-101" ] }, { name: "Review", items: [ "the review" ] } ],
         meetings: [ { title: "Standup", name: "Stand" } ],
         picks: [
-            { text: "Get ZAP-101 done", because: "sitting in Dev Verify for 3 days", minutes: 30 },
+            { text: "Get QRS-101 done", because: "sitting in Dev Verify for 3 days", minutes: 30 },
             { text: "Get the review done", because: "because Sam asked on Tuesday", minutes: 90 }
         ],
         sections: [
@@ -202,7 +202,7 @@ describe("caius_brief_write", () => {
             groups: []
         }
     };
-    const DAY_HTML = `<h3>Meetings</h3><ul><li data-list-item-id="em1">10:00 Standup</li></ul><h2>☑️ Tasks</h2>${ul(li("bt1", "Fix ZAP-101 ~30m"), li("bt2", "The review ~1h30m"))}`;
+    const DAY_HTML = `<h3>Meetings</h3><ul><li data-list-item-id="em1">10:00 Standup</li></ul><h2>☑️ Tasks</h2>${ul(li("bt1", "Fix QRS-101 ~30m"), li("bt2", "The review ~1h30m"))}`;
     let dayId = "";
 
     beforeAll(async () => {
@@ -217,7 +217,7 @@ describe("caius_brief_write", () => {
         const dry = await call("caius_brief_write", { ...brief, dryRun: true });
         expect(dry).toMatchObject({ date: BRIEF_DAY, dryRun: true, dayNoteId: dayId, briefNoteId: null, headerNoteId: null });
         expect(dry.header).toContain("<h2>Ship the fix, then review</h2>");
-        expect(dry.brief).toContain("Get ZAP-101 done: because sitting in Dev Verify for 3 days (~30m)");
+        expect(dry.brief).toContain("Get QRS-101 done: because sitting in Dev Verify for 3 days (~30m)");
         expect(becca.notes[dayId]?.getChildNotes()).toEqual([]);
     });
 
@@ -252,7 +252,7 @@ describe("caius_brief_write", () => {
 
         const body = String(briefNote?.getContent());
         expect(body.startsWith(`<section class="include-note" data-note-id="${answer.headerNoteId}" data-box-size="full">&nbsp;</section><h2>Get done today</h2><ul><li`)).toBe(true);
-        expect(body).toContain(">Get ZAP-101 done: because sitting in Dev Verify for 3 days (~30m)</li>");
+        expect(body).toContain(">Get QRS-101 done: because sitting in Dev Verify for 3 days (~30m)</li>");
         expect(body).toContain(">Get the review done: because Sam asked on Tuesday (~1h30m)</li>");
         expect(body).not.toContain("todo-list");
         expect(body).not.toContain("<img");
@@ -332,15 +332,15 @@ describe("caius_brief_write", () => {
 
     it("keeps the brief's lines out of the lanes", async () => {
         const open = await call("caius_open", {});
-        expect(open.tasks.map((t: any) => t.text).join("\n")).not.toContain("Get ZAP-101 done");
-        expect(open.tasks.map((t: any) => t.text)).toContain("Fix ZAP-101");
+        expect(open.tasks.map((t: any) => t.text).join("\n")).not.toContain("Get QRS-101 done");
+        expect(open.tasks.map((t: any) => t.text)).toContain("Fix QRS-101");
     });
 
     it("takes up to six groups named in ten characters or fewer, and latitude with longitude", () => {
         const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
         expect(schema?.safeParse(brief).success).toBe(true);
-        expect(schema?.safeParse({ ...brief, groups: [ { name: "Security fixes", items: [ "ZAP-101" ] } ] }).success).toBe(false);
-        expect(schema?.safeParse({ ...brief, groups: Array.from({ length: 7 }, () => ({ name: "Work", items: [ "ZAP-101" ] })) }).success).toBe(false);
+        expect(schema?.safeParse({ ...brief, groups: [ { name: "Security fixes", items: [ "QRS-101" ] } ] }).success).toBe(false);
+        expect(schema?.safeParse({ ...brief, groups: Array.from({ length: 7 }, () => ({ name: "Work", items: [ "QRS-101" ] })) }).success).toBe(false);
         expect(schema?.safeParse({ ...brief, meetings: [ { title: "Standup", name: "Daily standup" } ] }).success).toBe(false);
         // An older call that still sends acts isn't refused.
         expect(schema?.safeParse({ ...brief, acts: [ { range: "10:00 to 12:00", text: "x" } ] }).success).toBe(true);
@@ -348,7 +348,7 @@ describe("caius_brief_write", () => {
     });
 
     it("keeps his groups for the next write: a task added since joins the group of the task above it", async () => {
-        await cls.init(() => store.putContent(dayId, `${DAY_HTML.replace(li("bt2", "The review ~1h30m"), `${li("bt3", "Fix ZAP-102 ~30m")}${li("bt2", "The review ~1h30m")}`)}`));
+        await cls.init(() => store.putContent(dayId, `${DAY_HTML.replace(li("bt2", "The review ~1h30m"), `${li("bt3", "Fix QRS-102 ~30m")}${li("bt2", "The review ~1h30m")}`)}`));
         const { groups: _groups, meetings: _meetings, ...withoutGroups } = brief;
         const answer = await call("caius_brief_write", withoutGroups);
         expect(answer.groups).toEqual([

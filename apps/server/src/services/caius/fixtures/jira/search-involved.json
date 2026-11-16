@@ -1,7 +1,7 @@
 {
   "issues": [
     {
-      "key": "ZAP-105",
+      "key": "QRS-105",
       "fields": {
         "summary": "Confirm the staging bucket name",
         "status": {
@@ -19,7 +19,7 @@
       }
     },
     {
-      "key": "ZAP-106",
+      "key": "QRS-106",
       "fields": {
         "summary": "Ship the retry banner",
         "status": {
@@ -37,7 +37,7 @@
       }
     },
     {
-      "key": "ZAP-104",
+      "key": "QRS-104",
       "fields": {
         "summary": "Remove the legacy report job",
         "status": {
@@ -57,7 +57,7 @@
       }
     },
     {
-      "key": "ZAP-101",
+      "key": "QRS-101",
       "fields": {
         "summary": "Verify the export retry on staging",
         "status": {
@@ -75,7 +75,7 @@
       }
     },
     {
-      "key": "ZAP-107",
+      "key": "QRS-107",
       "fields": {
         "summary": "Archive the old dashboards",
         "status": {

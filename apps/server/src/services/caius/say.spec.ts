@@ -17,7 +17,7 @@ describe("inHisVoice", () => {
             [ "Shawn handles the vendor call", "Handling the vendor call" ],
             [ "Shawn picks up the keys", "Picking up the keys" ],
             [ "Shawn works from home", "Working from home" ],
-            [ "ZAP-2590 is open", "ZAP-2590 is open" ],
+            [ "QRS-2590 is open", "QRS-2590 is open" ],
             [ "Shawnee office is closed", "Shawnee office is closed" ]
         ];
         for (const [ said, written ] of cases) expect(inHisVoice(said), said).toEqual({ text: written });
@@ -41,12 +41,12 @@ describe("sayOf", () => {
     it("Wed 17:45: what was ticked, moved and added, in one sentence, with no ids", () => {
         const say = sayOf({
             written: [
-                { kind: "done", id: "e111aaaaaaaa", text: "ZAP-111 Check the invoice export in QA", status: "written" },
-                { kind: "done", id: "e101aaaaaaaa", text: "ZAP-101 Verify the export retry on staging", status: "written" },
+                { kind: "done", id: "e111aaaaaaaa", text: "QRS-111 Check the invoice export in QA", status: "written" },
+                { kind: "done", id: "e101aaaaaaaa", text: "QRS-101 Verify the export retry on staging", status: "written" },
                 { kind: "done", id: "ebagaaaaaaaa", text: "Pack the climbing gym bag", status: "written" },
                 { kind: "fate", id: "edaveaaaaaaa", text: "Message Dave about the lights", detail: "2026-11-05", status: "written" },
-                { kind: "finished", id: "ZAP-111", status: "written" },
-                { kind: "finished", id: "ZAP-101", status: "written" },
+                { kind: "finished", id: "QRS-111", status: "written" },
+                { kind: "finished", id: "QRS-101", status: "written" },
                 { kind: "area", id: "elaundryaaaa", text: "Laundry", detail: "recharge", status: "written" },
                 { kind: "area", id: "eballotaaaaa", text: "Drop off the ballot", detail: "growth", status: "written" },
                 { kind: "context", text: "Taking Incident Review over Vendor Onboarding at 11:00", status: "written" },
@@ -54,7 +54,7 @@ describe("sayOf", () => {
             ],
             skipped: []
         }, { day: "2026-11-05" });
-        expect(say).toBe("ZAP-111, ZAP-101 and Pack the climbing gym bag are done, Message Dave about the lights moved to Thu 5 Nov, "
+        expect(say).toBe("QRS-111, QRS-101 and Pack the climbing gym bag are done, Message Dave about the lights moved to Thu 5 Nov, "
             + "Drop off the ballot is marked Growth, Laundry is marked Recharge and 'Taking Incident Review over Vendor Onboarding at 11:00' is noted.");
         expect(say).not.toMatch(ID);
     });
@@ -62,28 +62,28 @@ describe("sayOf", () => {
     it("Plan my day: the accepts and the order, a second sentence for what was skipped, and nothing for what was already there", () => {
         const say = sayOf({
             written: [
-                { kind: "accept", id: "ZAP-110", text: "Get ZAP-110 Fix the importer done", status: "written" },
-                { kind: "accept", id: "ZAP-101", text: "Get ZAP-101 Verify the export retry done", status: "written" },
-                { kind: "place", id: "ZAP-101", text: "Get ZAP-101 Verify the export retry done", detail: "first", status: "written" },
-                { kind: "move", id: "e110aaaaaaaa", text: "ZAP-110 Fix the importer", detail: "after", anchor: "ZAP-101 Verify the export retry", status: "written" },
-                { kind: "suggested", id: "ZAP-105", text: "Get ZAP-105 Confirm the bucket done", status: "written" },
+                { kind: "accept", id: "QRS-110", text: "Get QRS-110 Fix the importer done", status: "written" },
+                { kind: "accept", id: "QRS-101", text: "Get QRS-101 Verify the export retry done", status: "written" },
+                { kind: "place", id: "QRS-101", text: "Get QRS-101 Verify the export retry done", detail: "first", status: "written" },
+                { kind: "move", id: "e110aaaaaaaa", text: "QRS-110 Fix the importer", detail: "after", anchor: "QRS-101 Verify the export retry", status: "written" },
+                { kind: "suggested", id: "QRS-105", text: "Get QRS-105 Confirm the bucket done", status: "written" },
                 { kind: "meetings", status: "unchanged" },
                 { kind: "brief", status: "written" }
             ],
             skipped: [
                 { kind: "evening", text: "just mom", reason: "use_add", detail: "Add it with caius_add" },
-                { kind: "done", text: "the export", reason: "ambiguous", detail: "ZAP-111 Check the export; ZAP-101 Verify the export retry" },
+                { kind: "done", text: "the export", reason: "ambiguous", detail: "QRS-111 Check the export; QRS-101 Verify the export retry" },
                 { kind: "done", id: "e999aaaaaaaa", reason: "not_offered" }
             ]
         }, { day: "2026-11-02" });
-        expect(say).toBe("ZAP-110 and ZAP-101 are on your list, ZAP-101 is first, ZAP-110 is after ZAP-101, ZAP-105 is in Suggested and the brief is written. "
-            + "'just mom' isn't on your list yet and one task wasn't found. Which export: ZAP-111 or ZAP-101?");
+        expect(say).toBe("QRS-110 and QRS-101 are on your list, QRS-101 is first, QRS-110 is after QRS-101, QRS-105 is in Suggested and the brief is written. "
+            + "'just mom' isn't on your list yet and one task wasn't found. Which export: QRS-111 or QRS-101?");
         expect(say).not.toMatch(ID);
     });
 
     it("names an item that changed since the step, with or without its text", () => {
-        expect(sayOf({ written: [], skipped: [ { kind: "accept", text: "Get ZAP-170 Check the report done", reason: "stale" }, { kind: "accept", reason: "stale" } ] }, { day: "2026-11-02" }))
-            .toBe("ZAP-170 changed since you saw it, so it stays as it was and one task changed since you saw it.");
+        expect(sayOf({ written: [], skipped: [ { kind: "accept", text: "Get QRS-170 Check the report done", reason: "stale" }, { kind: "accept", reason: "stale" } ] }, { day: "2026-11-02" }))
+            .toBe("QRS-170 changed since you saw it, so it stays as it was and one task changed since you saw it.");
     });
 
     it("says what a review leaves for Plan my day in one clause, for one item or several", () => {

@@ -23,7 +23,7 @@ function row(listItemId: string, text: string, rest: Partial<ViewTask> = {}): Vi
 const TASKS: ViewTask[] = [
     row("a1", "Garage shelf", { estMinutes: 60, block: "morning" }),
     row("a2", "The ballot"),
-    row("a3", "ZAP-2611 review", { estMinutes: 60, ticket: { key: "ZAP-2611", status: "In Review" } }),
+    row("a3", "QRS-2611 review", { estMinutes: 60, ticket: { key: "QRS-2611", status: "In Review" } }),
     row("p", "Parent", { estMinutes: null }),
     row("s1", "First part", { estMinutes: 20, parent: "Parent", parentListItemId: "p" }),
     row("s2", "Second part", { estMinutes: 25, parent: "Parent", parentListItemId: "p" }),
@@ -93,8 +93,8 @@ describe("viewReply and viewPicks", () => {
             [ tap({ [key("a1")]: { fate: { kind: "park", month: "2026-11", label: "November" } } }), `"Garage shelf" goes to November (2026-11)`, "Garage shelf", "Park · November" ],
             [ tap({ [key("a2")]: { fate: { kind: "done" } } }), `"The ballot" is done`, "The ballot", "Done" ],
             [ tap({ [key("a2")]: { fate: { kind: "drop", reason: "not needed" } } }), `"The ballot": drop it: not needed`, "The ballot", "Drop: not needed" ],
-            [ tap({ [key("a3")]: { estimate: 30 } }), `"ZAP-2611 review" is 30 minutes`, "ZAP-2611 review", "~30m" ],
-            [ tap({ [key("a3")]: { estimate: 120 } }), `"ZAP-2611 review" is 2 hours`, "ZAP-2611 review", "~2h" ],
+            [ tap({ [key("a3")]: { estimate: 30 } }), `"QRS-2611 review" is 30 minutes`, "QRS-2611 review", "~30m" ],
+            [ tap({ [key("a3")]: { estimate: 120 } }), `"QRS-2611 review" is 2 hours`, "QRS-2611 review", "~2h" ],
             [ tap({ [key("a2")]: { area: "growth" } }), `"The ballot" is Growth`, "The ballot", "Growth" ]
         ];
         for (const [ answers, sentence, what, choice ] of cases) {
@@ -117,17 +117,17 @@ describe("viewReply and viewPicks", () => {
     it("takes a ticket with no task to a day, the week, or finishes it", () => {
         const item: ItemViewData = {
             task: null, trail: [], origin: null, context: [], dispositions: [],
-            ticket: { key: "ZAP-2640", summary: "Fix the export", status: "To Do", daysInStatus: 3, assignee: null, url: "", done: false, lastComment: null, ask: null },
+            ticket: { key: "QRS-2640", summary: "Fix the export", status: "To Do", daysInStatus: 3, assignee: null, url: "", done: false, lastComment: null, ask: null },
             today: "2026-11-03", nextWorkday: "2026-11-04", week: "2026-W45"
         };
-        const view: ShownView = { view: "item", title: "ZAP-2640", sentence: "", data: item };
-        const take = (answer: NonNullable<ViewAnswers["tickets"]>[string]) => one({ tickets: { "ZAP-2640": answer } }, view);
-        expect(take({ kind: "take", to: "2026-11-03", label: "today", onDeck: true }).reply).toEqual([ "From the item view: Take ZAP-2640 to today's On deck (2026-11-03)." ]);
-        expect(take({ kind: "take", to: "2026-11-04", label: "Wed 4 Nov", onDeck: false }).reply).toEqual([ "From the item view: Take ZAP-2640 to Wed 4 Nov's list (2026-11-04)." ]);
-        expect(take({ kind: "take", to: "2026-W45", label: "Week 45", onDeck: true }).reply).toEqual([ "From the item view: Take ZAP-2640 to Week 45 (2026-W45)." ]);
+        const view: ShownView = { view: "item", title: "QRS-2640", sentence: "", data: item };
+        const take = (answer: NonNullable<ViewAnswers["tickets"]>[string]) => one({ tickets: { "QRS-2640": answer } }, view);
+        expect(take({ kind: "take", to: "2026-11-03", label: "today", onDeck: true }).reply).toEqual([ "From the item view: Take QRS-2640 to today's On deck (2026-11-03)." ]);
+        expect(take({ kind: "take", to: "2026-11-04", label: "Wed 4 Nov", onDeck: false }).reply).toEqual([ "From the item view: Take QRS-2640 to Wed 4 Nov's list (2026-11-04)." ]);
+        expect(take({ kind: "take", to: "2026-W45", label: "Week 45", onDeck: true }).reply).toEqual([ "From the item view: Take QRS-2640 to Week 45 (2026-W45)." ]);
         const finished = take({ kind: "finished" });
-        expect(finished.reply).toEqual([ "From the item view: ZAP-2640 is finished." ]);
-        expect(finished.picks.map(({ what, choice }) => ({ what, choice }))).toEqual([ { what: "ZAP-2640", choice: "Finished" } ]);
+        expect(finished.reply).toEqual([ "From the item view: QRS-2640 is finished." ]);
+        expect(finished.picks.map(({ what, choice }) => ({ what, choice }))).toEqual([ { what: "QRS-2640", choice: "Finished" } ]);
     });
 });
 
@@ -486,23 +486,23 @@ describe("the new views' sentences", () => {
     it("says Take and Finished as the Item view's chips give them", () => {
         const item: ItemViewData = {
             task: null, trail: [], origin: null, context: [], dispositions: [],
-            ticket: { key: "ZAP-2640", error: "timeout" }, today: "2026-11-03", nextWorkday: "2026-11-04", week: "2026-W45"
+            ticket: { key: "QRS-2640", error: "timeout" }, today: "2026-11-03", nextWorkday: "2026-11-04", week: "2026-W45"
         };
-        const view: ShownView = { view: "item", title: "ZAP-2640", sentence: "", data: item };
+        const view: ShownView = { view: "item", title: "QRS-2640", sentence: "", data: item };
         const takes = ticketTakes(item, true);
         expect(takes.map((t) => t.chip)).toEqual([ "Today", "Wed 4 Nov", "Week 45" ]);
-        const say = (answer: NonNullable<ViewAnswers["tickets"]>[string]) => one(view, { tickets: { "ZAP-2640": answer } });
+        const say = (answer: NonNullable<ViewAnswers["tickets"]>[string]) => one(view, { tickets: { "QRS-2640": answer } });
         expect(takes.map((t) => say(t.answer).reply[0])).toEqual([
-            "From the item view: Take ZAP-2640 to today's On deck (2026-11-03).",
-            "From the item view: Take ZAP-2640 to Wed 4 Nov's On deck (2026-11-04).",
-            "From the item view: Take ZAP-2640 to Week 45 (2026-W45)."
+            "From the item view: Take QRS-2640 to today's On deck (2026-11-03).",
+            "From the item view: Take QRS-2640 to Wed 4 Nov's On deck (2026-11-04).",
+            "From the item view: Take QRS-2640 to Week 45 (2026-W45)."
         ]);
         expect(say(takeTicket(item, "2026-11-10", false))).toEqual({
-            reply: [ "From the item view: Take ZAP-2640 to Tue 10 Nov's list (2026-11-10)." ],
-            picks: [ { what: "ZAP-2640", choice: "Take: Tue 10 Nov · list" } ]
+            reply: [ "From the item view: Take QRS-2640 to Tue 10 Nov's list (2026-11-10)." ],
+            picks: [ { what: "QRS-2640", choice: "Take: Tue 10 Nov · list" } ]
         });
         expect(takeTicket(item, "2026-11-03", false)).toEqual({ kind: "take", to: "2026-11-03", label: "today", onDeck: false });
-        expect(say({ kind: "finished" }).reply).toEqual([ "From the item view: ZAP-2640 is finished." ]);
+        expect(say({ kind: "finished" }).reply).toEqual([ "From the item view: QRS-2640 is finished." ]);
     });
 });
 

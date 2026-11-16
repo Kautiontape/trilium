@@ -11,7 +11,7 @@ The second: Caius's messages are a slog. The wind-down opened "Here's what's lef
 ### The three areas
 
 1. **The day has three areas, Shawn's own: Foundation, Growth, Recharge.** They are the `priorityGroup` values Shawn's Dashboard already uses for projects, and the area headings the method already names.
-   - **Foundation** is the day job, ZeroedIn work, and nothing else.
+   - **Foundation** is the day job, Northwind work, and nothing else.
    - **Growth** is Shawn's own projects and the life admin that isn't the job (the ballot, Vincent, Caius).
    - **Recharge** is fun and rest (3D printing, arcade, TTRPGs).
 2. **The day note is laid out by time; the area is a marker on the line.** Shawn works from home and the day bleeds: the ballot can go in the afternoon, a ticket can wait for the evening. So the headings say *when*, and a small marker says *what for*:
@@ -19,11 +19,11 @@ The second: Caius's messages are a slog. The wind-down opened "Here's what's lef
    ```
    ## ☑️ Tasks
    ### Morning
-   - [ ] ZAP-2620 prod bug ~1h
+   - [ ] QRS-2620 prod bug ~1h
    - [ ] Review Sasha's sign-offs ~30m
    ### Afternoon
    - [ ] 🌱 Drop off the ballot ~30m
-   - [ ] ZAP-2611 ~1h
+   - [ ] QRS-2611 ~1h
    ### Evening
    - [ ] 🌱 ~1h on Caius: the fate menu
    - [ ] 🔋 TTRPG prep ~1h
@@ -108,7 +108,7 @@ The second: Caius's messages are a slog. The wind-down opened "Here's what's lef
 
 ## Testing
 
-- `plan-read` specs: a task's area from its marker, and from an area heading on an old-shape note; its block from its heading; per-area minutes; a 🌱 chore adds nothing to Foundation; an unmarked "Laundry" is flagged, an unmarked ZAP ticket is not.
+- `plan-read` specs: a task's area from its marker, and from an area heading on an old-shape note; its block from its heading; per-area minutes; a 🌱 chore adds nothing to Foundation; an unmarked "Laundry" is flagged, an unmarked QRS ticket is not.
 - Server specs: Tuesday 3 Nov laid out as in decision 2 is not over; a Foundation-over day offers the next workday or the week, never Evening; Growth and Recharge candidates come from active projects as timeboxed sessions; Area ▸ writes and removes the marker and refuses an edited note.
 - Drawing: Morning's tasks sit before 12:00, Evening's after work end; a clocked task at its clock; no group spans two blocks.
 - Phone: the fate menu, the hidden empty card, three meters, markers shown as dots, not emoji text.

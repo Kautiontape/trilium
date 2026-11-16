@@ -14,7 +14,7 @@ const seed = (html: string, extra: Record<string, [ReturnType<typeof periodNote>
   ...extra,
 });
 const SITE = 'https://example.atlassian.net/browse/';
-beforeEach(() => setKeyConfig({ projects: ['ZAP'], browseBase: SITE }));
+beforeEach(() => setKeyConfig({ projects: ['QRS'], browseBase: SITE }));
 afterEach(() => setKeyConfig({ projects: [], browseBase: null }));
 const puts = (log: string[]) => log.filter((l) => l.startsWith('put') || l.startsWith('label') || l.startsWith('create'));
 
@@ -58,25 +58,25 @@ describe('addTasks', () => {
   });
   it('adds under a header, writes the source as a link and the estimate last, and guards the write', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>' + ul(li('e1', 'Existing'))));
-    const [r] = await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Reply to Pat', source: 'ZAP-7', est: '30m' }], base);
-    expect(r).toMatchObject({ status: 'added', writtenNoteId: 'd', key: 'ZAP-7' });
-    expect(f.html.d).toContain('Reply to Pat <a href="https://example.atlassian.net/browse/ZAP-7">ZAP-7</a> ~30m</span>');
+    const [r] = await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Reply to Pat', source: 'QRS-7', est: '30m' }], base);
+    expect(r).toMatchObject({ status: 'added', writtenNoteId: 'd', key: 'QRS-7' });
+    expect(f.html.d).toContain('Reply to Pat <a href="https://example.atlassian.net/browse/QRS-7">QRS-7</a> ~30m</span>');
     expect(puts(f.log)).toEqual(['put d']);
   });
   it('turns a Jira key already in the text into the link', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>'));
-    await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Look at ZAP-7 today', source: 'ZAP-7' }], base);
-    expect(f.html.d).toContain('Look at <a href="https://example.atlassian.net/browse/ZAP-7">ZAP-7</a> today');
+    await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Look at QRS-7 today', source: 'QRS-7' }], base);
+    expect(f.html.d).toContain('Look at <a href="https://example.atlassian.net/browse/QRS-7">QRS-7</a> today');
   });
   it('puts the source link before tokens already in the text, and the estimate stays last', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>'));
-    await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Plan it ~45m !!', source: 'https://m.example/x' }, { date: DAY, section: 'Work', text: 'Other !', source: 'ZAP-8', est: '20m' }], base);
+    await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Plan it ~45m !!', source: 'https://m.example/x' }, { date: DAY, section: 'Work', text: 'Other !', source: 'QRS-8', est: '20m' }], base);
     expect(f.html.d).toContain('Plan it <a href="https://m.example/x">m.example</a> ~45m !!</span>');
-    expect(f.html.d).toContain('Other <a href="https://example.atlassian.net/browse/ZAP-8">ZAP-8</a> ! ~20m</span>');
+    expect(f.html.d).toContain('Other <a href="https://example.atlassian.net/browse/QRS-8">QRS-8</a> ! ~20m</span>');
   });
   it('is read back with its estimate and importance (tokens trailing after the link)', async () => {
     const f = fakeTrilium(seed('<h3>Work</h3>'));
-    await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Plan it !', source: 'ZAP-8', est: '20m' }], base);
+    await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'Plan it !', source: 'QRS-8', est: '20m' }], base);
     const v = await readPlan(f.api, 'day', DAY, now);
     expect(v.sections[0]!.tasks[0]).toMatchObject({ estMinutes: 20 });
   });
@@ -104,8 +104,8 @@ describe('addTasks', () => {
     expect(f.html['new-2026-10-27']).not.toContain('[…]');
   });
   it('does not create the day for a duplicate', async () => {
-    const f = fakeTrilium(seed('<h3>Work</h3>' + ul(li('e1', 'Do ZAP-3'))));
-    const [r] = await addTasks(f.api, [{ date: '2026-10-27', section: 'Work', text: 'Again', source: 'ZAP-3' }], base);
+    const f = fakeTrilium(seed('<h3>Work</h3>' + ul(li('e1', 'Do QRS-3'))));
+    const [r] = await addTasks(f.api, [{ date: '2026-10-27', section: 'Work', text: 'Again', source: 'QRS-3' }], base);
     expect(r).toMatchObject({ status: 'skipped', reason: 'duplicate' });
     expect(puts(f.log)).toEqual([]);
   });
@@ -119,7 +119,7 @@ describe('addTasks', () => {
 
   describe('dedupe', () => {
     const journal = {
-      other: [periodNote('other', 'dateNote', '2026-10-20'), '<h3>Work</h3>' + ul(li('eo1', 'Check <a href="https://example.atlassian.net/browse/ZAP-1">ZAP-1</a>'), li('eo2', 'Read <a href="https://mail.example/t/9">the thread</a>'), li('eo3', 'Finished ZAP-2', { checked: true }), li('eo4', 'Plain words only'))] as [ReturnType<typeof periodNote>, string],
+      other: [periodNote('other', 'dateNote', '2026-10-20'), '<h3>Work</h3>' + ul(li('eo1', 'Check <a href="https://example.atlassian.net/browse/QRS-1">QRS-1</a>'), li('eo2', 'Read <a href="https://mail.example/t/9">the thread</a>'), li('eo3', 'Finished QRS-2', { checked: true }), li('eo4', 'Plain words only'))] as [ReturnType<typeof periodNote>, string],
     };
     const run = async (req: Parameters<typeof addTasks>[1][number], more = {}) => {
       const f = fakeTrilium(seed('<h3>Work</h3>', { ...journal, ...more }));
@@ -127,7 +127,7 @@ describe('addTasks', () => {
       return { r, f };
     };
     it('skips a live task elsewhere with the same Jira key', async () => {
-      const { r, f } = await run({ date: DAY, section: 'Work', text: 'x', source: 'ZAP-1' });
+      const { r, f } = await run({ date: DAY, section: 'Work', text: 'x', source: 'QRS-1' });
       expect(r).toMatchObject({ status: 'skipped', reason: 'duplicate' });
       expect(puts(f.log)).toEqual([]);
     });
@@ -138,11 +138,11 @@ describe('addTasks', () => {
       expect((await run({ date: DAY, section: 'Work', text: 'plain  WORDS only ~15m' })).r).toMatchObject({ reason: 'duplicate' });
     });
     it('does not count a finished task', async () => {
-      expect((await run({ date: DAY, section: 'Work', text: 'x', source: 'ZAP-2' })).r.status).toBe('added');
+      expect((await run({ date: DAY, section: 'Work', text: 'x', source: 'QRS-2' })).r.status).toBe('added');
     });
     it('is idempotent: adding the same source twice writes once', async () => {
       const f = fakeTrilium(seed('<h3>Work</h3>'));
-      const reqs = [{ date: DAY, section: 'Work', text: 'A', source: 'ZAP-50' }, { date: DAY, section: 'Work', text: 'A again', source: 'ZAP-50' }];
+      const reqs = [{ date: DAY, section: 'Work', text: 'A', source: 'QRS-50' }, { date: DAY, section: 'Work', text: 'A again', source: 'QRS-50' }];
       const out = await addTasks(f.api, reqs, base);
       expect(out.map((o) => o.status)).toEqual(['added', 'skipped']);
       expect(puts(f.log)).toEqual(['put d']);
@@ -150,13 +150,13 @@ describe('addTasks', () => {
       expect(second[0]).toMatchObject({ reason: 'duplicate' });
     });
     it('skips a key already suggested on the same note', async () => {
-      const f = fakeTrilium(seed('<h2>Suggested</h2>' + ul(li('es', 'Maybe ZAP-60'))));
-      expect((await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'x', source: 'ZAP-60' }], base))[0]).toMatchObject({ reason: 'duplicate' });
+      const f = fakeTrilium(seed('<h2>Suggested</h2>' + ul(li('es', 'Maybe QRS-60'))));
+      expect((await addTasks(f.api, [{ date: DAY, section: 'Work', text: 'x', source: 'QRS-60' }], base))[0]).toMatchObject({ reason: 'duplicate' });
     });
     it('skips a key dismissed on that note, but not on another note', async () => {
-      const dismissed = periodNote('d', 'dateNote', DAY, { attributes: [{ type: 'label', name: 'dateNote', value: DAY }, { type: 'label', name: 'caiusDismissed', value: 'ZAP-70' }] });
+      const dismissed = periodNote('d', 'dateNote', DAY, { attributes: [{ type: 'label', name: 'dateNote', value: DAY }, { type: 'label', name: 'caiusDismissed', value: 'QRS-70' }] });
       const f = fakeTrilium({ d: [dismissed, '<h3>Work</h3>'], e: [periodNote('e', 'dateNote', '2026-10-27'), '<h3>Work</h3>'] });
-      const [a, b] = await addTasks(f.api, [{ date: DAY, suggested: true, text: 'x', source: 'ZAP-70' }, { date: '2026-10-27', suggested: true, text: 'x', source: 'ZAP-70' }], base);
+      const [a, b] = await addTasks(f.api, [{ date: DAY, suggested: true, text: 'x', source: 'QRS-70' }, { date: '2026-10-27', suggested: true, text: 'x', source: 'QRS-70' }], base);
       expect(a).toMatchObject({ status: 'skipped', reason: 'dismissed' });
       expect(b.status).toBe('added');
     });
@@ -253,12 +253,12 @@ describe('acceptTasks', () => {
     expect(f.html.d?.match(/<h\d>[^<]*/g)).toEqual(['<h3>Meetings', '<h2>☑️ Tasks']);
   });
   it('without a section, skips an Evening list and goes straight under the Tasks heading, creating its list', async () => {
-    const day = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es9', 'Get ZAP-9 Fix it done: because x (~45m)'));
+    const day = '<h2>☑️ Tasks</h2><h3>Evening</h3>' + ul(li('ev1', 'Laundry')) + '<h2>Suggested</h2>' + ul(li('es9', 'Get QRS-9 Fix it done: because x (~45m)'));
     const f = fakeTrilium(seed(day));
     expect((await acceptTasks(f.api, [{ noteId: 'd', listItemId: 'es9' }], base))[0]).toMatchObject({ status: 'accepted' });
     expect(f.html.d!.startsWith('<h2>☑️ Tasks</h2><ul class="todo-list"><li data-list-item-id="es9">')).toBe(true);
     const plan = await readPlan(f.api, 'day', DAY, now);
-    expect(plan.sections.map((s) => [s.name, s.tasks.map((t) => t.text)])).toEqual([['☑️ Tasks', ['ZAP-9 Fix it']], ['Evening', ['Laundry']]]);
+    expect(plan.sections.map((s) => [s.name, s.tasks.map((t) => t.text)])).toEqual([['☑️ Tasks', ['QRS-9 Fix it']], ['Evening', ['Laundry']]]);
   });
   it('without a section, puts an evening suggestion under the evening heading, made above Suggested when there is none', async () => {
     const line = `Something away from screens, a chore or a Recharge item: because ${EVENING_REASON} (~45m)`;
@@ -275,7 +275,7 @@ describe('acceptTasks', () => {
     expect(g.html.d).toMatch(/<h2>☑️ Tasks<\/h2><ul[^>]*><li data-list-item-id="e1">.*<h\d>Evening<\/h\d><ul[^>]*><li data-list-item-id="es1">.*<h2>Suggested<\/h2>/s);
   });
   it('turns an accepted suggestion into a plain task: its key link and title, then its estimate as a token', async () => {
-    const link = '<a href="https://example.atlassian.net/browse/ZAP-111">ZAP-111</a>';
+    const link = '<a href="https://example.atlassian.net/browse/QRS-111">QRS-111</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
       li('es1', `Get ${link} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
       li('es2', 'Get Book the venue done: because the quote expires Friday (~15m)'),
@@ -287,12 +287,12 @@ describe('acceptTasks', () => {
     const plan = await readPlan(f.api, 'day', DAY, now);
     expect(plan.sections[0]!.tasks.map((t) => [t.text, t.estMinutes])).toEqual([
       ['One', null],
-      [`[ZAP-111](https://example.atlassian.net/browse/ZAP-111) Check the invoice export in QA`, 45],
+      [`[QRS-111](https://example.atlassian.net/browse/QRS-111) Check the invoice export in QA`, 45],
       ['Book the venue', 15],
     ]);
   });
   it("turns an accepted ask into a plain task: 'Answer X's question on KEY: because Y (~15m)' keeps its words and its estimate as a token", async () => {
-    const link = '<a href="https://example.atlassian.net/browse/ZAP-105">ZAP-105</a>';
+    const link = '<a href="https://example.atlassian.net/browse/QRS-105">QRS-105</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
       li('es1', `Answer Jordan Placeholder's question on ${link}: because Jordan Placeholder asked on Sunday (~15m)`),
     );
@@ -303,7 +303,7 @@ describe('acceptTasks', () => {
     expect(plan.sections[0]?.tasks.map((t) => t.estMinutes)).toEqual([null, 15]);
   });
   it('unwraps a suggestion that CKEditor saved with non-breaking spaces', async () => {
-    const link = '<a href="https://example.atlassian.net/browse/ZAP-2">ZAP-2</a>';
+    const link = '<a href="https://example.atlassian.net/browse/QRS-2">QRS-2</a>';
     const day = '<h2>☑️ Tasks</h2>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(
       li('es1', `Get&nbsp;${link} Fix done:&nbsp;because it waits (~30m)`),
       li('es2', 'Get Book the venue done: because it waits (~15m)&nbsp;'),
@@ -342,19 +342,19 @@ describe('acceptTasks', () => {
 });
 
 describe('dismissTasks', () => {
-  const html = '<h3>Work</h3>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(li('es1', 'Look at <a href="https://example.atlassian.net/browse/ZAP-9">ZAP-9</a>'), li('es2', 'No key here'));
+  const html = '<h3>Work</h3>' + ul(li('e1', 'One')) + '<h2>Suggested</h2>' + ul(li('es1', 'Look at <a href="https://example.atlassian.net/browse/QRS-9">QRS-9</a>'), li('es2', 'No key here'));
 
   it('removes the item and labels the note with its source key; text-only items use a hash', async () => {
     const f = fakeTrilium(seed(html));
     const out = await dismissTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }, { noteId: 'd', listItemId: 'es2' }], base);
     expect(out.map((o) => o.status)).toEqual(['dismissed', 'dismissed']);
-    expect(f.log).toEqual(['label d caiusDismissed=ZAP-9', 'put d', `label d caiusDismissed=${textHash('No key here')}`, 'put d']);
-    expect(f.html.d).not.toContain('ZAP-9');
+    expect(f.log).toEqual(['label d caiusDismissed=QRS-9', 'put d', `label d caiusDismissed=${textHash('No key here')}`, 'put d']);
+    expect(f.html.d).not.toContain('QRS-9');
   });
   it('then add refuses that key on the same note', async () => {
     const f = fakeTrilium(seed(html));
     await dismissTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base);
-    const [r] = await addTasks(f.api, [{ date: DAY, suggested: true, text: 'again', source: 'ZAP-9' }], base);
+    const [r] = await addTasks(f.api, [{ date: DAY, suggested: true, text: 'again', source: 'QRS-9' }], base);
     expect(r).toMatchObject({ status: 'skipped', reason: 'dismissed' });
   });
   it('refuses anything not under Suggested, and a second run does nothing', async () => {
@@ -367,7 +367,7 @@ describe('dismissTasks', () => {
   it('dry run writes no label and no content; guard drops a changed note', async () => {
     const f = fakeTrilium(seed(html));
     const [r] = await dismissTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], { ...base, dryRun: true });
-    expect(r).toMatchObject({ status: 'dismissed', dryRun: true, key: 'ZAP-9' });
+    expect(r).toMatchObject({ status: 'dismissed', dryRun: true, key: 'QRS-9' });
     expect(f.log).toEqual([]);
     const content = f.api.content;
     let reads = 0;
@@ -379,7 +379,7 @@ describe('dismissTasks', () => {
     const f = fakeTrilium(seed(html), { onPut: (id) => (f.html[id] += '<p>x</p>') });
     const [r] = await dismissTasks(f.api, [{ noteId: 'd', listItemId: 'es1' }], base);
     expect(r).toMatchObject({ status: 'skipped', reason: 'edited', detail: expect.stringContaining('re-run') });
-    expect(f.log).toEqual(['label d caiusDismissed=ZAP-9']);
+    expect(f.log).toEqual(['label d caiusDismissed=QRS-9']);
     expect(f.html.d).toContain('<p>x</p>');
   });
 });

@@ -157,8 +157,8 @@ describe('parseTaskLine — wikilink tokens (project / from / moved)', () => {
   });
 
   test('project name may contain spaces (bracket-aware scan)', () => {
-    const t = parseTaskLine('- [ ] Doc :[[ZeroedIn Bedrock Migration]]');
-    expect(t!.tokens[0]).toMatchObject({ kind: 'project', project: 'ZeroedIn Bedrock Migration' });
+    const t = parseTaskLine('- [ ] Doc :[[Northwind Bedrock Migration]]');
+    expect(t!.tokens[0]).toMatchObject({ kind: 'project', project: 'Northwind Bedrock Migration' });
     expect(t!.text).toBe('Doc');
   });
 
@@ -182,7 +182,7 @@ describe('parseTaskLine — wikilink tokens (project / from / moved)', () => {
 
   test('full move-target line: importance + estimate + from + id in source order', () => {
     const t = parseTaskLine(
-      '- [ ] Write Bedrock IAM policy doc !! ~2h  from:[[ZeroedIn Bedrock Migration]]  ^iam',
+      '- [ ] Write Bedrock IAM policy doc !! ~2h  from:[[Northwind Bedrock Migration]]  ^iam',
     );
     expect(t!.blockId).toBe('iam');
     expect(t!.text).toBe('Write Bedrock IAM policy doc');

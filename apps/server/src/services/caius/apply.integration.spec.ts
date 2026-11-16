@@ -30,12 +30,12 @@ const ticket = (key: string, summary: string, status: string): JiraTicket => ({
 
 const jira: JiraInputs = {
     handoff: [
-        { ...ticket("ZAP-101", "Verify the export retry on staging", "Dev Verify"), daysInStatus: 6 },
-        { ...ticket("ZAP-110", "Review the import mapper change", "Code Review"), daysInStatus: 2 },
-        { ...ticket("ZAP-111", "Check the invoice export", "QA Testing"), daysInStatus: 3 }
+        { ...ticket("QRS-101", "Verify the export retry on staging", "Dev Verify"), daysInStatus: 6 },
+        { ...ticket("QRS-110", "Review the import mapper change", "Code Review"), daysInStatus: 2 },
+        { ...ticket("QRS-111", "Check the invoice export", "QA Testing"), daysInStatus: 3 }
     ],
     asks: [ {
-        ticket: ticket("ZAP-105", "Confirm the staging bucket name", "In Progress"), author: "Jordan Placeholder",
+        ticket: ticket("QRS-105", "Confirm the staging bucket name", "In Progress"), author: "Jordan Placeholder",
         created: "2026-11-01T15:00:00.000Z", commentId: "50", excerpt: "The rollout note is now in the runbook."
     } ],
     done: []
@@ -81,7 +81,7 @@ beforeAll(async () => {
         await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("fd1", "Message Dave about hanging lights"))}`);
         notes.friday = friday.noteId;
         const w44 = await store.calendarWeek("2026-W44");
-        await store.putContent(w44.noteId, `<h3>Context</h3>${bullets("ZAP-2590 is open; Jira&#39;s Done is a mistake.", "Jaco out all week.")}`);
+        await store.putContent(w44.noteId, `<h3>Context</h3>${bullets("QRS-2590 is open; Jira&#39;s Done is a mistake.", "Jaco out all week.")}`);
         const w45 = await store.calendarWeek("2026-W45");
         await store.putContent(w45.noteId, `<h2>☑️ Tasks</h2>${ul(li("wk1", "Tidy the backlog ~45m"))}`);
         notes.w45 = w45.noteId;
@@ -104,8 +104,8 @@ describe("caius_plan_apply", () => {
         expect(catchup.data.tasks.map((task: any) => task.listItemId)).toEqual([ "fd1" ]);
         const inputs = await call("caius_planday", { date: MON, step: "inputs" });
         const ids = inputs.data.candidates.map((c: any) => c.candidateId);
-        expect(ids).toEqual(expect.arrayContaining([ "ZAP-101", "ZAP-110", "ZAP-111", "ZAP-105" ]));
-        const keep = inputs.data.carry.find((line: any) => line.line.startsWith("ZAP-2590"));
+        expect(ids).toEqual(expect.arrayContaining([ "QRS-101", "QRS-110", "QRS-111", "QRS-105" ]));
+        const keep = inputs.data.carry.find((line: any) => line.line.startsWith("QRS-2590"));
         expect(keep).toBeDefined();
 
         // Laundry is a Recharge thing for the evening: added with its area and block, no longer an answer of the apply.
@@ -113,14 +113,14 @@ describe("caius_plan_apply", () => {
         input = {
             date: MON,
             catchup: "move_all",
-            accept: [ { candidateId: "ZAP-111" }, { candidateId: "ZAP-101" } ],
+            accept: [ { candidateId: "QRS-111" }, { candidateId: "QRS-101" } ],
             keep: [ { lineId: keep.lineId } ],
             finished: [],
-            notToday: [ { candidateId: "ZAP-110" } ],
+            notToday: [ { candidateId: "QRS-110" } ],
             context: [ "Riley covers the deploy today" ],
             brief: {
                 headline: "Two hand-offs around Sprint Planning",
-                groups: [ { name: "Hand-offs", items: [ "ZAP-111", "ZAP-101" ] }, { name: "Home", items: [ "Laundry" ] } ],
+                groups: [ { name: "Hand-offs", items: [ "QRS-111", "QRS-101" ] }, { name: "Home", items: [ "Laundry" ] } ],
                 meetings: [ { title: "Sprint Planning", name: "Planning" } ],
                 sections: [ { title: "Heads-up", markdown: "Sprint Planning runs long." }, { title: "Follow up", markdown: "Jordan said something about a runbook." }, { title: "Notes", markdown: "Quiet afternoon." } ]
             }
@@ -131,11 +131,11 @@ describe("caius_plan_apply", () => {
         expect(result.skipped).toEqual([]);
         expect(result.written.map((w: any) => [ w.kind, w.id ?? null ])).toEqual([
             [ "catchup", "fd1" ],
-            [ "accept", "ZAP-111" ],
-            [ "accept", "ZAP-101" ],
+            [ "accept", "QRS-111" ],
+            [ "accept", "QRS-101" ],
             [ "keep", keep.lineId ],
-            [ "not_today", "ZAP-110" ],
-            [ "suggested", "ZAP-105" ],
+            [ "not_today", "QRS-110" ],
+            [ "suggested", "QRS-105" ],
             [ "context", null ],
             [ "meetings", null ],
             [ "brief", null ]
@@ -143,22 +143,22 @@ describe("caius_plan_apply", () => {
 
         const plan = await call("caius_plan", { period: "day", date: MON });
         const main = plan.sections.filter((section: any) => section.name !== "Evening").flatMap((section: any) => section.tasks.map((task: any) => task.text));
-        expect(main).toEqual([ expect.stringMatching(/^Message Dave about hanging lights \[from Fri 30 Oct\]/), expect.stringContaining("ZAP-111"), expect.stringContaining("ZAP-101") ]);
+        expect(main).toEqual([ expect.stringMatching(/^Message Dave about hanging lights \[from Fri 30 Oct\]/), expect.stringContaining("QRS-111"), expect.stringContaining("QRS-101") ]);
         expect(plan.sections.find((section: any) => section.name === "Evening")?.tasks.map((task: any) => task.text)).toEqual([ "🔋 Laundry" ]);
-        expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("ZAP-105") ]);
+        expect(plan.suggested.map((task: any) => task.text)).toEqual([ expect.stringContaining("QRS-105") ]);
         expect(plan.meetings).toEqual([ "10:00 Standup", "10:45 Sprint Planning", "18:00 Call Mom" ]);
         expect(plan.context.map((line: any) => line.text)).toEqual([ "Riley covers the deploy today" ]);
         const dayNote = await cls.init(() => store.note(plan.noteId));
-        expect(dayNote.attributes.filter((a) => a.name === "caiusNotToday").map((a) => a.value)).toEqual([ "ZAP-110" ]);
+        expect(dayNote.attributes.filter((a) => a.name === "caiusNotToday").map((a) => a.value)).toEqual([ "QRS-110" ]);
         expect((await call("caius_plan", { period: "week", date: "2026-W45" })).context.map((line: any) => line.text))
-            .toEqual([ "ZAP-2590 is open; Jira's Done is a mistake." ]);
+            .toEqual([ "QRS-2590 is open; Jira's Done is a mistake." ]);
 
         // The brief: picks from his list in its order, the tool's Follow up in place of the agent's, the weather from the standing note.
         expect(weatherCalls).toEqual([ [ 39.95, -75.17, MON ] ]);
         const brief = await cls.init(() => store.content(result.briefNoteId));
         expect(brief).toContain("Message Dave about hanging lights (~30m)");
-        expect(brief).toContain("ZAP-111 Check the invoice export: because sitting in QA Testing for 3 days (~30m)");
-        expect(brief.indexOf("ZAP-111")).toBeLessThan(brief.indexOf("ZAP-101"));
+        expect(brief).toContain("QRS-111 Check the invoice export: because sitting in QA Testing for 3 days (~30m)");
+        expect(brief.indexOf("QRS-111")).toBeLessThan(brief.indexOf("QRS-101"));
         expect(brief).not.toContain("Laundry");
         // Jordan's ask is new today, so it is a candidate and not yet a Follow up.
         expect(brief).not.toContain("Jordan Placeholder asked on Sunday:");
@@ -173,7 +173,7 @@ describe("caius_plan_apply", () => {
         expect(header).toMatch(/<td><p><strong>[\d:]+ to [\d:]+<\/strong><\/p><p>Hand-offs<\/p><\/td><td><p><strong>18:30 to 19:00<\/strong><\/p><p>Home<\/p><\/td>/);
         // Laundry sits under its own Evening heading, after his tasks and before Suggested, marked Recharge, and is drawn after work.
         const html = await cls.init(() => store.content(plan.noteId));
-        expect(html.indexOf("<h2>Evening</h2>")).toBeGreaterThan(html.indexOf("ZAP-101"));
+        expect(html.indexOf("<h2>Evening</h2>")).toBeGreaterThan(html.indexOf("QRS-101"));
         expect(html.indexOf("<h2>Evening</h2>")).toBeLessThan(html.indexOf("Suggested"));
         const drawn = (await call("caius_planday", { date: MON, step: "brief" })).data.header.groups.find((group: any) => group.name === "Home");
         expect(drawn).toMatchObject({ start: "18:30", end: "19:00", count: 1 });
@@ -199,12 +199,12 @@ describe("caius_plan_apply", () => {
         at(`${MON}T10:30`);
         const result = await call("caius_plan_apply", {
             ...input,
-            accept: [ { candidateId: "ZAP-999" } ],
+            accept: [ { candidateId: "QRS-999" } ],
             forward: [ { listItemId: "nope", to: "2026-11-03" } ],
             notToday: [], keep: [], context: []
         });
         expect(result.skipped).toEqual([
-            expect.objectContaining({ kind: "accept", id: "ZAP-999", reason: "not_offered" }),
+            expect.objectContaining({ kind: "accept", id: "QRS-999", reason: "not_offered" }),
             expect.objectContaining({ kind: "forward", id: "nope", reason: "not_offered" })
         ]);
         expect(result.written.find((w: any) => w.kind === "brief")).toBeDefined();
@@ -257,20 +257,20 @@ describe("caius_winddown_apply", () => {
     let input: any;
     const textOf = (task: any) => String(task.text);
 
-    it("Mon 17:30: one call marks ZAP-111 done, sends ZAP-101 to later this week, moves the rest as proposed, and keeps laundry in the evening", async () => {
+    it("Mon 17:30: one call marks QRS-111 done, sends QRS-101 to later this week, moves the rest as proposed, and keeps laundry in the evening", async () => {
         at(`${MON}T17:30`);
         const open = await call("caius_winddown", { date: MON, step: "open" });
         const item = (word: string) => open.data.items.find((i: any) => textOf(i).includes(word));
         expect(item("Dave")).toMatchObject({ group: "today", fate: { forward: "2026-11-03", forwardLabel: "Tue 3 Nov" } });
-        // Tuesday's own apply above already put ZAP-110 in its Suggested, and Jordan's ask, offered Monday, is a Follow up there.
+        // Tuesday's own apply above already put QRS-110 in its Suggested, and Jordan's ask, offered Monday, is a Follow up there.
         expect((await call("caius_winddown", { date: MON, step: "next" })).data.candidates.filter((c: any) => c.kind !== "week")).toEqual([]);
         await call("caius_winddown", { date: MON, step: "context" });
 
         input = {
             date: MON,
-            done: [ item("ZAP-111").listItemId ],
-            fates: [ { listItemId: item("ZAP-101").listItemId, to: "2026-W45" } ],
-            context: [ "ZAP-2590 is open; Jira's Done is a mistake" ]
+            done: [ item("QRS-111").listItemId ],
+            fates: [ { listItemId: item("QRS-101").listItemId, to: "2026-W45" } ],
+            context: [ "QRS-2590 is open; Jira's Done is a mistake" ]
         };
         const result = await call("caius_winddown_apply", input);
         expect(result.skipped).toEqual([]);
@@ -280,10 +280,10 @@ describe("caius_winddown_apply", () => {
         expect(result).toMatchObject({ targetDay: "2026-11-03", targetDayLabel: "Tue 3 Nov" });
 
         const monday = await call("caius_plan", { period: "day", date: MON });
-        // Every item is closed: ZAP-111 done, the rest forwarded with a "scheduled" link.
+        // Every item is closed: QRS-111 done, the rest forwarded with a "scheduled" link.
         const closed = monday.sections.flatMap((s: any) => s.tasks).map((t: any) => [ t.state, /_scheduled \[(Tue 3 Nov|week 45)\]/.exec(textOf(t))?.[1] ?? null, textOf(t).slice(0, 12) ]);
         expect(closed).toEqual([
-            [ "done", "Tue 3 Nov", "Message Dave" ], [ "done", null, "[ZAP-111](ht" ], [ "done", "week 45", "[ZAP-101](ht" ], [ "done", "Tue 3 Nov", "🔋 Laundry _" ]
+            [ "done", "Tue 3 Nov", "Message Dave" ], [ "done", null, "[QRS-111](ht" ], [ "done", "week 45", "[QRS-101](ht" ], [ "done", "Tue 3 Nov", "🔋 Laundry _" ]
         ]);
         const tuesday = await call("caius_plan", { period: "day", date: "2026-11-03" });
         // Dave, proposed for Tuesday, waits on its On deck; the Recharge Laundry stays on the list, in the evening.
@@ -293,9 +293,9 @@ describe("caius_winddown_apply", () => {
         expect(tuesday.onDeck.filter((t: any) => t.state === "open").map(textOf)).toEqual([ expect.stringContaining("Message Dave") ]);
         // The forwarded Laundry stays in the evening.
         expect(tuesday.sections.find((s: any) => s.name === "Evening")?.tasks.map(textOf)).toEqual([ expect.stringMatching(/^🔋 Laundry \[from Mon 2 Nov\]/) ]);
-        expect(tuesday.suggested.map(textOf)).toEqual([ expect.stringContaining("ZAP-110") ]);
+        expect(tuesday.suggested.map(textOf)).toEqual([ expect.stringContaining("QRS-110") ]);
         expect((await call("caius_plan", { period: "week", date: "2026-W45" })).sections.flatMap((s: any) => s.tasks).map(textOf))
-            .toEqual(expect.arrayContaining([ expect.stringContaining("ZAP-101") ]));
+            .toEqual(expect.arrayContaining([ expect.stringContaining("QRS-101") ]));
     });
 
     it("Mon 17:30: running it again changes no note", async () => {
@@ -307,13 +307,13 @@ describe("caius_winddown_apply", () => {
         expect(await snapshot()).toEqual(before);
     });
 
-    it("ZAP-101, sent to later this week on Monday night, isn't offered for Tuesday and is on Wednesday", async () => {
+    it("QRS-101, sent to later this week on Monday night, isn't offered for Tuesday and is on Wednesday", async () => {
         at(`${MON}T17:40`);
         const forTuesday = await call("caius_winddown", { date: MON, step: "next" });
-        expect(forTuesday.data.candidates.map((c: any) => c.candidateId)).not.toContain("ZAP-101");
+        expect(forTuesday.data.candidates.map((c: any) => c.candidateId)).not.toContain("QRS-101");
         at("2026-11-04T09:40");
         const wednesday = await call("caius_planday", { date: "2026-11-04", step: "inputs" });
-        expect(wednesday.data.candidates.filter((c: any) => c.kind === "week").map((c: any) => c.candidateId)).toContain("ZAP-101");
+        expect(wednesday.data.candidates.filter((c: any) => c.kind === "week").map((c: any) => c.candidateId)).toContain("QRS-101");
     });
 });
 

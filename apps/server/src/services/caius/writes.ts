@@ -147,7 +147,7 @@ const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ]
  * - Next week: next week's note. A weekday range ("Thu-Fri"): from its first day until its last, in
  *   this week, or next week when its last day is already past.
  * - This week, all week, or until a weekday or a date: this week's, with no end of its own.
- * - A ticket key: this week's, with no end, so "ZAP-2590 is open" doesn't lapse.
+ * - A ticket key: this week's, with no end, so "QRS-2590 is open" doesn't lapse.
  * - A person's or a one-day state (is open, out, off or down; away, on leave, covering, freeze,
  *   on PTO, vacation or holiday): this week's, ending on `date`.
  */

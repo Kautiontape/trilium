@@ -88,7 +88,7 @@ describe("sseParser and applyChunk", () => {
         expect(stepHasBody(step("winddown:next", { candidates: [], unmarked: [] }))).toBe(false);
         expect(stepHasBody(step("winddown:next", { candidates: [], capacity: { sentence: "Tuesday has room." } }))).toBe(true);
         expect(stepHasBody(step("winddown:open", { items: [] }))).toBe(false);
-        expect(stepHasBody(step("plan:inputs", { onDeck: [], candidates: [ { text: "ZAP-1" } ] }))).toBe(true);
+        expect(stepHasBody(step("plan:inputs", { onDeck: [], candidates: [ { text: "QRS-1" } ] }))).toBe(true);
         expect(stepHasBody(step("plan:inputs", { yesterday: { sentence: "Monday: 3 done." } }))).toBe(false);
         expect(stepHasBody(step("plan:catchup", { tasks: [] }))).toBe(false);
         expect(stepHasBody(step("plan:not_today", {}))).toBe(true);

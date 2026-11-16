@@ -72,12 +72,12 @@ describe('gatherContext', () => {
   });
 
   it('reads two lines that differ only in case, spacing and trailing punctuation as one', async () => {
-    // Round 2: Week 45 held the ZAP-2590 line twice, once with a full stop.
+    // Round 2: Week 45 held the QRS-2590 line twice, once with a full stop.
     const fake = fakeTrilium({
-      a: week('2026-W45', 'ZAP-2590 is open; Jira&#39;s Done is a mistake.', 'zap-2590 is  open; Jira&#39;s Done is a mistake'),
+      a: week('2026-W45', 'QRS-2590 is open; Jira&#39;s Done is a mistake.', 'qrs-2590 is  open; Jira&#39;s Done is a mistake'),
     });
-    expect(ids(await gatherContext(fake.api, '2026-11-06'))).toEqual(['zap-2590 is open; Jira\'s Done is a mistake']);
-    expect(sameContext('ZAP-2590 is open.')).toBe(sameContext(' zap-2590  IS open '));
+    expect(ids(await gatherContext(fake.api, '2026-11-06'))).toEqual(['qrs-2590 is open; Jira\'s Done is a mistake']);
+    expect(sameContext('QRS-2590 is open.')).toBe(sameContext(' qrs-2590  IS open '));
     expect(sameContext('Done!;')).toBe('done');
   });
 

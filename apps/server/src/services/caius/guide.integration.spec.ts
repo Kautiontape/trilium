@@ -83,14 +83,14 @@ describe("a guide, not a script", () => {
         ]);
         expect(next.data.onDeck.map((item: any) => [ item.text, item.minutes ])).toEqual([ [ "Maybe idea", 30 ] ]);
 
-        // "ZAP-2388 is next for Thursday": he'd like to, so it goes on deck, tracked.
-        const added = await call("caius_add", { items: [ { date: THU, onDeck: true, text: "ZAP-2388 next step", est: "1h" } ] });
+        // "QRS-2388 is next for Thursday": he'd like to, so it goes on deck, tracked.
+        const added = await call("caius_add", { items: [ { date: THU, onDeck: true, text: "QRS-2388 next step", est: "1h" } ] });
         expect(added.results[0]).toMatchObject({ status: "added" });
         const thursday = await call("caius_plan", { period: "day", date: THU });
-        expect(deckOf(thursday)).toEqual([ "Maybe idea", expect.stringContaining("ZAP-2388") ]);
+        expect(deckOf(thursday)).toEqual([ "Maybe idea", expect.stringContaining("QRS-2388") ]);
         expect(listOf(thursday)).toEqual([ "Existing thing" ]);
         // Tracked: it is live in the lanes, so nothing can add it twice.
-        const again = await call("caius_add", { items: [ { date: FRI, section: "Tasks", text: "ZAP-2388 next step" } ] });
+        const again = await call("caius_add", { items: [ { date: FRI, section: "Tasks", text: "QRS-2388 next step" } ] });
         expect(again.results[0]).toMatchObject({ status: "skipped", reason: "duplicate" });
     });
 
@@ -129,7 +129,7 @@ describe("a guide, not a script", () => {
         expect(result.skipped).toEqual([]);
         expect(result.say).toContain("moved to Thu 9 Mar's On deck");
         const thursday = await call("caius_plan", { period: "day", date: THU });
-        expect(deckOf(thursday)).toEqual([ "Maybe idea", expect.stringContaining("ZAP-2388"), "Write the report" ]);
+        expect(deckOf(thursday)).toEqual([ "Maybe idea", expect.stringContaining("QRS-2388"), "Write the report" ]);
         expect(listOf(thursday)).toEqual([ "Existing thing", "Call the plumber", "Laundry" ]);
         expect(thursday.critical.map((t: any) => plain(t.text))).toEqual([ "Pay the rent" ]);
         expect(thursday.sections.find((s: any) => s.name === "Evening")?.tasks.map((t: any) => plain(t.text))).toEqual([ "Laundry" ]);
@@ -157,7 +157,7 @@ describe("Plan my day", () => {
         at(`${THU}T09:30`);
         const inputs = await call("caius_planday", { date: THU, step: "inputs" });
         expect(inputs.data.yesterday).toMatchObject({ date: WED, done: 1, moved: 4, dropped: 0, open: 0, woundDown: true });
-        expect(inputs.data.yesterday.onDeck).toEqual([ "Maybe idea", expect.stringContaining("ZAP-2388"), "Write the report" ]);
+        expect(inputs.data.yesterday.onDeck).toEqual([ "Maybe idea", expect.stringContaining("QRS-2388"), "Write the report" ]);
         expect(inputs.data.yesterday.sentence).toBe("Wednesday: 1 done, 4 moved on, 0 dropped, 0 left open. It was wound down.");
     });
 
@@ -167,10 +167,10 @@ describe("Plan my day", () => {
         // 2 h 40 m committed against 4 h: the idea fits, the next two don't.
         expect(inputs.data.onDeck.map((item: any) => [ item.text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1"), item.fate ])).toEqual([
             [ "Maybe idea", { list: true } ],
-            [ "ZAP-2388 next step", { forward: WEEK, forwardLabel: "the week of Mon 6 Mar" } ],
+            [ "QRS-2388 next step", { forward: WEEK, forwardLabel: "the week of Mon 6 Mar" } ],
             [ "Write the report", { forward: WEEK, forwardLabel: "the week of Mon 6 Mar" } ]
         ]);
-        expect(inputs.question).toMatch(/^On your list from On deck: 'Maybe idea'\. Back up to the week, since it won't fit today: '.*ZAP-2388.*' and 'Write the report'\. Change any\?/);
+        expect(inputs.question).toMatch(/^On your list from On deck: 'Maybe idea'\. Back up to the week, since it won't fit today: '.*QRS-2388.*' and 'Write the report'\. Change any\?/);
         const report = inputs.data.onDeck.find((item: any) => item.text === "Write the report");
 
         // "The report goes first; the rest as you said."
@@ -182,7 +182,7 @@ describe("Plan my day", () => {
         expect(deckOf(thursday)).toEqual([]);
         expect(listOf(thursday)).toEqual([ "Write the report", "Existing thing", "Call the plumber", "Maybe idea", "Laundry" ]);
         const week = await call("caius_plan", { period: "week", date: WEEK });
-        expect(listOf(week)).toEqual([ expect.stringContaining("ZAP-2388") ]);
+        expect(listOf(week)).toEqual([ expect.stringContaining("QRS-2388") ]);
         expect(result.say).toContain("moved to the week of Mon 6 Mar");
 
         // A re-run changes nothing.

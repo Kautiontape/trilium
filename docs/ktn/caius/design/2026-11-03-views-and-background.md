@@ -22,7 +22,7 @@ What Shawn's planning is made of, as the code holds it on 2026-11-03. The views 
 | **Ticket** | A Jira issue: key, summary, status, days in a hand-off status, asks (comments that ask Shawn something), done. It isn't a task until taken; a task names it by its key. | Jira, read by `caius_inputs`. |
 | **Meeting** | A calendar event: start, end, title, attendees, declined, overlapping. | The iCal feeds, copied as plain lines into the day's Meetings block. |
 | **Capacity and load** | The work window less the meetings, the focus figure it leaves (the Rhythm's Foundation target, less when the meetings leave less), and each area's minutes against its target. | Worked out on each read: `dayCapacity`, `focusOf`, `loadOf`, `growthOf`, `plan.capacity`. |
-| **Context line** | A fact in force for a while ("Sam is out", "ZAP-2590 is open"), with `from` and `until`. It can override Jira; in the areas design, a day off has no Foundation target. | A bullet under Context on a day or week note. |
+| **Context line** | A fact in force for a while ("Sam is out", "QRS-2590 is open"), with `from` and `until`. It can override Jira; in the areas design, a day off has no Foundation target. | A bullet under Context on a day or week note. |
 | **Project** | An active note with a `#priorityGroup` (Growth or Recharge), ordered by `#priority`; its first open item is its next step. | Outside the Journal. |
 | **Candidate** | Something offered for a day: a Jira hand-off or ask, a week item, or an hour of a project. It has a reason and a size; taken, it becomes a task. | Worked out by the steps. |
 | **Disposition** | What Shawn said about a candidate's key: dismissed (14 days), finished (30), not today, done or dropped lately (14). | Labels on period notes. |
@@ -124,7 +124,7 @@ Four questions the review left open. The decisions below are written to match.
      - A ticket with no task gets the card alone.
    - Controls: the fate menu, estimate and area. For a ticket with no task: take it to today, a day or the week, or Finished.
    - Data: the task from `readPlan` or `caius_open`, the trail read and `originOf`, a ticket read by key with its comments, the Context in force, and the dispositions.
-   - Shown for a question about one named task or ticket: "what's going on with ZAP-2640?", "why does the garage shelf keep moving?".
+   - Shown for a question about one named task or ticket: "what's going on with QRS-2640?", "why does the garage shelf keep moving?".
 
    **Slipping.** Arguments: none, or a period.
    - On it: the open tasks with two moves or more, the longest trail first, each a task row with its count, then the overdue lane's count by age.
@@ -149,7 +149,7 @@ Four questions the review left open. The decisions below are written to match.
    - One line around a view, in gist: the figures are on the view. A view can follow a ritual's rundown in the same reply when the day the rundown proposes runs over.
    - The skill sheet holds the guide: the table in decision 3 and these rules.
 5. **One tool: `caius_show`.** `{ view: "day" | "days" | "item" | "slipping", date?, from?, count?, item?, area? }`. It reads only. Its data comes from reads shaped around things (shortfall 1), which the steps and Today move onto too, so the figure on a view is the figure in Caius's sentence and on Today: the one "over" figure of Shawn's answer 1, the list's Foundation minutes against the focus figure, with On deck apart. The new reads are the day read, an item's trail, one ticket by key, and a reader for several days built on the day read. Every row carries its `noteId` and `listItemId`, and a ticket its key, so Caius can map the pill's sentences onto writes in an Ask, where no step has given refs.
-6. **Answers are words Caius already understands; two writes are new.** A view's taps become sentences in the pill, like the cards' ("Garage shelf goes to the week.", "The ballot goes in the afternoon.", "ZAP-2611 is 30 minutes."), and Caius makes them with these tools:
+6. **Answers are words Caius already understands; two writes are new.** A view's taps become sentences in the pill, like the cards' ("Garage shelf goes to the week.", "The ballot goes in the afternoon.", "QRS-2611 is 30 minutes."), and Caius makes them with these tools:
 
    | Tap | Tool |
    |---|---|
@@ -194,7 +194,7 @@ Four questions the review left open. The decisions below are written to match.
 - Server, views: each view's reader against the round-spec fixtures. Day's Foundation figure is the same as the steps' load sentence, Today's card and the Over capacity notification for the same day, and none of them counts On deck. A task forwarded from Monday and Tuesday has a trail of two. One ticket's read has its last comment. Days over a week with an empty future day shows that day's meetings.
 - Server, writes: placing a task moves it from Morning to Afternoon and between the list and On deck on one day, and refuses a note that changed. Setting an estimate replaces the token, and the load follows.
 - Phone: each tap becomes the right sentence (`replies.spec`), and a meter redrawn after a tap matches the server's figure after the write; the transcript survives a simulated pause; the mini bar keeps pill answers.
-- Live on the rig: hide the app mid-turn and come back; reply from the notification; "why is Monday over?" gets Day, opened on Foundation; "what's going on with ZAP-2640?" gets Item; in a talk about tickets, no view of the day comes up.
+- Live on the rig: hide the app mid-turn and come back; reply from the notification; "why is Monday over?" gets Day, opened on Foundation; "what's going on with QRS-2640?" gets Item; in a talk about tickets, no view of the day comes up.
 
 ## Not now
 

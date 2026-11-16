@@ -22,7 +22,7 @@ const MONDAY = "2026-11-09";
 const TUESDAY = "2026-11-10";
 const WEDNESDAY = "2026-11-11";
 
-const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Jira: ZAP</li></ul>"
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Jira: QRS</li></ul>"
     + "<h2>Brief rules</h2><ul><li>Open time is work time.</li><li>Name concrete tickets.</li></ul>";
 
 const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
@@ -106,8 +106,8 @@ beforeAll(async () => {
         if (!calendarRoot) throw new Error("no #calendarRoot note");
         await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
 
-        notes.thursday = await dayNote(THURSDAY, `<h3>Work</h3>${ul(li("o1", "Slipped thing ~1h"), li("o2", "Fix <a href=\"https://example.atlassian.net/browse/ZAP-104\">ZAP-104</a>"))}`);
-        notes.friday = await dayNote(FRIDAY, `<h3>Context</h3>${bullets("ZAP-2590 is open (until Fri 6 Nov)")}<h3>Work</h3>${ul(
+        notes.thursday = await dayNote(THURSDAY, `<h3>Work</h3>${ul(li("o1", "Slipped thing ~1h"), li("o2", "Fix <a href=\"https://example.atlassian.net/browse/QRS-104\">QRS-104</a>"))}`);
+        notes.friday = await dayNote(FRIDAY, `<h3>Context</h3>${bullets("QRS-2590 is open (until Fri 6 Nov)")}<h3>Work</h3>${ul(
             li("f1", "Friday leftover ~30m"),
             li("f2", "Finished thing", { checked: true }),
             li("f3", "Parent task", { sub: ul(li("f4", "Sub step")) })
@@ -115,10 +115,10 @@ beforeAll(async () => {
         const week = await store.calendarWeek("2026-W45");
         await store.putContent(week.noteId, `<h3>Context</h3>${bullets("Release branch is cut", "Sam is out (until Wed 11 Nov)", "Freeze ends (until Fri 6 Nov)")}<h3>Work</h3>${ul(li("w1", "Week item ~45m"))}`);
         notes.week = week.noteId;
-        notes.monday = await dayNote(MONDAY, `<h3>Work</h3>${ul(li("m1", "Monday thing ~1h"))}<h3>Suggested</h3>${ul(li("ms1", "Get ZAP-105 Summary ZAP-105 done"))}`);
-        await store.addLabel(notes.monday, "caiusDismissed", "ZAP-103");
+        notes.monday = await dayNote(MONDAY, `<h3>Work</h3>${ul(li("m1", "Monday thing ~1h"))}<h3>Suggested</h3>${ul(li("ms1", "Get QRS-105 Summary QRS-105 done"))}`);
+        await store.addLabel(notes.monday, "caiusDismissed", "QRS-103");
         const nextWeek = await store.calendarWeek("2026-W46");
-        await store.putContent(nextWeek.noteId, `<h3>Context</h3>${bullets("ZAP-2600 is open")}<h3>Work</h3>${ul(li("nw1", "Next week item ~45m"))}`);
+        await store.putContent(nextWeek.noteId, `<h3>Context</h3>${bullets("QRS-2600 is open")}<h3>Work</h3>${ul(li("nw1", "Next week item ~45m"))}`);
         notes.tuesday = await dayNote(TUESDAY, `<h3>Work</h3>${ul(li("t1", "Huge thing ~4h"))}<h3>Evening</h3>${ul(li("t2", "Walk ~45m"))}`);
         notes.wednesday = await dayNote(WEDNESDAY, `<h3>Work</h3>${ul(li("we1", "Small thing ~30m"))}<h3>Evening</h3>${ul(li("we2", "Read ~30m"))}`);
 
@@ -127,12 +127,12 @@ beforeAll(async () => {
     });
 
     jiraByDate[MONDAY] = {
-        handoff: [ { ...ticket("ZAP-101"), daysInStatus: 3 }, { ...ticket("ZAP-103"), daysInStatus: 9 }, { ...ticket("ZAP-104"), daysInStatus: 2 }, { ...ticket("ZAP-105"), daysInStatus: 2 } ],
+        handoff: [ { ...ticket("QRS-101"), daysInStatus: 3 }, { ...ticket("QRS-103"), daysInStatus: 9 }, { ...ticket("QRS-104"), daysInStatus: 2 }, { ...ticket("QRS-105"), daysInStatus: 2 } ],
         asks: [
-            { ticket: ticket("ZAP-102"), author: "Sam Example", created: "2026-11-04T09:00:00.000-0500", commentId: "1", excerpt: "Can you look?" },
-            { ticket: ticket("ZAP-2600"), author: "Riley Sample", created: "2026-11-05T09:00:00.000-0500", commentId: "2", excerpt: "Still open?" }
+            { ticket: ticket("QRS-102"), author: "Sam Example", created: "2026-11-04T09:00:00.000-0500", commentId: "1", excerpt: "Can you look?" },
+            { ticket: ticket("QRS-2600"), author: "Riley Sample", created: "2026-11-05T09:00:00.000-0500", commentId: "2", excerpt: "Still open?" }
         ],
-        done: [ "ZAP-2590", "ZAP-2600" ]
+        done: [ "QRS-2590", "QRS-2600" ]
     };
     calendars[MONDAY] = [
         event("10:00", "10:15", "Standup"),
@@ -174,9 +174,9 @@ describe("caius_winddown", () => {
         expect(answer).toMatchObject({ step: "next", title: "On deck and new picks", targetDay: MONDAY, next: "context" });
         const candidates = answer.data.candidates.map((c: any) => [ c.text, c.because, c.minutes, c.source ]);
         expect(candidates).toEqual([
-            [ "Get ZAP-101 Summary ZAP-101 done", "sitting in Dev Verify for 3 days", 30, "ZAP-101" ],
-            [ "Answer Sam Example's question on ZAP-102", "Sam Example asked on Wednesday", 15, "ZAP-102" ],
-            [ "Answer Riley Sample's question on ZAP-2600", "Riley Sample asked on Thursday", 15, "ZAP-2600" ],
+            [ "Get QRS-101 Summary QRS-101 done", "sitting in Dev Verify for 3 days", 30, "QRS-101" ],
+            [ "Answer Sam Example's question on QRS-102", "Sam Example asked on Wednesday", 15, "QRS-102" ],
+            [ "Answer Riley Sample's question on QRS-2600", "Riley Sample asked on Thursday", 15, "QRS-2600" ],
             [ "Next week item", "on the week's list", 45, "2026-W46" ]
         ]);
         // A Context override keeps a ticket Jira calls Done on offer.
@@ -194,7 +194,7 @@ describe("caius_winddown", () => {
         expect(inputsCalls.filter((c) => c.date === MONDAY).length).toBe(before);
         await call("caius_winddown", { date: FRIDAY, step: "next", refresh: true });
         expect(inputsCalls.filter((c) => c.date === MONDAY).length).toBe(before + 1);
-        expect(inputsCalls.at(-1)).toMatchObject({ date: MONDAY, workStart: "10:00", workEnd: "18:00", context: expect.arrayContaining([ "ZAP-2600 is open" ]) });
+        expect(inputsCalls.at(-1)).toMatchObject({ date: MONDAY, workStart: "10:00", workEnd: "18:00", context: expect.arrayContaining([ "QRS-2600 is open" ]) });
     });
 
     it("next: asks which tasks can wait on an over-capacity day", async () => {
@@ -244,13 +244,13 @@ describe("caius_winddown", () => {
         expect(answer).toMatchObject({ step: "context", title: "For Monday", targetDay: MONDAY, next: null });
         expect(answer.data.targetWeek).toBe("2026-W46");
         expect(plain(answer.data.noticed)).toEqual([
-            { kind: "keep", line: "ZAP-2590 is open", until: FRIDAY, keys: [ "ZAP-2590" ], question: "Keep 'ZAP-2590 is open'?", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) },
+            { kind: "keep", line: "QRS-2590 is open", until: FRIDAY, keys: [ "QRS-2590" ], question: "Keep 'QRS-2590 is open'?", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) },
             // The week ends before Monday: the week note's lines still in force then are offered to carry.
             { kind: "carry", line: "Sam is out", until: "2026-11-11", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) },
             { kind: "carry", line: "Release branch is cut", ref: expect.stringMatching(/^x[0-9a-f]{5}$/) }
         ]);
-        expect(answer.data.context.map((line: any) => line.text)).toContain("ZAP-2600 is open");
-        expect(answer.question).toBe("Keep 'ZAP-2590 is open'? Carry 'Sam is out' and 'Release branch is cut' into next week? Anything to add for Monday?");
+        expect(answer.data.context.map((line: any) => line.text)).toContain("QRS-2600 is open");
+        expect(answer.question).toBe("Keep 'QRS-2590 is open'? Carry 'Sam is out' and 'Release branch is cut' into next week? Anything to add for Monday?");
 
         const quiet = await call("caius_winddown", { date: TUESDAY, step: "context" });
         expect(quiet.question).toBe("Anything to add for Wednesday?");
@@ -278,15 +278,15 @@ describe("caius_winddown", () => {
 
     it("next: a candidate put in Suggested and then dismissed does not come back", async () => {
         const sources = async () => (await call("caius_winddown", { date: FRIDAY, step: "next" })).data.candidates.map((c: any) => c.source);
-        expect(await sources()).toContain("ZAP-101");
+        expect(await sources()).toContain("QRS-101");
 
-        const added = await call("caius_add", { items: [ { date: MONDAY, suggested: true, key: "ZAP-101", title: "Summary ZAP-101", because: "sitting in Dev Verify for 3 days", minutes: 30 } ] });
+        const added = await call("caius_add", { items: [ { date: MONDAY, suggested: true, key: "QRS-101", title: "Summary QRS-101", because: "sitting in Dev Verify for 3 days", minutes: 30 } ] });
         expect(added.results[0]).toMatchObject({ status: "added" });
-        expect(await sources()).not.toContain("ZAP-101");
+        expect(await sources()).not.toContain("QRS-101");
 
         const dismissed = await call("caius_dismiss", { items: [ { noteId: notes.monday, listItemId: added.results[0].listItemId } ] });
-        expect(dismissed.results[0]).toMatchObject({ status: "dismissed", key: "ZAP-101" });
-        expect(await sources()).not.toContain("ZAP-101");
+        expect(dismissed.results[0]).toMatchObject({ status: "dismissed", key: "QRS-101" });
+        expect(await sources()).not.toContain("QRS-101");
     });
 
     it("says in one line that a protected standing note can't be read", async () => {
@@ -338,7 +338,7 @@ describe("caius_planday", () => {
     it("inputs: gives the candidates, the Meetings block to write and the overlap question", async () => {
         const answer = await planday({ date: MONDAY, step: "inputs" });
         expect(answer).toMatchObject({ step: "inputs", title: "New since yesterday", next: "brief" });
-        expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-102", "ZAP-2600", "2026-W46" ]);
+        expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "QRS-102", "QRS-2600", "2026-W46" ]);
         expect(answer.data.meetings).toEqual({
             lines: [ "10:00 Standup", "12:00 Release call (overlaps)", "12:30 Review (overlaps)" ], current: [], changed: true
         });
@@ -382,23 +382,23 @@ describe("caius_planday", () => {
         const shape = (await planday({ date: MONDAY, step: "brief" })).data.shape;
         expect((await onItsMorning("caius_brief_write", { ...shape, headline: "Monday" })).plannedAt).toBe(`${MONDAY}T08:00:00`);
 
-        jiraByDate[MONDAY]?.asks.push({ ticket: ticket("ZAP-106"), author: "Sam Example", created: "2026-11-09T20:00:00Z", commentId: "3", excerpt: "One more?" });
+        jiraByDate[MONDAY]?.asks.push({ ticket: ticket("QRS-106"), author: "Sam Example", created: "2026-11-09T20:00:00Z", commentId: "3", excerpt: "One more?" });
         const answer = await planday({ date: MONDAY, step: "inputs", refresh: true });
         expect(answer.data.plannedAt).toBe(`${MONDAY}T08:00:00`);
-        expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "ZAP-106" ]);
+        expect(answer.data.candidates.map((c: any) => c.source)).toEqual([ "QRS-106" ]);
     });
 
     it("inputs: leaves out a week item naming a ticket Jira calls done that is neither a hand-off nor an ask", async () => {
         const day = "2026-11-17";
         await cls.init(async () => {
             const week = await store.calendarWeek("2026-W47");
-            await store.putContent(week.noteId, `<h3>Context</h3>${bullets("ZAP-140 waits on legal")}<h3>Work</h3>${ul(li("x1", "Ship ZAP-130 rollout ~30m"), li("x2", "Plain week item ~30m"))}`);
+            await store.putContent(week.noteId, `<h3>Context</h3>${bullets("QRS-140 waits on legal")}<h3>Work</h3>${ul(li("x1", "Ship QRS-130 rollout ~30m"), li("x2", "Plain week item ~30m"))}`);
         });
-        jiraByDate[day] = { handoff: [], asks: [], done: [ "ZAP-130" ] };
+        jiraByDate[day] = { handoff: [], asks: [], done: [ "QRS-130" ] };
 
         const answer = await planday({ date: day, step: "inputs" });
         expect(answer.data.candidates.map((c: any) => c.text)).toEqual([ "Plain week item" ]);
-        expect(inputsCalls.at(-1)?.keys).toEqual([ "ZAP-130", "ZAP-140" ]);
+        expect(inputsCalls.at(-1)?.keys).toEqual([ "QRS-130", "QRS-140" ]);
     });
 
     it("reads the day without week keys when the week note is protected", async () => {

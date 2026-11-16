@@ -7,12 +7,12 @@ describe('groupTasks', () => {
   it('keeps the saved groups, in the order of their first task, each task in list order', () => {
     const list = [task('a'), task('b'), task('c'), task('d', null, true)];
     const groups = groupTasks(list, [
-      { name: 'ZAP bugs', items: ['b', 'c'] },
+      { name: 'QRS bugs', items: ['b', 'c'] },
       { name: 'Board', items: ['a', 'd'] },
     ]);
     expect(groups.map((g) => [g.name, g.tasks.map((t) => t.id), g.important])).toEqual([
       ['Board', ['a', 'd'], true],
-      ['ZAP bugs', ['b', 'c'], false],
+      ['QRS bugs', ['b', 'c'], false],
     ]);
   });
 

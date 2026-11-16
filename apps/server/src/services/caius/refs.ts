@@ -45,7 +45,7 @@ export function numbered<T extends object>(items: T[], prefix: string): (T & { r
 }
 
 /**
- * The item of `pool` that `said` names: by id, ref or exact phrase, then by ticket key ("ZAP-101") or its number
+ * The item of `pool` that `said` names: by id, ref or exact phrase, then by ticket key ("QRS-101") or its number
  * ("101"), then by its words ("the bag"), each word a word of the item's text. A key, number or word
  * that matches more than one item is ambiguous.
  */
@@ -197,7 +197,7 @@ const CLOSING = /\b(?:dismiss\w*|drop\w*|kill\w*|forget|remove\w*|scrap\w*|nuke\
 /** Words that say he answered something: answered, replied, responded, got back to, took care of, dealt with, handled. */
 const ANSWERING = /\b(?:answer\w*|repl\w*|respond\w*|got back|took care|dealt with|handled)\b/;
 
-/** Words of a candidate's text too common to name it: "Get ZAP-1 Check the report done: because …". */
+/** Words of a candidate's text too common to name it: "Get QRS-1 Check the report done: because …". */
 const COMMON = new Set([ "because", "answer", "question", "check", "about", "their", "there", "which" ]);
 
 /** Words around a fate that name no item: "dave can go to monday". */
@@ -217,7 +217,7 @@ function jiraKeys(text: string): string[] {
     return [ ...text.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g) ].map((m) => m[0]);
 }
 
-/** The words of `text` in lower case, a Jira key kept whole ("zap-111"). */
+/** The words of `text` in lower case, a Jira key kept whole ("qrs-111"). */
 function tokens(text: string): string[] {
     return text.toLowerCase().match(/[a-z][a-z0-9]+-\d+|[\p{L}\p{N}']+/gu)?.map((token) => token.replace(/'s$/, "").replace(/'/g, "")) ?? [];
 }

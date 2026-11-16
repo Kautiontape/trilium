@@ -15,7 +15,7 @@ import { DEFAULT_STATE_SYMBOLS } from './markdown.js';
 const NOW = new Date(2026, 10, 6, 9, 0);
 const TASKS = `<h2>☑️ Tasks</h2>${ul(li('t1', 'Write the spec ~1h'))}`;
 const DECK = `<h3>On deck</h3>${ul(li('d1', 'Tidy the garage ~45m'), li('d2', 'Read the RFC'))}`;
-const SUGGESTED = `<h3>Suggested</h3>${ul(li('s1', 'Get ZAP-1 done: because it waits (~30m)'))}`;
+const SUGGESTED = `<h3>Suggested</h3>${ul(li('s1', 'Get QRS-1 done: because it waits (~30m)'))}`;
 const texts = (tasks: { text: string }[]) => tasks.map((t) => t.text.split(' [from ')[0]);
 const day = (id: string, key: string, html: string) => ({ [id]: [periodNote(id, 'dateNote', key), html] as [ReturnType<typeof periodNote>, string] });
 

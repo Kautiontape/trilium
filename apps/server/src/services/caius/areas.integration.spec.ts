@@ -47,7 +47,7 @@ function call(name: string, args: object): Promise<any> {
 const at = (stamp: string) => vi.stubEnv("CAIUS_NOW", stamp);
 afterEach(() => vi.unstubAllEnvs());
 
-const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Jira: ZAP</li></ul><h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Jira: QRS</li></ul><h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
 const prose = { headline: "A day", sections: [] };
 
 /** A day note laid out by time: `blocks` maps each heading to its to-do items. */
@@ -70,7 +70,7 @@ beforeAll(async () => {
 
 describe("Tue 3 Nov: two tickets, the ballot and the relink", () => {
     const tasks = {
-        Morning: [ li("m1", "ZAP-2620 prod bug ~1h30m"), li("m2", "ZAP-2611 sign-offs ~1h30m") ],
+        Morning: [ li("m1", "QRS-2620 prod bug ~1h30m"), li("m2", "QRS-2611 sign-offs ~1h30m") ],
         Afternoon: [ li("a1", "🌱 Drop off the ballot ~30m") ],
         Evening: [ li("e1", "🌱 Relink Vincent ~1h30m") ]
     };
@@ -93,7 +93,7 @@ describe("Tue 3 Nov: two tickets, the ballot and the relink", () => {
         expect(inputs.data.unmarked).toEqual([]);
         expect(inputs.question).toBeNull();
         expect(inputs.data.list.map((item: any) => [ item.text, item.area, item.block ])).toEqual([
-            [ "ZAP-2620 prod bug", "foundation", "morning" ], [ "ZAP-2611 sign-offs", "foundation", "morning" ],
+            [ "QRS-2620 prod bug", "foundation", "morning" ], [ "QRS-2611 sign-offs", "foundation", "morning" ],
             [ "Drop off the ballot", "growth", "afternoon" ], [ "Relink Vincent", "growth", "evening" ]
         ]);
     });
@@ -109,14 +109,14 @@ describe("Tue 3 Nov: two tickets, the ballot and the relink", () => {
     });
 
     it("the old reading would have been over: add the same two hours as work and the move question comes, to the next workday and never to the evening", async () => {
-        const noteId = await dayWith(WED, { Morning: [ li("w1", "ZAP-3001 big one ~2h"), li("w2", "ZAP-3002 other one ~2h") ], Afternoon: [ li("w3", "ZAP-3003 and one more ~1h") ], Evening: [ li("w4", "🔋 TTRPG prep ~1h") ] });
+        const noteId = await dayWith(WED, { Morning: [ li("w1", "QRS-3001 big one ~2h"), li("w2", "QRS-3002 other one ~2h") ], Afternoon: [ li("w3", "QRS-3003 and one more ~1h") ], Evening: [ li("w4", "🔋 TTRPG prep ~1h") ] });
         calendars[WED] = [ event("10:00", "14:00", "Offsite workshop") ];
         at(`${WED}T09:30`);
         expect(noteId).toBeTruthy();
         const inputs = await call("caius_planday", { date: WED, step: "inputs", refresh: true });
         // 5 h of Foundation against the 2 h or so the offsite leaves: over, and the move is the last Foundation task, to Thursday.
         expect(inputs.data.forwardSuggestion).toMatchObject({ listItemId: "w3", to: THU });
-        expect(inputs.question).toBe("The day is 50% booked. Move 'ZAP-3003 and one more' to Thursday?");
+        expect(inputs.question).toBe("The day is 50% booked. Move 'QRS-3003 and one more' to Thursday?");
         expect(inputs.question).not.toMatch(/evening/i);
         expect(inputs.data.forwardSuggestion.text).not.toContain("TTRPG");
         delete calendars[WED];
@@ -127,10 +127,10 @@ describe("a Foundation-over day never offers the evening", () => {
     it("the wind-down's over question and the On deck overflow go to the week, and the Recharge task is never the one to move", async () => {
         calendars[FRI] = [ event("10:00", "14:00", "Planning offsite") ];
         await dayWith(FRI, {
-            Morning: [ li("o1", "ZAP-4001 first ~2h") ],
-            Afternoon: [ li("o2", "ZAP-4002 second ~2h") ],
+            Morning: [ li("o1", "QRS-4001 first ~2h") ],
+            Afternoon: [ li("o2", "QRS-4002 second ~2h") ],
             Evening: [ li("o3", "🔋 Arcade ~1h") ]
-        }, `<h2>On deck</h2>${ul(li("od1", "ZAP-4003 deck work ~2h"), li("od2", "🌱 Ballot deck ~30m"))}`);
+        }, `<h2>On deck</h2>${ul(li("od1", "QRS-4003 deck work ~2h"), li("od2", "🌱 Ballot deck ~30m"))}`);
         at(`${THU}T17:30`);
         const next = await call("caius_winddown", { date: THU, step: "next" });
         expect(next.targetDay).toBe(FRI);
@@ -143,13 +143,13 @@ describe("a Foundation-over day never offers the evening", () => {
         const inputs = await call("caius_planday", { date: FRI, step: "inputs", refresh: true });
         // Nothing fits the room the offsite leaves: the work goes back up to the week; the Growth item goes on the list in its block.
         expect(inputs.data.onDeck.map((item: any) => [ item.text, item.area, item.fate ])).toEqual([
-            [ "ZAP-4003 deck work", "foundation", { forward: "2026-W45", forwardLabel: "the week of Mon 2 Nov" } ],
+            [ "QRS-4003 deck work", "foundation", { forward: "2026-W45", forwardLabel: "the week of Mon 2 Nov" } ],
             [ "🌱 Ballot deck", "growth", { list: true } ]
         ]);
         expect(JSON.stringify([ inputs.data.forwardSuggestion, inputs.question ])).not.toMatch(/evening|Evening|Arcade/);
         // The offsite books half the day, so it is heavy: the move is the last Foundation task, to Monday, never the Recharge one.
         expect(inputs.data.forwardSuggestion).toMatchObject({ listItemId: "o2", to: "2026-11-09" });
-        expect(inputs.question).toContain("Move 'ZAP-4002 second' to Monday?");
+        expect(inputs.question).toContain("Move 'QRS-4002 second' to Monday?");
         delete calendars[FRI];
     });
 });
@@ -159,14 +159,14 @@ describe("workBlocks with a pinned clock", () => {
         const DAY = "2026-11-09";
         calendars[DAY] = [ event("10:00", "10:15", "Standup") ];
         await dayWith(DAY, {
-            Morning: [ li("p1", "ZAP-5001 first ~1h") ],
-            Afternoon: [ li("p2", "🌱 15:00 Drop off the ballot ~30m"), li("p3", "ZAP-5002 second ~1h") ]
+            Morning: [ li("p1", "QRS-5001 first ~1h") ],
+            Afternoon: [ li("p2", "🌱 15:00 Drop off the ballot ~30m"), li("p3", "QRS-5002 second ~1h") ]
         });
         at(`${DAY}T09:30`);
         const brief = await call("caius_planday", { date: DAY, step: "brief" });
         // Morning's work starts at standup's end; the pinned ballot sits at 15:00 and the afternoon's work flows around it from noon.
         expect(brief.data.list.map((item: any) => [ item.label, item.area, item.block, item.at ])).toEqual([
-            [ "ZAP-5001", "foundation", "morning", null ], [ "Drop off the ballot", "growth", "afternoon", "15:00" ], [ "ZAP-5002", "foundation", "afternoon", null ]
+            [ "QRS-5001", "foundation", "morning", null ], [ "Drop off the ballot", "growth", "afternoon", "15:00" ], [ "QRS-5002", "foundation", "afternoon", null ]
         ]);
         const groups = brief.data.header.groups;
         expect(groups.find((group: any) => group.start === "15:00")).toMatchObject({ end: "15:30", count: 1 });
@@ -186,7 +186,7 @@ describe("workBlocks with a pinned clock", () => {
 describe("the unmarked list and the areas answer", () => {
     it("lists a task with no marker, key or area heading once; foundation writes nothing and is not asked again; growth writes the marker", async () => {
         const DAY = "2026-11-10";
-        await dayWith(DAY, { Morning: [ li("u1", "Drop off the ballot ~30m"), li("u2", "ZAP-6001 fix ~30m"), li("u3", "Review the sign-offs ~30m"), li("u4", "🔋 Arcade ~30m") ] });
+        await dayWith(DAY, { Morning: [ li("u1", "Drop off the ballot ~30m"), li("u2", "QRS-6001 fix ~30m"), li("u3", "Review the sign-offs ~30m"), li("u4", "🔋 Arcade ~30m") ] });
         at(`${DAY}T09:30`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
         expect(inputs.data.unmarked).toEqual([
@@ -204,7 +204,7 @@ describe("the unmarked list and the areas answer", () => {
         expect(applied.say).toContain("Drop off the ballot is marked Growth");
         const plan = await call("caius_plan", { period: "day", date: DAY });
         expect(plan.sections[0].tasks.map((task: any) => [ task.text, task.area ])).toEqual([
-            [ "🌱 Drop off the ballot", "growth" ], [ "ZAP-6001 fix", "foundation" ], [ "Review the sign-offs", "foundation" ], [ "🔋 Arcade", "recharge" ]
+            [ "🌱 Drop off the ballot", "growth" ], [ "QRS-6001 fix", "foundation" ], [ "Review the sign-offs", "foundation" ], [ "🔋 Arcade", "recharge" ]
         ]);
         // Neither is asked about again, in a refresh or after the apply.
         const again = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
@@ -223,7 +223,7 @@ describe("caius_add files by block and area", () => {
 
     it("a Growth task with no place goes under Evening with its marker; a named block files it there, whatever its area", async () => {
         const DAY = "2026-11-11";
-        await dayWith(DAY, { Morning: [ li("f1", "ZAP-7001 first ~30m") ] });
+        await dayWith(DAY, { Morning: [ li("f1", "QRS-7001 first ~30m") ] });
         const added = await call("caius_add", { items: [
             { date: DAY, area: "growth", text: "Return the library books ~30m" },
             { date: DAY, area: "recharge", block: "afternoon", text: "Walk ~30m" },
@@ -231,23 +231,23 @@ describe("caius_add files by block and area", () => {
         ] });
         expect(added.results.map((r: any) => r.status)).toEqual([ "added", "added", "added" ]);
         expect(await sectionsOf(DAY)).toEqual({
-            Morning: [ "ZAP-7001 first" ], Afternoon: [ "🔋 Walk" ], Evening: [ "🌱 Return the library books", "Read" ]
+            Morning: [ "QRS-7001 first" ], Afternoon: [ "🔋 Walk" ], Evening: [ "🌱 Return the library books", "Read" ]
         });
     });
 
     it("a Foundation task goes under Morning when the note has that heading, else into the main list; no place and no area is refused", async () => {
         const WITH = "2026-11-12";
-        await dayWith(WITH, { Morning: [ li("g1", "ZAP-7101 first ~30m") ], Afternoon: [ li("g2", "ZAP-7102 second ~30m") ] });
-        await call("caius_add", { items: [ { date: WITH, area: "foundation", text: "ZAP-7103 third ~30m" } ] });
-        expect(await sectionsOf(WITH)).toEqual({ Morning: [ "ZAP-7101 first", "ZAP-7103 third" ], Afternoon: [ "ZAP-7102 second" ] });
+        await dayWith(WITH, { Morning: [ li("g1", "QRS-7101 first ~30m") ], Afternoon: [ li("g2", "QRS-7102 second ~30m") ] });
+        await call("caius_add", { items: [ { date: WITH, area: "foundation", text: "QRS-7103 third ~30m" } ] });
+        expect(await sectionsOf(WITH)).toEqual({ Morning: [ "QRS-7101 first", "QRS-7103 third" ], Afternoon: [ "QRS-7102 second" ] });
 
         const PLAIN = "2026-11-13";
         await cls.init(async () => {
             const day = await store.calendarDay(PLAIN);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g3", "ZAP-7201 first ~30m"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g3", "QRS-7201 first ~30m"))}`);
         });
-        await call("caius_add", { items: [ { date: PLAIN, area: "foundation", text: "ZAP-7202 second ~30m" }, { date: PLAIN, area: "growth", text: "Ballot ~30m" } ] });
-        expect(await sectionsOf(PLAIN)).toEqual({ "☑️ Tasks": [ "ZAP-7201 first", "ZAP-7202 second" ], Evening: [ "🌱 Ballot" ] });
+        await call("caius_add", { items: [ { date: PLAIN, area: "foundation", text: "QRS-7202 second ~30m" }, { date: PLAIN, area: "growth", text: "Ballot ~30m" } ] });
+        expect(await sectionsOf(PLAIN)).toEqual({ "☑️ Tasks": [ "QRS-7201 first", "QRS-7202 second" ], Evening: [ "🌱 Ballot" ] });
 
         const schema = [ ...tools ].find(([ n ]) => n === "caius_add")?.[1].inputSchema;
         expect(schema?.safeParse({ items: [ { date: PLAIN, text: "No place" } ] }).success).toBe(false);

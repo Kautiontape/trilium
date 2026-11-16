@@ -56,7 +56,7 @@ describe('renderDayTerrain', () => {
       events: [],
       groups: [
         { start: '12:00', end: '14:00', name: 'Board', count: 6 },
-        { start: '14:00', end: '16:00', name: 'ZAP bugs', count: 6 },
+        { start: '14:00', end: '16:00', name: 'QRS bugs', count: 6 },
       ],
     });
     const x = 26 + ((640 - 52) * (14 * 60 - 10 * 60)) / (13 * 60);
@@ -68,7 +68,7 @@ describe('renderDayTerrain', () => {
   it('draws a group holding an Important task in clay, and only that one', () => {
     const svg = renderDayTerrain(NORMAL_DAY);
     expect(svg.match(/data-part="hill"[^>]*fill="#d8764f"/g)).toHaveLength(1);
-    expect(svg).toContain('fill="#d8764f">ZAP-2617</text>');
+    expect(svg).toContain('fill="#d8764f">QRS-2617</text>');
     expect(svg).toContain('fill="#85837a">Reviews</text>');
     expect(renderDayTerrain(OPEN_DAY)).not.toContain('#d8764f');
   });
@@ -213,7 +213,7 @@ describe('renderDayTerrain', () => {
     const thursday = T13A_DAYS.find((day) => day.name === 'Thu 5 Nov');
     if (!thursday) throw new Error('no Thursday');
     const { groups } = layoutGroups(T13A_RHYTHM, thursday.meetings, [
-      { name: 'ZAP bugs', tasks: thursday.tasks.filter((task) => !task.area) },
+      { name: 'QRS bugs', tasks: thursday.tasks.filter((task) => !task.area) },
       { name: 'Laundry', tasks: thursday.tasks.filter((task) => task.area) },
     ]);
     expect(groups.find((group) => group.name === 'Laundry')).toMatchObject({ start: '18:00', end: '18:45', count: 1 });
@@ -224,18 +224,18 @@ describe('renderDayTerrain', () => {
   });
 
   it('names a group split around a meeting once, and draws evening calendar events as meeting dots', () => {
-    // Round 2, Mon 2 Nov: ZAP-101 split around Sprint Planning read as two tasks; Call Mom is a calendar event.
+    // Round 2, Mon 2 Nov: QRS-101 split around Sprint Planning read as two tasks; Call Mom is a calendar event.
     const meetings = [
       { start: '10:00', end: '10:15', title: 'Standup' },
       { start: '10:45', end: '12:00', title: 'Sprint Planning' },
       { start: '18:00', end: '18:30', title: 'Call Mom' },
       { start: '19:00', end: '21:00', title: 'Climbing gym' },
     ];
-    const { groups, work } = layoutGroups(T13A_RHYTHM, meetings, [{ name: 'ZAP bugs', tasks: [{ label: 'ZAP-111', minutes: 15 }, { label: 'ZAP-101', minutes: 60 }] }]);
+    const { groups, work } = layoutGroups(T13A_RHYTHM, meetings, [{ name: 'QRS bugs', tasks: [{ label: 'QRS-111', minutes: 15 }, { label: 'QRS-101', minutes: 60 }] }]);
     expect(work.filter((block) => block.start >= '10:30' && block.end <= '13:00')).toHaveLength(2);
-    expect(groups).toEqual([{ start: '10:15', end: '12:45', name: 'ZAP bugs', count: 2 }]);
+    expect(groups).toEqual([{ start: '10:15', end: '12:45', name: 'QRS bugs', count: 2 }]);
     const svg = renderDayTerrain({ ...T13A_RHYTHM, events: meetings, groups });
-    expect(svg.match(/>ZAP bugs<\/text>/g)).toHaveLength(1);
+    expect(svg.match(/>QRS bugs<\/text>/g)).toHaveLength(1);
     expect(svg.match(/data-part="hill"/g)).toHaveLength(1);
     expect(svg.match(/<circle /g)).toHaveLength(4);
     for (const title of ['Call Mom', 'Climbing gym']) expect(svg).toContain(`font-weight="400" fill="#85837a">${title}</text>`);

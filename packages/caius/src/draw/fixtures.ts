@@ -10,7 +10,7 @@ export const NORMAL_DAY: TerrainInput = {
   ],
   groups: [
     { start: '10:30', end: '11:00', name: 'Inbox', count: 2 },
-    { start: '13:30', end: '15:00', name: 'ZAP-2617', count: 1, important: true },
+    { start: '13:30', end: '15:00', name: 'QRS-2617', count: 1, important: true },
     { start: '16:00', end: '18:00', name: 'Reviews', count: 4 },
   ],
   weather: { code: 3, label: 'Overcast' },
@@ -30,7 +30,7 @@ export const HEAVY_DAY: TerrainInput = {
   groups: [
     { start: '12:15', end: '12:45', name: 'Triage', count: 3 },
     { start: '14:30', end: '15:00', name: 'Notes', count: 1 },
-    { start: '17:30', end: '18:30', name: 'ZIS-88', count: 1, important: true },
+    { start: '17:30', end: '18:30', name: 'XYZ-88', count: 1, important: true },
   ],
   weather: { code: 61, label: 'Rain' },
 };
@@ -52,7 +52,7 @@ export const LATE_HEAVY_DAY: TerrainInput = {
     { start: '18:00', end: '19:00', title: 'Board prep', overlap: true },
     { start: '18:30', end: '19:00', title: 'Wrap-up', overlap: true },
   ],
-  groups: [{ start: '13:00', end: '14:30', name: 'ZAP-9', count: 1, important: true }],
+  groups: [{ start: '13:00', end: '14:30', name: 'QRS-9', count: 1, important: true }],
   weather: { code: 95, label: 'Thunderstorm' },
 };
 
@@ -71,7 +71,7 @@ export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks:
       { start: '10:00', end: '10:30', title: 'Weekly Planning Sync' },
       { start: '11:00', end: '11:30', title: 'Customer Call' },
     ],
-    tasks: [{ label: 'ZAP-105', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'ZAP-110', minutes: 30 }],
+    tasks: [{ label: 'QRS-105', minutes: 30 }, { label: 'QRS-111', minutes: 30 }, { label: 'QRS-110', minutes: 30 }],
   },
   {
     name: 'Tue 3 Nov, 11:05',
@@ -79,7 +79,7 @@ export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks:
       { start: '10:00', end: '10:30', title: 'Weekly Planning Sync' },
       { start: '15:00', end: '15:30', title: 'Customer Call' },
     ],
-    tasks: [{ label: 'ZAP-105', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }],
+    tasks: [{ label: 'QRS-105', minutes: 30 }, { label: 'QRS-111', minutes: 30 }],
   },
   {
     name: 'Thu 5 Nov',
@@ -91,12 +91,12 @@ export const T13A_DAYS: { name: string; meetings: TerrainInput['events']; tasks:
       { start: '14:00', end: '15:30', title: 'Design Workshop' },
       { start: '16:00', end: '16:30', title: 'Interview Panel' },
     ],
-    tasks: [{ label: 'ZAP-110', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'Laundry', minutes: 45, area: 'growth' }],
+    tasks: [{ label: 'QRS-110', minutes: 30 }, { label: 'QRS-111', minutes: 30 }, { label: 'Laundry', minutes: 45, area: 'growth' }],
   },
   {
     name: 'Mon 9 Nov',
     meetings: [],
-    tasks: [{ label: 'ZAP-110', minutes: 30 }, { label: 'ZAP-101', minutes: 30 }, { label: 'ZAP-111', minutes: 30 }, { label: 'ZAP-105', minutes: 30 }],
+    tasks: [{ label: 'QRS-110', minutes: 30 }, { label: 'QRS-101', minutes: 30 }, { label: 'QRS-111', minutes: 30 }, { label: 'QRS-105', minutes: 30 }],
   },
 ];
 

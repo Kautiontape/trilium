@@ -34,7 +34,7 @@ const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
 
 /** Jira as the simulation served it all week: every ticket still open, whatever Shawn did. */
 const jira: JiraInputs = {
-    handoff: [ "ZAP-101", "ZAP-105", "ZAP-110", "ZAP-111", "ZAP-112" ].map((key) => ({ ...ticket(key), daysInStatus: 6 })),
+    handoff: [ "QRS-101", "QRS-105", "QRS-110", "QRS-111", "QRS-112" ].map((key) => ({ ...ticket(key), daysInStatus: 6 })),
     asks: [],
     done: []
 };
@@ -82,11 +82,11 @@ beforeAll(async () => {
         const calendarRoot = root ?? (await store.calendarDay(MON), (await store.search("#calendarRoot"))[0]);
         if (!calendarRoot) throw new Error("no #calendarRoot note");
         await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
-        await store.addLabel(createChildNote("root", "🧭 How I work", "<h2>Rhythm</h2><ul><li>Jira: ZAP</li></ul>"), "assistantContext", "");
+        await store.addLabel(createChildNote("root", "🧭 How I work", "<h2>Rhythm</h2><ul><li>Jira: QRS</li></ul>"), "assistantContext", "");
         notes.mon = await dayNote(MON, `<h2>☑️ Tasks</h2>${ul(
-            li("m1", `${jiraLink("ZAP-105")} — Confirm the staging bucket name ~30m`),
-            li("m2", `${jiraLink("ZAP-101")} — Verify the export retry on staging ~30m`),
-            li("m3", `${jiraLink("ZAP-110")} — Review the import mapper change ~30m`)
+            li("m1", `${jiraLink("QRS-105")} — Confirm the staging bucket name ~30m`),
+            li("m2", `${jiraLink("QRS-101")} — Verify the export retry on staging ~30m`),
+            li("m3", `${jiraLink("QRS-110")} — Review the import mapper change ~30m`)
         )}`);
     });
 });
@@ -96,7 +96,7 @@ afterEach(() => {
 });
 
 describe("work he finished never comes back", () => {
-    it("Mon 17:30: closing the day marks ZAP-101 done and moves the other two on", async () => {
+    it("Mon 17:30: closing the day marks QRS-101 done and moves the other two on", async () => {
         at(`${MON}T17:30`);
         const done = await call("caius_set_state", { items: [ { noteId: notes.mon, listItemId: "m2", state: "done" } ] });
         expect(done.results[0]).toMatchObject({ status: "updated" });
@@ -107,51 +107,51 @@ describe("work he finished never comes back", () => {
         expect(moved.results.map((r: any) => r.status)).toEqual([ "moved", "moved" ]);
     });
 
-    it("Tue 09:35: Plan my day leaves out ZAP-101, which Jira still calls Dev Verify, and keeps the forwarded ZAP-110 on offer from the week", async () => {
+    it("Tue 09:35: Plan my day leaves out QRS-101, which Jira still calls Dev Verify, and keeps the forwarded QRS-110 on offer from the week", async () => {
         at(`${TUE}T09:35`);
         const answer = await call("caius_planday", { date: TUE, step: "inputs" });
-        expect(sources(answer)).not.toContain("ZAP-101");
-        expect(sources(answer)).toEqual(expect.arrayContaining([ "ZAP-111", "ZAP-112", "2026-W45" ]));
-        expect(answer.data.candidates.find((c: any) => c.source === "2026-W45")?.text).toContain("ZAP-110");
+        expect(sources(answer)).not.toContain("QRS-101");
+        expect(sources(answer)).toEqual(expect.arrayContaining([ "QRS-111", "QRS-112", "2026-W45" ]));
+        expect(answer.data.candidates.find((c: any) => c.source === "2026-W45")?.text).toContain("QRS-110");
     });
 
-    it("Tue 11:05: the agent can't put ZAP-101 back in Suggested by hand", async () => {
+    it("Tue 11:05: the agent can't put QRS-101 back in Suggested by hand", async () => {
         at(`${TUE}T11:05`);
-        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, key: "ZAP-101", title: "Verify the export retry", because: "sitting in Dev Verify for 6 days", minutes: 45 } ] });
+        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, key: "QRS-101", title: "Verify the export retry", because: "sitting in Dev Verify for 6 days", minutes: 45 } ] });
         expect(added.results[0]).toMatchObject({ status: "skipped", reason: "finished" });
     });
 
     it("Wed 17:45: a ticket he says is finished, that was never a task, leaves every list for 30 days", async () => {
         at(`${WED}T17:45`);
-        const finished = await call("caius_finished", { keys: [ "ZAP-111" ] });
-        expect(finished).toMatchObject({ status: "updated", keys: [ "ZAP-111" ] });
-        expect(sources(await call("caius_winddown", { date: WED, step: "next" }))).not.toContain("ZAP-111");
+        const finished = await call("caius_finished", { keys: [ "QRS-111" ] });
+        expect(finished).toMatchObject({ status: "updated", keys: [ "QRS-111" ] });
+        expect(sources(await call("caius_winddown", { date: WED, step: "next" }))).not.toContain("QRS-111");
 
         at("2026-12-04T09:30");
-        expect(sources(await call("caius_planday", { date: "2026-12-04", step: "inputs" }))).not.toContain("ZAP-111");
+        expect(sources(await call("caius_planday", { date: "2026-12-04", step: "inputs" }))).not.toContain("QRS-111");
         at("2026-12-05T09:30");
-        expect(sources(await call("caius_planday", { date: "2026-12-05", step: "inputs" }))).toContain("ZAP-111");
+        expect(sources(await call("caius_planday", { date: "2026-12-05", step: "inputs" }))).toContain("QRS-111");
     });
 
-    it("Thu 09:30: a dismissal on Tuesday's note keeps ZAP-112 out of Friday's plan for Monday", async () => {
+    it("Thu 09:30: a dismissal on Tuesday's note keeps QRS-112 out of Friday's plan for Monday", async () => {
         at(`${THU}T09:30`);
-        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, key: "ZAP-112", title: "Check the report job", because: "sitting in Dev Verify for 6 days", minutes: 30 } ] });
+        const added = await call("caius_add", { items: [ { date: TUE, suggested: true, key: "QRS-112", title: "Check the report job", because: "sitting in Dev Verify for 6 days", minutes: 30 } ] });
         expect(added.results[0]).toMatchObject({ status: "added" });
         const dismissed = await call("caius_dismiss", { items: [ { noteId: added.results[0].writtenNoteId, listItemId: added.results[0].listItemId } ] });
-        expect(dismissed.results[0]).toMatchObject({ status: "dismissed", key: "ZAP-112" });
+        expect(dismissed.results[0]).toMatchObject({ status: "dismissed", key: "QRS-112" });
 
         at(`${FRI}T17:20`);
         const answer = await call("caius_winddown", { date: FRI, step: "next" });
         expect(answer.targetDay).toBe(MON9);
-        expect(sources(answer)).not.toContain("ZAP-112");
-        expect(sources(answer)).not.toContain("ZAP-101");
+        expect(sources(answer)).not.toContain("QRS-112");
+        expect(sources(answer)).not.toContain("QRS-101");
     });
 
     it("after 14 days, a ticket done once and still open in Jira is offered again", async () => {
         at("2026-11-16T09:30");
-        expect(sources(await call("caius_planday", { date: "2026-11-16", step: "inputs" }))).not.toContain("ZAP-101");
+        expect(sources(await call("caius_planday", { date: "2026-11-16", step: "inputs" }))).not.toContain("QRS-101");
         at("2026-11-17T09:30");
-        expect(sources(await call("caius_planday", { date: "2026-11-17", step: "inputs" }))).toContain("ZAP-101");
+        expect(sources(await call("caius_planday", { date: "2026-11-17", step: "inputs" }))).toContain("QRS-101");
     });
 });
 
@@ -185,7 +185,7 @@ describe("a wind-down that fits on one screen", () => {
 
 describe("Context writes decide their own target", () => {
     const JACO = "Jaco out all week.";
-    const ZAP2590 = "ZAP-2590 is open; Jira's Done is a mistake.";
+    const ZAP2590 = "QRS-2590 is open; Jira's Done is a mistake.";
     const contextOf = async (period: string, date: string) => (await call("caius_plan", { period, date })).context.map((line: any) => line.text);
 
     it("Mon 09:40: \"keep going\" on last week's lines writes them to week 45, not to Monday's note", async () => {
@@ -219,7 +219,7 @@ describe("Context writes decide their own target", () => {
 
     it("caius_context_add moves a line about a ticket or a state to the week note, and keeps a line about one day on the day", async () => {
         at(`${WED}T17:45`);
-        const ticketLine = await call("caius_context_add", { date: THU, text: "ZAP-2620 waits on legal" });
+        const ticketLine = await call("caius_context_add", { date: THU, text: "QRS-2620 waits on legal" });
         expect(ticketLine.results[0]).toMatchObject({ status: "added", detail: "moved to the week note" });
         const out = await call("caius_context_add", { date: THU, text: "Riley is out on Thursday" });
         expect(out.results[0]).toMatchObject({ status: "added", detail: "moved to the week note" });
@@ -227,7 +227,7 @@ describe("Context writes decide their own target", () => {
         expect(day.results[0]).toMatchObject({ status: "added" });
         expect(day.results[0].detail).not.toBe("moved to the week note");
 
-        expect(await contextOf("week", "2026-W45")).toEqual(expect.arrayContaining([ "ZAP-2620 waits on legal", "Riley is out on Thursday" ]));
+        expect(await contextOf("week", "2026-W45")).toEqual(expect.arrayContaining([ "QRS-2620 waits on legal", "Riley is out on Thursday" ]));
         expect(await contextOf("day", THU)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00" ]);
     });
 });
@@ -236,13 +236,13 @@ describe("Suggested lines have one format, built by the tool", () => {
     it("writes the structured fields as \"Get KEY title done: because why (~Nm)\", with the estimate once", async () => {
         at(`${THU}T09:30`);
         const added = await call("caius_add", { items: [
-            { date: THU, suggested: true, key: "ZAP-121", title: "Check the invoice export in QA", because: "because sitting in QA Testing for 3 days", minutes: 30 },
+            { date: THU, suggested: true, key: "QRS-121", title: "Check the invoice export in QA", because: "because sitting in QA Testing for 3 days", minutes: 30 },
             { date: THU, suggested: true, title: "Book the venue", because: "the quote expires Friday", minutes: 15 }
         ] });
         expect(added.results.map((r: any) => r.status)).toEqual([ "added", "added" ]);
         const suggested = (await call("caius_plan", { period: "day", date: THU })).suggested.map((task: any) => task.text.replace(/\]\([^)]*\)/g, "]"));
         expect(suggested).toEqual([
-            "Get [ZAP-121] Check the invoice export in QA done: because sitting in QA Testing for 3 days (~30m)",
+            "Get [QRS-121] Check the invoice export in QA done: because sitting in QA Testing for 3 days (~30m)",
             "Get Book the venue done: because the quote expires Friday (~15m)"
         ]);
     });
@@ -251,15 +251,15 @@ describe("Suggested lines have one format, built by the tool", () => {
         // The schema throws before the tool returns a promise.
         const add = (item: object) => Promise.resolve().then(() => call("caius_add", { items: [ item ] }));
         for (const text of [
-            "ZAP-101 — Verify the export retry on staging ~30m",
-            "ZAP-111",
-            "ZAP-111 (QA Testing, 3 days) ~30m",
-            "Get ZAP-111 \"Check the invoice export in QA\" done: sitting in QA Testing for 3 days (~30m) ~30m"
+            "QRS-101 — Verify the export retry on staging ~30m",
+            "QRS-111",
+            "QRS-111 (QA Testing, 3 days) ~30m",
+            "Get QRS-111 \"Check the invoice export in QA\" done: sitting in QA Testing for 3 days (~30m) ~30m"
         ]) {
-            await expect(add({ date: THU, suggested: true, text, source: "ZAP-111" }), text).rejects.toThrow(/Get KEY title done: because why \(~30m\)/);
+            await expect(add({ date: THU, suggested: true, text, source: "QRS-111" }), text).rejects.toThrow(/Get KEY title done: because why \(~30m\)/);
         }
-        await expect(add({ date: THU, suggested: true, key: "ZAP-120", title: "Check it", because: "it waits", minutes: 30, est: "30m" })).rejects.toThrow(/est/);
-        const shaped = await call("caius_add", { items: [ { date: THU, suggested: true, text: "Get ZAP-120 Check it done: because it waits (~30m)", source: "ZAP-120" } ] });
+        await expect(add({ date: THU, suggested: true, key: "QRS-120", title: "Check it", because: "it waits", minutes: 30, est: "30m" })).rejects.toThrow(/est/);
+        const shaped = await call("caius_add", { items: [ { date: THU, suggested: true, text: "Get QRS-120 Check it done: because it waits (~30m)", source: "QRS-120" } ] });
         expect(shaped.results[0]).toMatchObject({ status: "added" });
     });
 });
@@ -278,39 +278,39 @@ describe("follow-ups are raised once", () => {
     const followUps = (answer: any) => answer.data.followUps.map((f: any) => `${f.key}:${f.commentId}`);
 
     it("Mon 09:40: a brief with a Follow up records every ask it was given", async () => {
-        jira.asks.push(ask("ZAP-104", "2", "2026-10-26T19:30:00.000Z"), ask("ZAP-130", "20", "2026-10-30T14:00:00.000Z", "Jordan Placeholder"));
-        await offeredOn("2026-10-31", "ZAP-104:2", "ZAP-130:20");
+        jira.asks.push(ask("QRS-104", "2", "2026-10-26T19:30:00.000Z"), ask("QRS-130", "20", "2026-10-30T14:00:00.000Z", "Jordan Placeholder"));
+        await offeredOn("2026-10-31", "QRS-104:2", "QRS-130:20");
         at(`${MON}T09:40`);
         const brief = await call("caius_planday", { date: MON, step: "brief", refresh: true });
-        expect(followUps(brief)).toEqual([ "ZAP-104:2", "ZAP-130:20" ]);
-        expect(brief.data.shape.followUps).toEqual([ { key: "ZAP-104", commentId: "2" }, { key: "ZAP-130", commentId: "20" } ]);
+        expect(followUps(brief)).toEqual([ "QRS-104:2", "QRS-130:20" ]);
+        expect(brief.data.shape.followUps).toEqual([ { key: "QRS-104", commentId: "2" }, { key: "QRS-130", commentId: "20" } ]);
 
         const written = await call("caius_brief_write", {
             ...brief.data.shape, headline: "Sprint planning, then the handoffs",
-            sections: [ { title: "Follow up", markdown: "Riley asked on ZAP-104 whether the legacy report job is gone. If you already answered in Chat, dismiss this." } ]
+            sections: [ { title: "Follow up", markdown: "Riley asked on QRS-104 whether the legacy report job is gone. If you already answered in Chat, dismiss this." } ]
         });
         const note = await cls.init(() => store.note(written.briefNoteId));
-        expect(note.attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value)).toEqual([ "ZAP-104:2", "ZAP-130:20" ]);
+        expect(note.attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value)).toEqual([ "QRS-104:2", "QRS-130:20" ]);
     });
 
     it("Thu 09:30: an ask raised on Monday is out of the Follow up and the candidates; a newer comment is a new ask, offered as a candidate", async () => {
         at(`${THU}T09:30`);
         const quiet = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
         expect(followUps(quiet)).toEqual([]);
-        expect(sources(quiet)).not.toContain("ZAP-130");
+        expect(sources(quiet)).not.toContain("QRS-130");
         expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([]);
 
-        jira.asks.push(ask("ZAP-130", "21", "2026-11-04T15:00:00.000Z", "Jordan Placeholder"));
+        jira.asks.push(ask("QRS-130", "21", "2026-11-04T15:00:00.000Z", "Jordan Placeholder"));
         const newer = await call("caius_planday", { date: THU, step: "inputs", refresh: true });
         expect(followUps(newer)).toEqual([]);
-        expect(newer.data.candidates).toEqual(expect.arrayContaining([ expect.objectContaining({ candidateId: "ZAP-130", text: "Answer Jordan Placeholder's question on ZAP-130" }) ]));
+        expect(newer.data.candidates).toEqual(expect.arrayContaining([ expect.objectContaining({ candidateId: "QRS-130", text: "Answer Jordan Placeholder's question on QRS-130" }) ]));
         expect(followUps(await call("caius_planday", { date: THU, step: "brief" }))).toEqual([]);
         expect(followUps(await call("caius_winddown", { date: THU, step: "next" }))).toEqual([]);
     });
 
     it("Tue 10 Nov: an ask raised more than 7 days ago can come back", async () => {
         at("2026-11-10T09:30");
-        expect(followUps(await call("caius_planday", { date: "2026-11-10", step: "brief", refresh: true }))).toContain("ZAP-104:2");
+        expect(followUps(await call("caius_planday", { date: "2026-11-10", step: "brief", refresh: true }))).toContain("QRS-104:2");
     });
 });
 
@@ -347,7 +347,7 @@ describe("never plan another day from a wind-down", () => {
 });
 
 describe("the work layout starts at now", () => {
-    it("Tue 11:05: the refresh lays ZAP-105 out from 11:15, not in the hour already gone", async () => {
+    it("Tue 11:05: the refresh lays QRS-105 out from 11:15, not in the hour already gone", async () => {
         calendars[TUE] = [
             { start: "09:30", end: "09:45", title: "Team Standup", attendees: [], allDay: false, declined: false, source: [ 0 ] },
             { start: "10:00", end: "10:30", title: "Weekly Planning Sync", attendees: [], allDay: false, declined: false, source: [ 0 ] },
@@ -378,29 +378,29 @@ describe("weather by date", () => {
 describe("the brief follows his list", () => {
     it("Fri 09:30: the picks and the drawing's groups are his accepted tasks in his order; a candidate he left isn't a pick", async () => {
         await cls.init(() => dayNote(FRI, `<h2>☑️ Tasks</h2>${ul(
-            li("x1", `${jiraLink("ZAP-140")} — Confirm the staging bucket ~30m`),
-            li("x2", `${jiraLink("ZAP-141")} — Review the mapper change ~45m`)
-        )}<h3>Suggested</h3>${ul(li("x3", `Get ${jiraLink("ZAP-142")} Check the export done: because it waits (~30m)`))}`));
+            li("x1", `${jiraLink("QRS-140")} — Confirm the staging bucket ~30m`),
+            li("x2", `${jiraLink("QRS-141")} — Review the mapper change ~45m`)
+        )}<h3>Suggested</h3>${ul(li("x3", `Get ${jiraLink("QRS-142")} Check the export done: because it waits (~30m)`))}`));
         calendars[FRI] = [];
         at(`${FRI}T09:30`);
         const brief = await call("caius_planday", { date: FRI, step: "brief" });
-        expect(brief.data.list.map((task: any) => [ task.label, task.minutes ])).toEqual([ [ "ZAP-140", 30 ], [ "ZAP-141", 45 ] ]);
+        expect(brief.data.list.map((task: any) => [ task.label, task.minutes ])).toEqual([ [ "QRS-140", 30 ], [ "QRS-141", 45 ] ]);
 
         const written = await call("caius_brief_write", {
             ...brief.data.shape, headline: "Clear the handoffs",
             header: { ...brief.data.shape.header, groups: [ { start: "12:00", end: "14:00", name: "Handoffs", count: 1 } ] },
             picks: [
-                { text: "Get ZAP-142 Check the export done", because: "it waits", minutes: 30 },
-                { text: "Get ZAP-141 Review the mapper change done", because: "Riley waits on it", minutes: 45 },
-                { text: "Get ZAP-140 Confirm the staging bucket done", because: "the runbook needs it", minutes: 30 }
+                { text: "Get QRS-142 Check the export done", because: "it waits", minutes: 30 },
+                { text: "Get QRS-141 Review the mapper change done", because: "Riley waits on it", minutes: 45 },
+                { text: "Get QRS-140 Confirm the staging bucket done", because: "the runbook needs it", minutes: 30 }
             ]
         });
-        expect(written.droppedPicks).toEqual([ "Get ZAP-142 Check the export done" ]);
+        expect(written.droppedPicks).toEqual([ "Get QRS-142 Check the export done" ]);
         expect(written.groups).toEqual([ { start: "10:00", end: "11:15", name: "Tasks", count: 2 } ]);
         const body = await cls.init(() => store.content(written.briefNoteId));
         expect([ ...body.matchAll(/<li[^>]*>([^<]*)<\/li>/g) ].map((m) => m[1])).toEqual([
-            "Get ZAP-140 Confirm the staging bucket done: because the runbook needs it (~30m)",
-            "Get ZAP-141 Review the mapper change done: because Riley waits on it (~45m)"
+            "Get QRS-140 Confirm the staging bucket done: because the runbook needs it (~30m)",
+            "Get QRS-141 Review the mapper change done: because Riley waits on it (~45m)"
         ]);
     });
 });
@@ -409,7 +409,7 @@ describe("an evening thing he names", () => {
     it("goes on his list under Evening, above Suggested, reads as Recharge there, and is drawn after the end of work", async () => {
         const day = "2026-11-12";
         await cls.init(() => dayNote(day, `<h3>Meetings</h3><ul><li>10:00 Daily Standup</li></ul><h3>Context</h3><ul><li>Taking Incident Review</li></ul>`
-            + `<h2>☑️ Tasks</h2>${ul(li("e1", `${jiraLink("ZAP-150")} — Review the mapper ~30m`))}<h3>Suggested</h3>${ul(li("e2", `Get ${jiraLink("ZAP-151")} Check it done: because it waits (~30m)`))}`));
+            + `<h2>☑️ Tasks</h2>${ul(li("e1", `${jiraLink("QRS-150")} — Review the mapper ~30m`))}<h3>Suggested</h3>${ul(li("e2", `Get ${jiraLink("QRS-151")} Check it done: because it waits (~30m)`))}`));
         calendars[day] = [ { start: "10:00", end: "10:15", title: "Daily Standup", attendees: [], allDay: false, declined: false, source: [ 0 ] } ];
         at(`${day}T09:30`);
         const added = await call("caius_add", { items: [ { date: day, section: "Evening", text: "Laundry ~45m" } ] });
@@ -446,7 +446,7 @@ describe("an accepted suggestion reads like his own task", () => {
     it("counts its estimate, keeps a clean label, and still matches its pick", async () => {
         const day = "2026-11-16";
         const noteId = await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("b1", "His own first thing ~30m"))}<h3>Suggested</h3>${ul(
-            li("bs1", `Get ${jiraLink("ZAP-111")} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
+            li("bs1", `Get ${jiraLink("QRS-111")} Check the invoice export in QA done: because sitting in QA Testing for 3 days (~45m)`),
             li("bs2", "Get Book the venue done: because the quote expires Friday (~15m)")
         )}`));
         calendars[day] = [];
@@ -457,7 +457,7 @@ describe("an accepted suggestion reads like his own task", () => {
         const brief = await call("caius_planday", { date: day, step: "brief" });
         expect(brief.data.list.map((task: any) => [ task.label, task.text, task.minutes ])).toEqual([
             [ "His own first thing", "His own first thing", 30 ],
-            [ "ZAP-111", "ZAP-111 Check the invoice export in QA", 45 ],
+            [ "QRS-111", "QRS-111 Check the invoice export in QA", 45 ],
             [ "Book the venue", "Book the venue", 15 ]
         ]);
         const written = await call("caius_brief_write", { ...brief.data.shape, headline: "Venue and the export", picks: [
@@ -493,7 +493,7 @@ describe("week items", () => {
 
 describe("finished clears Suggested", () => {
     it("dismisses the key's Suggested items from today on, and leaves earlier days alone", async () => {
-        const suggestion = (id: string) => `<h3>Suggested</h3>${ul(li(id, `Get ${jiraLink("ZAP-170")} Check the export done: because it waits (~30m)`))}`;
+        const suggestion = (id: string) => `<h3>Suggested</h3>${ul(li(id, `Get ${jiraLink("QRS-170")} Check the export done: because it waits (~30m)`))}`;
         await cls.init(async () => {
             for (const [ date, id ] of [ [ "2026-11-18", "f18" ], [ "2026-11-19", "f19" ], [ "2026-11-20", "f20" ] ]) {
                 const note = await store.calendarDay(date);
@@ -501,7 +501,7 @@ describe("finished clears Suggested", () => {
             }
         });
         at("2026-11-19T09:30");
-        const finished = await call("caius_finished", { keys: [ "ZAP-170" ] });
+        const finished = await call("caius_finished", { keys: [ "QRS-170" ] });
         expect(finished.dismissed.map((d: any) => [ d.listItemId, d.status ])).toEqual([ [ "f19", "dismissed" ], [ "f20", "dismissed" ] ]);
         const suggested = async (date: string) => (await call("caius_plan", { period: "day", date })).suggested.map((task: any) => task.listItemId);
         expect(await suggested("2026-11-18")).toContain("f18");
@@ -511,13 +511,13 @@ describe("finished clears Suggested", () => {
 });
 
 describe("a done task closes its own ticket only", () => {
-    it("\"Reply to Riley on ZAP-180, unblocks ZAP-181\" done closes ZAP-180 and leaves ZAP-181 on offer", async () => {
-        jira.handoff.push({ ...ticket("ZAP-180"), daysInStatus: 2 }, { ...ticket("ZAP-181"), daysInStatus: 2 });
-        await cls.init(() => dayNote("2026-11-23", `<h2>☑️ Tasks</h2>${ul(li("r1", "Reply to Riley on ZAP-180, unblocks ZAP-181", { checked: true }))}`));
+    it("\"Reply to Riley on QRS-180, unblocks QRS-181\" done closes QRS-180 and leaves QRS-181 on offer", async () => {
+        jira.handoff.push({ ...ticket("QRS-180"), daysInStatus: 2 }, { ...ticket("QRS-181"), daysInStatus: 2 });
+        await cls.init(() => dayNote("2026-11-23", `<h2>☑️ Tasks</h2>${ul(li("r1", "Reply to Riley on QRS-180, unblocks QRS-181", { checked: true }))}`));
         at("2026-11-24T09:30");
         const offered = sources(await call("caius_planday", { date: "2026-11-24", step: "inputs" }));
-        expect(offered).not.toContain("ZAP-180");
-        expect(offered).toContain("ZAP-181");
+        expect(offered).not.toContain("QRS-180");
+        expect(offered).toContain("QRS-181");
     });
 });
 
@@ -529,13 +529,13 @@ describe("where a Context line goes", () => {
     };
     // The reviewer's examples: where each line lands, and when it ends.
     const DAY: string[] = [
-        "Riley is out today", "Heads down until lunch", "Pair with Sam on ZAP-110 at 14:00",
+        "Riley is out today", "Heads down until lunch", "Pair with Sam on QRS-110 at 14:00",
         "Taking Incident Review over Vendor Onboarding at 11:00", "Dentist 15:00, offline until 16:30", "Gym is off tonight",
         "Riley out tomorrow", "Kick off the migration", "Back up the prod DB first", "Sign off on the release notes",
         "Wind down early, school play", "Jordan off sick"
     ];
     const WEEK: [ string, string | null ][] = [
-        [ "ZAP-2590 is open; Jira's Done is a mistake.", null ], [ "Sam's off this week", null ], [ "Release freeze this week", null ],
+        [ "QRS-2590 is open; Jira's Done is a mistake.", null ], [ "Sam's off this week", null ], [ "Release freeze this week", null ],
         [ "Jaco out all week.", null ], [ "Vendor freeze until Friday", null ], [ "Code review paused until 27 Nov", null ],
         [ "Staging is down", day ], [ "Jordan covering for Jaco", day ], [ "Jaco is on PTO", day ], [ "Sam is on vacation", day ],
         [ "Pat is on holiday", day ], [ "Riley is out Thursday", day ], [ "Code freeze from Wednesday", day ],
@@ -557,37 +557,37 @@ describe("where a Context line goes", () => {
 describe("a same-day refresh keeps the Follow up", () => {
     it("09:35 raises the ask, 11:05 still has it, and the next morning drops it", async () => {
         const day = "2026-11-26";
-        jira.asks.push({ ticket: ticket("ZAP-190"), author: "Riley Sample", created: "2026-11-25T15:00:00.000Z", commentId: "30", excerpt: "Is the bucket confirmed?" });
-        await offeredOn("2026-11-21", "ZAP-190:30");
+        jira.asks.push({ ticket: ticket("QRS-190"), author: "Riley Sample", created: "2026-11-25T15:00:00.000Z", commentId: "30", excerpt: "Is the bucket confirmed?" });
+        await offeredOn("2026-11-21", "QRS-190:30");
         await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("q1", "Something ~30m"))}`));
         const raised = (answer: any) => answer.data.followUps.map((f: any) => `${f.key}:${f.commentId}`);
 
         at(`${day}T09:35`);
         const morning = await call("caius_planday", { date: day, step: "brief", refresh: true });
-        expect(raised(morning)).toContain("ZAP-190:30");
-        await call("caius_brief_write", { ...morning.data.shape, headline: "Morning", sections: [ { title: "Follow up", markdown: "Riley asked on ZAP-190 whether the bucket is confirmed." } ] });
+        expect(raised(morning)).toContain("QRS-190:30");
+        await call("caius_brief_write", { ...morning.data.shape, headline: "Morning", sections: [ { title: "Follow up", markdown: "Riley asked on QRS-190 whether the bucket is confirmed." } ] });
 
         at(`${day}T11:05`);
-        expect(raised(await call("caius_planday", { date: day, step: "brief" }))).toContain("ZAP-190:30");
+        expect(raised(await call("caius_planday", { date: day, step: "brief" }))).toContain("QRS-190:30");
         at("2026-11-27T09:30");
-        expect(raised(await call("caius_planday", { date: "2026-11-27", step: "brief", refresh: true }))).not.toContain("ZAP-190:30");
+        expect(raised(await call("caius_planday", { date: "2026-11-27", step: "brief", refresh: true }))).not.toContain("QRS-190:30");
     });
 });
 
 describe("what counts as raised", () => {
     it("records every follow-up passed when the Follow up has text, whatever its wording, and none without one", async () => {
         const day = "2026-11-30";
-        jira.asks.push({ ticket: ticket("ZAP-191"), author: "Jordan Placeholder", created: "2026-11-27T15:00:00.000Z", commentId: "31", excerpt: "Can you check?" });
-        jira.asks.push({ ticket: ticket("ZAP-192"), author: "Sam Example", created: "2026-11-27T16:00:00.000Z", commentId: "32", excerpt: "Any news?" });
-        await offeredOn("2026-11-28", "ZAP-191:31", "ZAP-192:32");
+        jira.asks.push({ ticket: ticket("QRS-191"), author: "Jordan Placeholder", created: "2026-11-27T15:00:00.000Z", commentId: "31", excerpt: "Can you check?" });
+        jira.asks.push({ ticket: ticket("QRS-192"), author: "Sam Example", created: "2026-11-27T16:00:00.000Z", commentId: "32", excerpt: "Any news?" });
+        await offeredOn("2026-11-28", "QRS-191:31", "QRS-192:32");
         await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("v1", "Something ~30m"))}`));
         at(`${day}T09:30`);
         const brief = await call("caius_planday", { date: day, step: "brief", refresh: true });
         const passed = brief.data.shape.followUps;
-        expect(passed).toEqual([ { key: "ZAP-191", commentId: "31" }, { key: "ZAP-192", commentId: "32" } ]);
+        expect(passed).toEqual([ { key: "QRS-191", commentId: "31" }, { key: "QRS-192", commentId: "32" } ]);
         const raisedOn = async (noteId: string) => (await cls.init(() => store.note(noteId))).attributes.filter((a) => a.name === "caiusRaised").map((a) => a.value).sort();
 
-        const quiet = await call("caius_brief_write", { ...brief.data.shape, headline: "Quiet", sections: [ { title: "Follow up", markdown: " " }, { title: "Heads-up", markdown: "ZAP-191 shipped." } ] });
+        const quiet = await call("caius_brief_write", { ...brief.data.shape, headline: "Quiet", sections: [ { title: "Follow up", markdown: " " }, { title: "Heads-up", markdown: "QRS-191 shipped." } ] });
         expect(await raisedOn(quiet.briefNoteId)).toEqual([]);
 
         const written = await call("caius_brief_write", { ...brief.data.shape, headline: "Asks", sections: [ { title: "Follow up", markdown: "Jordan asked whether you could check the export." } ] });
@@ -598,16 +598,16 @@ describe("what counts as raised", () => {
         const schema = [ ...tools ].find(([ n ]) => n === "caius_brief_write")?.[1].inputSchema;
         const shape = { date: "2026-11-30", headline: "x", acts: [ { range: "", text: "" }, { range: "", text: "" }, { range: "", text: "" } ], picks: [], sections: [],
             header: { start: "10:00", end: "23:00", events: [], groups: [] } };
-        expect(schema?.safeParse({ ...shape, followUps: [ { key: "ZAP-1", commentId: "1" } ] }).success).toBe(true);
-        expect(schema?.safeParse({ ...shape, followUps: [ { key: "ZAP.*", commentId: "1" } ] }).success).toBe(false);
+        expect(schema?.safeParse({ ...shape, followUps: [ { key: "QRS-1", commentId: "1" } ] }).success).toBe(true);
+        expect(schema?.safeParse({ ...shape, followUps: [ { key: "QRS.*", commentId: "1" } ] }).success).toBe(false);
     });
 });
 
 describe("done in Jira", () => {
     it("flags the wind-down's open items whose ticket Jira calls done", async () => {
         const day = "2026-12-01";
-        jira.done.push("ZAP-104");
-        await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("j1", `${jiraLink("ZAP-104")} — Remove the legacy job ~30m`), li("j2", "Plain thing ~30m"))}`));
+        jira.done.push("QRS-104");
+        await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2>${ul(li("j1", `${jiraLink("QRS-104")} — Remove the legacy job ~30m`), li("j2", "Plain thing ~30m"))}`));
         at(`${day}T17:30`);
         const answer = await call("caius_winddown", { date: day, step: "open" });
         expect(answer.data.items.filter((item: any) => item.group === "today").map((item: any) => [ item.listItemId, item.jiraDone ?? false ])).toEqual([ [ "j1", true ], [ "j2", false ] ]);
@@ -615,17 +615,17 @@ describe("done in Jira", () => {
 });
 
 describe("accepting past an Evening list", () => {
-    it("Thu: with only laundry under Evening, accepting ZAP-9 lands under Tasks and counts as work", async () => {
+    it("Thu: with only laundry under Evening, accepting QRS-9 lands under Tasks and counts as work", async () => {
         const day = "2026-12-03";
         const noteId = await cls.init(() => dayNote(day, `<h2>☑️ Tasks</h2><h3>Evening</h3>${ul(li("l1", "Laundry ~45m"))}<h3>Suggested</h3>${ul(
-            li("z9", `Get ${jiraLink("ZAP-9")} Fix it done: because it waits (~45m)`))}`));
+            li("z9", `Get ${jiraLink("QRS-9")} Fix it done: because it waits (~45m)`))}`));
         calendars[day] = [];
         at(`${day}T09:30`);
         expect((await call("caius_accept", { items: [ { noteId, listItemId: "z9" } ] })).results[0]).toMatchObject({ status: "accepted" });
         const plan = await call("caius_plan", { period: "day", date: day });
         expect(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.listItemId) ])).toEqual([ [ "☑️ Tasks", [ "z9" ] ], [ "Evening", [ "l1" ] ] ]);
         const brief = await call("caius_planday", { date: day, step: "brief" });
-        expect(brief.data.list.map((task: any) => [ task.label, task.area ])).toEqual([ [ "ZAP-9", "foundation" ], [ "Laundry", "recharge" ] ]);
+        expect(brief.data.list.map((task: any) => [ task.label, task.area ])).toEqual([ [ "QRS-9", "foundation" ], [ "Laundry", "recharge" ] ]);
         expect(brief.data.header.groups.find((group: any) => group.name === "Tasks")).toMatchObject({ start: "10:00", end: "10:45" });
     });
 });
