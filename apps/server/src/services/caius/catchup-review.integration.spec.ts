@@ -2,7 +2,8 @@
  * A review: the wind-down of an older day run from a later one, as the catch-up's Review or a
  * Monday-morning Wind down of Friday. "Later this week" and "next week" count from the day the
  * review works against, not from the week the reviewed day is in.
- * It writes only the reviewed day: what it would offer or write for the target day is left to Plan my day.
+ * It writes the reviewed day, its keep lines and his own Context lines: what it would offer for the
+ * target day is left to Plan my day.
  */
 
 import { dayCapacity } from "@triliumnext/caius";
@@ -94,7 +95,7 @@ async function labelsOf(date: string, name: string) {
     return note?.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) ?? [];
 }
 
-describe("a catch-up review writes only the reviewed day", () => {
+describe("a catch-up review writes the reviewed day, its keep lines and his own Context lines", () => {
     beforeAll(async () => {
         jira.handoff.push(
             { ...ticket("ABC-21", "Check the invoice export"), daysInStatus: 2 },
@@ -365,5 +366,29 @@ describe("a review asks nothing Plan my day asks", () => {
         expect(applied.say).toContain("'Ben is out Thursday' is noted");
         const monday = await call("caius_context", { date: TODAY });
         expect(monday.context.map((line: any) => line.text)).toContain("Ben is out Thursday");
+    });
+
+    it("Mon 19:00, Review of Fri 6: a carry line passed as a keep is left for Plan my day, and the keep line is kept", async () => {
+        const SIXTH = "2026-11-06";
+        await cls.init(async () => {
+            const sixth = await store.calendarDay(SIXTH);
+            await store.putContent(sixth.noteId, `<h3>Context</h3>${bullets("ABC-32 is open (until Mon 9 Nov)", "Ben covers the release (until Fri 20 Nov)")}`);
+        });
+        at(`${TODAY}T19:00`);
+        const keep = lineIdOf("ABC-32 is open");
+        const carry = lineIdOf("Ben covers the release");
+        const answers = { date: SIXTH, keep: [ { lineId: keep }, { lineId: carry } ] };
+        const left = { kind: "carry", id: carry, text: "Ben covers the release", reason: "review_only", detail: expect.stringContaining("Plan my day") };
+        const applied = await call("caius_winddown_apply", answers);
+        expect(applied.written).toContainEqual(expect.objectContaining({ kind: "keep", id: keep, status: "written" }));
+        expect(applied.skipped).toEqual([ left ]);
+        const monday = (await call("caius_context", { date: TODAY })).context.map((line: any) => line.text);
+        expect(monday).toContain("ABC-32 is open");
+        expect(monday).not.toContain("Ben covers the release");
+
+        // The same call again finds the keep line in place, and the carry is still left for Plan my day.
+        const again = await call("caius_winddown_apply", answers);
+        expect(again.written).toContainEqual(expect.objectContaining({ kind: "keep", id: keep, status: "unchanged" }));
+        expect(again.skipped).toEqual([ left ]);
     });
 });
