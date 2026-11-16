@@ -119,7 +119,7 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
                         {slips && <span class="slip-count mono" title={`Moved ${view?.slips} times`}>{slips}</span>}
                         {view?.ticket && <span class="ticket-chip mono">{view.ticket.key}{view.ticket.status && ` · ${view.ticket.status}`}</span>}
                     </div>
-                    {forwardedTo ? <div class="task-row-detail">Forwarded → {forwardedTo}</div> : detail && <div class="task-row-detail">{detail}</div>}
+                    {forwardedTo && task.state === "tombstone" ? <div class="task-row-detail">Forwarded → {forwardedTo}</div> : detail && <div class="task-row-detail">{detail}</div>}
                 </div>
                 {trailing ?? (live ? <Est minutes={task.estMinutes} /> : null)}
             </div>
