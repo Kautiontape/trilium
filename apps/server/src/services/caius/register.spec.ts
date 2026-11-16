@@ -63,6 +63,8 @@ it("offers the caius skill only while it is registered, and names every tool the
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",
         "Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date.",
+        "A weekday he names reads from the ritual's date, not the clock: that date's own weekday name is that date, any other is the next one after it.",
+        "A task you bring into a day laid out in blocks needs its block: put it there with `caius_place` (or `block` on `caius_add`) and say which in one clause.",
         "\"Later this week\" and \"this week\" are the week ref `w1` in `data.days`, and \"next week\" is `w2`: never a date.",
         "Name each item in an answer by its `ref` from the step data (such as `o3fa9c` or `d1`) or by his own words: a ticket key or its number (\"101\"), or a distinctive word (\"the bag\")",
         "When `say` ends with a which-question, the items it names stay open until he answers; his answer is one more apply call naming them.",
