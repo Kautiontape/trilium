@@ -2,7 +2,11 @@ import type { CKTextEditor } from "@triliumnext/ckeditor5";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
-    notes: {} as Record<string, { blobId: string; getOwnedLabelValue?: (name: string) => string | null }>,
+    notes: {} as Record<string, {
+        blobId: string;
+        getOwnedLabelValue?: (name: string) => string | null;
+        hasOwnedLabel?: (name: string) => boolean;
+    }>,
     blobPromises: {} as Record<string, unknown>,
     getBlob: vi.fn(async (_entityType: string, _noteId: string): Promise<{ content: string } | null> => null),
     getComponentByEl: vi.fn(),
@@ -44,7 +48,8 @@ import { noteSavedDataStore, setEditorNoteId } from "../widgets/react/NoteStore.
 import {
     ANSWER_TIMEOUT_MS, CAIUS_WRITE_LOCK, caiusApi, caiusClockMinutes, caiusNow, type CaiusItemResult, caiusWrite, describeSkip,
     flushEditors,
-    forgetCaiusStatus, isCaiusEnabled, openPeriodNoteIds, RELOAD_TIMEOUT_MS, startCaiusConversation
+    forgetCaiusStatus, isCaiusEnabled, movesCaiusClock, openPeriodNoteIds, refreshCaiusClock, RELOAD_TIMEOUT_MS,
+    startCaiusConversation, wasCaiusEnabled
 } from "./caius.js";
 import type LoadResults from "./load_results.js";
 
@@ -691,6 +696,104 @@ describe("isCaiusEnabled", () => {
     it("reads enabled: false, which the server answers when the service fails to load", async () => {
         h.getWithSilentNotFound.mockResolvedValueOnce({ enabled: false, detail: "Cannot find module" });
         await expect(isCaiusEnabled()).resolves.toBe(false);
+    });
+});
+
+describe("movesCaiusClock", () => {
+    const changes = (rows: { name: string; noteId: string; isDeleted?: boolean }[], noteIds: string[] = []) => ({
+        getAttributeRows: () => rows,
+        getNoteIds: () => noteIds
+    }) as unknown as LoadResults;
+
+    afterEach(() => {
+        delete h.notes.standing;
+        delete h.notes.plain;
+    });
+
+    it("is true for a started label or the standing note's label, set or deleted, on any note", () => {
+        expect(movesCaiusClock(changes([ { name: "caiusStarted", noteId: "unknown" } ]))).toBe(true);
+        expect(movesCaiusClock(changes([ { name: "caiusStarted", noteId: "unknown", isDeleted: true } ]))).toBe(true);
+        expect(movesCaiusClock(changes([ { name: "assistantContext", noteId: "standing" } ]))).toBe(true);
+    });
+
+    it("is true for a changed note the client holds with the standing label", () => {
+        h.notes.standing = { blobId: "b", hasOwnedLabel: (name) => name === "assistantContext" };
+        h.notes.plain = { blobId: "b", hasOwnedLabel: () => false };
+
+        expect(movesCaiusClock(changes([], [ "standing" ]))).toBe(true);
+        expect(movesCaiusClock(changes([], [ "plain", "unknown" ]))).toBe(false);
+    });
+
+    it("is false for other labels", () => {
+        expect(movesCaiusClock(changes([
+            { name: "caiusFocus", noteId: "n1" }, { name: "color", noteId: "n2", isDeleted: true }
+        ]))).toBe(false);
+    });
+});
+
+describe("refreshCaiusClock", () => {
+    beforeEach(() => {
+        forgetCaiusStatus();
+        h.getWithSilentNotFound.mockReset();
+        vi.useFakeTimers({ toFake: [ "Date" ] });
+        vi.setSystemTime(new Date(2026, 10, 9, 1, 30));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("follows a day started early, and is the day before again when it is taken back", async () => {
+        h.getWithSilentNotFound
+            .mockResolvedValueOnce({ enabled: true, rollover: "04:00" })
+            .mockResolvedValueOnce({
+                enabled: true, rollover: "00:00", started: "2026-11-09T01:20:00", rhythmRollover: "04:00"
+            })
+            .mockResolvedValueOnce({ enabled: true, rollover: "04:00" });
+        await isCaiusEnabled();
+        expect(caiusNow().getDate()).toBe(8);
+
+        await refreshCaiusClock();
+        expect(caiusNow().getDate()).toBe(9);
+
+        await refreshCaiusClock();
+        expect(caiusNow().getDate()).toBe(8);
+        expect(h.getWithSilentNotFound).toHaveBeenCalledTimes(3);
+    });
+
+    it("follows the latest answer when an older one arrives after it", async () => {
+        const answers: ((status: unknown) => void)[] = [];
+        h.getWithSilentNotFound.mockImplementation(
+            () => new Promise((resolve) => answers.push(resolve))
+        );
+        const first = isCaiusEnabled();
+        const refresh = refreshCaiusClock();
+        const [ resolveFirst, resolveSecond ] = answers;
+
+        resolveSecond({
+            enabled: true, rollover: "00:00", started: "2026-11-09T01:20:00", rhythmRollover: "04:00"
+        });
+        await refresh;
+        expect(caiusNow().getDate()).toBe(9);
+
+        resolveFirst({ enabled: true, rollover: "04:00" });
+        await expect(first).resolves.toBe(true);
+        expect(caiusNow().getDate()).toBe(9);
+    });
+
+    it("keeps the latest answer and its cache when an older request fails after it", async () => {
+        const answers: { resolve: (status: unknown) => void; reject: (error: unknown) => void }[] = [];
+        h.getWithSilentNotFound.mockImplementation(
+            () => new Promise((resolve, reject) => answers.push({ resolve, reject }))
+        );
+        const first = isCaiusEnabled();
+        const refresh = refreshCaiusClock();
+
+        answers[1].resolve({ enabled: true });
+        await refresh;
+        answers[0].reject("offline");
+
+        await expect(first).resolves.toBe(true);
+        await expect(isCaiusEnabled()).resolves.toBe(true);
+        expect(wasCaiusEnabled()).toBe(true);
+        expect(h.getWithSilentNotFound).toHaveBeenCalledTimes(2);
     });
 });
 

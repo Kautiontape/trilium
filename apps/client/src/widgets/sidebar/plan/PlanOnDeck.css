@@ -5,6 +5,10 @@
         gap: 4px;
     }
 
+    li.done > .plan-parent-row .plan-task-text {
+        text-decoration: line-through;
+    }
+
     .plan-sub-items {
         margin: 0;
         padding-inline-start: 28px;

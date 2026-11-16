@@ -306,12 +306,28 @@ describe("sub-items", () => {
         task({ listItemId: "p4", text: "Four", parent: "Caius fixes", parentListItemId: "p", state: "cancelled" })
     ];
 
-    it("keeps a done parent's open sub-item in On deck, and a live parent's sub-items under it", () => {
-        const done = { ...parent, state: "done" as const };
-        const decked = { ...planOf([]), onDeck: [ done, ...subs ] };
-        expect(onDeckTasks(decked).map((t) => t.listItemId)).toEqual([ "p2", "p3" ]);
-        expect(onDeckTasks({ ...planOf([]), onDeck: [ parent, ...subs ] }).map((t) => t.listItemId))
-            .toEqual([ "p" ]);
+    it("lists a done parent with open sub-items as one row, and its sub-items under it", () => {
+        const ids = (...onDeck: CaiusPlanTask[]) =>
+            onDeckTasks({ ...planOf([]), onDeck }).map((t) => t.listItemId);
+        expect(ids({ ...parent, state: "done" }, ...subs)).toEqual([ "p" ]);
+        expect(ids(parent, ...subs)).toEqual([ "p" ]);
+
+        const settled = [ subs[0], { ...subs[3], state: "cancelled" as const } ];
+        expect(ids({ ...parent, state: "done" }, ...settled)).toEqual([]);
+
+        expect(ids({ ...parent, state: "cancelled" }, ...subs)).toEqual([ "p2", "p3" ]);
+        expect(ids(task({ listItemId: "s", text: "Solo" }), parent, subs[1])).toEqual([ "s", "p" ]);
+    });
+
+    it("lists a task nested under a sub-item, and a done sub-item parent of a live one", () => {
+        const ids = (...onDeck: CaiusPlanTask[]) =>
+            onDeckTasks({ ...planOf([]), onDeck }).map((t) => t.listItemId);
+        const a = task({ listItemId: "A", text: "Alpha" });
+        const b = task({ listItemId: "B", text: "Beta", parent: "Alpha", parentListItemId: "A" });
+        const c = task({ listItemId: "C", text: "Gamma", parent: "Beta", parentListItemId: "B" });
+        expect(ids(a, b, c)).toEqual([ "A", "C" ]);
+        expect(ids(a, { ...b, state: "done" }, c)).toEqual([ "A", "C" ]);
+        expect(ids({ ...a, state: "done" }, { ...b, state: "done" }, c)).toEqual([ "B" ]);
     });
 
     it("counts a parent's direct sub-items as done over total, or as open for a done parent", () => {
