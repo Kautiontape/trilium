@@ -2,7 +2,7 @@ import { htmlToMarkdown } from "@triliumnext/caius";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, copyKey, fitted, isReview, MAX_REPLY_CHARS, namedDays, plainText, SCHEDULED, withoutMoveLinks } from "./daily.js";
+import { carryQuestion, copyKey, fitted, isReview, MAX_REPLY_CHARS, movedOn, namedDays, plainText, SCHEDULED, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -29,6 +29,17 @@ describe("withoutMoveLinks", () => {
         expect(withoutMoveLinks("Message Dave [from Friday 30](#root/abc) _scheduled [Tuesday 3](#root/def)_")).toBe("Message Dave");
         expect(withoutMoveLinks("Get a quote from Acme 2")).toBe("Get a quote from Acme 2");
         expect(withoutMoveLinks("See [Plan](#root/zz) scheduled Tuesday 3")).toBe("See [Plan](#root/zz) scheduled Tuesday 3");
+    });
+});
+
+describe("movedOn", () => {
+    it("is true for a tombstone and for a marked line, false for an open or bare-marked one", () => {
+        const mark = "Ring the plumber _scheduled [Tue 3 Nov](#root/tue)_";
+        expect(movedOn({ state: "tombstone", text: "Ring the plumber" })).toBe(true);
+        expect(movedOn({ state: "done", text: mark })).toBe(true);
+        expect(movedOn({ state: "open", text: mark })).toBe(true);
+        expect(movedOn({ state: "open", text: "Ring the plumber" })).toBe(false);
+        expect(movedOn({ state: "open", text: "Ring the plumber _scheduled_" })).toBe(false);
     });
 });
 

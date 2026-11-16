@@ -79,6 +79,7 @@ import {
     listOf,
     mainTasks,
     deckTasks,
+    movedOn,
     type NamedDay,
     namedDays,
     nextAsked,
@@ -947,7 +948,7 @@ async function refTable(store: NoteStore, now: Date, known: Map<string, Candidat
         const period = /^Journal\/\w+\/([^/]+?)(?:\.md|\/)/.exec(task.file)?.[1] ?? "";
         const from = /\[from [^\]]*\]\(#root\/([^)]+)\)/.exec(task.text)?.[1] ?? null;
         // A moved task is told by its "scheduled" link too, since its checked box reads as done where the Rescheduled state isn't known.
-        const moved = task.state === "tombstone" || /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/.test(task.text);
+        const moved = movedOn(task);
         const entry = { id, text: plainText(withoutMoveLinks(task.text)), settled: !task.live, item: { state: task.state, moved, noteId: doc.noteId, period, from } };
         put(refOf("o", id), entry);
         put(refOf("l", id), entry);

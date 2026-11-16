@@ -6,7 +6,7 @@
 
 import { bareText, loadJournal, type NoteStore, scanDocs, TRILIUM_CONFIG, type TriliumDoc } from "@triliumnext/caius";
 
-import { copyKey, fromOf, plainText, SCHEDULED, withoutMoveLinks } from "./daily.js";
+import { copyKey, fromOf, movedOn, plainText, withoutMoveLinks } from "./daily.js";
 
 export type TrailPeriodKind = "day" | "week" | "month";
 
@@ -56,10 +56,10 @@ export function trailsOf(docs: TriliumDoc[], now: Date, scan: ScanResult = scanD
         const where = doc && periodOf(task.file);
         if (!doc || !where) continue;
         const key = trailKey(task.text, doc.noteId);
-        const movedOn = task.state === "tombstone" || SCHEDULED.test(task.text);
+        const moved = movedOn(task);
         const trail = result.get(key) ?? { key, copies: [], slips: 0 };
-        trail.copies.push({ ...where, noteId: doc.noteId, listItemId: doc.itemIds.get(task.line) ?? null, state: task.state, movedOn });
-        if (movedOn && where.kind === "day") trail.slips++;
+        trail.copies.push({ ...where, noteId: doc.noteId, listItemId: doc.itemIds.get(task.line) ?? null, state: task.state, movedOn: moved });
+        if (moved && where.kind === "day") trail.slips++;
         result.set(key, trail);
     }
     for (const trail of result.values()) trail.copies.sort(byPeriod);

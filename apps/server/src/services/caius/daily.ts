@@ -228,6 +228,9 @@ export function fromOf(text: string): string | null {
 
 export const SCHEDULED = /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/;
 
+/** A task that moved on from its note: a tombstone, or a line carrying a forward's `_scheduled [..](#root/..)_` mark. */
+export const movedOn = (task: { state: string; text: string }): boolean => task.state === "tombstone" || SCHEDULED.test(task.text);
+
 /**
  * A copy's key: the note it came from and its words without an estimate, which a moved source keeps
  * in its text, or the reason a drop adds to it (`_not needed_`).
@@ -648,8 +651,8 @@ export async function yesterdayOf(store: NoteStore, date: string, now: Date) {
         return { date: day, done: 0, moved: 0, dropped: 0, open: 0, woundDown: false, planned: false, onDeck: landed, sentence: t("caius.daily.yesterday_empty", { day: weekdayName(day) }) };
     }
     const tasks = [ await readPlan(store, "day", day, now), ...await readDuplicatePlans(store, "day", day, now) ].flatMap(topLevel);
-    const moved = tasks.filter((task) => task.state === "tombstone" || SCHEDULED.test(task.text)).length;
-    const done = tasks.filter((task) => task.state === "done" && !SCHEDULED.test(task.text)).length;
+    const moved = tasks.filter(movedOn).length;
+    const done = tasks.filter((task) => task.state === "done" && !movedOn(task)).length;
     const dropped = tasks.filter((task) => task.state === "cancelled").length;
     const open = tasks.filter((task) => isLive(task)).length;
     const woundDown = label(note, WOUND_DOWN_LABEL) !== undefined;
