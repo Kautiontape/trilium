@@ -280,10 +280,10 @@ describe("caius_winddown_apply", () => {
         expect(result).toMatchObject({ targetDay: "2026-11-03", targetDayLabel: "Tue 3 Nov" });
 
         const monday = await call("caius_plan", { period: "day", date: MON });
-        // Every item is closed: QRS-111 done, the rest forwarded with a "scheduled" link.
+        // Every item is closed: ZAP-111 done, the rest forwarded (tombstones) with a "scheduled" link.
         const closed = monday.sections.flatMap((s: any) => s.tasks).map((t: any) => [ t.state, /_scheduled \[(Tue 3 Nov|week 45)\]/.exec(textOf(t))?.[1] ?? null, textOf(t).slice(0, 12) ]);
         expect(closed).toEqual([
-            [ "done", "Tue 3 Nov", "Message Dave" ], [ "done", null, "[QRS-111](ht" ], [ "done", "week 45", "[QRS-101](ht" ], [ "done", "Tue 3 Nov", "🔋 Laundry _" ]
+            [ "tombstone", "Tue 3 Nov", "Message Dave" ], [ "done", null, "[ZAP-111](ht" ], [ "tombstone", "week 45", "[ZAP-101](ht" ], [ "tombstone", "Tue 3 Nov", "🔋 Laundry _" ]
         ]);
         const tuesday = await call("caius_plan", { period: "day", date: "2026-11-03" });
         // Dave, proposed for Tuesday, waits on its On deck; the Recharge Laundry stays on the list, in the evening.
@@ -324,6 +324,6 @@ describe("caius_plan_apply on a day that hasn't started", () => {
         expect(await call("caius_plan_apply", { ...said, date: "2026-11-06" })).toMatchObject({ error: "not_today", dateLabel: "Fri 6 Nov" });
         const result = await call("caius_plan_apply", { ...said, date: "2026-11-06", early: true });
         expect(result.error).toBeUndefined();
-        expect((await call("caius_plan", { period: "day", date: "2026-11-06" })).context.map((line: any) => line.text)).toContain("The office is closed on Friday");
+        expect((await call("caius_context", { date: "2026-11-06" })).context.map((line: any) => line.text)).toContain("The office is closed on Friday");
     });
 });

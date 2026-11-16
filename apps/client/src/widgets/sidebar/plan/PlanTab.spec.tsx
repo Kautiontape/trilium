@@ -29,16 +29,37 @@ const api = vi.hoisted(() => ({
 const caiusWrite = vi.hoisted(() => vi.fn());
 const startCaiusConversation = vi.hoisted(() => vi.fn());
 const caiusEnabled = vi.hoisted(() => ({ value: true }));
-vi.mock("../../../services/caius", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../../services/caius")>()),
-    caiusApi: api,
-    caiusWrite,
-    startCaiusConversation,
-    isCaiusEnabled: async () => caiusEnabled.value,
-    wasCaiusEnabled: () => false,
-    findOpenEditors: () => [],
-    openPeriodNoteIds: (key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])
+const clock = vi.hoisted(() => ({ now: null as Date | null, next: null as Date | null }));
+const refreshCaiusClock = vi.hoisted(() => vi.fn());
+const trackStartedNotes = vi.hoisted(() => vi.fn());
+const refresh = vi.hoisted(() => ({
+    deferred: false,
+    calls: 0,
+    pending: [] as (() => void)[],
+    promise: null as Promise<void> | null
 }));
+vi.mock("../../../services/caius", async (importOriginal) => {
+    const original = await importOriginal<typeof import("../../../services/caius")>();
+    return {
+        ...original,
+        caiusNow: () => clock.now ?? original.caiusNow(),
+        caiusClockMinutes: (now: Date) => clock.now
+            ? now.getHours() * 60 + now.getMinutes()
+            : original.caiusClockMinutes(now),
+        refreshCaiusClock,
+        trackStartedNotes,
+        caiusApi: api,
+        caiusWrite,
+        startCaiusConversation,
+        isCaiusEnabled: async () => {
+            await refresh.promise;
+            return caiusEnabled.value;
+        },
+        wasCaiusEnabled: () => false,
+        findOpenEditors: () => [],
+        openPeriodNoteIds: (key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])
+    };
+});
 
 const activeNote = vi.hoisted(() => ({ current: null as FNote | null }));
 vi.mock("../../react/hooks", async (importOriginal) => ({
@@ -80,6 +101,35 @@ describe("PlanTab", () => {
         vi.useFakeTimers({ toFake: [ "Date" ] });
         vi.setSystemTime(new Date(2026, 9, 27, 16, 0));
         vi.clearAllMocks();
+        clock.now = null;
+        clock.next = null;
+        refresh.deferred = false;
+        refresh.calls = 0;
+        refresh.pending = [];
+        refresh.promise = null;
+        refreshCaiusClock.mockImplementation(() => {
+            const answer = clock.next;
+            const call = ++refresh.calls;
+            // An older request answers with the latest one's status.
+            const apply = () => {
+                if (call === refresh.calls) {
+                    clock.now = answer;
+                }
+            };
+            if (!refresh.deferred) {
+                apply();
+                return Promise.resolve();
+            }
+
+            const request = new Promise<void>((resolve) => {
+                refresh.pending.push(() => {
+                    apply();
+                    resolve();
+                });
+            });
+            refresh.promise = request;
+            return request;
+        });
         options.load({ rightPaneCollapsedItems: "[]" } as Parameters<typeof options.load>[0]);
         caiusWrite.mockImplementation(
             (_noteId: string, call: (blobId: string) => Promise<unknown>) => call("blob-1"));
@@ -212,6 +262,145 @@ describe("PlanTab", () => {
         await caiusWrote([ { entityName: "attributes", entityId: "a2", entity: { attributeId: "a2", noteId: "elsewhere", type: "label", name: "color", value: "red" } } ]);
         await wait(REFRESH_DELAY_MS + 50);
         expect(api.plan).toHaveBeenCalledTimes(3);
+    });
+
+    it("moves a tab on the current period when a day is started early, and back when it is taken back", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        vi.setSystemTime(new Date(2026, 9, 28, 2, 0));
+        const { container, caiusWrote } = mountInPane(true);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+        expect(api.plan).toHaveBeenCalledWith("day", "2026-10-28");
+
+        clock.next = new Date(2026, 9, 27, 2, 0);
+        await caiusWrote([ startedRow(true) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+    });
+
+    it("keeps the day of its note when the clock moves, and shows the Today button", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const { container, caiusWrote } = mountInPane(true);
+        await flush();
+        expect(container.querySelector(".plan-period-current")).not.toBeNull();
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+        expect(container.querySelector(".plan-period-current")).toBeNull();
+        expect(button(container, "Today")).toBeTruthy();
+    });
+
+    it("keeps the period a tab was stepped to when the clock moves, and redraws it", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        vi.setSystemTime(new Date(2026, 9, 28, 2, 0));
+        const { container, caiusWrote } = mountInPane(true);
+        await flush();
+        await press(container.querySelector(".plan-period-step .bx-chevron-right"));
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+        expect(container.querySelector(".plan-period-current")).toBeNull();
+        expect(button(container, "Today")).toBeTruthy();
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+        expect(container.querySelector(".plan-period-current")).not.toBeNull();
+    });
+
+    it("keeps a period chosen before the status the tab read on opening has answered", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        refresh.deferred = true;
+        const { container } = mountInPane(true);
+        await flush();
+        await press(container.querySelector(".plan-period-step .bx-chevron-right"));
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+
+        refresh.pending[0]();
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+    });
+
+    it("shows a day started while the pane was closed when the tab opens", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        vi.setSystemTime(new Date(2026, 9, 28, 2, 0));
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        const { container } = mountInPane(true);
+        await flush();
+
+        expect(refreshCaiusClock).toHaveBeenCalledTimes(1);
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+        expect(api.plan).toHaveBeenCalledWith("day", "2026-10-28");
+    });
+
+    it("settles on the latest clock when two changes come before either answer", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        const { container, caiusWrote } = mountInPane(true);
+        await flush();
+        refresh.deferred = true;
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        clock.next = new Date(2026, 9, 27, 2, 0);
+        await caiusWrote([ startedRow(true) ]);
+        expect(refresh.pending).toHaveLength(2);
+
+        refresh.pending[1]();
+        refresh.pending[0]();
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+
+        refresh.deferred = false;
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+    });
+
+    it("follows the note the tab shows when the active note changes before the clock answers", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const day = activeNote.current;
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        const { container, caiusWrote, rerender } = mountInPane(true);
+        await flush();
+        refresh.deferred = true;
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        activeNote.current = day;
+        await rerender();
+        refresh.pending[0]();
+        await flush();
+
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+    });
+
+    it("asks for the status only when a label that moves the clock changes", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const { caiusWrote } = mountInPane(true);
+        await flush();
+
+        expect(refreshCaiusClock).toHaveBeenCalledTimes(1);
+
+        await caiusWrote([ { entityName: "attributes", entityId: "a9", entity: { attributeId: "a9", noteId: "today", type: "label", name: "caiusFocus", value: "120-120" } } ]);
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(refreshCaiusClock).toHaveBeenCalledTimes(1);
+        expect(trackStartedNotes).not.toHaveBeenCalled();
+
+        await caiusWrote([ startedRow(false) ]);
+        expect(refreshCaiusClock).toHaveBeenCalledTimes(2);
+        expect(trackStartedNotes).toHaveBeenCalledTimes(1);
     });
 
     it("starts no refresh while one is in flight, and runs at most one more after it", async () => {
@@ -600,6 +789,24 @@ describe("PlanTab", () => {
         expect(window.localStorage.getItem("caius.plan.openParents")).toBe("[]");
     });
 
+    it("folds a done On deck parent with open sub-items into one struck-through row", async () => {
+        const plan = dayPlan();
+        const onDeck = [
+            planTask({ listItemId: "p", text: "Caius fixes", section: "On deck", state: "done" }),
+            planTask({ listItemId: "p1", text: "ABC-12", section: "On deck", parent: "Caius fixes", parentListItemId: "p", state: "done" }),
+            planTask({ listItemId: "p2", text: "ABC-13", section: "On deck", parent: "Caius fixes", parentListItemId: "p" }),
+            planTask({ listItemId: "p3", text: "ABC-14", section: "On deck", parent: "Caius fixes", parentListItemId: "p" })
+        ];
+        api.plan.mockResolvedValue({ ...plan, onDeck });
+        const tab = await mount();
+        expect(texts(tab, "#plan-on-deck .plan-task-list > li")).toEqual([ "Caius fixes2 open" ]);
+        expect(text(tab, "#plan-on-deck .plan-sub-count")).toBe("2 open");
+        expect(tab.querySelector("#plan-on-deck .plan-task-list > li.done")).not.toBeNull();
+
+        await press(tab.querySelector("#plan-on-deck [aria-expanded]"));
+        expect(texts(tab, "#plan-on-deck .plan-sub-items li")).toEqual([ "ABC-12", "ABC-13", "ABC-14" ]);
+    });
+
     it("shows a live parent's sub-item count beside its row in Close", async () => {
         const plan = dayPlan();
         api.plan.mockResolvedValue({
@@ -689,6 +896,17 @@ const LANES: Record<string, CaiusOpenTask[]> = {
     orbit: []
 };
 
+function startedRow(isDeleted: boolean) {
+    return {
+        entityName: "attributes" as const,
+        entityId: "started1",
+        entity: {
+            attributeId: "started1", noteId: "monday", type: "label", name: "caiusStarted",
+            value: "2026-10-28T02:00:00", isDeleted
+        }
+    };
+}
+
 function dayPlan(): CaiusPlan {
     return {
         period: "day",
@@ -747,11 +965,19 @@ function mountInPane(visible: boolean) {
             host
         );
     });
+    let current = visible;
     draw(visible);
     return {
         container: host,
         async setVisible(shown: boolean) {
+            current = shown;
             draw(shown);
+            await flush();
+        },
+        /** Draws the tab again after the active note changed, by toggling its visibility off and on. */
+        async rerender() {
+            draw(!current);
+            draw(current);
             await flush();
         },
         /** Rows a Caius tool wrote over MCP, as the WebSocket delivers them: attributes and branches only. */

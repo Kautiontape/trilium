@@ -106,6 +106,20 @@ describe('rewordTask', () => {
     expect(r).toEqual({ ok: false, reason: 'moved' });
   });
 
+  it('keeps a scheduled trail as the editor saves it, on a line whose state a click cleared', () => {
+    const saved = [
+      '<em>scheduled </em><a href="#root/n2"><em>Tue 17 Nov</em></a>',
+      '<em>scheduled&nbsp;</em><a class="reference-link" href="#root/n2">17 - Tuesday</a>',
+      '<em>scheduled</em> <a href="#root/n2"><em>Tue 17 Nov</em></a>',
+      '<em>scheduled</em>&nbsp;<a class="reference-link" href="#root/n2">17 - Tuesday</a>',
+    ];
+    for (const mark of saved) {
+      const r = rewordTask(doc(li('t1', `Send the note ${mark}`)), 't1', 'Send the summary', STATES);
+      expect.soft(r.ok && spanOf(r.html, 't1')).toBe(`Send the summary ${mark}`);
+      expect.soft(r.ok && r.dropped).toEqual([]);
+    }
+  });
+
   it('reports unchanged for the same words', () => {
     const html = doc(li('t1', `🌱 09:00 Same words ${FROM} ~30m`));
     const r = rewordTask(html, 't1', 'Same words', STATES);

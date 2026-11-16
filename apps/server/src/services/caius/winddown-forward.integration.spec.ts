@@ -8,6 +8,7 @@ import { dayCapacity } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { areaAskIds } from "./daily.js";
 import type { CaiusInputs } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
 import { createBeccaStore } from "./store.js";
@@ -97,5 +98,42 @@ describe("moving a task the wind-down didn't offer", () => {
         const target = (await cls.init(() => store.calendarDay(FRI))).noteId;
         expect(await content(target)).toContain("Book the dentist");
         expect(await content(oldDay)).toContain("_rescheduled");
+    });
+});
+
+describe("an On deck item forwarded by one wind-down call and given an area by the next", () => {
+    const CLOSING = "2027-04-05";
+    const TARGET = "2027-04-06";
+
+    /** The values of the label `name` on the day note of `date`. */
+    async function labelsOf(date: string, name: string) {
+        const [ note ] = await cls.init(() => store.search(`#dateNote="${date}"`));
+        return note?.attributes.filter((a) => a.type === "label" && a.name === name).map((a) => a.value) ?? [];
+    }
+
+    it("records the copy's own words, never those of empty text", async () => {
+        await cls.init(async () => {
+            const closing = await store.calendarDay(CLOSING);
+            await store.putContent(closing.noteId, `<h2>☑️ Tasks</h2>${ul(li("c1", "Water the ferns ~15m"))}<h2>On deck</h2>${ul(li("od1", "Call the printer ~15m"))}`);
+            await store.calendarDay(TARGET);
+        });
+        at(`${CLOSING}T18:00`);
+        const open = await call("caius_winddown", { date: CLOSING, step: "open" });
+        const deck = open.data.items.find((item: any) => item.text.startsWith("Call the printer"));
+        expect(deck).toBeDefined();
+        const first = await call("caius_winddown_apply", { date: CLOSING, fates: [ { listItemId: deck.ref, to: TARGET } ] });
+        expect(first.written).toContainEqual(expect.objectContaining({ kind: "fate", detail: TARGET, status: "written" }));
+
+        const second = await call("caius_winddown_apply", { date: CLOSING, areas: [ { item: deck.ref, area: "growth" } ] });
+        expect(second.written).toContainEqual(expect.objectContaining({ kind: "area", detail: "growth" }));
+
+        const plan = await call("caius_plan", { period: "day", date: TARGET });
+        const copy = plan.onDeck.find((task: any) => task.text.includes("Call the printer"));
+        expect(copy.listItemId).not.toBe("od1");
+        const asked = await labelsOf(TARGET, "caiusAsked");
+        const [ id, words ] = areaAskIds(copy.listItemId, copy.text);
+        expect(asked).toContain(id);
+        expect(asked).toContain(words);
+        expect(asked).not.toContain("area:~da39a3ee5e");
     });
 });

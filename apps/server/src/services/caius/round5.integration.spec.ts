@@ -130,8 +130,8 @@ describe("a correction after the apply", () => {
         // 111 left Tuesday for the week; 101 and the bag stay on Tuesday, once each.
         expect(await tasksOf("day", TUE)).toEqual([
             { text: "🔋 Pack the climbing gym bag", state: "open" },
-            { text: "QRS-101 Verify the export retry on staging", state: "open" },
-            { text: "QRS-111 Check the invoice export in QA ~30m", state: expect.not.stringMatching(/^open$/) }
+            { text: "ZAP-101 Verify the export retry on staging", state: "open" },
+            { text: "ZAP-111 Check the invoice export in QA", state: expect.not.stringMatching(/^open$/) }
         ]);
         expect(await tasksOf("week", "2026-W45")).toEqual([ { text: "QRS-111 Check the invoice export in QA", state: "open" } ]);
         expect((await call("caius_context", { date: TUE })).context.map((line: any) => line.text)).toContain("QRS-2590 is open");

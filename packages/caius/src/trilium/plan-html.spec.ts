@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
 import { moveInMainList, placeForwarded, placeInDay, placeInMainList, placeTask, setTaskArea, setTaskEstimate, setTaskState, takeSuggested, itemMarkup } from './plan-html.js';
+import { htmlToMarkdown } from './markdown.js';
 import { critical, li, STATES, TEMPLATE, ul } from './helpers.js';
 
 const item = itemMarkup('enew', 'New thing');
@@ -424,5 +425,30 @@ describe('placeInDay', () => {
     ]).toEqual(['not_found', 'bad_request', 'not_live', 'not_live', 'bad_request', 'bad_request', 'not_found', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'bad_request']);
     const parent = placeInDay(withMore, 'm2a', { block: 'afternoon' }, STATES);
     expect(parent.ok ? '' : parent.detail).toBe('place its parent');
+  });
+});
+
+describe('setTaskEstimate on a reopened moved line', () => {
+  const MARKS = {
+    written: '<em>scheduled <a href="#root/tue">Tue 3 Nov</a></em>',
+    saved: '<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>',
+  };
+  const noteOf = (text: string) => '<h2>☑️ Tasks</h2>' + ul(li('r1', text));
+  const words = (html: string) =>
+    parse(html).querySelectorAll('li').find((l) => l.getAttribute('data-list-item-id') === 'r1')?.querySelector('span.todo-list__label__description')?.innerHTML;
+  const lastToken = (html: string) => htmlToMarkdown(html, STATES).trim().split(' ').pop();
+
+  it.each(Object.entries(MARKS))('sets, keeps and inserts an estimate before the %s mark', (_shape, mark) => {
+    const note = noteOf(`Write it ~30m ${mark}`);
+    const set = setTaskEstimate(note, 'r1', 60);
+    expect(set).toMatchObject({ ok: true, unchanged: false });
+    expect(set.ok && words(set.html)).toBe(`Write it ~1h ${mark}`);
+    expect(set.ok && lastToken(set.html)).toBe('~1h');
+    expect(setTaskEstimate(note, 'r1', 30)).toEqual({ ok: true, html: note, unchanged: true });
+
+    const bare = setTaskEstimate(noteOf(`Write it ${mark}`), 'r1', 30);
+    expect(bare.ok && words(bare.html)).toBe(`Write it ~30m ${mark}`);
+    const tokens = setTaskEstimate(noteOf(`Write it ~30m ! ${mark}`), 'r1', 45);
+    expect(tokens.ok && words(tokens.html)).toBe(`Write it ~45m ! ${mark}`);
   });
 });

@@ -16,7 +16,8 @@ const OPEN_PARENTS_KEY = "caius.plan.openParents";
 /**
  * A day's On deck as its own group: the tasks intended for the day, tracked but not counted in the
  * capacity until Plan my day puts them on the list. Shown only while the day has one. A parent is
- * one row with its sub-item count and a chevron that opens the sub-items under it.
+ * one row with its sub-item count and a chevron that opens the sub-items under it; a done parent
+ * with open sub-items stays, struck through, with "N open" in place of the count.
  */
 export default function PlanOnDeck({ plan, onOpen }: {
     plan: CaiusPlan;
@@ -49,7 +50,10 @@ export default function PlanOnDeck({ plan, onOpen }: {
 
                     const expanded = key !== null && open.includes(key);
                     return (
-                        <li key={task.listItemId ?? task.text}>
+                        <li
+                            key={task.listItemId ?? task.text}
+                            className={task.state === "done" ? "done" : undefined}
+                        >
                             <div className="plan-parent-row">
                                 <ActionButton
                                     icon={expanded ? "bx bx-chevron-down" : "bx bx-chevron-right"}

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { htmlToMarkdownWithIds } from './markdown.js';
 import { headingsByLine, neutralizeSuggested, normName, sectionKind } from './sections.js';
+import { setTaskEstimate } from './plan-html.js';
 import { isPeriodKey, readPlan } from './plan-read.js';
 import { openTasks, suggestedTasks } from './open.js';
 import { scanDocs } from '../index/index.js';
@@ -240,5 +241,24 @@ describe('period search', () => {
     await readPlan(f.api, 'day', '2026-10-26', now);
     await readPlan(f.api, 'week', '2026-W44', now);
     expect(seen).toEqual(['#dateNote="2026-10-26"', '#weekNote="2026-W44"']);
+  });
+});
+
+describe('readPlan on a reopened moved line', () => {
+  it('reads the estimate written before its "scheduled" mark', async () => {
+    const mark = '<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>';
+    const html = '<h2>Tasks</h2>' + ul(li('r1', `Write it ~30m ${mark}`), li('r2', 'Plain'));
+    const f = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] });
+    const v = await readPlan(f.api, 'day', '2026-10-26', now);
+    const tasks = v.sections.flatMap((s) => s.tasks);
+    expect(tasks.find((t) => t.listItemId === 'r1')).toMatchObject({ state: 'open', estMinutes: 30 });
+  });
+
+  it('reads the estimate set on the line, before the mark', async () => {
+    const mark = '<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>';
+    const set = setTaskEstimate('<h2>Tasks</h2>' + ul(li('r1', `Write it ~30m ${mark}`)), 'r1', 60);
+    const f = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), set.ok ? set.html : ''] });
+    const v = await readPlan(f.api, 'day', '2026-10-26', now);
+    expect(v.sections.flatMap((s) => s.tasks).find((t) => t.listItemId === 'r1')).toMatchObject({ state: 'open', estMinutes: 60 });
   });
 });

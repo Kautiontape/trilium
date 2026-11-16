@@ -2,7 +2,7 @@
  * What a Caius forward writes, saved again by a real CKEditor with the fork's link, reference link,
  * italic and task state plugins: what `EditableText` stores the next time the note is saved.
  */
-import { hasCopy, insertCopy, markRescheduled } from "@triliumnext/caius";
+import { hasCopy, htmlToMarkdown, insertCopy, markRescheduled } from "@triliumnext/caius";
 import ItalicAsEmPlugin from "@triliumnext/ckeditor5/src/plugins/italic_as_em.js";
 import ReferenceLink from "@triliumnext/ckeditor5/src/plugins/referencelink.js";
 import TodoListMultistateEditing from "@triliumnext/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate_editing.js";
@@ -66,6 +66,22 @@ describe("a Caius forward saved by the editor", () => {
         expect(hasCopy(saved, SOURCE, "eone", "srcnote")).toBe(true);
     });
 
+    it("leaves a bare \"scheduled\" when one Backspace takes an old reference link and a click clears the state", () => {
+        const old = SOURCE.replace("Ship &amp; tell", "Ship &amp; tell <em>scheduled <a class=\"reference-link\" href=\"#root/tgtnote\">Tuesday 27</a></em>")
+            .replace("<li data-list-item-id=\"eone\">", "<li data-list-item-id=\"eone\" data-trilium-task-state=\"_rescheduled\">")
+            .replace("<input type=\"checkbox\"", "<input type=\"checkbox\" checked=\"checked\"");
+        editor.setData(old);
+        const item = editor.model.document.getRoot()?.getChild(1);
+        if (!item) throw new Error("no list item");
+        editor.model.change((writer) => writer.setSelection(writer.createPositionAt(item, "end")));
+        editor.execute("delete");
+        expect(editor.getData()).toContain("Ship &amp; tell <em>scheduled&nbsp;</em></span>");
+        editor.execute("checkTodoList");
+        const saved = editor.getData();
+        expect(saved).toContain("<li data-list-item-id=\"eone\"><label class=\"todo-list__label\"><input type=\"checkbox\" disabled=\"disabled\">");
+        expect(saved).toContain("Ship &amp; tell <em>scheduled&nbsp;</em></span>");
+    });
+
     it("still reads the reference links written before, after the editor has replaced their text", () => {
         const old = SOURCE.replace("Ship &amp; tell", "Ship &amp; tell <em>scheduled <a class=\"reference-link\" href=\"#root/tgtnote\">Tuesday 27</a></em>")
             .replace("<li data-list-item-id=\"eone\">", "<li data-list-item-id=\"eone\" data-trilium-task-state=\"_rescheduled\">");
@@ -77,5 +93,15 @@ describe("a Caius forward saved by the editor", () => {
         const oldCopy = SOURCE.replace("Ship &amp; tell", "Ship &amp; tell <a class=\"reference-link\" href=\"#root/srcnote\">from Monday 26</a>")
             .replace("eone", "ecopy");
         expect(hasCopy(save(oldCopy), SOURCE, "eone", "srcnote")).toBe(true);
+    });
+
+    it("reads a saved \"scheduled\" mark, fresh or from an old reference link, as `_scheduled [label](#root/id)_`", () => {
+        const marked = markRescheduled(SOURCE, "eone", { targetNoteId: "tgtnote", targetLabel: "Tuesday 27", states: STATES });
+        if (!marked.ok) throw new Error(marked.reason);
+        expect(htmlToMarkdown(save(marked.html), STATES)).toContain("_scheduled [Tuesday 27](#root/tgtnote)_");
+
+        const old = SOURCE.replace("Ship &amp; tell", "Ship &amp; tell <em>scheduled <a class=\"reference-link\" href=\"#root/tgtnote\">Tuesday 27</a></em>")
+            .replace("<li data-list-item-id=\"eone\">", "<li data-list-item-id=\"eone\" data-trilium-task-state=\"_rescheduled\">");
+        expect(htmlToMarkdown(save(old), STATES)).toContain("_scheduled [26 - Monday](#root/tgtnote)_");
     });
 });

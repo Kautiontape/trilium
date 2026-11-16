@@ -5,7 +5,7 @@
 // source range; every change is then spliced into the original string, so all
 // markup we don't touch stays byte-for-byte as Trilium stored it.
 
-import { parse, HTMLElement } from 'node-html-parser';
+import { parse, HTMLElement, TextNode, type Node } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
 import { escapeHtml, ON_DECK, placeForwarded } from './plan-html.js';
 import { isOnDeckName } from './sections.js';
@@ -68,7 +68,8 @@ export type InsertResult =
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DEFAULT_STATE_ID = '_rescheduled';
+/** The fork's Rescheduled state id. */
+export const RESCHEDULED_STATE_ID = '_rescheduled';
 const DEFAULT_STATE_TITLE = 'Rescheduled';
 
 /** "2026-10-27" → "Tue 27 Oct", as the step data labels a day. */
@@ -140,7 +141,7 @@ export function inspectItem(
   html: string,
   id: string,
   states: StateSymbols,
-  stateId = DEFAULT_STATE_ID,
+  stateId = RESCHEDULED_STATE_ID,
 ): { ok: true; text: string; section: string | null } | { ok: false; reason: ItemProblem; scheduledTo: string[] } {
   const root = parse(html, { comment: true });
   const found = lookup(root, id, states, stateId);
@@ -154,7 +155,7 @@ export function inspectItem(
  * link points at the target note.
  */
 export function markRescheduled(html: string, id: string, opts: MarkOptions): MarkResult {
-  const stateId = opts.stateId ?? DEFAULT_STATE_ID;
+  const stateId = opts.stateId ?? RESCHEDULED_STATE_ID;
   const root = parse(html, { comment: true });
   const found = lookup(root, id, opts.states, stateId);
   if (!('li' in found)) return { ok: false, ...found };
@@ -181,15 +182,17 @@ export function markRescheduled(html: string, id: string, opts: MarkOptions): Ma
 /** The item's HTML as a fresh open copy: new ids, no state, only open sub-items, "from …" link. */
 function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): string {
   const states = opts.states;
-  const snippet = sourceHtml.slice(li.range[0], li.range[1]);
+  const snippet = withoutOwnMarks(sourceHtml.slice(li.range[0], li.range[1]));
   const copyRoot = parse(snippet, { comment: true });
-  const top = elements(copyRoot)[0]!;
+  const top = elements(copyRoot)[0];
+  if (!top) return snippet;
   const newId = opts.newId ?? newListItemId;
   const edits: Edit[] = [];
 
   const reset = (item: HTMLElement) => {
     // A task that was Doing stays Doing in the copy; any other state resets to open.
-    const keepDoing = item.getAttribute('data-trilium-task-state') !== undefined && states.get(item.getAttribute('data-trilium-task-state')!) === '/';
+    const itemState = item.getAttribute('data-trilium-task-state');
+    const keepDoing = itemState !== undefined && states.get(itemState) === '/';
     edits.push(rewriteOpenTag(snippet, item, keepDoing ? { id: newId() } : { id: newId(), state: null }));
     const box = checkboxEdit(snippet, item, false);
     if (box) edits.push(box);
@@ -232,7 +235,7 @@ function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): stri
  */
 export function insertCopy(targetHtml: string, sourceHtml: string, id: string, opts: CopyOptions & { stateId?: string }): InsertResult {
   const sourceRoot = parse(sourceHtml, { comment: true });
-  const found = lookup(sourceRoot, id, opts.states, opts.stateId ?? DEFAULT_STATE_ID);
+  const found = lookup(sourceRoot, id, opts.states, opts.stateId ?? RESCHEDULED_STATE_ID);
   if (!('li' in found)) return { ok: false, ...found };
   const section = sectionLabel(sourceRoot, found.li);
   const item = buildCopy(sourceHtml, found.li, opts);
@@ -254,7 +257,7 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
   const source = findItem(parse(sourceHtml, { comment: true }), id);
   const sourceSpan = source && descriptionOf(source);
   if (!sourceSpan) return false;
-  const body = sourceSpan.innerHTML;
+  const body = withoutScheduledMarks(sourceSpan.innerHTML);
   const origin = backLinkOf(sourceSpan)?.getAttribute('href');
   if (origin) {
     // The copy's back link is written again (`buildCopy`), so the rest of the text is compared,
@@ -277,6 +280,32 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
     });
 }
 
+/** `html` without the "scheduled" marks of any item's description, and the space before each. */
+function withoutOwnMarks(html: string): string {
+  const marks = parse(html, { comment: true })
+    .querySelectorAll('li')
+    .flatMap((item) => {
+      const span = descriptionOf(item);
+      return span ? scheduledMarksOf(span) : [];
+    });
+  return withoutMarkRanges(html, marks);
+}
+
+/** A description's inner HTML without its "scheduled" marks, and the space before each. */
+export function withoutScheduledMarks(inner: string): string {
+  return withoutMarkRanges(inner, scheduledMarksOf(parse(inner)));
+}
+
+/** `html` with each mark cut out, with the spaces or `&nbsp;` before it; `marks` are offsets into `html`. */
+function withoutMarkRanges(html: string, marks: ScheduledMark[]): string {
+  const edits: Edit[] = marks.map((mark) => ({
+    start: mark.start - (/(?:\s|&nbsp;)*$/.exec(html.slice(0, mark.start))?.[0].length ?? 0),
+    end: mark.end,
+    text: '',
+  }));
+  return apply(html, edits);
+}
+
 /** Whether a task's text holds a "from …" link to the note it was forwarded from. */
 function hasBackLink(span: HTMLElement): boolean {
   return !!backLinkOf(span);
@@ -285,6 +314,70 @@ function hasBackLink(span: HTMLElement): boolean {
 /** A task's "from …" link to the note it was forwarded from. */
 export function backLinkOf(span: HTMLElement): HTMLElement | undefined {
   return span.querySelectorAll('a').find((a) => /^#root\/[^/?#]+$/.test(a.getAttribute('href') ?? '') && /^from\s/.test(a.text.trim()));
+}
+
+/** A "scheduled" mark in a task's text: the italic word and the link to the note the task moved to. */
+export interface ScheduledMark {
+  /** The nodes that make up the mark, in order: one `em` as written, else the `em`, any space between and the `a`. */
+  nodes: Node[];
+  /** Offset of the first node's start in the HTML that was parsed. */
+  start: number;
+  /** Offset of the last node's end in the HTML that was parsed. */
+  end: number;
+  /** True when the mark is already in the shape `markRescheduled` writes: `<em>scheduled <a>…</a></em>`. */
+  written: boolean;
+  noteId: string;
+  /** The text inside the link. */
+  label: string;
+}
+
+export const MARK_WORD = /^[\s\u00a0]*(?:re)?scheduled\b/;
+const MARK_WORD_ONLY = /^[\s\u00a0]*(?:re)?scheduled[\s\u00a0]*$/;
+const NOTE_HREF = /^#root\/([^/?#]+)$/;
+
+/**
+ * The "scheduled" marks in a task's text, as written (`<em>scheduled <a href="#root/…">…</a></em>`)
+ * and as the editor or a Markdown round trip saves them (`<em>scheduled</em>`, a space or `&nbsp;`,
+ * then the link). An italic word with no link after it, with other words before the link, or
+ * before the "from …" back link (`backLinkOf`) is not a mark.
+ */
+export function scheduledMarksOf(span: HTMLElement): ScheduledMark[] {
+  const marks: ScheduledMark[] = [];
+  for (const em of span.querySelectorAll('em')) {
+    const link = em.querySelector('a[href^="#root/"]');
+    const found = link ? (writtenMark(em, link) ? { nodes: [em], link, written: true } : undefined) : savedMark(em);
+    const noteId = found && NOTE_HREF.exec(found.link.getAttribute('href') ?? '')?.[1];
+    if (!found || !noteId || !MARK_WORD.test(em.text) || /^from\s/.test(found.link.text.trim())) continue;
+    const first = found.nodes[0];
+    const last = found.nodes[found.nodes.length - 1];
+    if (!first || !last) continue;
+    marks.push({ nodes: found.nodes, start: first.range[0], end: last.range[1], written: found.written, noteId, label: found.link.text.trim() });
+  }
+  return marks;
+}
+
+/** Whether an `em` holds only the word, then the link, then at most whitespace. */
+function writtenMark(em: HTMLElement, link: HTMLElement): boolean {
+  const text = em.text;
+  const at = text.indexOf(link.text);
+  return at >= 0 && MARK_WORD_ONLY.test(text.slice(0, at)) && !text.slice(at + link.text.length).trim();
+}
+
+/** An `em` that holds only the word, with the link that follows it past any space. */
+function savedMark(em: HTMLElement): { nodes: Node[]; link: HTMLElement; written: false } | undefined {
+  if (!MARK_WORD_ONLY.test(em.text)) return undefined;
+  const siblings = em.parentNode?.childNodes ?? [];
+  const after = siblings.slice(siblings.indexOf(em) + 1);
+  const nodes: Node[] = [em];
+  let next = after[0];
+  if (next instanceof TextNode) {
+    if (next.rawText.replace(/&nbsp;/g, '').trim()) return undefined;
+    nodes.push(next);
+    next = after[1];
+  }
+  if (!(next instanceof HTMLElement) || next.tagName !== 'A') return undefined;
+  nodes.push(next);
+  return { nodes, link: next, written: false };
 }
 
 /** The note id a task's "from …" link points at, or null; `html` is the note, `id` the task's list item id. */

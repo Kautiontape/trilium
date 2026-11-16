@@ -13,6 +13,7 @@ import TaskContext from "../../../services/task_context.js";
 import { z } from "zod";
 
 import { applyTextEdits, getContentPreview, getLlmNote, getLlmParentNotes, getNoteContentForLlm, getNoteMeta, getSvgImageError, isExcludedFromLlm, LLM_NOTE_TYPES, PROTECTED_SYSTEM_NOTES, setNoteContentFromLlm, SVG_MIME, TOOL_LIMITS } from "./helpers.js";
+import { carryListItemIds } from "./list_item_ids.js";
 import { defineTools } from "./tool_registry.js";
 
 export const noteTools = defineTools({
@@ -143,13 +144,16 @@ export const noteTools = defineTools({
             }
             const mimeChanged = newMime !== note.mime;
 
+            const previousContent = note.type === "text" ? note.getContent() : "";
+            const previousHtml = typeof previousContent === "string" ? previousContent : "";
+
             note.saveRevision({ source: "llm" });
             if (typeChanged || mimeChanged) {
                 note.type = newType;
                 note.mime = newMime;
                 note.save();
             }
-            setNoteContentFromLlm(note, content);
+            setNoteContentFromLlm(note, content, previousHtml);
             scanWrittenContent(note);
             return {
                 success: true,
@@ -191,7 +195,11 @@ export const noteTools = defineTools({
 
             let newContent: string;
             if (note.type === "text") {
-                const htmlToAppend = markdownImport.renderToHtml(content, note.getTitleOrProtected());
+                const rendered = markdownImport.renderToHtml(
+                    content,
+                    note.getTitleOrProtected()
+                );
+                const htmlToAppend = carryListItemIds("", rendered);
                 newContent = existingContent + htmlToAppend;
             } else {
                 newContent = existingContent + (existingContent.endsWith("\n") ? "" : "\n") + content;

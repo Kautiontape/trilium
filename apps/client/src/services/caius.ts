@@ -241,6 +241,9 @@ export function caiusClockMinutes(now: Date) {
 let statusRequest: Promise<boolean> | null = null;
 let lastKnownEnabled = false;
 
+/** The number of the latest `fetchStatus()`; an older request leaves the clock and cache alone. */
+let statusGeneration = 0;
+
 /**
  * Whether the server runs Caius. The answer is fetched once per session; a failed request answers
  * `false` and is asked again on the next call. A 404 (the standalone and Capacitor builds have no
@@ -264,9 +267,57 @@ export function forgetCaiusStatus() {
     statusRequest = null;
 }
 
-async function fetchStatus() {
+/**
+ * Asks the server for the status again, and resolves once the request has answered, whether or
+ * not it succeeded: `caiusNow()` then follows a day started early or taken back (`#caiusStarted`)
+ * and the standing note's rollover, and after a failure keeps its last answer.
+ */
+export async function refreshCaiusClock() {
+    forgetCaiusStatus();
+    await isCaiusEnabled();
+}
+
+/**
+ * Whether the changes can move `caiusNow()`: a `#caiusStarted` label set or deleted (a set row
+ * arrives for any note, a removal only for a note froca holds), or a change to the standing note,
+ * whose Rhythm holds the rollover.
+ */
+export function movesCaiusClock(loadResults: LoadResults) {
+    return loadResults.getAttributeRows().some(
+        (row) => row.name === "caiusStarted" || row.name === STANDING_LABEL
+    ) || loadResults.getNoteIds().some(
+        (noteId) => froca.notes[noteId]?.hasOwnedLabel(STANDING_LABEL)
+    );
+}
+
+/**
+ * Loads the notes a `#caiusStarted` label was set on that froca does not hold, so that taking the
+ * day back later reaches `entitiesReloaded`: froca reports a deleted attribute only when it holds
+ * it. A failed load is ignored.
+ */
+export async function trackStartedNotes(loadResults: LoadResults) {
+    const unknown = new Set<string>();
+    for (const row of loadResults.getAttributeRows()) {
+        const { noteId } = row;
+        if (row.name === "caiusStarted" && !row.isDeleted && noteId && !froca.notes[noteId]) {
+            unknown.add(noteId);
+        }
+    }
+
+    await Promise.allSettled(Array.from(unknown, (noteId) => froca.getNote(noteId, true)));
+}
+
+/** The label of the standing note, which the server finds it by. */
+const STANDING_LABEL = "assistantContext";
+
+async function fetchStatus(): Promise<boolean> {
+    const generation = ++statusGeneration;
     try {
         const status = await server.getWithSilentNotFound<CaiusStatus>("caius/status");
+        if (generation !== statusGeneration) {
+            return isCaiusEnabled();
+        }
+
         lastKnownEnabled = status?.enabled === true;
         const serverNow = status?.now ? new Date(status.now).getTime() : NaN;
         clockOffset = Number.isNaN(serverNow) ? 0 : serverNow - Date.now();
@@ -274,6 +325,10 @@ async function fetchStatus() {
         rolloverMinutes = rollover ? Number(rollover[1]) * 60 + Number(rollover[2]) : 4 * 60;
         started = status?.started ?? null;
     } catch {
+        if (generation !== statusGeneration) {
+            return isCaiusEnabled();
+        }
+
         lastKnownEnabled = false;
         statusRequest = null;
     }

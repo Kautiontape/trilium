@@ -13,7 +13,7 @@
 import { label, type NoteReader, type NoteStore, type StoreNote } from './store.js';
 import { loadStateSymbols } from './journal.js';
 import { findPeriodNote, isPeriodKey, type PeriodKind } from './plan-read.js';
-import { backLinkTarget, periodLabel, hasCopy, insertCopy, markRescheduled, type ItemProblem } from './forward-html.js';
+import { backLinkTarget, periodLabel, hasCopy, insertCopy, markRescheduled, RESCHEDULED_STATE_ID, type ItemProblem } from './forward-html.js';
 import type { StateSymbols } from './markdown.js';
 
 export interface ForwardRequest {
@@ -74,7 +74,7 @@ export interface ForwardOptions {
 
 export async function forwardTasks(api: ForwardStore, requests: ForwardRequest[], opts: ForwardOptions = {}): Promise<ForwardResult[]> {
   const states = opts.states ?? (await loadStateSymbols(api));
-  const stateId = [...states].find(([, symbol]) => symbol === '>')?.[0] ?? '_rescheduled';
+  const stateId = [...states].find(([, symbol]) => symbol === '>')?.[0] ?? RESCHEDULED_STATE_ID;
   const periods = new Map<string, StoreNote | null>();
 
   const period = async (kind: PeriodKind, key: string): Promise<StoreNote | null> => {

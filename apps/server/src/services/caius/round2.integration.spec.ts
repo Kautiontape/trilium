@@ -353,6 +353,20 @@ describe("a Context line can hold over a range of days", () => {
     });
 });
 
+describe("a Context line naming one weekday holds on that day", () => {
+    it("'Ana is out Tuesday', written on Monday, holds on Tuesday only, and is Tuesday's Heads-up", async () => {
+        at("2026-11-30T17:30");
+        const added = await call("caius_context_add", { date: "2026-11-30", text: "Ana is out Tuesday" });
+        expect(added.results[0]).toMatchObject({ status: "added", line: "Ana is out Tuesday (from Tue 1 Dec until Tue 1 Dec)", detail: "moved to the week note" });
+        const inForce = async (date: string) => (await call("caius_context", { date })).context.map((c: any) => c.text).includes("Ana is out Tuesday");
+        expect([ await inForce("2026-11-30"), await inForce("2026-12-01"), await inForce("2026-12-02") ]).toEqual([ false, true, false ]);
+
+        at("2026-12-01T09:30");
+        const tuesday = await call("caius_planday", { date: "2026-12-01", step: "inputs", refresh: true });
+        expect(tuesday.data.headsUp).toEqual([ "Ana is out Tuesday" ]);
+    });
+});
+
 describe("a refresh keeps the morning", () => {
     const event = (start: string, end: string, title: string): CalendarEvent => ({ start, end, title, attendees: [], allDay: false, declined: false, source: [ 0 ] });
     const DAY = "2026-11-19";

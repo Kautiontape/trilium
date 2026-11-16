@@ -1,7 +1,8 @@
+import { htmlToMarkdown } from "@triliumnext/caius";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, fitted, isReview, MAX_REPLY_CHARS, namedDays, withoutMoveLinks } from "./daily.js";
+import { areaAskIds, carryQuestion, copyKey, fitted, isReview, MAX_REPLY_CHARS, movedOn, namedDays, plainText, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -28,6 +29,60 @@ describe("withoutMoveLinks", () => {
         expect(withoutMoveLinks("Message Dave [from Friday 30](#root/abc) _scheduled [Tuesday 3](#root/def)_")).toBe("Message Dave");
         expect(withoutMoveLinks("Get a quote from Acme 2")).toBe("Get a quote from Acme 2");
         expect(withoutMoveLinks("See [Plan](#root/zz) scheduled Tuesday 3")).toBe("See [Plan](#root/zz) scheduled Tuesday 3");
+    });
+});
+
+describe("movedOn", () => {
+    const line = (state: string, text: string) => ({ state, text });
+
+    it("is true for a tombstone only: a mark on a done, open or doing line does not move it", () => {
+        const mark = "Ring the plumber _scheduled [Tue 3 Nov](#root/tue)_";
+        expect(movedOn(line("tombstone", "Ring the plumber"))).toBe(true);
+        expect(movedOn(line("done", mark))).toBe(false);
+        expect(movedOn(line("open", mark))).toBe(false);
+        expect(movedOn(line("in_progress", mark))).toBe(false);
+        expect(movedOn(line("done", "Ring the plumber"))).toBe(false);
+        expect(movedOn(line("open", "Ring the plumber _scheduled_"))).toBe(false);
+    });
+});
+
+describe("a moved task's \"scheduled\" mark as the editor saves it", () => {
+    // `markRescheduled` writes the first; CKEditor saves it as the second (`caius_markup.spec.ts`
+    // in the client), and a mark written as a reference link before 26 Oct as the third. The last
+    // two are those saved marks after the LLM note tools' Markdown round trip.
+    const MARKS = {
+        written: "<em>scheduled <a href=\"#root/tue\">Tue 3 Nov</a></em>",
+        saved: "<em>scheduled </em><a href=\"#root/tue\"><em>Tue 3 Nov</em></a>",
+        "saved reference": "<em>scheduled&nbsp;</em><a class=\"reference-link\" href=\"#root/tue\">03 - Tuesday</a>",
+        "round-tripped": "<em>scheduled</em> <a href=\"#root/tue\"><em>Tue 3 Nov</em></a>",
+        "round-tripped reference": "<em>scheduled</em>&nbsp;<a class=\"reference-link\" href=\"#root/tue\">03 - Tuesday</a>"
+    };
+    /** A moved task's text as the parser reads it from the note's HTML. */
+    const textOf = (mark: string) => htmlToMarkdown("<ul class=\"todo-list\"><li data-list-item-id=\"t1\" data-trilium-task-state=\"_rescheduled\">"
+        + "<label class=\"todo-list__label\"><input type=\"checkbox\" checked=\"checked\" disabled=\"disabled\">"
+        + `<span class="todo-list__label__description">Ring the plumber ${mark}</span></label></li></ul>`).replace(/^- \[.\] /, "");
+
+    it.each(Object.entries(MARKS))("reads the %s mark in its written form, and keys the task with its copy", (_shape, mark) => {
+        const text = textOf(mark);
+        expect.soft(text).toMatch(/^Ring the plumber _scheduled \[[^\]]+\]\(#root\/tue\)_$/);
+        expect.soft(withoutMoveLinks(text)).toBe("Ring the plumber");
+        expect.soft(copyKey("mon", plainText(withoutMoveLinks(text)))).toBe(copyKey("mon", plainText(withoutMoveLinks("Ring the plumber [from Mon 2 Nov](#root/mon)"))));
+    });
+
+    it("leaves a bare italic \"scheduled\" as it is", () => {
+        const text = textOf("<em>scheduled</em>");
+        expect(withoutMoveLinks(text)).toBe("Ring the plumber _scheduled_");
+    });
+});
+
+describe("areaAskIds", () => {
+    it("records the words only when a task has some", () => {
+        expect(areaAskIds("x1", "")).toEqual([ "area:x1" ]);
+        expect(areaAskIds("x1", "[from Mon 16 Nov](#root/abc)")).toEqual([ "area:x1" ]);
+        const [ id, words ] = areaAskIds("x1", "Call the printer");
+        expect(id).toBe("area:x1");
+        expect(words).toMatch(/^area:~[0-9a-f]{10}$/);
+        expect(areaAskIds("x2", "Call the printer [from Mon 16 Nov](#root/abc)")[1]).toBe(words);
     });
 });
 

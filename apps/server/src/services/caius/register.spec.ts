@@ -59,6 +59,7 @@ it("offers the caius skill only while it is registered, and names every tool the
     expect(sheet).toContain("call `caius_plan_apply` **once**");
     expect(sheet).toContain("call `caius_winddown_apply` **once**");
     expect(sheet).toContain("Send **one message**");
+    expect(sheet).toContain("never with `get_note_content` and `set_note_content`");
     for (const rule of [
         "Call him \"you\", never \"Shawn\".",
         "Use the date strings the step data gives (the `…Label` fields) as they are. Never work out a weekday.",

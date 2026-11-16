@@ -3,7 +3,7 @@ on:
   push:
     branches: [ktn]
   pull_request:
-    branches: [ktn] # build-gate for upstream-sync PRs (cloud only — safe for untrusted)
+    branches: [ktn] # build-gate for upstream-sync PRs only, see the job's `if` (cloud only — safe for untrusted)
   workflow_dispatch:
 concurrency:
   group: ktn-build-${{ github.ref }}
@@ -13,6 +13,9 @@ permissions:
   packages: write
 jobs:
   build:
+    # A feature PR is built once, when it merges; a failed build there blocks the deploy. Only sync
+    # PRs (fork-sync's sync/<tag>) are built before merging, since the upstream code is the unknown.
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'sync/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
