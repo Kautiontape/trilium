@@ -380,10 +380,13 @@ export async function commitTasks(api: NoteStore, reqs: CommitRequest[], opts: P
       const moved = moveInMainList(after, req.listItemId, { first: true });
       if (!moved.ok) return skip(req, moved.reason);
       after = moved.html;
-    } else if (req.before !== undefined || req.after !== undefined) {
-      const placed = placeInDay(after, req.listItemId, req.before !== undefined ? { before: req.before } : { after: req.after ?? '' }, states);
-      if (!placed.ok) return skip(req, placed.reason, placed.detail);
-      after = placed.html;
+    } else {
+      const place = req.before !== undefined ? { before: req.before, onDeck: false } : req.after !== undefined ? { after: req.after, onDeck: false } : null;
+      if (place) {
+        const placed = placeInDay(after, req.listItemId, place, states);
+        if (!placed.ok) return skip(req, placed.reason, placed.detail);
+        after = placed.html;
+      }
     }
     if (opts.dryRun) return { ...req, status: 'moved', dryRun: true, changes: [{ noteId: req.noteId, role: 'target', before: html, after }] };
     if (!(await api.putContent(req.noteId, after, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');

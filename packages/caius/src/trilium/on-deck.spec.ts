@@ -162,11 +162,19 @@ describe('writing On deck', () => {
       { noteId: 'a', listItemId: 'd2', before: 'nope' },
     ]);
     expect(results[0]).toMatchObject({ status: 'moved' });
-    expect(results[1]).toMatchObject({ status: 'skipped' });
+    expect(results[1]).toMatchObject({ status: 'skipped', reason: 'not_found' });
     const html = fake.html.a ?? '';
     expect(html.indexOf('Cook')).toBeLessThan(html.indexOf('Tidy the garage'));
     expect(html.indexOf('Tidy the garage')).toBeLessThan(html.indexOf('Read<'));
     expect(html.indexOf('Evening')).toBeLessThan(html.indexOf('Tidy the garage'));
     expect(html).toContain('Read the RFC');
+  });
+
+  it('refuses an anchor that is itself On deck and leaves the note as it was', async () => {
+    const fake = fakeTrilium(day('a', '2026-11-06', TASKS + DECK));
+    const before = fake.html.a;
+    const [result] = await commitTasks(fake.api, [{ noteId: 'a', listItemId: 'd1', after: 'd2' }]);
+    expect(result).toMatchObject({ status: 'skipped', reason: 'bad_request' });
+    expect(fake.html.a).toBe(before);
   });
 });
