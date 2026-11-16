@@ -301,4 +301,27 @@ describe("a review asks nothing Plan my day asks", () => {
         const week = await call("caius_context", { date: TODAY });
         expect(week.context.map((line: any) => line.text)).not.toContain("ABC-30 is open");
     });
+
+    it("Mon 19:00, Review of Thu 12: a meeting of Monday's overlap in his words is no check, and an overlap answer is left for Plan my day", async () => {
+        const THURSDAY = "2026-11-12";
+        calendars[TODAY] = [ event("11:00", "12:00", "Design sync"), event("11:30", "12:30", "Vendor call") ];
+        // Friday evening's wind-down is no review: it reads Monday's calendar again and names the overlap.
+        at(`${FRIDAY}T23:00`);
+        const friday = await call("caius_winddown", { date: FRIDAY, step: "next", refresh: true });
+        const [ overlap ] = friday.data.overlaps;
+        expect(overlap).toMatchObject({ first: "Design sync", second: "Vendor call" });
+        await cls.init(async () => {
+            const thursday = await store.calendarDay(THURSDAY);
+            await store.putContent(thursday.noteId, `<h2>☑️ Tasks</h2>${ul(li("th-done", "Order the toner ~15m"))}`);
+        });
+
+        at(`${TODAY}T19:00`);
+        const said = await call("caius_winddown_apply", { date: THURSDAY, said: "toner's done, and I'll take the design sync", done: [ "th-done" ] });
+        expect(said.check).toBeUndefined();
+        expect(said.written).toContainEqual(expect.objectContaining({ kind: "done", id: "th-done", status: "written" }));
+        const answered = await call("caius_winddown_apply", { date: THURSDAY, overlaps: [ { overlapId: overlap.overlapId, take: "Design sync" } ] });
+        expect(answered.skipped).toEqual([ { kind: "overlap", id: overlap.overlapId, text: "Design sync", reason: "review_only", detail: expect.stringContaining("Plan my day") } ]);
+        expect(await labelsOf(TODAY, "caiusDeclined")).toEqual([]);
+        delete calendars[TODAY];
+    });
 });
