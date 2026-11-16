@@ -462,8 +462,7 @@ export async function planDay(deps: StepDeps, { date, step, refresh, answered, e
  */
 async function nestsOf(store: NoteStore, read: DayFrame, offer: Awaited<ReturnType<typeof planOffer>>) {
     const { plan, projects } = offer.day;
-    const live = [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].filter(isLive);
-    const parents = new Set(live.map((task) => task.parentListItemId));
+    const parents = new Set([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].map((task) => task.parentListItemId));
     const sources = new Map<string, Promise<{ noteId: string; title: string } | null>>();
     const sourceOf = (noteId: string) => {
         const found = sources.get(noteId) ?? store.note(noteId).then(
@@ -501,10 +500,13 @@ async function nestsOf(store: NoteStore, read: DayFrame, offer: Awaited<ReturnTy
 function nestWords(nest: NumberedNest) {
     const { because: reason, ...rest } = nest;
     const because = reason.kind === "meeting"
-        ? t("caius.daily.nest_meeting", {
-            count: nest.items.length, meeting: "text" in nest.under ? nest.under.text : "",
-            askers: reason.askers.length > 1 ? t("caius.daily.list_and", { head: reason.askers.slice(0, -1).join(", "), last: reason.askers.at(-1) }) : reason.askers[0] ?? ""
-        })
+        ? [
+            t("caius.daily.nest_meeting", { count: nest.items.length, meeting: "text" in nest.under ? nest.under.text : "" }),
+            t("caius.daily.nest_askers", {
+                count: reason.askers.length,
+                askers: reason.askers.length > 1 ? t("caius.daily.list_and", { head: reason.askers.slice(0, -1).join(", "), last: reason.askers.at(-1) }) : reason.askers[0] ?? ""
+            })
+        ].join(" ")
         : t("caius.daily.nest_project", { count: reason.count, project: reason.project });
     return { ...rest, because, reason };
 }

@@ -24,6 +24,9 @@ const STANDUP_DAY = "2026-11-10";
 const GARDEN_DAY = "2026-11-11";
 const QUIET_DAY = "2026-11-12";
 const PICK_DAY = "2026-11-13";
+const THREE_DAY = "2026-11-16";
+const PAIR_DAY = "2026-11-17";
+const DONE_SUB_DAY = "2026-11-18";
 
 const jiraByDate: Record<string, JiraInputs> = {};
 const calendars: Record<string, CalendarEvent[]> = {};
@@ -72,11 +75,27 @@ beforeAll(async () => {
         await store.addLabel(pick, "status", "active");
         await store.addLabel(pick, "priorityGroup", "Growth");
         await dayNote(PICK_DAY, `<h3>Work</h3>${ul(...[ "Prune the roses", "Water the beds", "Plant the beans" ].map((text, i) => li(`k${i}`, `🌱 Garden: ${text}`)))}`);
+        await dayNote(THREE_DAY, `<h3>Work</h3>${ul(li("e1", "09:30 Standup"))}`);
+        await dayNote(PAIR_DAY, `<h3>Work</h3>${ul(li("f1", "09:30 Standup"))}`);
+        await dayNote(DONE_SUB_DAY, `<h3>Work</h3>${ul(
+            li("h0", `Prune the roses <a href="#root/${garden}">from Garden</a>`).replace("</li>", `<ul class="todo-list"><li data-list-item-id="h0a"><label class="todo-list__label"><input type="checkbox" checked="checked" disabled="disabled"><span class="todo-list__label__description">Buy shears</span></label></li></ul></li>`),
+            li("h1", `Water the beds <a href="#root/${garden}">from Garden</a>`),
+            li("h2", `Plant the beans <a href="#root/${garden}">from Garden</a>`)
+        )}`);
         await dayNote(QUIET_DAY, `<h3>Work</h3>${ul(li("q1", "Write the report ~20m"))}`);
     });
     calendars[STANDUP_DAY] = [ {
         start: "09:30", end: "09:45", title: "Standup", attendees: [ "ana.lopez@example.com", "Ben Ortiz" ], allDay: false, declined: false, source: [ 0 ]
     } ];
+    const meeting = (attendees: string[]): CalendarEvent[] => [ { start: "09:30", end: "09:45", title: "Standup", attendees, allDay: false, declined: false, source: [ 0 ] } ];
+    const ask = (key: string, author: string, id: string) => ({
+        ticket: { key, summary: `Summary ${key}`, status: "Dev Verify", resolution: null, url: `https://example.atlassian.net/browse/${key}`, assignee: "Me", updated: "2026-11-13T10:00:00.000-0500" },
+        author, created: "2026-11-13T09:00:00.000-0500", commentId: id, excerpt: "Can you look?"
+    });
+    calendars[THREE_DAY] = meeting([ "ana.lopez@example.com" ]);
+    jiraByDate[THREE_DAY] = { handoff: [], asks: [ ask("ABC-31", "Ana Lopez", "31"), ask("ABC-32", "Ana Lopez", "32"), ask("ABC-33", "Ana Lopez", "33") ], done: [] };
+    calendars[PAIR_DAY] = meeting([ "ana.lopez@example.com", "Ben Ortiz" ]);
+    jiraByDate[PAIR_DAY] = { handoff: [], asks: [ ask("ABC-41", "Ana Lopez", "41"), ask("ABC-42", "Ben Ortiz", "42") ], done: [] };
     jiraByDate[STANDUP_DAY] = {
         handoff: [],
         asks: [ {
@@ -120,6 +139,18 @@ describe("caius_planday inputs: nests", () => {
             ref: "n1", under: { text: "Garden" }, items: [ { id: "k0" }, { id: "k1" }, { id: "k2" } ],
             because: "Put the 3 Garden tasks under one Garden item?"
         } ]);
+    });
+
+    it("words the question's count on the answers and its is or are on the askers", async () => {
+        const three = await planday(THREE_DAY);
+        expect(three.data.nests[0].because).toBe("Put 3 answers under Standup? Ana is in it.");
+        const pair = await planday(PAIR_DAY);
+        expect(pair.data.nests[0].because).toBe("Put 2 answers under Standup? Ana and Ben are in it.");
+    });
+
+    it("leaves out a task that has a done sub-item, and offers no nest when fewer than three remain", async () => {
+        const answer = await planday(DONE_SUB_DAY);
+        expect(answer.data.nests).toEqual([]);
     });
 
     it("offers none on a day with neither", async () => {
