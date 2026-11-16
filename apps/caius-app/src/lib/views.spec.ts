@@ -379,7 +379,7 @@ describe("a parent with closed sub-items", () => {
         const both = tap({ [key("a")]: { fate: { kind: "done" } }, [key("b")]: { fate: { kind: "done" } } });
         expect(foundation(data, both)).toBe(0);
         expect(dayTerrain(data, redrawRows(data.tasks, both)).input.groups).toEqual([]);
-        expect(foundation(data, tap({ [key("a")]: { fate: { kind: "drop" } }, [key("b")]: { fate: { kind: "drop" } } }))).toBe(30);
+        expect(foundation(data, tap({ [key("a")]: { fate: { kind: "drop", reason: "not needed" } }, [key("b")]: { fate: { kind: "drop", reason: "not needed" } } }))).toBe(30);
     });
 
     it("moves the meter by nothing when a parent whose sub-items are all done is ticked", () => {
