@@ -105,7 +105,7 @@ export function dayLoadOf(frame: DayFrame, plan: PlanView, { stated = null, inco
     return dayLoad({
         foundation: plan.capacity.areas.foundation.minutes + incoming.list,
         // The whole On deck, so a parent counts through its live sub-items as plan-read counts it.
-        onDeck: liveMinutes(plan.onDeck, "foundation") + incoming.onDeck,
+        onDeck: liveMinutes(plan.onDeck, "foundation", { meetings: plan.meetings }) + incoming.onDeck,
         growth: plan.capacity.areas.growth.minutes,
         recharge: mainTasks(plan).filter((task) => task.area === "recharge" && task.text.trim() !== "").length
     }, { focus, growthTarget: frame.rhythm.targets.growth });

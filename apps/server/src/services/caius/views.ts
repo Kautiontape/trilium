@@ -37,6 +37,7 @@ import {
     type SlippingViewData,
     type StoreNote,
     type TaskOrigin,
+    topLevelOf,
     TRILIUM_CONFIG,
     type TriliumDoc,
     type ViewContextLine,
@@ -198,8 +199,8 @@ async function slippingView(deps: ViewsDeps, period: string | null, now: Date): 
         const scan = scanDocs(docs, TRILIUM_CONFIG, now);
         const open = openTasks(docs, scan);
         const all = trailsOf(docs, now, scan);
-        const slipping = open
-            .filter((task) => task.parent === null && task.listItemId)
+        const slipping = topLevelOf(open)
+            .filter((task) => task.listItemId)
             .flatMap((task) => {
                 const trail = trailOf(all, task);
                 return trail && trail.slips >= MIN_SLIPS && (!within || movedWithin(trail, within)) ? [ { task, trail } ] : [];

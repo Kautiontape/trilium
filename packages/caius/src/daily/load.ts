@@ -8,7 +8,8 @@ import type { PlanTask } from '../trilium/plan-read.js';
 export const DEFAULT_ESTIMATE = 30;
 
 type Range = { min: number; max: number };
-type Countable = Pick<PlanTask, 'state' | 'text' | 'estMinutes' | 'parent' | 'listItemId' | 'parentListItemId' | 'at'> & {
+type Countable = Pick<PlanTask, 'state' | 'text' | 'estMinutes' | 'parent' | 'listItemId' | 'parentListItemId'> & {
+  at?: string | null;
   noteId?: string;
   area?: Area;
 };
@@ -68,7 +69,7 @@ export function countUnits<T extends Countable>(tasks: T[], opts: CountOptions<T
         ? { minutes: own, estimated: 1, unestimated: 0 }
         : { minutes: DEFAULT_ESTIMATE, estimated: 0, unestimated: 1 };
     }
-    const at = clockKey(task.at);
+    const at = clockKey(task.at ?? null);
     if (at !== null && clocks.has(at)) return { minutes: 0, estimated: 0, unestimated: 0 };
     if (own !== null) return { minutes: own, estimated: 1, unestimated: 0 };
     const sum = { minutes: 0, estimated: 0, unestimated: 0 };
@@ -115,6 +116,15 @@ export function parentsOf<T extends Countable>(tasks: T[]): Map<T, T> {
     if (parent !== undefined) parents.set(task, parent);
   }
   return parents;
+}
+
+/** The tasks of `tasks`, in any state, whose parent is absent or not live: top-level tasks and sub-items left behind by a parent that is done. */
+export function topLevelOf<T extends Countable>(tasks: T[]): T[] {
+  const parents = parentsOf(tasks);
+  return tasks.filter((task) => {
+    const parent = parents.get(task);
+    return parent === undefined || !isLive(parent);
+  });
 }
 
 /** The day's load from its minutes. On deck never counts toward `over`; `recharge` is a count of things. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { critical, fakeTrilium, li, periodNote, ul } from '../trilium/helpers.js';
 import { readPlan, type PlanTask } from '../trilium/plan-read.js';
-import { countUnits, dayLoad, liveMinutes, parentsOf, unitMinutes } from './load.js';
+import { countUnits, dayLoad, liveMinutes, parentsOf, topLevelOf, unitMinutes } from './load.js';
 
 const task = (over: Partial<PlanTask>): PlanTask => ({
   noteId: 'd', listItemId: null, state: 'open', text: 't', estMinutes: null, parent: null, parentListItemId: null,
@@ -120,5 +120,20 @@ describe('dayLoad', () => {
     expect(load(0, 0, 120).growth).toEqual({ minutes: 120, target: { min: 60, max: 120 }, over: false });
     expect(load(0, 0, 135, 2).growth.over).toBe(true);
     expect(load(0, 0, 0, 2).recharge).toEqual({ count: 2 });
+  });
+});
+
+describe('topLevelOf', () => {
+  it('keeps a sub-item whose parent is done or cancelled, drops one under a live parent, and finds an id-less parent by its words', () => {
+    const tasks = [
+      task({ listItemId: 'p1', text: 'Standup', state: 'done' }),
+      task({ listItemId: 'a1', text: 'Answer', parent: 'Standup', parentListItemId: 'p1' }),
+      task({ listItemId: 'p2', text: 'Review' }),
+      task({ listItemId: 'b1', text: 'Read', parent: 'Review', parentListItemId: 'p2' }),
+      task({ text: 'Sync', state: 'cancelled' }),
+      task({ text: 'Notes', parent: 'Sync' }),
+      task({ text: 'Plain' }),
+    ];
+    expect(topLevelOf(tasks).map((t) => t.text)).toEqual(['Standup', 'Answer', 'Review', 'Sync', 'Notes', 'Plain']);
   });
 });

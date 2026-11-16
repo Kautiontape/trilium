@@ -58,6 +58,8 @@ import {
     headingArea,
     headingStacks,
     TRILIUM_CONFIG,
+    topLevelOf,
+    unitMinutes,
     workdayMinutes
 } from "@triliumnext/caius";
 import { createHash } from "crypto";
@@ -840,7 +842,7 @@ export async function periodNotesWith(store: NoteStore, name: string): Promise<S
 
 /** A plan's top-level tasks in any state, On deck included. */
 function topLevel(plan: PlanView): PlanTask[] {
-    return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ].filter((task) => task.parent === null && task.text.trim() !== "");
+    return topLevelOf([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks), ...plan.onDeck ]).filter((task) => task.text.trim() !== "");
 }
 
 /**
@@ -1089,10 +1091,11 @@ function wallClock(clock: string): string {
  * its time block, its pinned clock and whether it is work: a Foundation task, whatever its heading.
  */
 export function listOf(plan: PlanView) {
+    const all = [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ];
     return mainTasks(plan).map((task) => {
         const keys = keysOf(withoutMoveLinks(task.text));
         return {
-            label: workLabel(bareText(withoutMoveLinks(task.text))), text: bareText(plainText(withoutMoveLinks(task.text))), minutes: task.estMinutes ?? DEFAULT_ESTIMATE,
+            label: workLabel(bareText(withoutMoveLinks(task.text))), text: bareText(plainText(withoutMoveLinks(task.text))), minutes: unitMinutes(task, all, { meetings: plan.meetings }),
             area: task.area, block: task.block, at: task.at, work: task.area === "foundation", keys,
             id: task.listItemId, section: task.section, critical: task.critical
         };
@@ -1312,14 +1315,17 @@ function onOffer<C extends { candidateId: string; kind: string }>(candidates: C[
         && !(candidate.kind === "week" && facts.putOffBefore.has(candidate.candidateId)));
 }
 
-/** The live top-level tasks of a plan, the Important block first, then in his order. On deck is not on his list: see `deckTasks`. */
+/**
+ * The live top-level tasks of a plan, the Important block first, then in his order, with a
+ * sub-item whose parent is not live (`topLevelOf`). On deck is not on his list: see `deckTasks`.
+ */
 export function mainTasks(plan: PlanView): PlanTask[] {
-    return [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ].filter((task) => isLive(task) && task.parent === null);
+    return topLevelOf([ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ]).filter(isLive);
 }
 
 /** The live top-level tasks of a plan's On deck, in order. */
 export function deckTasks(plan: PlanView): PlanTask[] {
-    return plan.onDeck.filter((task) => isLive(task) && task.parent === null);
+    return topLevelOf(plan.onDeck).filter(isLive);
 }
 
 /** Every live top-level task of a plan a day leaves behind: his list, then On deck. */
