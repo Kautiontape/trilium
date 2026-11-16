@@ -86,6 +86,12 @@ describe("sayOf", () => {
             .toBe("ZAP-170 changed since you saw it, so it stays as it was and one task changed since you saw it.");
     });
 
+    it("says what a review leaves for Plan my day in one clause, for one item or several", () => {
+        const later = (key: string) => ({ kind: "accept", id: key, text: `Get ${key} Check the export done`, reason: "review_only", detail: "Plan my day takes this answer" });
+        expect(sayOf({ written: [], skipped: [ later("ABC-21") ] }, { day: "2026-11-16" })).toBe("ABC-21 is left for Plan my day.");
+        expect(sayOf({ written: [], skipped: [ later("ABC-21"), later("ABC-23") ] }, { day: "2026-11-16" })).toBe("ABC-21 and ABC-23 are left for Plan my day.");
+    });
+
     it("says so when nothing needed writing", () => {
         expect(sayOf({ written: [ { kind: "brief", status: "unchanged" } ], skipped: [] }, { day: "2026-11-02" })).toBe("Everything was already in place.");
     });

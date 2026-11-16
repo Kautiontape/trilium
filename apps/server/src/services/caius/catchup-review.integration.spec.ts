@@ -282,4 +282,23 @@ describe("a review asks nothing Plan my day asks", () => {
         expect(yes.check).toBeUndefined();
         expect(yes.written).toContainEqual(expect.objectContaining({ kind: "fate", id: "wd-left", detail: TODAY, status: "written" }));
     });
+
+    it("Mon 19:00, Review of Wed 11: a keep line and a dismissal passed anyway are left for Plan my day", async () => {
+        await cls.init(async () => {
+            const wednesday = await store.calendarDay(WEDNESDAY);
+            const before = await store.content(wednesday.noteId);
+            await store.putContent(wednesday.noteId, `<h3>Context</h3>${bullets("ABC-30 is open (until Thu 12 Nov)")}${before}`);
+        });
+        at(`${TODAY}T19:00`);
+        const keep = lineIdOf("ABC-30 is open");
+        const applied = await call("caius_winddown_apply", { date: WEDNESDAY, keep: [ { lineId: keep } ], dismiss: [ { candidateId: "ABC-22" } ] });
+        const later = { reason: "review_only", detail: expect.stringContaining("Plan my day") };
+        expect(applied.skipped).toEqual([
+            { kind: "dismiss", id: "ABC-22", text: expect.stringContaining("ABC-22"), ...later },
+            { kind: "keep", id: keep, text: "ABC-30 is open", ...later }
+        ]);
+        expect(await labelsOf(TODAY, "caiusDismissed")).toEqual([]);
+        const week = await call("caius_context", { date: TODAY });
+        expect(week.context.map((line: any) => line.text)).not.toContain("ABC-30 is open");
+    });
 });
