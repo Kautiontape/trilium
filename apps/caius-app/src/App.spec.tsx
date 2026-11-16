@@ -136,4 +136,23 @@ describe("App", () => {
         root.remove();
         today.value = null;
     });
+
+    it("draws the nav, add button and mini-chat icons at their px sizes", async () => {
+        ritual.value = null;
+        tab.value = "today";
+        const root = document.createElement("div");
+        document.body.append(root);
+        act(() => render(<App />, root));
+        await vi.waitFor(() => expect(root.querySelector(".shell")).not.toBeNull());
+        act(() => openRitual("plan", "2026-11-03"));
+        act(() => minimizeRitual());
+
+        const boxes = [ ...root.querySelectorAll<HTMLElement>(".shell .icon") ].map((icon) => `${icon.style.width} × ${icon.style.height}`);
+        const nav = Array<string>(4).fill("24px × 24px");
+        expect(boxes.sort()).toEqual([ "20px × 20px", ...nav, "28px × 28px" ]);
+
+        act(() => render(null, root));
+        root.remove();
+        ritual.value = null;
+    });
 });
