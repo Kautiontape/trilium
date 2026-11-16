@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ensureListItemIds, listItemsWithoutIds } from './html-util.js';
+import { ensureListItemIds, listItemsWithoutIds, tokenZoneStartInHtml } from './html-util.js';
 
 const counter = () => {
   let n = 0;
@@ -55,5 +55,14 @@ describe('ensureListItemIds', () => {
     ]) {
       expect(ensureListItemIds(html)).toBe(html);
     }
+  });
+});
+
+describe('tokenZoneStartInHtml', () => {
+  it('counts each entity as the characters it takes in the raw HTML', () => {
+    expect(tokenZoneStartInHtml('Migrate A -&gt; B ~30m')).toBe(17);
+    expect(tokenZoneStartInHtml('Q&amp;A &lt;draft&gt; ~30m')).toBe('Q&amp;A &lt;draft&gt;'.length);
+    expect(tokenZoneStartInHtml('Fix &amp; ship ~1h')).toBe(14);
+    expect(tokenZoneStartInHtml('<b>bold</b> A -&gt; B ~30m')).toBe('<b>bold</b> A -&gt; B'.length);
   });
 });

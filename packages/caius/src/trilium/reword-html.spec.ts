@@ -94,6 +94,12 @@ describe('rewordTask', () => {
     expect(reason('t1', '   ')).toBe('empty');
   });
 
+  it('keeps the estimate when the words hold an escaped < or >', () => {
+    const html = doc(li('t1', 'Migrate A -&gt; B ~30m'));
+    const r = rewordTask(html, 't1', 'Migrate A to B', STATES);
+    expect(r.ok && spanOf(r.html, 't1')).toBe('Migrate A to B ~30m');
+  });
+
   it('reports unchanged for the same words', () => {
     const html = doc(li('t1', `🌱 09:00 Same words ${FROM} ~30m`));
     const r = rewordTask(html, 't1', 'Same words', STATES);
