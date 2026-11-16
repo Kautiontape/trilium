@@ -19,7 +19,7 @@ const li = (id: string, text: string) =>
     `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox" disabled="disabled">`
     + `<span class="todo-list__label__description">${text}</span></label></li>`;
 const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>`;
-const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+const qrs = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
 
 const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
     key, summary: `Summary ${key}`, status: "Code Review", resolution: null, url: `https://example.atlassian.net/browse/${key}`,
@@ -89,7 +89,7 @@ describe("the header's groups", () => {
         calendars[WED] = [ event("10:00", "10:15", "Daily Standup") ];
         await dayWith(WED, `<h2>☑️ Tasks</h2>${ul(
             li("w-dave", "Message Dave if he knows anyone who will hang lights as a small job"),
-            li("w-111", `${zap("QRS-611", "Check the invoice export in QA")} ~30m`)
+            li("w-111", `${qrs("QRS-611", "Check the invoice export in QA")} ~30m`)
         )}`);
         at(`${WED}T09:40`);
         const planned = await call("caius_plan_apply", { date: WED, said: "", brief: { headline: "Message Dave, then QRS-611.", groups: [
@@ -110,7 +110,7 @@ describe("the header's groups", () => {
 describe("a group names a ticket by its whole key", () => {
     it("a group naming QRS-811 doesn't take QRS-81", async () => {
         const DAY = "2030-06-10";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("k-811", `${zap("QRS-811", "Verify the export retry")} ~30m`), li("k-81", `${zap("QRS-81", "Tidy the board")} ~30m`))}`);
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("k-811", `${qrs("QRS-811", "Verify the export retry")} ~30m`), li("k-81", `${qrs("QRS-81", "Tidy the board")} ~30m`))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "The export retry, then the board.", groups: [
             { name: "Export", items: [ "QRS-811" ] }, { name: "Board", items: [ "QRS-81" ] }
@@ -127,9 +127,9 @@ describe("a closed day's header", () => {
         const MON = "2028-11-06";
         calendars[MON] = [ event("10:00", "10:15", "Daily Standup"), event("11:00", "12:00", "Sprint Planning") ];
         await dayWith(MON, `<h2>☑️ Tasks</h2>${ul(
-            li("m-101", `${zap("QRS-601", "Verify the export retry on staging")} ~30m`),
-            li("m-110", `${zap("QRS-610", "Review the import mapper change")} ~30m`),
-            li("m-111", `${zap("QRS-611", "Check the invoice export in QA")} ~30m`)
+            li("m-101", `${qrs("QRS-601", "Verify the export retry on staging")} ~30m`),
+            li("m-110", `${qrs("QRS-610", "Review the import mapper change")} ~30m`),
+            li("m-111", `${qrs("QRS-611", "Check the invoice export in QA")} ~30m`)
         )}`);
         at(`${MON}T09:40`);
         const planned = await call("caius_plan_apply", { date: MON, said: "", brief: { headline: "QRS-601 first, then QRS-610 and QRS-611.", groups: [
@@ -457,7 +457,7 @@ describe("a stale errand", () => {
     it("the plan's top pick is the first task on his list, whatever its area: a Growth chore above the work leads, and an Evening task is no pick", async () => {
         const DAY = "2029-05-07";
         await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Home</h3>${ul(li("p-dave", "🌱 Message Dave about the lights"))}<h3>Chores</h3>${ul(li("p-bins", "🔋 Take the bins out"))}`
-            + `<h3>Work</h3>${ul(li("p-801", `${zap("QRS-801", "Verify the export retry")} ~30m`), li("p-802", `${zap("QRS-802", "Check the invoice export")} ~30m`))}<h3>Evening</h3>${ul(li("p-ev", "Call the plumber"))}`);
+            + `<h3>Work</h3>${ul(li("p-801", `${qrs("QRS-801", "Verify the export retry")} ~30m`), li("p-802", `${qrs("QRS-802", "Check the invoice export")} ~30m`))}<h3>Evening</h3>${ul(li("p-ev", "Call the plumber"))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Message Dave first, then the export retry.", acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
@@ -484,8 +484,8 @@ describe("a stale errand", () => {
 
     it("a task with a ticket is work under any heading: QRS-821 under Admin chores stays the top pick", async () => {
         const DAY = "2030-06-11";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Admin chores</h3>${ul(li("c-821", `${zap("QRS-821", "Submit the expense report")} ~15m`))}`
-            + `<h3>Work</h3>${ul(li("c-822", `${zap("QRS-822", "Fix the export retry")} ~30m`))}`);
+        await dayWith(DAY, `<h2>☑️ Tasks</h2><h3>Admin chores</h3>${ul(li("c-821", `${qrs("QRS-821", "Submit the expense report")} ~15m`))}`
+            + `<h3>Work</h3>${ul(li("c-822", `${qrs("QRS-822", "Fix the export retry")} ~30m`))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: "Expense report on QRS-821, then the export retry.", acts: [
             { range: "", text: "x" }, { range: "", text: "y" }
@@ -496,7 +496,7 @@ describe("a stale errand", () => {
     it("the agent's headline is written as sent, an evening task's words in it or not", async () => {
         const DAY = "2029-05-08";
         const HEADLINE = "Call Jordan about the QRS-811 export retry first.";
-        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${zap("QRS-811", "Verify the export retry")} ~30m`))}<h3>Evening</h3>${ul(li("q-mom", "Call Mom about the flights"))}`);
+        await dayWith(DAY, `<h2>☑️ Tasks</h2>${ul(li("q-801", `${qrs("QRS-811", "Verify the export retry")} ~30m`))}<h3>Evening</h3>${ul(li("q-mom", "Call Mom about the flights"))}`);
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, said: "", brief: { headline: HEADLINE, acts: [
             { range: "", text: "x" }, { range: "", text: "y" }

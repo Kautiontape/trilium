@@ -100,7 +100,7 @@ describe("the caius service reading a ticket", () => {
             return reads.length === 1 ? { error: "http_503" } : card;
         });
 
-        expect(await service.ticket("zap 1")).toEqual({ error: "bad_request" });
+        expect(await service.ticket("qrs 1")).toEqual({ error: "bad_request" });
         expect(await service.ticket("qrs-1")).toEqual({ error: "http_503" });
         expect(await service.ticket("QRS-1")).toBe(card);
         now = 14 * 60_000;

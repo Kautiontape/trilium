@@ -84,7 +84,7 @@
               },
               {
                 "type": "text",
-                "text": "zap-staging-east",
+                "text": "qrs-staging-east",
                 "marks": [
                   {
                     "type": "code"

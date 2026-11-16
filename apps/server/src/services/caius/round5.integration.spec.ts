@@ -18,7 +18,7 @@ const li = (id: string, text: string) =>
     `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox" disabled="disabled">`
     + `<span class="todo-list__label__description">${text}</span></label></li>`;
 const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>`;
-const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+const qrs = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
 
 const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
     key, summary: `Summary ${key}`, status: "Code Review", resolution: null, url: `https://example.atlassian.net/browse/${key}`,
@@ -79,9 +79,9 @@ async function monday(date: string) {
     await cls.init(async () => {
         const day = await store.calendarDay(date);
         await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-            li(`${date}-101`, `${zap("QRS-101", "Verify the export retry on staging")} ~30m`),
-            li(`${date}-110`, `${zap("QRS-110", "Review the import mapper change")} ~30m`),
-            li(`${date}-111`, `${zap("QRS-111", "Check the invoice export in QA")} ~30m`)
+            li(`${date}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`),
+            li(`${date}-110`, `${qrs("QRS-110", "Review the import mapper change")} ~30m`),
+            li(`${date}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`)
         )}`);
     });
 }
@@ -156,7 +156,7 @@ describe("a correction to a day, by key or words", () => {
         const WED = "2027-07-14";
         await cls.init(async () => {
             const day = await store.calendarDay(MON);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MON}-101`, `${zap("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${MON}-dave`, "Message Dave about the lights"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MON}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${MON}-dave`, "Message Dave about the lights"))}`);
         });
         at(`${MON}T17:30`);
         await call("caius_winddown_apply", { date: MON, said: "fine", asOffered: true });
@@ -216,8 +216,8 @@ describe("his words decide", () => {
             await cls.init(async () => {
                 const day = await store.calendarDay(MON);
                 await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-                    li(`${MON}-101`, `${zap("QRS-101", "Verify the export retry on staging")} ~30m`),
-                    li(`${MON}-111`, `${zap("QRS-111", "Check the invoice export in QA")} ~30m`),
+                    li(`${MON}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`),
+                    li(`${MON}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`),
                     li(`${MON}-dave`, "Message Dave about the lights"),
                     li(`${MON}-plumber`, "Call the plumber")
                 )}`);
@@ -442,7 +442,7 @@ describe("the header follows the drawing", () => {
         calendars[TUE] = [ event("09:30", "09:45", "Team Standup"), event("10:00", "10:30", "Weekly Planning Sync"), event("11:00", "11:30", "Customer Call") ];
         await cls.init(async () => {
             const day = await store.calendarDay(TUE);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-101", `${zap("QRS-401", "Verify the export retry on staging")} ~30m`), li("t-dave", "Message Dave ~30m"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t-101", `${qrs("QRS-401", "Verify the export retry on staging")} ~30m`), li("t-dave", "Message Dave ~30m"))}`);
         });
         at(`${TUE}T09:35`);
         const planned = await call("caius_plan_apply", { date: TUE, said: "", brief: {

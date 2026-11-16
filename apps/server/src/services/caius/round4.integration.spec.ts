@@ -19,7 +19,7 @@ const li = (id: string, text: string) =>
     `<li data-list-item-id="${id}"><label class="todo-list__label"><input type="checkbox" disabled="disabled">`
     + `<span class="todo-list__label__description">${text}</span></label></li>`;
 const ul = (...items: string[]) => `<ul class="todo-list">${items.join("")}</ul>`;
-const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+const qrs = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
 
 const MON = "2026-11-02";
 const WED = "2026-11-04";
@@ -97,8 +97,8 @@ async function wednesday(date = WED) {
     await cls.init(async () => {
         const day = await store.calendarDay(date);
         await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-            li(`${date}-111`, `${zap("QRS-111", "Check the invoice export in QA")} ~30m`),
-            li(`${date}-101`, `${zap("QRS-101", "Verify the export retry on staging")} ~30m`),
+            li(`${date}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`),
+            li(`${date}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`),
             li(`${date}-dave`, "Message Dave if he knows anyone who will hang lights as a small job")
         )}<h3>Evening</h3>${ul(li(`${date}-bag`, "Pack the climbing gym bag"))}`);
     });
@@ -274,8 +274,8 @@ describe("'done' means done", () => {
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-                li("t111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`),
-                li("t101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`),
+                li("t111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`),
+                li("t101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`),
                 li("tdave", "Message Dave about the lights")
             )}<h3>Evening</h3>${ul(li("tbag", "Pack the climbing gym bag"))}`);
         });
@@ -477,7 +477,7 @@ describe("an emptied Suggested goes", () => {
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("s-dave", "Message Dave about the lights"))}<h2>Suggested</h2>${ul(
-                li("s-105", `Get ${zap("QRS-105", "Confirm the staging bucket name")} done: because Jordan Placeholder asked on Sunday (~30m)`)
+                li("s-105", `Get ${qrs("QRS-105", "Confirm the staging bucket name")} done: because Jordan Placeholder asked on Sunday (~30m)`)
             )}`);
         });
         at(`${DAY}T09:40`);
@@ -493,7 +493,7 @@ describe("a refresh plans from now", () => {
         const DAY = "2027-04-06";
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("n101", `${zap("QRS-101", "Verify the export retry")} ~30m`), li("n-dave", "Message Dave ~15m"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("n101", `${qrs("QRS-101", "Verify the export retry")} ~30m`), li("n-dave", "Message Dave ~15m"))}`);
         });
         at(`${DAY}T09:35`);
         await call("caius_plan_apply", { date: DAY, brief: prose });
@@ -750,8 +750,8 @@ describe("fix round 1: a finished key that two open items carry", () => {
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-                li("f-105", `${zap("QRS-105", "Confirm the bucket")} ~30m`),
-                li("f-ask", `Answer Jordan Placeholder's question on ${zap("QRS-105", "")} ~15m`),
+                li("f-105", `${qrs("QRS-105", "Confirm the bucket")} ~30m`),
+                li("f-ask", `Answer Jordan Placeholder's question on ${qrs("QRS-105", "")} ~15m`),
                 li("f-oth", "Other thing")
             )}`);
         });
@@ -766,7 +766,7 @@ describe("fix round 1: a finished key that two open items carry", () => {
         const DAY = "2027-07-07";
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g-a", `${zap("QRS-106", "Confirm the bucket")} ~30m`), li("g-b", `${zap("QRS-106", "Write the rollout note")} ~30m`))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g-a", `${qrs("QRS-106", "Confirm the bucket")} ~30m`), li("g-b", `${qrs("QRS-106", "Write the rollout note")} ~30m`))}`);
         });
         at(`${DAY}T17:45`);
         const applied = await call("caius_winddown_apply", { date: DAY, finished: [ "QRS-106" ] });
@@ -1044,9 +1044,9 @@ describe("fix round 3: a hold that spans two days", () => {
     it("F0 (X1, X2): Monday's 111 and Wednesday's 101 held together; neither Thursday's move_all nor Thursday's wind-down moves either until he names one", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2027-11-01");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("x-111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("x-111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
             const wednesday = await store.calendarDay("2027-11-03");
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("x-101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("x-101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
         });
         at("2027-11-03T17:45");
         const held = await call("caius_winddown_apply", { date: "2027-11-03", done: [ "the export" ] });
@@ -1081,8 +1081,8 @@ describe("fix round 3: a three-way hold narrowed by one", () => {
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
             await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(
-                li("t3-111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`), li("t3-101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`),
-                li("t3-120", `${zap("QRS-120", "Fix the export columns")} ~30m`)
+                li("t3-111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`), li("t3-101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`),
+                li("t3-120", `${qrs("QRS-120", "Fix the export columns")} ~30m`)
             )}`);
         });
         at(`${DAY}T17:45`);
@@ -1176,9 +1176,9 @@ describe("fix round 4: a follow-up by words after a complete wind-down", () => {
         const MO = "2028-02-07", WE = "2028-02-09", TH = "2028-02-10";
         await cls.init(async () => {
             const monday = await store.calendarDay(MO);
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MO}-111`, `${zap("QRS-111", "Check the invoice export in QA")} ~30m`), li(`${MO}-dave`, "Message Dave about the lights"))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MO}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`), li(`${MO}-dave`, "Message Dave about the lights"))}`);
             const wednesday = await store.calendarDay(WE);
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${WE}-101`, `${zap("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${WE}-bag`, "Pack the climbing gym bag"))}`);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${WE}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${WE}-bag`, "Pack the climbing gym bag"))}`);
         });
         at(`${WE}T17:45`);
         const first = await call("caius_winddown_apply", { date: WE, done: [ "the invoice export" ] });
@@ -1201,9 +1201,9 @@ describe("fix round 3: held items on several days are named with their days", ()
     it("F6: Monday's 111 and Wednesday's 101 held together; Thursday's question names each one's day", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2027-12-06");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("d6-111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("d6-111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
             const wednesday = await store.calendarDay("2027-12-08");
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("d6-101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("d6-101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
         });
         at("2027-12-08T17:45");
         await call("caius_winddown_apply", { date: "2027-12-08", done: [ "the export" ] });
@@ -1235,9 +1235,9 @@ describe("fix round 3: a held week item is asked about too", () => {
     it("Wednesday's 111 and the week's 101 held together; Thursday's catch-up lists the week item with the day item and asks which", async () => {
         await cls.init(async () => {
             const wednesday = await store.calendarDay("2027-12-22");
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("ws-111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("ws-111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
             const week = await store.calendarWeek("2027-W51");
-            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("ws-101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
+            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("ws-101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
         });
         at("2027-12-22T17:45");
         const held = await call("caius_winddown_apply", { date: "2027-12-22", done: [ "the export" ] });
@@ -1254,9 +1254,9 @@ describe("fix round 3: a day with a held item isn't closed", () => {
     it("Wednesday's hold covers Monday's 111; Thursday's Review of Monday keeps 111 there and doesn't mark Monday wound down", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2028-01-03");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("cg-111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("cg-111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
             const wednesday = await store.calendarDay("2028-01-05");
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("cg-101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("cg-101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
         });
         at("2028-01-05T17:45");
         await call("caius_winddown_apply", { date: "2028-01-05", done: [ "the export" ] });
@@ -1274,9 +1274,9 @@ describe("fix round 4: a hold settled from a day whose window doesn't reach the 
     async function heldAcrossDays(mon: string, wed: string, prefix: string) {
         await cls.init(async () => {
             const monday = await store.calendarDay(mon);
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${prefix}-111`, `${zap("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${prefix}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
             const wednesday = await store.calendarDay(wed);
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${prefix}-101`, `${zap("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${prefix}-dave`, "Message Dave about the lights"))}`);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${prefix}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${prefix}-dave`, "Message Dave about the lights"))}`);
         });
         at(`${wed}T17:45`);
         const held = await call("caius_winddown_apply", { date: wed, done: [ "the export" ] });
@@ -1315,9 +1315,9 @@ describe("fix round 5: a Review of a day older than 3 workdays keeps its settled
         const TH = "2028-03-30", MO = "2028-04-03", FR = "2028-04-07";
         await cls.init(async () => {
             const thursday = await store.calendarDay(TH);
-            await store.putContent(thursday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${TH}-111`, `${zap("QRS-111", "Check the invoice export in QA")} ~30m`), li(`${TH}-dave`, "Message Dave about the lights"))}`);
+            await store.putContent(thursday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${TH}-111`, `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`), li(`${TH}-dave`, "Message Dave about the lights"))}`);
             const monday = await store.calendarDay(MO);
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MO}-101`, `${zap("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${MO}-bag`, "Pack the climbing gym bag"))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li(`${MO}-101`, `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`), li(`${MO}-bag`, "Pack the climbing gym bag"))}`);
         });
         at(`${FR}T09:30`);
         const first = await call("caius_winddown_apply", { date: MO, done: [ "the invoice export" ] });
@@ -1362,9 +1362,9 @@ describe("fix round 5: a hold settled in Plan my day", () => {
         const FR = "2028-05-19", WE = "2028-05-24", TH = "2028-05-25";
         await cls.init(async () => {
             const friday = await store.calendarDay(FR);
-            await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("nf-111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
+            await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("nf-111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`);
             const wednesday = await store.calendarDay(WE);
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("nf-101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`), li("nf-dave", "Message Dave about the lights"))}`);
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("nf-101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`), li("nf-dave", "Message Dave about the lights"))}`);
         });
         at(`${WE}T17:45`);
         const held = await call("caius_winddown_apply", { date: WE, done: [ "the export" ] });

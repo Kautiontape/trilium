@@ -344,7 +344,7 @@ describe("readTicket", () => {
     it("answers not_found for a missing ticket, not_configured without settings and bad_request for a bad key", async () => {
         expect(await readTicket(deps(withIssue(undefined).doFetch), "QRS-999")).toEqual({ error: "not_found" });
         expect(await readTicket(deps(withIssue(issue).doFetch, { ...ENV, JIRA_TOKEN: undefined }), "QRS-105")).toEqual({ error: "not_configured" });
-        expect(await readTicket(deps(withIssue(issue).doFetch), "zap 105")).toEqual({ error: "bad_request" });
+        expect(await readTicket(deps(withIssue(issue).doFetch), "qrs 105")).toEqual({ error: "bad_request" });
         const denied = (async () => json({}, 401)) as unknown as typeof fetch;
         expect(await readTicket(deps(denied), "QRS-105")).toEqual({ error: "http_401" });
     });

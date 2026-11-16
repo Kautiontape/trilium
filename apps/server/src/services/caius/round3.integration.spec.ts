@@ -111,7 +111,7 @@ describe("a Context line he gave is settled until the week boundary", () => {
     });
 });
 
-const zap = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
+const qrs = (key: string, title: string) => `<a href="https://example.atlassian.net/browse/${key}">${key}</a> ${title}`;
 /** The day's main list and evening, as the plan reads them. */
 async function listed(date: string) {
     const plan = await call("caius_plan", { period: "day", date });
@@ -122,10 +122,10 @@ describe("accept takes a position", () => {
     it("Wed 09:40 'yes, 101 first': the week's QRS-101 goes to the top of his list, not the end", async () => {
         await cls.init(async () => {
             const wednesday = await store.calendarDay(WED);
-            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("w105", `${zap("QRS-105", "Confirm the staging bucket name")} ~30m`), li("w111", `${zap("QRS-111", "Check the invoice export in QA")} ~30m`))}`
+            await store.putContent(wednesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("w105", `${qrs("QRS-105", "Confirm the staging bucket name")} ~30m`), li("w111", `${qrs("QRS-111", "Check the invoice export in QA")} ~30m`))}`
                 + `<h3>Evening</h3>${ul(li("wlau", "Laundry"))}`);
             const week = await store.calendarWeek("2026-W45");
-            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("k101", `${zap("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
+            await store.putContent(week.noteId, `${await store.content(week.noteId)}<h2>☑️ Tasks</h2>${ul(li("k101", `${qrs("QRS-101", "Verify the export retry on staging")} ~30m`))}`);
         });
         at(`${WED}T09:40`);
         const inputs = await call("caius_planday", { date: WED, step: "inputs", refresh: true });
@@ -151,8 +151,8 @@ describe("accept takes a position", () => {
         jira.handoff.push({ ...ticket("QRS-120", { status: "QA Testing" }), daysInStatus: 3 });
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t105", `${zap("QRS-105", "Confirm the staging bucket name")} ~30m`), li("trun", "Write the runbook ~30m"))}`
-                + `<h3>Evening</h3>${ul(li("tlau", "Laundry"))}<h2>Suggested</h2>${ul(li("ts120", `Get ${zap("QRS-120", "Check the invoice export in QA")} done: because sitting in QA Testing for 3 days (~30m)`))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("t105", `${qrs("QRS-105", "Confirm the staging bucket name")} ~30m`), li("trun", "Write the runbook ~30m"))}`
+                + `<h3>Evening</h3>${ul(li("tlau", "Laundry"))}<h2>Suggested</h2>${ul(li("ts120", `Get ${qrs("QRS-120", "Check the invoice export in QA")} done: because sitting in QA Testing for 3 days (~30m)`))}`);
         });
         at(`${DAY}T09:35`);
         const applied = await call("caius_plan_apply", { date: DAY, accept: [ { candidateId: "QRS-120", after: "t105" } ], brief: prose });
@@ -201,7 +201,7 @@ describe("a place can name what the same call writes", () => {
     it("Plan my day 'move them all, 302 first': an item the catch-up moves goes first", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2027-02-22");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("t301", `${zap("QRS-301", "Check the export")} ~30m`), li("tmemo", "Write the memo ~30m"), li("t302", `${zap("QRS-302", "Verify the retry")} ~30m`))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("t301", `${qrs("QRS-301", "Check the export")} ~30m`), li("tmemo", "Write the memo ~30m"), li("t302", `${qrs("QRS-302", "Verify the retry")} ~30m`))}`);
             const tuesday = await store.calendarDay("2027-02-23");
             await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("tmorn", "Morning thing ~30m"))}`);
         });
@@ -214,7 +214,7 @@ describe("a place can name what the same call writes", () => {
     it("Wind down '305 tomorrow, first' and '311 after 305': items the fates move are placed on the next workday", async () => {
         await cls.init(async () => {
             const monday = await store.calendarDay("2027-03-01");
-            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("s305", `${zap("QRS-305", "Confirm the bucket")} ~30m`), li("s311", `${zap("QRS-311", "Check the invoice")} ~30m`), li("sdesk", "Tidy the desk"))}`);
+            await store.putContent(monday.noteId, `<h2>☑️ Tasks</h2>${ul(li("s305", `${qrs("QRS-305", "Confirm the bucket")} ~30m`), li("s311", `${qrs("QRS-311", "Check the invoice")} ~30m`), li("sdesk", "Tidy the desk"))}`);
             const tuesday = await store.calendarDay("2027-03-02");
             await store.putContent(tuesday.noteId, `<h2>☑️ Tasks</h2>${ul(li("sold", "Already there"))}`);
         });
@@ -267,7 +267,7 @@ describe("the header is drawn from the note as it ends", () => {
         calendars[DAY] = [ event("10:00", "10:15", "Daily Standup"), event("19:00", "20:30", "Climbing gym") ];
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h130", `${zap("QRS-130", "Verify the export retry")} ~30m`))}`
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("h130", `${qrs("QRS-130", "Verify the export retry")} ~30m`))}`
                 + `<h3>Evening</h3>${ul(li("hlau", "Laundry <a href=\"#root/abc\">from Tue 10 Nov</a>"))}`);
         });
         at(`${DAY}T09:40`);
@@ -314,7 +314,7 @@ describe("the header is drawn from the note as it ends", () => {
         const DAY = "2026-11-18";
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g140", `${zap("QRS-140", "Ship the fix")} ~30m`))}<h3>Evening</h3>${ul(li("glau", "Laundry"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("g140", `${qrs("QRS-140", "Ship the fix")} ~30m`))}<h3>Evening</h3>${ul(li("glau", "Laundry"))}`);
         });
         at(`${DAY}T09:40`);
         const planned = await call("caius_plan_apply", { date: DAY, brief: prose });
@@ -331,8 +331,8 @@ describe("the header is drawn from the note as it ends", () => {
         const OLD = "2027-02-10";
         const DAY = "2027-02-11";
         await cls.init(async () => {
-            await store.putContent((await store.calendarDay(OLD)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u1", `${zap("QRS-170", "Ship it")} ~30m`))}`);
-            await store.putContent((await store.calendarDay(DAY)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u2", `${zap("QRS-171", "Ship that")} ~30m`))}`);
+            await store.putContent((await store.calendarDay(OLD)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u1", `${qrs("QRS-170", "Ship it")} ~30m`))}`);
+            await store.putContent((await store.calendarDay(DAY)).noteId, `<h2>☑️ Tasks</h2>${ul(li("u2", `${qrs("QRS-171", "Ship that")} ~30m`))}`);
         });
         errorsByDate[DAY] = [ { source: "calendar", error: "feed_0_timeout" } ];
         at(`${DAY}T09:00`);
@@ -402,7 +402,7 @@ describe("capacity is one honest number", () => {
         calendars[DAY] = heavy;
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${zap("QRS-150", "Verify the export retry on staging")} ~30m`))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${qrs("QRS-150", "Verify the export retry on staging")} ~30m`))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
         });
         at(`${DAY}T09:30`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
@@ -425,7 +425,7 @@ describe("capacity is one honest number", () => {
     it("Thu 09:30, over the focus target on a heavy day: the move question, and no summary", async () => {
         await cls.init(async () => {
             const day = await store.calendarDay(DAY);
-            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${zap("QRS-150", "Verify the export retry on staging")} ~1h`), li("c102", "Write the runbook ~1h30m"))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
+            await store.putContent(day.noteId, `<h2>☑️ Tasks</h2>${ul(li("c101", `${qrs("QRS-150", "Verify the export retry on staging")} ~1h`), li("c102", "Write the runbook ~1h30m"))}<h3>Evening</h3>${ul(li("clau", "Laundry"))}`);
         });
         at(`${DAY}T09:30`);
         const inputs = await call("caius_planday", { date: DAY, step: "inputs", refresh: true });
