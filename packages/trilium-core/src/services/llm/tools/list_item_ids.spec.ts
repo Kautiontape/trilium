@@ -104,6 +104,49 @@ describe("carryListItemIds", () => {
             .toEqual(["ep2", "es2", "ep1", "es1"]);
     });
 
+    it("falls back to the first same-text item when the parent has no counterpart", () => {
+        const nested = (id: string) => `<ul>${todo(id, "Draft")}</ul>`;
+        const previous = `<ul>${todo("ep", "Plan the offsite", "", nested("es"))}`
+            + `${todo("et", "Draft")}</ul>`;
+        const html = `<ul>${todo("", "Plan the offsite with Ana", "", nested(""))}`
+            + `${todo("", "Draft")}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["ep", "es", "et"]);
+    });
+
+    it("matches an edited item only between its matched neighbours", () => {
+        const previous = withIds([["ea", "A"], ["ex", "Pick a contract shape"], ["eb", "B"],
+            ["ec", "C"]]);
+        const html = list(["A", "B", "Pick the contract shape", "C"]);
+
+        expect(idsOf(carryListItemIds(previous, html, counter())))
+            .toEqual(["ea", "eb", "fresh1", "ec"]);
+    });
+
+    it("gives equally similar candidates to the earliest one", () => {
+        // "email cy" shares 5 of 7 bigrams with both "email ana" and "email ben" (8 each).
+        const previous = withIds([["eh", "Head"], ["ex1", "Email Ana"], ["ex2", "Email Ben"],
+            ["et", "Tail"]]);
+        const html = list(["Head", "Email Cy", "Tail"]);
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["eh", "ex1", "et"]);
+    });
+
+    it("matches at a similarity of exactly 0.5 and not below", () => {
+        // abcde / abcxy: 2 common of 4 + 4 bigrams = 4/8. abcdef / abcxyz: 2 of 5 + 5 = 4/10.
+        const at = carryListItemIds(withIds([["e1", "abcde"]]), list(["abcxy"]), counter());
+        const below = carryListItemIds(withIds([["e1", "abcdef"]]), list(["abcxyz"]), counter());
+
+        expect(idsOf(at)).toEqual(["e1"]);
+        expect(idsOf(below)).toEqual(["fresh1"]);
+    });
+
+    it("matches upper-case list markup", () => {
+        const result = carryListItemIds(withIds([["e1", "A"]]), "<UL><LI>A</LI></UL>", counter());
+
+        expect(idsOf(result)).toEqual(["e1"]);
+    });
+
     it("never reuses an id and gives fresh ids to items without a counterpart id", () => {
         const dup = withIds([["e1", "A"], ["e1", "B"]]);
         expect(idsOf(carryListItemIds(dup, list(["A", "B"]), counter()))).toEqual(["e1", "fresh1"]);

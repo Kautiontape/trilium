@@ -24,7 +24,7 @@ export function carryListItemIds(
     html: string,
     newId: () => string = newListItemId
 ): string {
-    if (!html.includes("<li")) {
+    if (!/<li/i.test(html)) {
         return html;
     }
 
@@ -45,7 +45,8 @@ export function carryListItemIds(
         used.add(id);
 
         const start = item.element.range[0];
-        const end = html.indexOf(">", start + "<li".length + item.element.rawAttrs.length) + 1;
+        const attrsAt = html.indexOf(item.element.rawAttrs, start + "<li".length);
+        const end = html.indexOf(">", attrsAt + item.element.rawAttrs.length) + 1;
         const rest = html.slice(start + "<li".length, end - 1)
             .replace(new RegExp(`\\s${ID_ATTRIBUTE}\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+)`), "");
         splices.push({ start, end, tag: `<li ${ID_ATTRIBUTE}="${id}"${rest}>` });
@@ -114,7 +115,9 @@ function matchItems(oldItems: ListItem[], newItems: ListItem[]) {
     for (const [index, item] of newItems.entries()) {
         const candidates = oldItems.filter((old) => !taken.has(old) && old.text === item.text);
         const expectedParent = item.parent ? oldFor.get(item.parent) : undefined;
-        const match = candidates.find((old) => old.parent === expectedParent) ?? candidates[0];
+        const match = (!item.parent || expectedParent
+            ? candidates.find((old) => old.parent === expectedParent)
+            : undefined) ?? candidates[0];
         if (match) {
             matches[index] = match;
             taken.add(match);
