@@ -84,12 +84,37 @@ function applyClock(status: CaiusStatus | null) {
     }
 }
 
-/** Reads Today from the server; offline, shows the last snapshot with actions off. */
-export async function refreshToday() {
-    if (refreshing.value) {
-        return;
+let reading: Promise<void> | null = null;
+let followUp: Promise<void> | null = null;
+
+/**
+ * Reads Today from the server; offline, shows the last snapshot with actions off. The promise
+ * settles after a read that started after this call: while one runs, callers share one follow-up.
+ */
+export function refreshToday(): Promise<void> {
+    if (!reading) {
+        return startRead();
     }
+    followUp ??= reading.then(() => {
+        followUp = null;
+        return startRead();
+    });
+    return followUp;
+}
+
+function startRead(): Promise<void> {
     refreshing.value = true;
+    const read: Promise<void> = readToday().finally(() => {
+        reading = null;
+        if (!followUp) {
+            refreshing.value = false;
+        }
+    });
+    reading = read;
+    return read;
+}
+
+async function readToday() {
     try {
         if (serverStatus.value === undefined) {
             await probeServer();
@@ -112,7 +137,7 @@ export async function refreshToday() {
             plan,
             catchup,
             rhythm: readRhythm(catchup?.standing ?? null),
-            started: (status ?? serverStatus.value)?.started ?? null,
+            started: startedOn(plan.key, (status ?? serverStatus.value)?.started),
             nudge,
             asOf: appNow().toISOString(),
             offline: false
@@ -128,9 +153,12 @@ export async function refreshToday() {
                 today.value = { ...snapshot, started: snapshot.started ?? null, offline: true };
             }
         }
-    } finally {
-        refreshing.value = false;
     }
+}
+
+/** The `#caiusStarted` stamp when it is dated on `key`, the day the plan is for; else null. */
+function startedOn(key: string, started: string | null | undefined) {
+    return started && started.slice(0, 10) === key ? started : null;
 }
 
 /** A user-facing sentence for an error, in Caius's words where there is one. */
@@ -163,6 +191,12 @@ interface HeldWrite {
     send: () => Promise<void>;
 }
 
+/** A hold's hooks on its row: `clear` removes only what this hold's `show` put there. */
+interface HeldRow {
+    show: () => void;
+    clear: () => void;
+}
+
 let pending: HeldWrite | null = null;
 
 /**
@@ -177,7 +211,9 @@ export function holdWrite(task: TaskRef, state: HeldState, text: string, send: (
             held.value = { ...held.value, [key]: state };
         },
         clear: () => {
-            held.value = without(held.value, key);
+            if (held.value[key] === state) {
+                held.value = without(held.value, key);
+            }
         }
     });
 }
@@ -193,12 +229,14 @@ export function holdReword(task: TaskRef, words: string, send: () => Promise<unk
             rewording.value = { ...rewording.value, [key]: words };
         },
         clear: () => {
-            rewording.value = without(rewording.value, key);
+            if (rewording.value[key] === words) {
+                rewording.value = without(rewording.value, key);
+            }
         }
     });
 }
 
-function hold(key: string, text: string, send: () => Promise<unknown>, row: { show: () => void; clear: () => void }) {
+function hold(key: string, text: string, send: () => Promise<unknown>, row: HeldRow) {
     void flushHeld();
     row.show();
     const write: HeldWrite = {
@@ -259,7 +297,7 @@ export async function runWrite(send: () => Promise<unknown>): Promise<boolean> {
         return false;
     } finally {
         revision.value++;
-        void refreshToday();
+        await refreshToday();
     }
 }
 
