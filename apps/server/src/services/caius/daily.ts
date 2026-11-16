@@ -226,8 +226,6 @@ export function fromOf(text: string): string | null {
     return /\[from [^\]]*\]\(#root\/([^)]+)\)/.exec(text)?.[1] ?? null;
 }
 
-export const SCHEDULED = /_scheduled \[[^\]]*\]\(#root\/[^)]*\)_/;
-
 /**
  * A task that moved on from its note: a tombstone. A Rescheduled line reads as one whatever the
  * state symbols list, and a line reopened by a click is open even when it keeps its mark.

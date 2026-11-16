@@ -2,7 +2,7 @@ import { htmlToMarkdown } from "@triliumnext/caius";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, copyKey, fitted, isReview, MAX_REPLY_CHARS, movedOn, namedDays, plainText, SCHEDULED, withoutMoveLinks } from "./daily.js";
+import { carryQuestion, copyKey, fitted, isReview, MAX_REPLY_CHARS, movedOn, namedDays, plainText, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -62,16 +62,15 @@ describe("a moved task's \"scheduled\" mark as the editor saves it", () => {
         + "<label class=\"todo-list__label\"><input type=\"checkbox\" checked=\"checked\" disabled=\"disabled\">"
         + `<span class="todo-list__label__description">Ring the plumber ${mark}</span></label></li></ul>`).replace(/^- \[.\] /, "");
 
-    it.each(Object.entries(MARKS))("reads the %s mark as moved, and keys the task with its copy", (_shape, mark) => {
+    it.each(Object.entries(MARKS))("reads the %s mark in its written form, and keys the task with its copy", (_shape, mark) => {
         const text = textOf(mark);
-        expect.soft(SCHEDULED.test(text)).toBe(true);
+        expect.soft(text).toMatch(/^Ring the plumber _scheduled \[[^\]]+\]\(#root\/tue\)_$/);
         expect.soft(withoutMoveLinks(text)).toBe("Ring the plumber");
         expect.soft(copyKey("mon", plainText(withoutMoveLinks(text)))).toBe(copyKey("mon", plainText(withoutMoveLinks("Ring the plumber [from Mon 2 Nov](#root/mon)"))));
     });
 
-    it("does not read a bare italic \"scheduled\" as moved", () => {
+    it("leaves a bare italic \"scheduled\" as it is", () => {
         const text = textOf("<em>scheduled</em>");
-        expect(SCHEDULED.test(text)).toBe(false);
         expect(withoutMoveLinks(text)).toBe("Ring the plumber _scheduled_");
     });
 });
