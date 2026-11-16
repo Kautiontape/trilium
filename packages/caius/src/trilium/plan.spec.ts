@@ -480,7 +480,7 @@ describe('setEstimates', () => {
     expect(plan.sections.flatMap((s) => s.tasks).find((t) => t.text.startsWith('Two'))?.text).toBe('Two _from [Mon 26 Oct](#root/srcnote)_');
     expect(plan.capacity.areas.foundation.minutes).toBe(before + 60 + 15);
   });
-  it('skips a parent with live sub-items, an unknown item and a bad request, keeping the order', async () => {
+  it('writes a parent\'s estimate, skips an unknown item and a bad request, keeping the order', async () => {
     const f = fakeTrilium(seed(html));
     const out = await setEstimates(f.api, [
       { noteId: 'd', listItemId: 'e3', minutes: 30 },
@@ -491,9 +491,9 @@ describe('setEstimates', () => {
       { noteId: 'd', listItemId: 'e1', minutes: 15 },
     ], base);
     expect(out.map((r) => [r.status, 'reason' in r ? r.reason : undefined])).toEqual([
-      ['skipped', 'has_subitems'], ['skipped', 'not_found'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['updated', undefined],
+      ['updated', undefined], ['skipped', 'not_found'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['updated', undefined],
     ]);
-    expect(out[0]).toMatchObject({ detail: 'set the estimates of its sub-items' });
+    expect(f.html.d).toContain('Three ~30m');
   });
   it('dry run writes nothing; the guard drops a changed note; a failed put is reported', async () => {
     const f = fakeTrilium(seed(html));

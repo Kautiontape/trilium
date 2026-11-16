@@ -339,8 +339,11 @@ describe('setTaskEstimate', () => {
     const r = setTaskEstimate(note, 't7', 45);
     expect(r.ok && text(r.html, 't7')).toBe('Keep 30 min&nbsp;~45m');
   });
-  it('skips a parent with live sub-items, but not one whose sub-items are closed', () => {
-    expect(setTaskEstimate(note, 't4', 30, STATES)).toEqual({ ok: false, reason: 'has_subitems' });
+  it('gives a parent its own estimate, whether its sub-items are live or closed', () => {
+    const r = setTaskEstimate(note, 't4', 30, STATES);
+    expect(r).toMatchObject({ ok: true, unchanged: false });
+    expect(r.ok && text(r.html, 't4')).toBe('Plan ~30m');
+    expect(r.ok && text(r.html, 't4a')).toBe('Part one');
     expect(setTaskEstimate(note, 't5', 30, STATES)).toMatchObject({ ok: true, unchanged: false });
   });
   it('fails for an unknown, closed or Meetings item', () => {

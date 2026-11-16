@@ -107,7 +107,6 @@ export type PlanSkip =
   | 'already_doing'
   | 'already_cancelled'
   | 'duplicate'
-  | 'has_subitems'
   | 'dismissed'
   | 'edited'
   | 'bad_request'
@@ -540,7 +539,7 @@ export interface EstimateRequest {
 /**
  * Give each task its `~` estimate. The tasks of one note are changed together and written once, as
  * `setAreas` writes them; if the note changed meanwhile, none of them is written and each reports
- * `edited`. A task with live sub-items is skipped as `has_subitems`.
+ * `edited`. A parent takes its own estimate.
  */
 export async function setEstimates(api: NoteStore, reqs: EstimateRequest[], opts: PlanOptions = {}): Promise<Done<EstimateRequest>[]> {
   const states = opts.states ?? (await loadStateSymbols(api));
@@ -563,7 +562,7 @@ export async function setEstimates(api: NoteStore, reqs: EstimateRequest[], opts
       const changed: EstimateRequest[] = [];
       for (const req of group) {
         const r = setTaskEstimate(after, req.listItemId, req.minutes, states);
-        if (!r.ok) out.set(req, skip(req, r.reason, r.reason === 'has_subitems' ? 'set the estimates of its sub-items' : undefined));
+        if (!r.ok) out.set(req, skip(req, r.reason));
         else if (r.unchanged) out.set(req, { ...req, status: 'unchanged' });
         else {
           after = r.html;

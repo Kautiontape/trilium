@@ -664,11 +664,11 @@ export function setTaskArea(
   return { ok: true, html: apply(html, [{ start, end: start + run.length, text }]), unchanged: false };
 }
 
-export type EstimateProblem = 'not_found' | 'not_live' | 'has_subitems';
+export type EstimateProblem = 'not_found' | 'not_live';
 
 /**
  * The task `id` with its `~` estimate set to `minutes`, before any trailing `!` or date token.
- * A task with live sub-items has none of its own, and `unchanged` means it has that many already.
+ * A parent takes its own estimate, which covers its sub-items; `unchanged` means it has that many already.
  */
 export function setTaskEstimate(
   html: string,
@@ -682,7 +682,6 @@ export function setTaskEstimate(
   if (inProseSection(root, li) || !isLive(li, states)) return { ok: false, reason: 'not_live' };
   const span = descriptionOf(li);
   if (!span) return { ok: false, reason: 'not_found' };
-  if (liveDescendants(li, states).length) return { ok: false, reason: 'has_subitems' };
   const start = html.indexOf('>', span.range[0] + 5 + span.rawAttrs.length) + 1;
   const inner = html.slice(start, spanEnd(html, span));
   // Masked to the same length, so a `&nbsp;` before a token reads as the space it is.
