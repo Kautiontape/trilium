@@ -28,6 +28,10 @@ function todo(id: string, text: string, state = "", sub = "") {
         + `<span class="todo-list__label__description">${text}</span></label>${sub}</li>`;
 }
 
+function nest(id: string, text: string, subs: string) {
+    return todo(id, text, "", `<ul>${subs}</ul>`);
+}
+
 describe("carryListItemIds", () => {
     it("keeps ids of unchanged items and leaves other markup byte for byte", () => {
         const html = `<p>Intro &nbsp; text</p><ul><li>Alpha</li><li>Beta</li></ul>`
@@ -104,7 +108,7 @@ describe("carryListItemIds", () => {
             .toEqual(["ep2", "es2", "ep1", "es1"]);
     });
 
-    it("falls back to the first same-text item when the parent has no counterpart", () => {
+    it("matches a sub-item under its parent once a reworded parent is matched", () => {
         const nested = (id: string) => `<ul>${todo(id, "Draft")}</ul>`;
         const previous = `<ul>${todo("ep", "Plan the offsite", "", nested("es"))}`
             + `${todo("et", "Draft")}</ul>`;
@@ -145,6 +149,55 @@ describe("carryListItemIds", () => {
         const result = carryListItemIds(withIds([["e1", "A"]]), "<UL><LI>A</LI></UL>", counter());
 
         expect(idsOf(result)).toEqual(["e1"]);
+    });
+
+    it("gives a new line no id from a deleted line under another parent", () => {
+        const previous = `<ul>${nest("ep1", "Plan the offsite", todo("es1", "Draft"))}`
+            + `${nest("ep2", "Book venue", todo("es2", "Draft"))}</ul>`;
+        const html = `<ul>${todo("", "Plan the offsite")}`
+            + `${nest("", "Book the venue", todo("", "Draft"))}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["ep1", "ep2", "es2"]);
+    });
+
+    it("matches same-text items across lists in order", () => {
+        const previous = `<h2>Mon</h2>${withIds([["e1", "Standup"], ["e2", "Ship"]])}`
+            + `<h2>Tue</h2>${withIds([["e3", "Standup"], ["e4", "Retro"]])}`;
+        const html = `<h2>Mon</h2>${list(["Ship"])}<h2>Tue</h2>${list(["Standup", "Retro"])}`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["e2", "e3", "e4"]);
+    });
+
+    it("keeps a reworded child with its parent when the block moves", () => {
+        const previous = `<ul>${nest("p1", "Parent one", todo("a", "Alpha"))}`
+            + `${nest("p2", "Parent two", todo("b", "Pick a contract shape"))}</ul>`;
+        const html = `<ul>${nest("", "Parent two", todo("", "Pick the contract shape"))}`
+            + `${nest("", "Parent one", todo("", "Alpha"))}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter())))
+            .toEqual(["p2", "b", "p1", "a"]);
+    });
+
+    it("keeps unique sub-items that move under a new parent", () => {
+        const previous = withIds([["a", "Alpha"], ["b", "Bravo"]]);
+        const html = `<ul>${nest("", "New", todo("", "Alpha") + todo("", "Bravo"))}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["fresh1", "a", "b"]);
+    });
+
+    it("gives fresh ids to ambiguous sub-items under a new parent", () => {
+        const previous = `<ul>${nest("p1", "Parent one", todo("d1", "Draft"))}`
+            + `${nest("p2", "Parent two", todo("d2", "Draft"))}</ul>`;
+        const html = `<ul>${nest("", "Something else", todo("", "Draft"))}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["fresh1", "fresh2"]);
+    });
+
+    it("escapes a carried id when writing it", () => {
+        const previous = `<ul><li data-list-item-id="a&amp;b&quot;c">X</li></ul>`;
+
+        expect(carryListItemIds(previous, "<ul><li>X</li></ul>", counter()))
+            .toBe(`<ul><li data-list-item-id="a&amp;b&quot;c">X</li></ul>`);
     });
 
     it("never reuses an id and gives fresh ids to items without a counterpart id", () => {
