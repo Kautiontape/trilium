@@ -197,7 +197,7 @@ describe("a day started early", () => {
         await start();
         at(`${NEXT_MON}T03:00`);
         expect(await key()).toBe(NEXT_MON);
-        expect(await clock()).toEqual({ rollover: "00:00", started: STARTED });
+        expect(await clock()).toEqual({ rollover: "00:00", started: STARTED, rhythmRollover: "04:00" });
         expect((await call("caius_planday", { date: NEXT_MON, step: "catchup" })).error).toBeUndefined();
         const offer = await call("caius_planday", { date: NEXT_MON, step: "inputs" });
         expect(offer.error).toBeUndefined();

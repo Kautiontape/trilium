@@ -372,13 +372,16 @@ export function createCaiusService(
         ticket,
 
         /**
-         * When the day rolls over now, `HH:MM`, and the `#caiusStarted` value when it moved the
-         * rollover to 00:00. A read, so it takes no lock and the status never waits on a write.
+         * When the day rolls over now, `HH:MM`. While `#caiusStarted` moves the rollover to 00:00
+         * the answer also carries that label's value and `rhythmRollover`, the standing note's own
+         * rollover, so a client that caches the status can work out the rollover on a later night.
+         * A read, so it takes no lock and the status never waits on a write.
          */
         clock: async () => {
             const { standing, rhythm, started } = await clockRead();
-            const moved = !!started && rhythm.rollover !== readRhythm(standing.markdown).rollover;
-            return { rollover: rhythm.rollover, ...(moved ? { started } : {}) };
+            const rhythmRollover = readRhythm(standing.markdown).rollover;
+            const moved = !!started && rhythm.rollover !== rhythmRollover;
+            return { rollover: rhythm.rollover, ...(moved ? { started, rhythmRollover } : {}) };
         },
 
         /**
