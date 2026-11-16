@@ -85,7 +85,7 @@ export function Snackbar() {
 
 /** Material Symbols Rounded, weight 300, drawn in the text colour. Task states keep their own glyphs. */
 export function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
-    return <span class="icon" aria-hidden="true" style={{ width: size, height: size }} dangerouslySetInnerHTML={{ __html: ICONS[name] }} />;
+    return <span class="icon" aria-hidden="true" style={{ width: `${size}px`, height: `${size}px` }} dangerouslySetInnerHTML={{ __html: ICONS[name] }} />;
 }
 
 export type IconName = keyof typeof ICONS;
