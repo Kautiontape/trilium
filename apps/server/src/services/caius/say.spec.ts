@@ -87,7 +87,7 @@ describe("sayOf", () => {
     });
 
     it("says what a review leaves for Plan my day in one clause, for one item or several", () => {
-        const later = (key: string) => ({ kind: "accept", id: key, text: `Get ${key} Check the export done`, reason: "review_only", detail: "Plan my day takes this answer" });
+        const later = (key: string) => ({ kind: "accept", id: key, text: `Get ${key} Check the export done`, reason: "review_only", detail: "A review writes only the reviewed day" });
         expect(sayOf({ written: [], skipped: [ later("ABC-21") ] }, { day: "2026-11-16" })).toBe("ABC-21 is left for Plan my day.");
         expect(sayOf({ written: [], skipped: [ later("ABC-21"), later("ABC-23") ] }, { day: "2026-11-16" })).toBe("ABC-21 and ABC-23 are left for Plan my day.");
     });

@@ -791,7 +791,7 @@
       "review": "the earlier day goes through its wind-down",
       "review_only_one": "{{- items}} is left for Plan my day",
       "review_only_other": "{{- items}} are left for Plan my day",
-      "review_only_detail": "A review writes only the reviewed day; Plan my day takes this answer for the day it plans",
+      "review_only_detail": "A review writes only the reviewed day; the day it works against is Plan my day's",
       "not_noted": "'{{- item}}' isn't noted",
       "unnamed_one": "one task wasn't found",
       "unnamed_other": "{{count}} tasks weren't found",

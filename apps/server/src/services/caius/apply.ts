@@ -458,7 +458,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...finishedChecks(input.unmatched), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
             ...(reviewOnly ? [] : [ ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ]) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
-        // A review answers none of these questions, so Plan my day still asks them.
+        // A review answers none of these questions, so none is recorded as asked.
         if (!reviewOnly) {
             await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
             // The next step's questions are about the next workday, so they are answered on its note.
