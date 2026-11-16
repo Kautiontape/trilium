@@ -40,7 +40,7 @@ async function stubInputs(input: InputsInput): Promise<CaiusInputs> {
 
 const tools = createCaiusTools(undefined, async () => ({ code: 3, label: "Overcast" }), stubInputs);
 
-const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Location for the weather: 39.95, -75.17</li></ul>"
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Location for the weather: 39.95, -75.17</li><li>Jira: ZAP</li></ul>"
     + "<h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
 
 function call(name: string, args: object): Promise<any> {

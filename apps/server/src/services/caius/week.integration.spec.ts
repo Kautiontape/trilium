@@ -9,7 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, CalendarEvent, JiraInputs, JiraTicket } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, createChildNote } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -82,6 +82,7 @@ beforeAll(async () => {
         const calendarRoot = root ?? (await store.calendarDay(MON), (await store.search("#calendarRoot"))[0]);
         if (!calendarRoot) throw new Error("no #calendarRoot note");
         await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
+        await store.addLabel(createChildNote("root", "🧭 How I work", "<h2>Rhythm</h2><ul><li>Jira: ZAP</li></ul>"), "assistantContext", "");
         notes.mon = await dayNote(MON, `<h2>☑️ Tasks</h2>${ul(
             li("m1", `${jiraLink("ZAP-105")} — Confirm the staging bucket name ~30m`),
             li("m2", `${jiraLink("ZAP-101")} — Verify the export retry on staging ~30m`),

@@ -29,7 +29,7 @@ const event = (start: string, end: string, title: string): CalendarEvent => ({ s
 
 const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li>"
     + "<li>The day runs to bedtime, and the evening is planned too. Bedtime: 23:00. Evening: something away from screens, a chore or a Recharge item.</li>"
-    + "<li>Capacity: 180–240 work minutes a day, and 45–60 minutes in the evening.</li></ul>";
+    + "<li>Capacity: 180–240 work minutes a day, and 45–60 minutes in the evening.</li><li>Jira: ZAP</li></ul>";
 
 const MON = "2034-03-06";
 const TUE = "2034-03-07";

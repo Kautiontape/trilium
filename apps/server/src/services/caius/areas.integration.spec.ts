@@ -47,7 +47,7 @@ function call(name: string, args: object): Promise<any> {
 const at = (stamp: string) => vi.stubEnv("CAIUS_NOW", stamp);
 afterEach(() => vi.unstubAllEnvs());
 
-const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li></ul><h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Jira: ZAP</li></ul><h2>Brief rules</h2><ul><li>Open time is work time.</li></ul>";
 const prose = { headline: "A day", sections: [] };
 
 /** A day note laid out by time: `blocks` maps each heading to its to-do items. */

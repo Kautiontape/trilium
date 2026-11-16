@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CaiusInputs, CalendarEvent } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
 import sql from "../sql.js";
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, createChildNote } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -71,6 +71,7 @@ beforeAll(async () => {
         const calendarRoot = root ?? (await store.calendarDay(FRIDAY), (await store.search("#calendarRoot"))[0]);
         if (!calendarRoot) throw new Error("no #calendarRoot note");
         await store.addLabel(calendarRoot.noteId, "enableWeekNote", "");
+        await store.addLabel(createChildNote("root", "🧭 How I work", "<h2>Rhythm</h2><ul><li>Jira: ZAP</li></ul>"), "assistantContext", "");
         const friday = await store.calendarDay(FRIDAY);
         await store.putContent(friday.noteId, `<h3>Work</h3>${ul(li("f1", "Friday thing"))}`);
     });

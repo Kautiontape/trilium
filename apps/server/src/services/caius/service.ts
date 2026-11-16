@@ -37,6 +37,7 @@ import {
     loadJournal,
     loadStateSymbols,
     meetingLines,
+    readJiraProjects,
     readRhythm,
     type NoteStore,
     openTasks,
@@ -53,6 +54,7 @@ import {
     rewordTasks,
     setAreas,
     setEstimates,
+    setKeyConfig,
     setMeetings,
     setStates,
     type StateAction,
@@ -113,7 +115,7 @@ import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js"
 import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
 import type { CalendarEvent, InputError } from "./inputs/types.js";
 import { refOf } from "./refs.js";
-import { createBeccaStore, withCaiusLock } from "./store.js";
+import { createBeccaStore, withCaiusLock as lockAlone } from "./store.js";
 import { showView } from "./views.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
 import { clockText, contextAddOn, contextKeepOn, drawHeader, finishedOn, localIso, skipCatchupOn, startDayOn, TERRAIN_TITLE } from "./writes.js";
@@ -157,7 +159,30 @@ export function createCaiusService(
     const feeds = createFeedCache(clockMs, INPUTS_TTL_MS);
     const readDayCalendar: CalendarReader = calendarOf ?? ((date) => readCalendar({ fetch: globalThis.fetch, env: process.env, feeds }, date));
 
-    /** The standing note (`#assistantContext`) as markdown. The caller holds the lock. */
+    let standingRead: { html: string; markdown: string } | undefined;
+
+    /**
+     * `store.ts`'s `withCaiusLock`, then `syncKeys()` as the first step under the lock, so every
+     * entry point derives task keys from the same `setKeyConfig()` and no call site sets it.
+     */
+    function withCaiusLock<T>(name: string, run: () => Promise<T>): Promise<T> {
+        return lockAlone(name, async () => {
+            await syncKeys();
+            return run();
+        });
+    }
+
+    /** Sets the key config from the standing note's `Jira:` line and `JIRA_BASE_URL`. */
+    async function syncKeys(): Promise<void> {
+        // A failed read keeps the last config: a call that needs the standing note fails on its own read, and the others go on.
+        const standing = await readStanding().catch(() => undefined);
+        if (!standing) return;
+        const { markdown } = standing;
+        const site = process.env.JIRA_BASE_URL?.replace(/\/+$/, "");
+        setKeyConfig({ projects: readJiraProjects(markdown), browseBase: site ? `${site}/browse/` : null });
+    }
+
+    /** The standing note (`#assistantContext`) as markdown, converted again only when it changed. */
     async function readStanding(): Promise<Standing> {
         const [ note ] = (await store.search(`#${STANDING_LABEL}`)).filter((n) => n.attributes.some((a) => a.type === "label" && a.name === STANDING_LABEL));
         if (!note) {
@@ -166,7 +191,11 @@ export function createCaiusService(
         if (note.type !== "text" || note.isProtected) {
             return { markdown: null, missing: t("caius.daily.standing_unreadable") };
         }
-        return { markdown: markdownExportService.toMarkdown(await store.content(note.noteId)) };
+        const html = await store.content(note.noteId);
+        if (standingRead?.html !== html) {
+            standingRead = { html, markdown: markdownExportService.toMarkdown(html) };
+        }
+        return { markdown: standingRead.markdown };
     }
 
     /**

@@ -22,7 +22,7 @@ const MONDAY = "2026-11-09";
 const TUESDAY = "2026-11-10";
 const WEDNESDAY = "2026-11-11";
 
-const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li></ul>"
+const STANDING = "<h2>Rhythm</h2><ul><li>Work starts at standup, 10:00.</li><li>Bedtime: 23:00.</li><li>Jira: ZAP</li></ul>"
     + "<h2>Brief rules</h2><ul><li>Open time is work time.</li><li>Name concrete tickets.</li></ul>";
 
 const ticket = (key: string, o: Partial<JiraTicket> = {}): JiraTicket => ({
