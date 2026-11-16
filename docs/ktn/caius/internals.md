@@ -182,7 +182,7 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 
 | Setting | Meaning |
 |---|---|
-| `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_TOKEN` | Jira Cloud site and basic-auth credentials. With any unset the Jira source answers `not_configured`. |
+| `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_TOKEN` | Jira Cloud site and basic-auth credentials. With any unset the Jira source answers `not_configured`. `JIRA_BASE_URL` also gives a `source` key given to `caius_add` its link (`<JIRA_BASE_URL>/browse/<KEY>`); without it the key is written as plain text. |
 | `CAIUS_ICAL_URLS` | Comma-separated secret iCal URLs. Unset answers `calendar: not_configured`. |
 | `CAIUS_USER_EMAILS` | Optional, comma-separated. Addresses that count as you when reading an attendee's `PARTSTAT`, in addition to `JIRA_EMAIL`. |
 
@@ -204,6 +204,8 @@ Writes that do not start in the open editor (MCP, the Plan tab on another note, 
 `addContext` and `addContextLine` sit beside `setMeetings` in `daynote.ts`, and the brief's markup is built by `brief-html.ts`.
 
 **Keys.** `keysOf` derives a task's keys the way `caius_add` and `caius_dismiss` do: its Jira keys and links, else a hash of its text. A candidate that was suggested and then dismissed therefore matches the `#caiusDismissed` label. A Jira candidate's key is its ticket key, which is what `caius_add` stores for `source`.
+
+**Key config.** `keys.ts` holds a module-level `KeyConfig` (`projects`, `browseBase`), empty by default, set with `setKeyConfig()` and read with `keyConfig()`. `taskKeys()` and `parseSource()` take an optional last argument that wins over it. `createCaiusService` wraps `withCaiusLock` so that, once a call holds the lock, `syncKeys()` reads the standing note's Jira line (`readJiraProjects` in `packages/caius/src/daily/standing.ts`) and `JIRA_BASE_URL` into `setKeyConfig()`. Every entry point takes the lock through it, so all the keys one call derives agree. The standing note's markdown is reused while its HTML is unchanged.
 
 **The steps** are in `apps/server/src/services/caius/daily.ts`, behind two service entry points. Neither holds the lock across the network.
 1. `dayRead` reads the Context in force (`gatherContext`) and the standing note under the lock.
