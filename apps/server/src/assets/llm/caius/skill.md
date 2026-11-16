@@ -184,7 +184,7 @@ An item with `park` has been carried on three workdays or more, and the `open` q
 - When `say` ends with a which-question, the items it names stay open until he answers; his answer is one more apply call naming them.
 - A ref names the same item for the whole conversation. One whose item changed since the step is skipped as `stale`: ask him about that item in one clause.
 - Map a day he names to one of `data.days` (a week to `data.weeks`, a month to `data.months`); never compute a date. An apply's answer may name only items the steps showed; anything else goes through the other tools, as Off the path says.
-- A weekday he names reads from the ritual's date, not the clock: that date's own weekday name is that date, any other is the next one after it.
+- A weekday he names counts from the day the ritual sets up (Plan my day's `date`, Wind down's `targetDay`), not the clock: that day's own weekday name is that day, any other is the next one after it.
 - A task you bring into a day laid out in blocks needs its block: put it there with `caius_place` (or `block` on `caius_add`) and say which in one clause.
 - "Later this week" and "this week" are the week ref `w1` in `data.days`, and "next week" is `w2`: never a date.
 - The evening has no question and no suggestion of its own. Offer Growth and Recharge picks like the other candidates; when he says the evening holds nothing, pass nothing for it.
