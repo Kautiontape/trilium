@@ -228,7 +228,7 @@ describe("Context writes decide their own target", () => {
         expect(day.results[0].detail).not.toBe("moved to the week note");
 
         const week = await call("caius_plan", { period: "week", date: "2026-W45" });
-        expect(week.context.map((line: any) => line.text)).toContain("ZAP-2620 waits on legal");
+        expect(week.context.map((line: any) => line.text)).toContain("QRS-2620 waits on legal");
         expect(week.pendingContext).toContainEqual(expect.objectContaining({ text: "Riley is out on Thursday", from: THU, until: THU }));
         expect(await contextOf("day", THU)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00" ]);
     });
