@@ -121,3 +121,51 @@ describe('htmlToMarkdown on a _rescheduled item the states do not list', () => {
     expect(htmlToMarkdown(moved, new Map([['_rescheduled', '~']]))).toBe('- [~] Moved task');
   });
 });
+
+// These pin the output on harder notes; the pass skips a note without a mark, so they pass either way.
+describe('htmlToMarkdownWithIds on a saved mark in harder notes', () => {
+  const saved = (label: string) => `<em>scheduled </em><a href="#root/tue"><em>${label}</em></a>`;
+  const written = (label: string) => `_scheduled [${label}](#root/tue)_`;
+  const item = (id: string, text: string, sub = '') =>
+    todo(text, { state: '_rescheduled', checked: true, sub }).replace('<li ', `<li data-list-item-id="${id}" `);
+
+  it('reads a mark on a nested sub-item', () => {
+    const out = htmlToMarkdownWithIds(
+      `<ul class="todo-list">${item('p1', 'Parent', `<ul class="todo-list">${item('c1', `Child ${saved('Tue 3 Nov')}`)}</ul>`)}</ul>`,
+      STATES,
+    );
+    expect(out.markdown).toBe(`- [>] Parent\n    - [>] Child ${written('Tue 3 Nov')}`);
+    expect([...out.itemIds]).toEqual([[0, 'p1'], [1, 'c1']]);
+    expect([...out.critical]).toEqual([]);
+  });
+
+  it('reads a mark on an item inside an Important aside', () => {
+    const out = htmlToMarkdownWithIds(
+      `<aside class="admonition important"><ul class="todo-list">${item('a1', `Urgent ${saved('Tue 3 Nov')}`)}</ul></aside>`,
+      STATES,
+    );
+    expect(out.markdown).toBe(`- [>] Urgent ${written('Tue 3 Nov')} !!!`);
+    expect([...out.itemIds]).toEqual([[0, 'a1']]);
+    expect([...out.critical]).toEqual([0]);
+  });
+
+  it('reads two marks on one line', () => {
+    const out = htmlToMarkdownWithIds(
+      `<ul class="todo-list">${item('t1', `Ring ${saved('Tue 3 Nov')} ${saved('Wed 4 Nov')}`)}</ul>`,
+      STATES,
+    );
+    expect(out.markdown).toBe(`- [>] Ring ${written('Tue 3 Nov')} ${written('Wed 4 Nov')}`);
+    expect([...out.itemIds]).toEqual([[0, 't1']]);
+    expect([...out.critical]).toEqual([]);
+  });
+
+  it('reads marks on two items', () => {
+    const out = htmlToMarkdownWithIds(
+      `<ul class="todo-list">${item('t1', `One ${saved('Tue 3 Nov')}`)}${item('t2', `Two ${saved('Wed 4 Nov')}`)}</ul>`,
+      STATES,
+    );
+    expect(out.markdown).toBe(`- [>] One ${written('Tue 3 Nov')}\n- [>] Two ${written('Wed 4 Nov')}`);
+    expect([...out.itemIds]).toEqual([[0, 't1'], [1, 't2']]);
+    expect([...out.critical]).toEqual([]);
+  });
+});

@@ -115,6 +115,7 @@ function convert(html: string, states: StateSymbols): string {
  * `<em>scheduled <a href="#root/ID">label</a></em>`, so the scan reads every saved form alike.
  */
 function withWrittenMarks(html: string): string {
+  if (!html.includes('scheduled')) return html;
   const edits: Edit[] = [];
   for (const li of parse(html, { comment: true }).querySelectorAll('li')) {
     const span = descriptionOf(li);
