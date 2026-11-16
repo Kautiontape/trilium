@@ -1,4 +1,4 @@
-import { countUnits, parentsOf, topLevelOf } from "@triliumnext/caius/src/daily/load.js";
+import { countUnits, parentsOf } from "@triliumnext/caius/src/daily/load.js";
 
 import type FNote from "../../../entities/fnote";
 import {
@@ -147,11 +147,27 @@ export function planTasks(plan: CaiusPlan) {
 }
 
 /**
- * The live tasks of a day's On deck that are not under a live parent, in order: a sub-item whose
- * parent is done or gone stays, as a task of its own.
+ * The tasks of a day's On deck that get a row, in order: a parent that is live, or done with a live
+ * sub-item; a live task without a parent; and a live sub-item whose parent is neither, as a task of
+ * its own. A sub-item of a listed parent stays under it.
  */
 export function onDeckTasks(plan: CaiusPlan) {
-    return topLevelOf(plan.onDeck ?? []).filter(isLive);
+    const onDeck = plan.onDeck ?? [];
+    const parents = parentsOf(onDeck);
+    const withLiveSub = new Set<CaiusPlanTask>();
+    for (const [ task, parent ] of parents) {
+        if (isLive(task)) {
+            withLiveSub.add(parent);
+        }
+    }
+
+    const isListedParent = (task: CaiusPlanTask) =>
+        isLive(task) || (task.state === "done" && withLiveSub.has(task));
+
+    return onDeck.filter((task) => {
+        const parent = parents.get(task);
+        return parent ? isLive(task) && !isListedParent(parent) : isListedParent(task);
+    });
 }
 
 /**

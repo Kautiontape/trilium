@@ -680,6 +680,24 @@ describe("PlanTab", () => {
         expect(window.localStorage.getItem("caius.plan.openParents")).toBe("[]");
     });
 
+    it("folds a done On deck parent with open sub-items into one struck-through row", async () => {
+        const plan = dayPlan();
+        const onDeck = [
+            planTask({ listItemId: "p", text: "Caius fixes", section: "On deck", state: "done" }),
+            planTask({ listItemId: "p1", text: "ABC-12", section: "On deck", parent: "Caius fixes", parentListItemId: "p", state: "done" }),
+            planTask({ listItemId: "p2", text: "ABC-13", section: "On deck", parent: "Caius fixes", parentListItemId: "p" }),
+            planTask({ listItemId: "p3", text: "ABC-14", section: "On deck", parent: "Caius fixes", parentListItemId: "p" })
+        ];
+        api.plan.mockResolvedValue({ ...plan, onDeck });
+        const tab = await mount();
+        expect(texts(tab, "#plan-on-deck .plan-task-list > li")).toEqual([ "Caius fixes2 open" ]);
+        expect(text(tab, "#plan-on-deck .plan-sub-count")).toBe("2 open");
+        expect(tab.querySelector("#plan-on-deck .plan-task-list > li.done")).not.toBeNull();
+
+        await press(tab.querySelector("#plan-on-deck [aria-expanded]"));
+        expect(texts(tab, "#plan-on-deck .plan-sub-items li")).toEqual([ "ABC-12", "ABC-13", "ABC-14" ]);
+    });
+
     it("shows a live parent's sub-item count beside its row in Close", async () => {
         const plan = dayPlan();
         api.plan.mockResolvedValue({
