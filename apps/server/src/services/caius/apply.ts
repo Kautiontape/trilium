@@ -253,6 +253,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas, {
             day: date, noteFor: (id) => noteOf(store, id),
             textOf: (id) => [ ...listItems(offer.day.plan), ...offer.onDeck, ...catchupTasks, ...heldTasks ].find((item) => item.listItemId === id)?.text
+                ?? input.follows.get(id)?.text ?? items.find((item) => item.id === id)?.text
         }, written, skipped));
         // A held task he named is settled; a hold that narrows to one releases it. Holds are settled on
         // every note they were given on, against what is open anywhere in the Journal.
@@ -507,6 +508,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas.filter((ref) => !laterArea(ref)), {
             day: targetDay, noteFor,
             textOf: (id) => [ ...open.items, ...listItems(facts.plan) ].find((item) => item.listItemId === id)?.text
+                ?? input.follows.get(id)?.text ?? journalItem(id)?.text
         }, written, skipped));
 
         // An item an ambiguous answer matched stays where it is, on this call and later ones, until a

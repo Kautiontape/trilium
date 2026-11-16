@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, fitted, isReview, MAX_REPLY_CHARS, namedDays, withoutMoveLinks } from "./daily.js";
+import { areaAskIds, carryQuestion, fitted, isReview, MAX_REPLY_CHARS, namedDays, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -28,6 +28,17 @@ describe("withoutMoveLinks", () => {
         expect(withoutMoveLinks("Message Dave [from Friday 30](#root/abc) _scheduled [Tuesday 3](#root/def)_")).toBe("Message Dave");
         expect(withoutMoveLinks("Get a quote from Acme 2")).toBe("Get a quote from Acme 2");
         expect(withoutMoveLinks("See [Plan](#root/zz) scheduled Tuesday 3")).toBe("See [Plan](#root/zz) scheduled Tuesday 3");
+    });
+});
+
+describe("areaAskIds", () => {
+    it("records the words only when a task has some", () => {
+        expect(areaAskIds("x1", "")).toEqual([ "area:x1" ]);
+        expect(areaAskIds("x1", "[from Mon 16 Nov](#root/abc)")).toEqual([ "area:x1" ]);
+        const [ id, words ] = areaAskIds("x1", "Call the printer");
+        expect(id).toBe("area:x1");
+        expect(words).toMatch(/^area:~[0-9a-f]{10}$/);
+        expect(areaAskIds("x2", "Call the printer [from Mon 16 Nov](#root/abc)")[1]).toBe(words);
     });
 });
 
