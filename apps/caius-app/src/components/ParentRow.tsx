@@ -63,7 +63,7 @@ export function ParentRow<T extends AnyTask>({ parent, subs, row }: { parent: T;
  * sit under it, and a sub-item whose parent is not in the list is a plain row.
  */
 export function groupedRows<T extends AnyTask>(tasks: T[], row: RowRenderer<T>): ComponentChildren[] {
-    const parents = parentsOf(tasks as PlanTask[]) as Map<T, T>;
+    const parents = parentsOf(tasks);
     const subs = new Map<T, T[]>();
     for (const [ sub, parent ] of parents) {
         subs.set(parent, [ ...(subs.get(parent) ?? []), sub ]);

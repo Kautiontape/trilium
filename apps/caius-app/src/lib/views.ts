@@ -179,7 +179,7 @@ export function redraw(view: ShownView, answers: ViewAnswers): RedrawnDay[] {
 }
 
 /** One day's rows and load after the taps. A leaving row stays in `tasks`, so the view can strike it through. */
-export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad }, answers: ViewAnswers): RedrawnDay {
+export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad; meetingLines: string[] }, answers: ViewAnswers): RedrawnDay {
     return withLoad(day, redrawRows(day.tasks, answers));
 }
 
@@ -271,8 +271,8 @@ export function takeTicket(data: ItemViewData, to: string, onDeck: boolean): Tic
  * The day's server `load` moved by the change in each figure between its own rows and `tasks`,
  * with `over`, `overMinutes` and `overWith` worked again; the server's own `load` when nothing changed.
  */
-function withLoad(day: { tasks: ViewTask[]; load: DayLoad }, tasks: RedrawnTask[]): RedrawnDay {
-    const [ was, now ] = [ countOf(day.tasks), countOf(tasks.filter((t) => !t.leaving)) ];
+function withLoad(day: { tasks: ViewTask[]; load: DayLoad; meetingLines: string[] }, tasks: RedrawnTask[]): RedrawnDay {
+    const [ was, now ] = [ countOf(day.tasks, day.meetingLines), countOf(tasks.filter((t) => !t.leaving), day.meetingLines) ];
     if (FIGURES.every((figure) => was[figure] === now[figure])) {
         return { tasks, load: day.load };
     }
@@ -287,13 +287,14 @@ function withLoad(day: { tasks: ViewTask[]; load: DayLoad }, tasks: RedrawnTask[
 }
 
 /** The four figures `dayLoad` takes, counted from rows: Foundation, On deck and Growth minutes, and the Recharge things on the list. */
-function countOf(tasks: ViewTask[]): Record<(typeof FIGURES)[number], number> {
+function countOf(tasks: ViewTask[], meetingLines: string[]): Record<(typeof FIGURES)[number], number> {
     const list = tasks.filter((t) => t.place === "list");
     const onDeck = tasks.filter((t) => t.place === "onDeck");
+    const opts = { meetings: meetingLines };
     return {
-        foundation: liveMinutes(list, "foundation"),
-        onDeck: liveMinutes(onDeck, "foundation"),
-        growth: liveMinutes(list, "growth"),
+        foundation: liveMinutes(list, "foundation", opts),
+        onDeck: liveMinutes(onDeck, "foundation", opts),
+        growth: liveMinutes(list, "growth", opts),
         recharge: topLevelOf(list).filter((t) => t.area === "recharge" && isLive(t)).length
     };
 }
@@ -390,12 +391,11 @@ export function dayGroups(tasks: RedrawnTask[]): DayGroup[] {
 export function dayTerrain(data: DayViewData, tasks: RedrawnTask[]): { input: TerrainInput; unplacedMinutes: number } {
     const meetings = data.meetings.filter((m) => !m.allDay);
     const listed = tasks.filter((t) => !t.leaving && t.place === "list");
-    const clocks = meetings.map((m) => `${m.start} ${m.title}`);
     const work = topLevelOf(listed)
         .filter(isLive)
         .map((t) => ({
             id: t.listItemId, section: t.section ?? null, critical: t.critical,
-            label: bareText(t.text), minutes: unitMinutes(t, listed, { meetings: clocks }), block: t.block, area: t.area, at: t.at
+            label: bareText(t.text), minutes: unitMinutes(t, listed, { meetings: data.meetingLines }), block: t.block, area: t.area, at: t.at
         }));
     const groups = groupTasks(work, data.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
     const { span } = data;

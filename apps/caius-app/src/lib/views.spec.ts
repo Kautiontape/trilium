@@ -47,7 +47,7 @@ const DAY: DayViewData = {
     date: "2026-11-03", dateLabel: "Tue 3 Nov", openOn: null, load: loadOf(TASKS), calendarFailed: false,
     capacity: { windowMinutes: 480, bookedMinutes: 60, openMinutes: 420 },
     span: { start: "09:00", noon: "12:00", workEnd: "17:00", end: "23:00" },
-    meetings: [], drawn: null, unplacedMinutes: 0, tasks: TASKS, context: []
+    meetings: [], meetingLines: [], drawn: null, unplacedMinutes: 0, tasks: TASKS, context: []
 };
 const DAY_VIEW: ShownView = { view: "day", title: "Tue 3 Nov", sentence: "3 h 15 m of 3–4 h.", data: DAY };
 
@@ -173,6 +173,24 @@ describe("redraw", () => {
         expect(after.load.onDeck.minutes).toBe(45);
     });
 
+    it("keeps a meeting parent's sub-items out of the Foundation meter, on the day and on Days", () => {
+        const standup = (noteId: string): ViewTask[] => [
+            row("m", "Standup", { noteId, estMinutes: null, at: "10:00" }),
+            row("q1", "Ask Ana", { noteId, estMinutes: null, parent: "Standup", parentListItemId: "m" }),
+            row("q2", "Ask Ben", { noteId, estMinutes: null, parent: "Standup", parentListItemId: "m" })
+        ];
+        const tasks = standup("day1");
+        const load = dayLoad({ foundation: 0, onDeck: 0, growth: 0, recharge: 0 }, { focus: FOCUS, growthTarget: GROWTH });
+        const view: ShownView = { view: "day", title: "Tue 3 Nov", sentence: "", data: { ...DAY, load, tasks, meetingLines: [ "10:00 Standup (Ana, Ben)" ] } };
+        const tick = tap({ [key("q1")]: { fate: { kind: "done" } } });
+        expect(redraw(view, tick)[0].load.foundation.minutes).toBe(0);
+        const days: ShownView = {
+            view: "days", title: "", sentence: "",
+            data: { from: "2026-11-03", days: [ { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 30, load, calendarFailed: false, tasks, meetingLines: [ "10:00 Standup (Ana, Ben)" ] } ], week: DAYS.week }
+        };
+        expect(redraw(days, tick)[0].load.foundation.minutes).toBe(0);
+    });
+
     it("moves minutes between meters on an area tap", () => {
         const after = moved(tap({ [key("a2")]: { area: "growth" }, [key("g")]: { area: "recharge" } }));
         expect(after.load.foundation.minutes).toBe(165);
@@ -201,8 +219,8 @@ describe("redraw", () => {
         const days: DaysViewData = {
             from: "2026-11-03",
             days: [
-                { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 60, load: DAY.load, calendarFailed: false, tasks: TASKS },
-                { date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false, tasks: other }
+                { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 60, load: DAY.load, calendarFailed: false, meetingLines: [], tasks: TASKS },
+                { date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false, meetingLines: [], tasks: other }
             ],
             week: { key: "2026-W45", label: "Week 45", tasks: [], foundation: { minutes: 0, target: { min: 720, max: 900 } } }
         };
@@ -323,7 +341,9 @@ describe("dayTerrain", () => {
     });
 
     it("counts a parent once, at its own estimate or its sub-items' sum, and keeps a done parent's open sub-item", () => {
-        const nested = (tasks: ViewTask[], meetings: DayViewData["meetings"] = []): DayViewData => ({ ...data, drawn: null, meetings, tasks });
+        const nested = (tasks: ViewTask[], meetings: DayViewData["meetings"] = []): DayViewData => ({
+            ...data, drawn: null, meetings, meetingLines: meetings.map((m) => `${m.start} ${m.title}`), tasks
+        });
         const sub = (id: string, rest: Partial<ViewTask> = {}) => row(id, `Step ${id}`, { section: "Tasks", estMinutes: null, parent: "Fix things", parentListItemId: "p", ...rest });
         const parent = (rest: Partial<ViewTask> = {}) => row("p", "Fix things", { section: "Tasks", estMinutes: null, ...rest });
         expect(hills({}, nested([ parent({ estMinutes: 90 }), sub("a"), sub("b") ]))).toEqual([ [ "Tasks", "09:00", "10:30", 1 ] ]);
@@ -349,9 +369,9 @@ describe("slipLabel", () => {
 const DAYS: DaysViewData = {
     from: "2026-11-03",
     days: [
-        { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 90, load: DAY.load, calendarFailed: false, tasks: TASKS },
+        { date: "2026-11-03", dateLabel: "Tue 3 Nov", workday: true, meetingMinutes: 90, load: DAY.load, calendarFailed: false, meetingLines: [], tasks: TASKS },
         {
-            date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false,
+            date: "2026-11-04", dateLabel: "Wed 4 Nov", workday: true, meetingMinutes: 0, load: DAY.load, calendarFailed: false, meetingLines: [],
             tasks: TASKS.map((t) => ({ ...t, noteId: "day2", period: { kind: "day" as const, key: "2026-11-04" } }))
         }
     ],

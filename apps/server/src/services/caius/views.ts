@@ -100,6 +100,7 @@ async function dayView(deps: ViewsDeps, date: string, area: DayViewData["openOn"
         capacity: { windowMinutes: capacity.windowMinutes, bookedMinutes: capacity.bookedMinutes, openMinutes: capacity.openMinutes },
         span: { start, noon, workEnd, end },
         meetings: day.meetings,
+        meetingLines: day.plan.meetings,
         drawn: drawn ? { groups: drawn.groups, meetings: drawn.meetings } : null,
         unplacedMinutes: day.layout.unplaced.reduce((sum, unplaced) => sum + unplaced.minutes, 0),
         tasks: rowsOf(day.plan, day.slips),
@@ -118,7 +119,7 @@ async function daysView(deps: ViewsDeps, from: string, count: number, now: Date)
         from,
         days: read.days.map(({ date, workday, day }) => ({
             date, dateLabel: dateLabel(date) ?? date, workday, meetingMinutes: day.capacity.bookedMinutes,
-            load: day.load, calendarFailed: day.calendarFailed, tasks: rowsOf(day.plan, day.slips)
+            load: day.load, calendarFailed: day.calendarFailed, meetingLines: day.plan.meetings, tasks: rowsOf(day.plan, day.slips)
         })),
         week: {
             key,
