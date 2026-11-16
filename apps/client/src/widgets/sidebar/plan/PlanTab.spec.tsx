@@ -29,16 +29,24 @@ const api = vi.hoisted(() => ({
 const caiusWrite = vi.hoisted(() => vi.fn());
 const startCaiusConversation = vi.hoisted(() => vi.fn());
 const caiusEnabled = vi.hoisted(() => ({ value: true }));
-vi.mock("../../../services/caius", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../../services/caius")>()),
-    caiusApi: api,
-    caiusWrite,
-    startCaiusConversation,
-    isCaiusEnabled: async () => caiusEnabled.value,
-    wasCaiusEnabled: () => false,
-    findOpenEditors: () => [],
-    openPeriodNoteIds: (key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])
-}));
+const clock = vi.hoisted(() => ({ now: null as Date | null, next: null as Date | null }));
+const refreshCaiusClock = vi.hoisted(() => vi.fn());
+vi.mock("../../../services/caius", async (importOriginal) => {
+    const original = await importOriginal<typeof import("../../../services/caius")>();
+    return {
+        ...original,
+        caiusNow: () => clock.now ?? original.caiusNow(),
+        caiusClockMinutes: (now: Date) => clock.now ? now.getHours() * 60 + now.getMinutes() : original.caiusClockMinutes(now),
+        refreshCaiusClock,
+        caiusApi: api,
+        caiusWrite,
+        startCaiusConversation,
+        isCaiusEnabled: async () => caiusEnabled.value,
+        wasCaiusEnabled: () => false,
+        findOpenEditors: () => [],
+        openPeriodNoteIds: (key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])
+    };
+});
 
 const activeNote = vi.hoisted(() => ({ current: null as FNote | null }));
 vi.mock("../../react/hooks", async (importOriginal) => ({
@@ -80,6 +88,11 @@ describe("PlanTab", () => {
         vi.useFakeTimers({ toFake: [ "Date" ] });
         vi.setSystemTime(new Date(2026, 9, 27, 16, 0));
         vi.clearAllMocks();
+        clock.now = null;
+        clock.next = null;
+        refreshCaiusClock.mockImplementation(async () => {
+            clock.now = clock.next;
+        });
         options.load({ rightPaneCollapsedItems: "[]" } as Parameters<typeof options.load>[0]);
         caiusWrite.mockImplementation(
             (_noteId: string, call: (blobId: string) => Promise<unknown>) => call("blob-1"));
@@ -212,6 +225,53 @@ describe("PlanTab", () => {
         await caiusWrote([ { entityName: "attributes", entityId: "a2", entity: { attributeId: "a2", noteId: "elsewhere", type: "label", name: "color", value: "red" } } ]);
         await wait(REFRESH_DELAY_MS + 50);
         expect(api.plan).toHaveBeenCalledTimes(3);
+    });
+
+    it("moves a tab on the current period when a day is started early, and back when it is taken back", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        vi.setSystemTime(new Date(2026, 9, 28, 2, 0));
+        const { container, caiusWrote } = mountInPane(true);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+        expect(api.plan).toHaveBeenCalledWith("day", "2026-10-28");
+
+        clock.next = new Date(2026, 9, 27, 2, 0);
+        await caiusWrote([ startedRow(true) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+    });
+
+    it("keeps the day of its note when the clock moves, and shows the Today button", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const { container, caiusWrote } = mountInPane(true);
+        await flush();
+        expect(container.querySelector(".plan-period-current")).not.toBeNull();
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-27");
+        expect(container.querySelector(".plan-period-current")).toBeNull();
+        expect(button(container, "Today")).toBeTruthy();
+    });
+
+    it("asks for the status only when a label that moves the clock changes", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        const { caiusWrote } = mountInPane(true);
+        await flush();
+
+        await caiusWrote([ { entityName: "attributes", entityId: "a9", entity: { attributeId: "a9", noteId: "today", type: "label", name: "caiusFocus", value: "120-120" } } ]);
+        await wait(REFRESH_DELAY_MS + 50);
+        expect(refreshCaiusClock).not.toHaveBeenCalled();
+
+        await caiusWrote([ startedRow(false) ]);
+        expect(refreshCaiusClock).toHaveBeenCalledTimes(1);
     });
 
     it("starts no refresh while one is in flight, and runs at most one more after it", async () => {
@@ -688,6 +748,17 @@ const LANES: Record<string, CaiusOpenTask[]> = {
     ],
     orbit: []
 };
+
+function startedRow(isDeleted: boolean) {
+    return {
+        entityName: "attributes" as const,
+        entityId: "started1",
+        entity: {
+            attributeId: "started1", noteId: "monday", type: "label", name: "caiusStarted",
+            value: "2026-10-28T02:00:00", isDeleted
+        }
+    };
+}
 
 function dayPlan(): CaiusPlan {
     return {

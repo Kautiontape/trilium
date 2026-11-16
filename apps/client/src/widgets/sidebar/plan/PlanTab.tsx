@@ -10,7 +10,8 @@ import type NoteContext from "../../../components/note_context";
 import { isJournalNote } from "../../../menus/task_actions";
 import {
     caiusApi, caiusClockMinutes, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
-    isCaiusEnabled, RELOAD_TIMEOUT_MS, startCaiusConversation, wasCaiusEnabled
+    isCaiusEnabled, movesCaiusClock, refreshCaiusClock, RELOAD_TIMEOUT_MS, startCaiusConversation,
+    wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
 import type LoadResults from "../../../services/load_results";
@@ -72,6 +73,33 @@ export default function PlanTab() {
             mounted = false;
         };
     }, [ note ]);
+
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
+    // A day started early or taken back moves `caiusNow()`: a tab on the period it worked out
+    // follows it, and one the user stepped elsewhere keeps its period but draws it again.
+    useTriliumEvent("entitiesReloaded", useCallback(({ loadResults }) => {
+        if (!movesCaiusClock(loadResults)) {
+            return;
+        }
+
+        const before = periodOfNote(note, caiusNow());
+        void refreshCaiusClock().then(() => {
+            if (!mountedRef.current) {
+                return;
+            }
+
+            const after = periodOfNote(note, caiusNow());
+            setPeriod((shown) => shown.kind === before.kind && periodKey(shown) === periodKey(before)
+                ? after
+                : { ...shown });
+        });
+    }, [ note ]));
 
     const key = periodKey(period);
     const { data, error, reload, refresh } = usePlanData(period.kind, key);

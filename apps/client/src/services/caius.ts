@@ -264,6 +264,31 @@ export function forgetCaiusStatus() {
     statusRequest = null;
 }
 
+/**
+ * Asks the server for the status again, and resolves once `caiusNow()` follows the new answer: a
+ * day started early or taken back (`#caiusStarted`) and the standing note's rollover change it.
+ */
+export async function refreshCaiusClock() {
+    forgetCaiusStatus();
+    await isCaiusEnabled();
+}
+
+/**
+ * Whether the changes can move `caiusNow()`: a `#caiusStarted` label set or deleted on any note
+ * (the day note it lands on may be new to the client), or a change to the standing note, whose
+ * Rhythm holds the rollover.
+ */
+export function movesCaiusClock(loadResults: LoadResults) {
+    return loadResults.getAttributeRows().some(
+        (row) => row.name === "caiusStarted" || row.name === STANDING_LABEL
+    ) || loadResults.getNoteIds().some(
+        (noteId) => froca.notes[noteId]?.hasOwnedLabel(STANDING_LABEL)
+    );
+}
+
+/** The label of the standing note, which the server finds it by. */
+const STANDING_LABEL = "assistantContext";
+
 async function fetchStatus() {
     try {
         const status = await server.getWithSilentNotFound<CaiusStatus>("caius/status");
