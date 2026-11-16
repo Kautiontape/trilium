@@ -127,21 +127,27 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
     );
 }
 
+/** Caius's forward marker: lower case, opened by an underscore after no letter, digit or `_`. */
+const FORWARD_MARKER =
+    /\s*(?<![\p{L}\p{N}_])_(?:re)?scheduled_?\s+\[_?(?!from\s)([^\]]+?)_?\]\(#root\/[^)]*\)_?/gu;
+
 /**
  * A task's words as the row shows them. A forwarded task (state `tombstone`) keeps Caius's marker
  * in its text, `_scheduled [Thu 5 Nov](#root/…)_` or, once the desktop editor has saved the note,
  * `_scheduled_ [_Thu 5 Nov_](#root/…)`; the row shows the day it went to instead, and links as
- * their labels. A marker links to a `#root/` note and `scheduled` follows no letter, so a bare
- * `_scheduled_`, `unscheduled [x](#root/a)` and `scheduled [docs](https://…)` are not markers. A
- * task forwarded again carries several; every one is left out and the last names the day. A copy's
- * "from …" link to where it came from is left out: on a narrow row it only cuts the task off, and the task tray's From
- * block carries it. A leading area marker and clock are left out too; the marker comes back as
- * `area` for the row to draw as a dot. Bold and italic marks are dropped, their words kept.
+ * their labels. A marker is lower case, opens with an underscore that follows no letter, digit
+ * or underscore, and links to a `#root/` note other than a "from …" link. So words typed as
+ * `scheduled [Q4](#root/a)`, `word_scheduled [x](#root/a)`, a bare `_scheduled_` and
+ * `scheduled [docs](https://…)` are not markers. A task forwarded again carries several; every
+ * one is left out and the last names the day. A copy's "from …" link to where it came from is
+ * left out: on a narrow row it only cuts the task off, and the task tray's From block carries
+ * it. A leading area marker and clock are left out too; the marker comes back as `area` for the
+ * row to draw as a dot. Bold and italic marks are dropped, their words kept.
  */
 export function displayText(raw: string): { text: string; forwardedTo: string | null; area?: Area } {
     const area = markedArea(raw) ?? undefined;
     raw = bareText(raw);
-    const markers = [ ...raw.matchAll(/\s*_?(?<!\p{L})(?:re)?scheduled_?\s+\[_?([^\]]+?)_?\]\(#root\/[^)]*\)_?/giu) ];
+    const markers = [ ...raw.matchAll(FORWARD_MARKER) ];
     const kept = raw.replace(/\s*\[from\s[^\]]*\]\(#root\/[^)]*\)/i, "");
     let rest = kept;
     if (markers.length) {

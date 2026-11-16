@@ -54,6 +54,16 @@ describe("displayText", () => {
             .toEqual({ text: "Pair on the seed data", forwardedTo: "Wed" });
     });
 
+    it("keeps the user's own scheduled words, and only a lower-case marker with its leading underscore counts", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Prep for the scheduled [Q4 planning](#root/q4)"))
+            .toEqual({ text: "Prep for the scheduled Q4 planning", forwardedTo: null });
+        expect.soft(displayText("un_scheduled [x](#root/a)").forwardedTo).toBeNull();
+        expect.soft(displayText("word_scheduled [x](#root/a)").forwardedTo).toBeNull();
+        expect.soft(displayText("_Scheduled [Tue](#root/a)_").forwardedTo).toBeNull();
+        expect.soft(displayText("_scheduled_ [from Mon](#root/m)").forwardedTo).toBeNull();
+    });
+
 describe("displayText's emphasis", () => {
     it("drops **bold**, *italic* and _italic_ markers and keeps their words, but not an underscore inside a word", async () => {
         const { displayText } = await import("./TaskRow.js");
