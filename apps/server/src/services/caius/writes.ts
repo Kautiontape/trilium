@@ -138,6 +138,14 @@ export function drawHeader(noteId: string, day: HeaderDay, weather: DayWeather |
 }
 
 const WEEKDAY = "(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*";
+// A full name in any case, or an abbreviation with a capital first letter, so "sat" and "mon" in
+// ordinary words aren't days. A trailing "s" makes it a plural.
+const DAY_NAME = new RegExp(
+    "\\b(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    + "(?:Mon|Tues|Tue|Wed|Thurs|Thur|Thu|Fri|Sat|Sun))(s?)\\b", "gi"
+);
+const FULL_DAY_NAME = /^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i;
+const DAY_ABBREVIATION = /^(?:Mon|Tues?|Wed|Thu(?:rs?)?|Fri|Sat|Sun)$/;
 const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ];
 
 /**
@@ -147,7 +155,10 @@ const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ]
  * - Next week: next week's note. A weekday range ("Thu-Fri"): from its first day until its last, in
  *   this week, or next week when its last day is already past.
  * - This week, all week, or until a weekday or a date: this week's, with no end of its own.
- * - A ticket key: this week's, with no end, so "ZAP-2590 is open" doesn't lapse.
+ * - One weekday name ("Tuesday", "Tue", "next Tuesday"): that day alone, in this week, or next week
+ *   when the day is before `date` or the line says next. A plural, a weekday with a day number, one
+ *   after until, since, from or the like, and two or more weekdays that aren't a range don't count.
+ * - A ticket key: this week's, with no end, so "ABC-12 is open" doesn't lapse.
  * - A person's or a one-day state (is open, out, off or down; away, on leave, covering, freeze,
  *   on PTO, vacation or holiday): this week's, ending on `date`.
  */
@@ -168,9 +179,29 @@ export function weekPlace(text: string, date: string): { week: string; from?: st
     }
     const untilWhen = new RegExp(`\\buntil\\s+(?:${WEEKDAY}\\b|\\d|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\s+\\d)`, "i");
     if (/\b(?:this week|all week)\b/i.test(text) || untilWhen.test(text)) return { week };
+    const single = singleWeekday(text);
+    if (single) {
+        const day = weekdayOf(date, single.name);
+        const on = single.next || day < date ? new Date(Date.parse(`${day}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10) : day;
+        return { week: isoWeekKey(new Date(`${on}T00:00:00Z`)), from: on, until: on };
+    }
     if (/\b[A-Z][A-Z0-9]+-\d+\b/.test(text)) return { week };
     const state = /\b(?:is|are)\s+(?:open|out|off|down|away)\b|['’]s\s+(?:out|off|down|away)\b|\b(?:away|on leave|covering|freeze|on PTO|on vacation|on holiday)\b/i;
     return state.test(text) ? { week, until: date } : null;
+}
+
+/** The one weekday `text` names as a day to place a line on, and whether it follows "next"; else null. */
+function singleWeekday(text: string): { name: string; next: boolean } | null {
+    const nameOf = (m: RegExpMatchArray) => m[0].slice(0, m[0].length - (m[1] ?? "").length);
+    const found = [ ...text.matchAll(DAY_NAME) ].filter((m) => FULL_DAY_NAME.test(nameOf(m)) || DAY_ABBREVIATION.test(nameOf(m)));
+    const [ only ] = found;
+    if (found.length !== 1 || !only || only[1] !== "") return null;
+    const name = nameOf(only);
+    const index = only.index ?? 0;
+    if (/^,?\s+\d/.test(text.slice(index + name.length))) return null;
+    const before = text.slice(0, index);
+    if (/\b(?:until|till|through|thru|since|from|by|before|after|last|every)\s+$/i.test(before)) return null;
+    return { name, next: /\bnext\s+$/i.test(before) };
 }
 
 /** The date of `weekday` ("Fri", "friday") in the ISO week of `date`. */

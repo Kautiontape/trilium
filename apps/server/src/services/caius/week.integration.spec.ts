@@ -226,7 +226,9 @@ describe("Context writes decide their own target", () => {
         expect(day.results[0]).toMatchObject({ status: "added" });
         expect(day.results[0].detail).not.toBe("moved to the week note");
 
-        expect(await contextOf("week", "2026-W45")).toEqual(expect.arrayContaining([ "ZAP-2620 waits on legal", "Riley is out on Thursday" ]));
+        const week = await call("caius_plan", { period: "week", date: "2026-W45" });
+        expect(week.context.map((line: any) => line.text)).toContain("ZAP-2620 waits on legal");
+        expect(week.pendingContext).toContainEqual(expect.objectContaining({ text: "Riley is out on Thursday", from: THU, until: THU }));
         expect(await contextOf("day", THU)).toEqual([ "Taking Incident Review over Vendor Onboarding at 11:00" ]);
     });
 });
@@ -537,7 +539,7 @@ describe("where a Context line goes", () => {
         [ "ZAP-2590 is open; Jira's Done is a mistake.", null ], [ "Sam's off this week", null ], [ "Release freeze this week", null ],
         [ "Jaco out all week.", null ], [ "Vendor freeze until Friday", null ], [ "Code review paused until 27 Nov", null ],
         [ "Staging is down", day ], [ "Jordan covering for Jaco", day ], [ "Jaco is on PTO", day ], [ "Sam is on vacation", day ],
-        [ "Pat is on holiday", day ], [ "Riley is out Thursday", day ], [ "Code freeze from Wednesday", day ],
+        [ "Pat is on holiday", day ], [ "Riley is out Thursday", "2026-11-26" ], [ "Code freeze from Wednesday", day ],
         [ "Jaco out Thu-Fri", "2026-11-27" ]
     ];
 
