@@ -943,7 +943,7 @@ function mountInPane(visible: boolean) {
             draw(shown);
             await flush();
         },
-        /** Draws the tab again, after the active note changed: a new context value makes it render. */
+        /** Draws the tab again after the active note changed, by toggling its visibility off and on. */
         async rerender() {
             draw(!current);
             draw(current);

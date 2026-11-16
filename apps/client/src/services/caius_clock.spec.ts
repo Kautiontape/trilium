@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import appContext from "../components/app_context.js";
 import type { EntityChange } from "../server_types.js";
+import { buildNote } from "../test/easy-froca.js";
 import { movesCaiusClock, trackStartedNotes } from "./caius.js";
 import froca from "./froca.js";
 import frocaUpdater from "./froca_updater.js";
 import type LoadResults from "./load_results.js";
-import { buildNote } from "../test/easy-froca.js";
 
 const MONDAY = "mondayNote";
 const STARTED_ID = "startedAttr";

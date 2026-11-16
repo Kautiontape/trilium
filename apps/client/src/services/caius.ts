@@ -298,8 +298,9 @@ export function movesCaiusClock(loadResults: LoadResults) {
 export async function trackStartedNotes(loadResults: LoadResults) {
     const unknown = new Set<string>();
     for (const row of loadResults.getAttributeRows()) {
-        if (row.name === "caiusStarted" && !row.isDeleted && !froca.notes[row.noteId]) {
-            unknown.add(row.noteId);
+        const { noteId } = row;
+        if (row.name === "caiusStarted" && !row.isDeleted && noteId && !froca.notes[noteId]) {
+            unknown.add(noteId);
         }
     }
 
