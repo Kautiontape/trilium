@@ -170,8 +170,9 @@ describe("a catch-up review writes the reviewed day, its keep lines and his own 
         expect(await labelsOf(TODAY, "caiusAsked")).not.toContain("area:cr-deck");
         expect(await labelsOf(REVIEWED, "caiusAsked")).not.toContain(carry.lineId);
         const monday = await call("caius_context", { date: TODAY });
-        expect(monday.context.map((line: any) => line.text)).toContain("Ana is out Tuesday");
+        expect(monday.context.map((line: any) => line.text)).not.toContain("Ana is out Tuesday");
         const tuesday = await call("caius_context", { date: "2026-11-17" });
+        expect(tuesday.context.map((line: any) => line.text)).toContain("Ana is out Tuesday");
         expect(tuesday.context.map((line: any) => line.text)).not.toContain("Ben covers the on-call rotation");
 
         // The same call again finds the forward's move in place and changes nothing on the target day.
@@ -365,7 +366,9 @@ describe("a review asks nothing Plan my day asks", () => {
         expect(applied.skipped).toEqual([]);
         expect(applied.say).toContain("'Ben is out Thursday' is noted");
         const monday = await call("caius_context", { date: TODAY });
-        expect(monday.context.map((line: any) => line.text)).toContain("Ben is out Thursday");
+        expect(monday.context.map((line: any) => line.text)).not.toContain("Ben is out Thursday");
+        const thursday = await call("caius_context", { date: "2026-11-19" });
+        expect(thursday.context.map((line: any) => line.text)).toContain("Ben is out Thursday");
     });
 
     it("Mon 19:00, Review of Fri 6: a carry line passed as a keep is left for Plan my day, and the keep line is kept", async () => {

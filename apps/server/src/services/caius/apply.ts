@@ -253,6 +253,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas, {
             day: date, noteFor: (id) => noteOf(store, id),
             textOf: (id) => [ ...listItems(offer.day.plan), ...offer.onDeck, ...catchupTasks, ...heldTasks ].find((item) => item.listItemId === id)?.text
+                ?? input.follows.get(id)?.text ?? items.find((item) => item.id === id)?.text
         }, written, skipped));
         // A held task he named is settled; a hold that narrows to one releases it. Holds are settled on
         // every note they were given on, against what is open anywhere in the Journal.
@@ -357,7 +358,7 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
         const reasons = new Map(dayCandidates({ jira: read.inputs.jira, week: offer.day.week, live: new Map(), exclude: offer.day.closed })
             .map(present).map((candidate) => [ candidate.candidateId, candidate ]));
         const answered = new Set(written.filter((entry) => entry.kind === "dismiss" && entry.id).map((entry) => entry.id));
-        const brief = await briefOf(deps, { date, brief: prose }, taken, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, headsUp, weather, groupWords(pools))
+        const brief = await briefOf(deps, { date, brief: prose }, taken, reasons, { ...offer.jira, asks: offer.jira.asks.filter((ask) => !answered.has(ask.ticket.key)) }, headsUp, weather, groupWords(pools, { table, copies, collided }))
             .catch((e: unknown) => ({ error: "failed", detail: e instanceof Error ? e.message : String(e) }));
         if ("error" in brief) {
             skipped.push({ kind: "brief", reason: brief.error ?? "bad_request", detail: brief.detail });
@@ -507,6 +508,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas.filter((ref) => !laterArea(ref)), {
             day: targetDay, noteFor,
             textOf: (id) => [ ...open.items, ...listItems(facts.plan) ].find((item) => item.listItemId === id)?.text
+                ?? input.follows.get(id)?.text ?? journalItem(id)?.text
         }, written, skipped));
 
         // An item an ambiguous answer matched stays where it is, on this call and later ones, until a
@@ -745,7 +747,7 @@ async function reorder(deps: ApplyDeps, asked: PlanApplyInput, read: DayRead, we
         await acceptAll(store, date, now, input, { known, moved: new Map() }, written, skipped);
         await guarded({ kind: "nest" }, skipped, () => nestAll(store, date, now, input.nest, { known, moved: new Map() }, written, skipped));
         const plan = await readPlan(store, "day", date, now);
-        const regrouped = asked.groups ? groupsFrom(plan, wordsOf(asked.groups, groupWords(pools))) : null;
+        const regrouped = asked.groups ? groupsFrom(plan, wordsOf(asked.groups, groupWords(pools, { table, copies, collided }))) : null;
         if (regrouped?.unmatched.length) skipped.push(...regrouped.unmatched.map((said) => ({ kind: "groups", text: said, reason: "not_on_list" })));
         // A nest changes what the drawing counts even when the picks stay the same.
         const nested = written.some((entry) => entry.kind === "nest" && entry.status === "written");
@@ -2023,14 +2025,19 @@ function headerOf(plan: Awaited<ReturnType<typeof readPlan>>, read: DayRead, dat
 
 /**
  * How a group answer's item reads once its writes are made: a candidate's, open item's or On deck
- * item's ref as that item's words, which name it on his list; anything else as given.
+ * item's ref as that item's words, which name it on his list. A ref none of those pools holds is read
+ * from the ref table, and a moved item reads as its live copy's `l` ref. Anything else as given.
  */
-function groupWords(pools: Pools): (said: string) => string {
+function groupWords(pools: Pools, refs: { table: Map<string, RefEntry>; copies: Copies; collided: Map<string, RefEntry[]> }): (said: string) => string {
+    const { read } = nameReader([], refs.table, refs.copies, refs.collided);
     return (said) => {
         if (!isRef(said) || /^l/i.test(said.trim())) return said;
         const named = resolveIn([ pools.candidates, pools.open, pools.deck ], said);
         const id = named && "id" in named ? named.id : null;
-        return [ ...pools.candidates, ...pools.open, ...pools.deck ].find((item) => item.id === id)?.text ?? said;
+        const text = [ ...pools.candidates, ...pools.open, ...pools.deck ].find((item) => item.id === id)?.text;
+        if (text !== undefined) return text;
+        const live = read("groups", said, []);
+        return live ? refOf("l", live) : said;
     };
 }
 
