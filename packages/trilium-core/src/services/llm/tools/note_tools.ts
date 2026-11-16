@@ -195,7 +195,11 @@ export const noteTools = defineTools({
 
             let newContent: string;
             if (note.type === "text") {
-                const htmlToAppend = carryListItemIds("", markdownImport.renderToHtml(content, note.getTitleOrProtected()));
+                const rendered = markdownImport.renderToHtml(
+                    content,
+                    note.getTitleOrProtected()
+                );
+                const htmlToAppend = carryListItemIds("", rendered);
                 newContent = existingContent + htmlToAppend;
             } else {
                 newContent = existingContent + (existingContent.endsWith("\n") ? "" : "\n") + content;

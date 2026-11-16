@@ -32,6 +32,15 @@ function nest(id: string, text: string, subs: string) {
     return todo(id, text, "", `<ul>${subs}</ul>`);
 }
 
+function li(id: string, text: string, subs = "") {
+    const idAttr = id ? ` data-list-item-id="${id}"` : "";
+    return `<li${idAttr}>${text}${subs ? `<ul>${subs}</ul>` : ""}</li>`;
+}
+
+function section(title: string, ...items: string[]) {
+    return `<h2>${title}</h2><ul>${items.join("")}</ul>`;
+}
+
 describe("carryListItemIds", () => {
     it("keeps ids of unchanged items and leaves other markup byte for byte", () => {
         const html = `<p>Intro &nbsp; text</p><ul><li>Alpha</li><li>Beta</li></ul>`
@@ -223,6 +232,89 @@ describe("carryListItemIds", () => {
             + `${todo("", "Tail")}</ul>`;
 
         expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["h", "fresh1", "t"]);
+    });
+
+    it("keeps same-text items under their own headings", () => {
+        const previous = section("Mon", li("o1", "Ship"), li("o2", "Standup"))
+            + section("Tue", li("o3", "Standup"), li("o4", "Retro"));
+        const ids = (html: string) => idsOf(carryListItemIds(previous, html, counter()));
+
+        expect(ids(section("Mon", li("", "Ship")) + section("Tue", li("", "Standup"))))
+            .toEqual(["o1", "o3"]);
+        expect(ids(section("Tue", li("", "Standup"), li("", "Retro")))).toEqual(["o3", "o4"]);
+        expect(ids(section("Tue", li("", "Standup"), li("", "Retro"))
+            + section("Mon", li("", "Standup"), li("", "Ship")))).toEqual(["o3", "o4", "o2", "o1"]);
+        expect(ids(section("Tue", li("", "Standup"), li("", "Retro"))
+            + section("Mon", li("", "Ship")))).toEqual(["o3", "o4", "o1"]);
+    });
+
+    it("keeps nested items with their section when an earlier section is deleted", () => {
+        const previous = section("Mon", li("o1", "Standup", li("o2", "Notes")))
+            + section("Tue", li("o3", "Standup", li("o4", "Notes")));
+        const html = section("Tue", li("", "Standup", li("", "Notes")));
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["o3", "o4"]);
+    });
+
+    it("keeps items when a title heading is added or removed", () => {
+        const plain = (a: string, b: string, c: string) => `<h2>Tasks</h2><ul>${li(a, "A")}`
+            + `${li(b, "B")}</ul><h2>Notes</h2><ul>${li(c, "C")}</ul>`;
+        const titled = (a: string, b: string, c: string) => `<h2>Monday</h2><h3>Tasks</h3>`
+            + `<ul>${li(a, "A")}${li(b, "B")}</ul><h3>Notes</h3><ul>${li(c, "C")}</ul>`;
+
+        expect(idsOf(carryListItemIds(plain("a", "b", "c"), titled("", "", ""), counter())))
+            .toEqual(["a", "b", "c"]);
+        expect(idsOf(carryListItemIds(titled("a", "b", "c"), plain("", "", ""), counter())))
+            .toEqual(["a", "b", "c"]);
+    });
+
+    it("gives a fresh id to a new line at the end of the children, not a deleted one", () => {
+        const previous = `<ul>${li("p", "P", li("a", "Call Ana") + li("b", "Book flights")
+            + li("c", "Pack"))}</ul>`;
+        const html = `<ul>${li("", "P", li("", "Book flights") + li("", "Pack")
+            + li("", "Call Cy"))}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter())))
+            .toEqual(["p", "b", "c", "fresh1"]);
+    });
+
+    it("gives fresh ids to sub-items under a new parent unless their text is unique", () => {
+        const previous = `<ul>${li("p1", "Ship the build", li("o2", "Follow up"))}`
+            + `${li("p2", "Book the venue", li("o4", "Follow up"))}</ul>`;
+        const html = `<ul>${li("", "Ship the build", li("", "Follow up"))}`
+            + `${li("", "Totally new thing", li("", "Follow up"))}</ul>`;
+        expect(idsOf(carryListItemIds(previous, html, counter())))
+            .toEqual(["p1", "o2", "fresh1", "fresh2"]);
+
+        const plan = `<ul>${li("p", "Plan offsite", li("d", "Draft"))}</ul>`;
+        const blog = `<ul>${li("", "Write blog post", li("", "Draft"))}</ul>`;
+        expect(idsOf(carryListItemIds(plan, blog, counter()))).toEqual(["fresh1", "fresh2"]);
+
+        const two = `<ul>${li("", "Write blog", li("", "Draft"))}`
+            + `${li("", "Write memo", li("", "Draft"))}</ul>`;
+        expect(idsOf(carryListItemIds(plan, two, counter())))
+            .toEqual(["fresh1", "fresh2", "fresh3", "fresh4"]);
+    });
+
+    it("removes only the attribute named data-list-item-id from an opening tag", () => {
+        const previous = `<ul><li data-list-item-id="o1">A</li></ul>`;
+
+        expect(carryListItemIds(previous, `<ul><li title="q data-list-item-id=z">A</li></ul>`))
+            .toBe(`<ul><li data-list-item-id="o1" title="q data-list-item-id=z">A</li></ul>`);
+        expect(carryListItemIds(previous,
+            `<ul><li data-x="1 data-list-item-id = &quot;q">A</li></ul>`))
+            .toBe(`<ul><li data-list-item-id="o1" `
+                + `data-x="1 data-list-item-id = &quot;q">A</li></ul>`);
+        expect(carryListItemIds(previous, `<ul><LI Data-List-Item-Id='zzz' class=c>A</LI></ul>`))
+            .toBe(`<ul><li data-list-item-id="o1" class=c>A</LI></ul>`);
+    });
+
+    it("strips an id from a list item outside a list", () => {
+        const previous = `<ul><li data-list-item-id="o1">A</li></ul>`;
+        const html = `<ul><li>A</li></ul><div><li data-list-item-id="o1">Stray</li></div>`;
+
+        expect(carryListItemIds(previous, html, counter()))
+            .toBe(`<ul><li data-list-item-id="o1">A</li></ul><div><li>Stray</li></div>`);
     });
 
     it("never reuses an id and gives fresh ids to items without a counterpart id", () => {

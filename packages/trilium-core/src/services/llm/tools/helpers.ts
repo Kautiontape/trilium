@@ -121,7 +121,8 @@ export function getNoteContentForLlm(note: BNote) {
  */
 export function setNoteContentFromLlm(note: BNote, content: string, previousHtml = "") {
     if (note.type === "text") {
-        note.setContent(carryListItemIds(previousHtml, markdownImport.renderToHtml(content, note.title)));
+        const html = markdownImport.renderToHtml(content, note.title);
+        note.setContent(carryListItemIds(previousHtml, html));
     } else {
         note.setContent(content);
     }
