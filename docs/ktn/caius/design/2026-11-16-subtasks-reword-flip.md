@@ -23,15 +23,19 @@ Examples below use invented names and tickets.
    catch-up (the reviewed day's next workday is before the target day), anchor on the target day. Otherwise anchor on
    `date` as now, so a Friday wind-down's "later this week" is still that week.
    Spec: `namedDays("2026-11-10", "2026-11-16")` gives w1 `2026-W47`, w2 `2026-W48`;
-   `namedDays("2026-11-13", "2026-11-16")` gives w1 `2026-W46` as today.
+   `namedDays("2026-11-13", "2026-11-16")` gives w1 `2026-W46` as today. `caius_winddown_apply` resolves its refs
+   through the same call (`apply.ts`, `namedDays(date, targetDay)`), so also test at the apply level: a review of
+   2026-11-10 with target 2026-11-16 and fate `w1` writes to `2026-W47`.
 2. **A catch-up review wrote to the target day.** `caius_winddown_apply` on an older day ran the `next` step's writes
    against the target day as well. `shelve` put the ten tickets Shawn had just taken in Plan my day into Suggested, so
    Caius had to accept them again, the refs changed and a move was skipped. In a catch-up review the apply writes only
    the answers about the reviewed day: done, fates (a forward to the target day included), drops and holds. It skips
    the offers (accept, shelve, not today, dismiss), the focus record and the closing Context lines, and reports any
-   that were passed as skipped `review_only`. Plan my day owns the target day.
-3. **"Monday" said on a Monday.** Caius put two tasks on the 23rd. Skill line: today's own weekday name means today;
-   another weekday name is the next one.
+   that were passed as skipped `review_only`. `acceptAll` runs with `accept` emptied; a `move` still runs for an item
+   this call forwards to the target day, and other moves are skipped `review_only`. Plan my day owns the target day.
+3. **"Monday" said on a Monday.** Caius put two tasks on the 23rd. At 02:55 the Caius clock still said Sunday while
+   the session planned Monday, so the rule reads from the ritual's date, not the clock. Skill line: in a ritual, the
+   ritual date's own weekday name means that date; another weekday name is the next one after it.
 4. **Brought-in tasks land without a word.** `caius_forward` puts a copy under the same-named section, else in the
    first work list, so two errands and the Caius fixes landed in Morning. Code can't pick the block from the area:
    Shawn wanted the Growth Caius fixes in the morning and a Growth errand in the evening. Skill line: a task brought into a
@@ -41,8 +45,10 @@ Examples below use invented names and tickets.
    after that item, the way `caius_place` does.
 6. **Enter in the phone chat.** `Chat.tsx` sends on Enter. Enter adds a newline and the Send button sends. Quick add
    keeps Enter to submit, since it is one line.
-7. **Parents matched by text.** `plan-read.ts` finds a parent's sub-items by the parent's text, so two tasks both
-   named "standup" collide. Match by row instead. Part 2 needs this; on its own it changes nothing visible.
+7. **Parents matched by text.** `plan-read.ts` finds a parent's sub-items by the parent's text (`parents`, and
+   `deckParents` for On deck), and so does the desktop's `plan_logic.ts` (its unestimated count), so two tasks both
+   named "standup" collide. Match by row or list item id instead, and check the per-area sums (`liveMinutes`) and the
+   phone's `views.ts` for the same. Part 2 needs this; on its own it changes nothing visible.
 
 ## Part 2: sub-tasks
 
@@ -55,8 +61,12 @@ and any screen that shows sub-items. The phone's Today, its Plan day view and th
 ### Decisions (Shawn, 2026-11-16)
 
 - **Time: the parent's estimate wins, else the sum.** A parent's own estimate covers everything under it ("Caius fixes
-  ~15m"). With none, its live sub-items add up, unestimated ones at the 30-minute default. A parent pinned to a clock,
-  like "09:00 standup", counts as itself (its estimate or the default), so answers under it add nothing.
+  ~15m"). With none, its live sub-items add up, unestimated ones at the 30-minute default. A meeting parent counts as
+  its meeting time, so answers under it add nothing. A meeting parent is a task pinned to a clock that matches a
+  meeting's start that day ("09:00 standup" and a 09:00 calendar event). The meeting's time is already booked from
+  the calendar, so such a parent adds nothing to the list's minutes either. Today the pinned standup task also counts
+  as an unestimated 30 minutes on top of the booking; the rule ends that double count for a meeting parent. A pinned
+  task that is not a meeting ("10:30 appointment") follows the estimate-or-sum rule like any other.
 - **Ticking: independent, and the last tick asks.** Ticking a parent leaves its open sub-items open, so an answer not
   given carries over and wind-down asks about it like any leftover. When the last open sub-item is ticked, Caius offers
   to tick the parent, never silently. Dropping a parent still drops its live sub-items.
@@ -64,8 +74,11 @@ and any screen that shows sub-items. The phone's Today, its Plan day view and th
   with a done/total count ("3/10") and a chevron. Opening it lists the sub-items, each with the usual row actions. Each
   device remembers which parents are open (localStorage). The Top 3, the brief's groups and the hills count parents
   only.
-- **Nesting: Caius proposes, he picks.** In Plan my day Caius proposes groupings as a pick he takes or skips. In any
-  other chat, Caius nests when he asks.
+- **Nesting: Caius proposes, he picks.** In Plan my day Caius proposes groupings (meeting asks, three or more tasks
+  from one project) as a pick he takes or skips. In any other chat, Caius nests when he asks.
+
+A sub-item with no area marker takes its parent's area, so the unmarked steps of a 🌱 parent count as Growth and Plan
+my day doesn't ask about each one.
 
 ### Writes
 
@@ -83,18 +96,30 @@ and any screen that shows sub-items. The phone's Today, its Plan day view and th
 ### The Plan my day offer
 
 The `inputs` step adds `nests`: each one has a ref (`n1`), a parent (a list item, or a new one's text), its items and
-a `because`. The rule is one the server can check: an ask (a taken or listed `kind: "ask"` candidate) whose asker
-shares a first name with an attendee of a meeting that day goes under that meeting's task, if the day has one. Example:
-"Put 4 answers under standup? Ana, Ben and Cy are in it." The phone shows each nest as a pick card (Yes / Skip), and
-Send folds the picks into the reply like the other step answers. Caius may propose any other grouping in its message
-("the three Caius fixes under one 15-minute item?"). A yes to one of those is written with `nest` the same way. An
-offer he doesn't take writes nothing.
+a `because`. Two rules the server can check:
+
+- **Meeting asks.** An ask (a `kind: "ask"` candidate, or a list item naming its ticket) goes under a meeting's task
+  that day when its asker shares a first name with one of the meeting's attendees. An attendee is mostly an email, so
+  the first name is the email's local part before the first `.` (`ana.lopez@example.com` → `ana`), else the first
+  word of the name; `meetings.ts` splits only on whitespace today. Example: "Put 4 answers under standup? Ana, Ben and
+  Cy are in it."
+- **Project runs.** Three or more tasks on the day's list whose first copy came from the same project note (the
+  origin `caius_explain` reports, or a project pick) go under a new parent named for the project.
+
+The phone shows each nest as a pick card (Yes / Skip), and Send folds the picks into the reply like the other step
+answers. Neither rule catches a grouping like today's "Caius fixes": two of the three were added by hand and one came
+from a project. Caius proposes those in its message ("the three Caius fixes under one 15-minute item?"), and a yes is
+written with `nest` the same way. An offer he doesn't take writes nothing.
 
 ### Done parent, open sub-items
 
 A parent ticked with sub-items still open keeps showing on Today, with "2 open" in place of the count, until each one
-has a fate. Wind-down lists those sub-items under the parent's name. Forwarding one on its own puts it at the top level
-of the target day, with the usual "from …" link; `caius_explain`'s origin already names the item it sat under.
+has a fate. Wind-down already lists such a sub-item: `stillOpen` keeps a sub-item whose parent isn't open. The readers
+that keep only `parent === null` (`mainTasks`, `deckTasks`, `topLevel` in `daily.ts`, `views.ts:202` on the server,
+the phone's and desktop's own filters) change to keep a sub-item whose parent is not live. Forwarding one on its own
+puts it at the top level of the target day, with the usual "from …" link; `caius_explain`'s origin already names the
+item it sat under. Test: tick a parent, leave one sub-item open, run `caius_winddown` `open`, and that sub-item is
+listed.
 
 ## Part 3: rewording
 
@@ -102,7 +127,9 @@ of the target day, with the usual "from …" link; `caius_explain`'s origin alre
   id, state, area marker, `~est` token, the "from …" and "scheduled …" trail links, and a leading clock unless the new
   words start with a clock of their own.
 - **Links inside the words.** A link whose text still appears in the new words stays on that text. The others are
-  dropped and listed under `dropped` in the result, so Caius says so.
+  dropped and listed under `dropped` in the result, so Caius says so. A ticket key is how a task claims its ticket
+  (`keysOf`): if the new words lose a key the old ones had, the result says `droppedKeys`, because the ticket's ask
+  will be offered again.
 - **What can be reworded.** Open, doing and done tasks. A moved copy is history and is refused (`moved`). Rewording one
   copy leaves its other copies alone.
 - **The phone.** The task sheet gets an Edit action: a text field holding only the words, Save, then Undo in the
@@ -123,15 +150,28 @@ of the target day, with the usual "from …" link; `caius_explain`'s origin alre
 - **Chat.** "It's Monday now" in a chat works the same way through `caius_start_day`, one call with nothing to answer.
 - Sunday's leftovers reach Monday through the usual catch-up; nothing else changes.
 
+## Defaults I chose (say if wrong)
+
+Shawn picked the time rule, ticking, the folded display, proposed nests, chat-and-phone rewording and the full day
+flip. These were settled in writing the doc, not by him:
+
+- One level of nesting; `too_deep` below that.
+- The review-only skip list in Part 1, item 2.
+- Meeting asks matched on first names from the attendees' email local parts.
+- Reword drops a link whose text leaves the words, and reports it.
+- A done parent with open sub-items stays on Today with "N open".
+- `caius_start_day` for the flip in chat.
+
 ## Testing
 
 - **Spike first (sub-tasks).** On the local rig, nest items with the new write, open the note in the desktop editor,
   edit another line and save. Check that the nesting and every `data-list-item-id` survive: an unchecked editor save
   can revert a server write, as the 2026-10-27 TOC case did. Write nested lists in the shape CKEditor itself saves.
-- **Unit.** `namedDays` anchors; review-only apply skips; parent matching by row; the three counting rules (parent
-  estimate, sum, pinned parent); `under`, `out`, `too_deep`, `other_note`; `parentComplete`; reword keeps the marker,
-  estimate, trail links and clock and reports dropped links; `effectiveRollover` before, at and after 04:00, with and
-  without the label.
+- **Unit.** `namedDays` anchors and the apply-level `w1`; review-only apply skips; parent matching by row; the
+  counting rules (parent estimate, sum, meeting parent, pinned non-meeting parent); a sub-item taking its parent's
+  area; `under`, `out`, `too_deep`, `other_note`; `parentComplete`; a done parent's open sub-item in wind-down; the
+  attendee first-name match on emails; both nest rules; reword keeps the marker, estimate, trail links and clock and
+  reports dropped links and keys; `effectiveRollover` before, at and after 04:00, with and without the label.
 - **Integration.** `tools.integration.spec.ts` for the new fields. The skill sheet stays under the 48,000-character cap
   (43,908 on 2026-11-16, so every new line has to be short).
 - **Phone.** A folded parent and its chevron, ticking the last sub-item and the toast, the Edit sheet, Start/Back only
