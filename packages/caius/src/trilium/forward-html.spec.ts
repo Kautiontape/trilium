@@ -286,6 +286,28 @@ describe('a task forwarded again', () => {
   });
 });
 
+describe('a task reopened with a click, its mark kept', () => {
+  const reopened = ul(li('eone', 'Write it <em>scheduled </em><a href="#root/tue"><em>Tue 27 Oct</em></a> ~30m'));
+  const fresh = { ...copy, newId: () => 'enew' };
+
+  it('copies without the old mark, and recognises its copy in the note that holds the first one', () => {
+    const r = insertCopy('<h3>Work</h3>', reopened, 'eone', fresh);
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a> ~30m');
+    expect(hasCopy(r.html, reopened, 'eone', SRC_ID)).toBe(true);
+    expect(hasCopy('<h3>Work</h3>', reopened, 'eone', SRC_ID)).toBe(false);
+  });
+
+  it('drops a written mark and the &nbsp; before a saved one, from the top item only', () => {
+    const sub = li('esub', 'Child <em>scheduled <a href="#root/x">X</a></em>');
+    const src = ul(li('eone', 'Write it&nbsp;<em>scheduled&nbsp;</em><a class="reference-link" href="#root/tue">03 - Tuesday</a>', { sub: ul(sub) }));
+    const r = insertCopy('', src, 'eone', fresh);
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a>');
+    expect(r.html).toContain('Child <em>scheduled <a href="#root/x">X</a></em>');
+  });
+});
+
 describe('hasCopy of a task with a back link', () => {
   it('tells a recurring Laundry from Monday from one from Tuesday by where each link points', () => {
     const fromMon = ul(li('wlau', 'Laundry <a href="#root/mon">from Mon 2 Nov</a>'));

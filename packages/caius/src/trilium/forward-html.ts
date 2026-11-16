@@ -181,7 +181,7 @@ export function markRescheduled(html: string, id: string, opts: MarkOptions): Ma
 /** The item's HTML as a fresh open copy: new ids, no state, only open sub-items, "from …" link. */
 function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): string {
   const states = opts.states;
-  const snippet = sourceHtml.slice(li.range[0], li.range[1]);
+  const snippet = withoutOwnMarks(sourceHtml.slice(li.range[0], li.range[1]));
   const copyRoot = parse(snippet, { comment: true });
   const top = elements(copyRoot)[0]!;
   const newId = opts.newId ?? newListItemId;
@@ -254,7 +254,7 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
   const source = findItem(parse(sourceHtml, { comment: true }), id);
   const sourceSpan = source && descriptionOf(source);
   if (!sourceSpan) return false;
-  const body = sourceSpan.innerHTML;
+  const body = withoutMarks(sourceSpan.innerHTML);
   const origin = backLinkOf(sourceSpan)?.getAttribute('href');
   if (origin) {
     // The copy's back link is written again (`buildCopy`), so the rest of the text is compared,
@@ -275,6 +275,27 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
       const inner = descriptionOf(li)?.innerHTML;
       return inner !== undefined && link.test(inner) && inner.replace(link, '') === body;
     });
+}
+
+/** `html` without the "scheduled" marks of its first description, and the space before each. */
+function withoutOwnMarks(html: string): string {
+  const span = descriptionOf(elements(parse(html, { comment: true }))[0]!);
+  return span ? withoutMarkRanges(html, scheduledMarksOf(span)) : html;
+}
+
+/** A description's inner HTML without its "scheduled" marks, and the space before each. */
+function withoutMarks(inner: string): string {
+  return withoutMarkRanges(inner, scheduledMarksOf(parse(inner)));
+}
+
+/** `html` with each mark cut out, with the spaces or `&nbsp;` before it; `marks` are offsets into `html`. */
+function withoutMarkRanges(html: string, marks: ScheduledMark[]): string {
+  const edits: Edit[] = marks.map((mark) => ({
+    start: mark.start - (/(?:\s|&nbsp;)*$/.exec(html.slice(0, mark.start))?.[0].length ?? 0),
+    end: mark.end,
+    text: '',
+  }));
+  return apply(html, edits);
 }
 
 /** Whether a task's text holds a "from …" link to the note it was forwarded from. */

@@ -141,6 +141,39 @@ describe("a task with a bare italic \"scheduled\", the state unknown", () => {
     });
 });
 
+// One click on a moved line's checkbox clears its state and unticks it but keeps the mark: the
+// state wins, so the line is open.
+describe("a moved task reopened with a click, the state unknown", () => {
+    const mon = "2031-05-12";
+    const tue = "2031-05-13";
+    let copy: Awaited<ReturnType<typeof moveAndSave>>;
+    beforeAll(async () => {
+        copy = await moveAndSave(mon, tue, "plain");
+        const fromId = await dayId(mon);
+        await cls.init(async () => {
+            const html = await store.content(fromId);
+            const reopened = html.replace(/ data-trilium-task-state="[^"]*"/, "").replace(/ title="[^"]*"/, "").replace(/ checked="checked"/, "");
+            if (reopened === html) throw new Error("nothing to reopen");
+            await store.putContent(fromId, reopened, html);
+        });
+    });
+
+    it("keeps the saved line open on its trail and in Plan my day's yesterday", async () => {
+        const all = await cls.init(() => trails(store, new Date(`${tue}T12:00:00`)));
+        expect(trailOf(all, copy)?.copies.map((c) => [ c.period, c.movedOn ])).toEqual([ [ mon, false ], [ tue, false ] ]);
+        const yesterday = await cls.init(() => yesterdayOf(store, tue, new Date(`${tue}T09:00:00`)));
+        expect({ open: yesterday.open, moved: yesterday.moved }).toEqual({ open: 1, moved: 0 });
+    });
+
+    it("ticks that line when a wind-down calls it done, and leaves the copy open", async () => {
+        vi.stubEnv("CAIUS_NOW", `${mon}T17:45`);
+        const done = await call("caius_winddown_apply", { date: mon, done: [ "Ring the plumber" ] });
+        expect.soft(done.skipped).toEqual([]);
+        expect((await statesOn(mon)).map(([ words, state ]: string[]) => [ words.replace(/\s*_scheduled.*$/, ""), state ])).toEqual([ [ "Ring the plumber", "done" ] ]);
+        expect(await statesOn(tue)).toEqual([ [ "Ring the plumber", "open" ] ]);
+    });
+});
+
 // Last: the state note stays for the rest of the file.
 describe("the Rescheduled state known", () => {
     beforeAll(() => cls.init(async () => {
