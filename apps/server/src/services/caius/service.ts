@@ -5,7 +5,7 @@
  * entry points never call one another, since the lock is not re-entrant. Each store write commits
  * in its own transaction behind a compare-and-swap, and gives any list item without an id one.
  *
- * Items of accept, dismiss, set state, set area and forward can carry the `expectedBlobId` of their note,
+ * Items of accept, dismiss, set state, set area, reword and forward can carry the `expectedBlobId` of their note,
  * which the routes accept and the tools don't: an item whose note has changed since is skipped as
  * `stale` with the note's current `blobId`, and the library never sees it.
  */
@@ -50,6 +50,7 @@ import {
     readPlan,
     scanDocs,
     placeTasks,
+    rewordTasks,
     setAreas,
     setEstimates,
     setMeetings,
@@ -93,6 +94,7 @@ import {
     type PlanInput,
     type PlaceInput,
     type SetAreaInput,
+    type RewordInput,
     type SetEstimateInput,
     type SetStateInput,
     type ShowInput,
@@ -513,6 +515,10 @@ export function createCaiusService(
 
         place: ({ items, dryRun, html }: PlaceInput) => withCaiusLock("caius_place", async () => withBlobIds(
             (await unlessStale(items, (fresh) => placeTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+        )),
+
+        reword: ({ items, dryRun, html }: RewordInput) => withCaiusLock("caius_reword", async () => withBlobIds(
+            (await unlessStale(items, (fresh) => rewordTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
 
         setEstimate: ({ items, dryRun, html }: SetEstimateInput) => withCaiusLock("caius_set_estimate", async () => withBlobIds(

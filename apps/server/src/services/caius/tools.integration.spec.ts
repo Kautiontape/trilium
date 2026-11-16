@@ -3,7 +3,7 @@ import { becca, cls, sql_init } from "@triliumnext/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { caiusService, routeInputs } from "./service.js";
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, createChildNote } from "./store.js";
 import { caiusTools, createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -57,7 +57,7 @@ describe("caius tools", () => {
         const defs = new Map([...caiusTools]);
         expect([...defs.keys()]).toEqual([
             "caius_plan", "caius_open", "caius_explain", "caius_context", "caius_inputs", "caius_add",
-            "caius_accept", "caius_dismiss", "caius_set_state", "caius_set_area", "caius_place", "caius_set_estimate", "caius_show", "caius_forward", "caius_assign_ids", "caius_meetings", "caius_context_add", "caius_context_keep", "caius_brief_write", "caius_skip_catchup", "caius_start_day", "caius_finished", "caius_winddown", "caius_planday", "caius_plan_apply", "caius_winddown_apply", "caius_header"
+            "caius_accept", "caius_dismiss", "caius_set_state", "caius_set_area", "caius_place", "caius_set_estimate", "caius_reword", "caius_show", "caius_forward", "caius_assign_ids", "caius_meetings", "caius_context_add", "caius_context_keep", "caius_brief_write", "caius_skip_catchup", "caius_start_day", "caius_finished", "caius_winddown", "caius_planday", "caius_plan_apply", "caius_winddown_apply", "caius_header"
         ]);
         for (const [name, def] of defs) {
             expect(def.async).toBe(true);
@@ -264,6 +264,61 @@ describe("caius tools", () => {
             const parent = await call("caius_set_estimate", { items: [{ noteId: blockNote, listItemId: "p1", minutes: 30 }] });
             expect(parent.results[0]).toMatchObject({ status: "skipped", reason: "has_subitems" });
             expect(toolNamed("caius_set_estimate").inputSchema.safeParse({ items: [{ noteId: "n", listItemId: "i", minutes: 4 }] }).success).toBe(false);
+        });
+    });
+
+    describe("caius_reword", () => {
+        const REWORD_DAY = "2031-05-12";
+        const OTHER_DAY = "2031-05-13";
+        const JIRA = "<a href=\"https://jira.example.com/browse/ABC-12\">ABC-12</a>";
+        let noteId = "";
+        beforeAll(() => cls.init(async () => {
+            const state = createChildNote("_taskStates", "Rescheduled", "");
+            await store.addLabel(state, "stateId", "_rescheduled");
+            await store.addLabel(state, "markdownSymbol", ">");
+        }));
+        const reword = (listItemId: string, text: string, id = noteId) => call("caius_reword", { items: [{ noteId: id, listItemId, text }] });
+        const reset = () => cls.init(async () => {
+            noteId = (await store.calendarDay(REWORD_DAY)).noteId;
+            await store.putContent(noteId, `<h3>Work</h3>${ul(li("w1", `🌱 Write the draft ${JIRA} ~30m`), li("w2", "Call Ana"))}`);
+            await store.putContent((await store.calendarDay(OTHER_DAY)).noteId, "<h3>Work</h3>");
+        });
+        const taskIn = async (date: string, id: string) =>
+            (await call("caius_plan", { period: "day", date })).sections.flatMap((s: any) => s.tasks).find((t: any) => t.listItemId === id);
+
+        it("keeps the id, area and estimate, and reports the link and ticket key the words lost", async () => {
+            await reset();
+            const out = await reword("w1", "Draft the summary for Ana");
+            expect(out.results[0]).toMatchObject({
+                status: "updated",
+                dropped: [{ text: "ABC-12", href: "https://jira.example.com/browse/ABC-12" }],
+                droppedKeys: ["ABC-12"]
+            });
+            const content = await cls.init(() => store.content(noteId));
+            expect(content).toContain("🌱 Draft the summary for Ana");
+            expect(content).toContain("~30m");
+            expect(await taskIn(REWORD_DAY, "w1")).toMatchObject({ text: expect.stringContaining("Draft the summary for Ana"), estMinutes: 30, area: "growth" });
+        });
+
+        it("refuses a moved copy and rewords the copy it moved to", async () => {
+            await reset();
+            const forwarded = await call("caius_forward", { items: [{ noteId, listItemId: "w2", to: OTHER_DAY }] });
+            expect(forwarded.results[0]).toMatchObject({ status: "moved" });
+            expect(await reword("w2", "Call Ana back")).toMatchObject({
+                results: [{ status: "skipped", reason: "moved", detail: "a moved copy is history: reword the copy it was moved to" }]
+            });
+            const other = (await call("caius_plan", { period: "day", date: OTHER_DAY })).sections.flatMap((s: any) => s.tasks).find((t: any) => t.text.includes("Call Ana"));
+            const copy = await reword(other.listItemId, "Call Ana back", other.noteId ?? (await cls.init(() => store.calendarDay(OTHER_DAY))).noteId);
+            expect(copy.results[0]).toMatchObject({ status: "updated" });
+            expect(await cls.init(() => store.content(noteId))).toContain("Call Ana");
+            expect(await cls.init(() => store.content(noteId))).not.toContain("Call Ana back");
+        });
+
+        it("skips as stale when the note changed since expectedBlobId, and refuses empty words", async () => {
+            await reset();
+            const stale = await caiusService.reword(routeInputs.reword.parse({ items: [{ noteId, listItemId: "w2", text: "x", expectedBlobId: "oldBlob" }] }));
+            expect(stale.results[0]).toMatchObject({ status: "skipped", reason: "stale" });
+            expect(toolNamed("caius_reword").inputSchema.safeParse({ items: [{ noteId: "n", listItemId: "i", text: "  " }] }).success).toBe(false);
         });
     });
 

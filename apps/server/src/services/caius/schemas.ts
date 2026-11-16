@@ -120,6 +120,11 @@ const estimateItem = z.object({
     minutes: z.number().int().min(5).max(600).describe("The estimate in whole minutes, 5 to 600")
 });
 
+const rewordItem = z.object({
+    ...taskRef,
+    text: z.string().trim().min(1).describe("The task's new words only. Its id, state, area marker, estimate, from and scheduled links stay; a leading HH:MM replaces its clock. A link stays on its text when that text is still in the words")
+});
+
 const forwardItem = z.object({
     ...taskRef,
     to: z.string().refine(
@@ -472,6 +477,7 @@ export const toolInputs = {
     setArea: writes(areaItem),
     place: writes(placeItem),
     setEstimate: writes(estimateItem),
+    reword: writes(rewordItem),
     show,
     forward: writes(forwardItem),
     header
@@ -493,6 +499,7 @@ export const routeInputs = {
     setArea: writes(areaItem.safeExtend(version)),
     place: writes(placeItem.safeExtend(version)),
     setEstimate: writes(estimateItem.safeExtend(version)),
+    reword: writes(rewordItem.safeExtend(version)),
     forward: writes(forwardItem.safeExtend(version)),
     /** The Plan tab's Close: forwards, then state changes, behind one version check. */
     apply: z.object({
@@ -536,5 +543,6 @@ export type SetStateInput = z.infer<typeof routeInputs.setState>;
 export type SetAreaInput = z.infer<typeof routeInputs.setArea>;
 export type PlaceInput = z.infer<typeof routeInputs.place>;
 export type SetEstimateInput = z.infer<typeof routeInputs.setEstimate>;
+export type RewordInput = z.infer<typeof routeInputs.reword>;
 export type ForwardInput = z.infer<typeof routeInputs.forward>;
 export type ApplyInput = z.infer<typeof routeInputs.apply>;

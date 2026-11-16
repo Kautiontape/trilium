@@ -111,6 +111,14 @@ export function createCaiusTools(
             execute: parsed(toolInputs.setEstimate, service.setEstimate)
         },
 
+        caius_reword: {
+            description: "Replace tasks' words, keeping each task's id, state, area marker, estimate, from and scheduled links, and its clock unless the new words start with one. A link stays when its text is still in the words; otherwise it is listed in dropped, and droppedKeys names a ticket key the words lost (its ask is offered again). A moved copy is refused (moved): reword the copy it moved to. Change words this way, never by cancelling a task and adding it again. Takes a list of items.",
+            inputSchema: toolInputs.reword,
+            async: true,
+            mutates: true,
+            execute: parsed(toolInputs.reword, service.reword)
+        },
+
         caius_show: {
             description: "Show a view on the phone, drawn from this result: day (date, and optionally area to open on; it opens on the area that is over), days (from and count, 2 to 7, with the week row), item (item: { noteId, listItemId }, or a ticket key: the task, its trail, origin, the ticket and what was said about it) or slipping (the tasks that keep moving, and the overdue count; period narrows it). Every row carries its noteId, listItemId and ref. Reads only. Show one when the user asks to see something, or when the answer is a load or a day's shape that runs over; never two in one reply, and never about something the user isn't talking about. Keep the line around it to the gist: the figures are on the view, and sentence has them in words for a client that draws none.",
             inputSchema: toolInputs.show,
