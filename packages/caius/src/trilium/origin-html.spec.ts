@@ -69,6 +69,15 @@ describe('originIn', () => {
     expect(originIn(html, { text: 'Count the seats across the two offices — replaces "2" everywhere' }, STATES)).toMatchObject({ headings: ['Follow-ups'], matched: true });
   });
 
+  it.each([
+    ['a bare mark', '<em>scheduled</em>'],
+    ['a bare mark after a non-breaking space', '&nbsp;<em>scheduled</em>'],
+  ])('finds the original whose link was deleted, leaving %s', (_shape, left) => {
+    const html = MEETING.replace(' <em>scheduled <a href="#root/oct">October</a></em>', left).replace('<em>scheduled <a href="#root/oct">October</a></em>', left);
+    expect(html).not.toBe(MEETING);
+    expect(originIn(html, { text: 'Count the seats across the two offices — replaces "2" everywhere' }, STATES)).toMatchObject({ headings: ['Follow-ups'], matched: true });
+  });
+
   it('prefers the rescheduled item of two with the same words', () => {
     const html = '<h3>Earlier</h3>' + ul(li('x', 'Send the invoice')) + '<h3>Later</h3>' + ul(li('y', 'Send the invoice', { state: '_rescheduled' }), li('z', 'Chase the bank'));
     expect(originIn(html, { text: 'send the invoice' }, STATES)).toMatchObject({ headings: ['Later'], neighbours: ['Chase the bank'] });

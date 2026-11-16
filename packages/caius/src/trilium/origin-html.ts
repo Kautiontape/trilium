@@ -5,7 +5,7 @@
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
 import { backLinkOf, scheduledMarksOf, withoutBackLink } from './forward-html.js';
-import { apply, descriptionOf, elements, findItem, isHeading, itemState, norm, tokenZoneStart } from './html-util.js';
+import { apply, descriptionOf, elements, findItem, isHeading, itemState, norm, tokenZoneStart, type Edit } from './html-util.js';
 
 /** What the source note's HTML says about a task. */
 export interface OriginFields {
@@ -65,10 +65,15 @@ function itemText(li: HTMLElement): string {
   return text.slice(0, tokenZoneStart(text)).trim();
 }
 
-/** `inner` as text, without its scheduled marks. */
+/** `inner` as text, without its scheduled marks or any other italic that starts with the word. */
 function withoutMarks(inner: string): string {
   const root = parse(inner);
-  const edits = scheduledMarksOf(root).map((mark) => ({ start: mark.start, end: mark.end, text: '' }));
+  const edits: Edit[] = scheduledMarksOf(root).map((mark) => ({ start: mark.start, end: mark.end, text: '' }));
+  for (const em of root.querySelectorAll('em')) {
+    const [start, end] = em.range;
+    const covered = edits.some((e) => e.start <= start && end <= e.end);
+    if (!covered && /^[\s\u00a0]*(?:re)?scheduled\b/.test(em.text)) edits.push({ start, end, text: '' });
+  }
   return parse(apply(inner, edits)).text;
 }
 
