@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { slipLabel } from "../components/TaskRow.js";
 import {
-    dayGroups, daysCells, dayTerrain, dispositionWords, fateChoices, hasLiveSubItems, overdueLine, redraw, redrawDays, redrawRows, rowKey, takeTicket,
+    dayGroups, daysCells, dayTerrain, dispositionWords, fateChoices, overdueLine, redraw, redrawDays, redrawRows, rowKey, takeTicket,
     ticketTakes, trailWords, type ViewAnswers, viewOf, viewPicks, viewReply
 } from "./views.js";
 
@@ -280,16 +280,6 @@ describe("dayGroups", () => {
     });
 });
 
-describe("hasLiveSubItems", () => {
-    it("is true for a row with a live sub-item on its note", () => {
-        expect(hasLiveSubItems(TASKS[3], TASKS)).toBe(true);
-        expect(hasLiveSubItems(TASKS[0], TASKS)).toBe(false);
-        const finished = TASKS.map((t) => t.parentListItemId === "p" ? { ...t, state: "done" as const } : t);
-        expect(hasLiveSubItems(TASKS[3], finished)).toBe(false);
-        expect(hasLiveSubItems(TASKS[3], TASKS.map((t) => ({ ...t, noteId: t.listItemId === "p" ? "day1" : "day2" })))).toBe(false);
-    });
-});
-
 describe("dayTerrain", () => {
     const tasks = [
         row("m1", "Deep work", { estMinutes: 60, block: "morning" }),
@@ -330,6 +320,16 @@ describe("dayTerrain", () => {
         const moved = names(tap({ [key("w")]: { fate: { kind: "block", block: "afternoon" } } }));
         expect(moved).toContain("Afternoon");
         expect(moved).not.toContain("Morning");
+    });
+
+    it("counts a parent once, at its own estimate or its sub-items' sum, and keeps a done parent's open sub-item", () => {
+        const nested = (tasks: ViewTask[], meetings: DayViewData["meetings"] = []): DayViewData => ({ ...data, drawn: null, meetings, tasks });
+        const sub = (id: string, rest: Partial<ViewTask> = {}) => row(id, `Step ${id}`, { section: "Tasks", estMinutes: null, parent: "Fix things", parentListItemId: "p", ...rest });
+        const parent = (rest: Partial<ViewTask> = {}) => row("p", "Fix things", { section: "Tasks", estMinutes: null, ...rest });
+        expect(hills({}, nested([ parent({ estMinutes: 90 }), sub("a"), sub("b") ]))).toEqual([ [ "Tasks", "09:00", "10:30", 1 ] ]);
+        expect(hills({}, nested([ parent(), sub("a", { estMinutes: 20 }), sub("b") ]))).toEqual([ [ "Tasks", "09:00", "09:50", 1 ] ]);
+        expect(hills({}, nested([ parent({ state: "done" }), sub("a", { estMinutes: 20 }) ]))).toEqual([ [ "Tasks", "09:00", "09:20", 1 ] ]);
+        expect(hills({}, nested([ parent({ at: "10:00" }), sub("a"), sub("b") ], [ { start: "10:00", end: "10:30", title: "Standup" } ]))).toEqual([]);
     });
 
     it("gives the minutes that don't fit before bedtime, and starts the drawing at an earlier meeting's hour", () => {

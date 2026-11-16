@@ -1,0 +1,35 @@
+.parent-group {
+    border-top: 1px solid var(--line);
+
+    &:first-child { border-top: 0; }
+
+    & > .task-row-wrap:first-child { border-top: 0; }
+}
+
+.parent-subs {
+    & .task-row { padding-left: var(--s6); }
+    & > .task-row-wrap:first-child { border-top: 1px solid var(--line); }
+}
+
+.parent-count {
+    flex: none;
+    font-size: 14px;
+    color: var(--ink-2);
+}
+
+.parent-chevron {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: calc(var(--s2) * -1) calc(var(--s4) * -1) calc(var(--s2) * -1) 0;
+    border: 0;
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+
+    & > span { display: inline-block; transition: transform 150ms var(--ease); }
+    &.open > span { transform: rotate(180deg); }
+}
