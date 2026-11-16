@@ -183,13 +183,15 @@ function buildCopy(sourceHtml: string, li: HTMLElement, opts: CopyOptions): stri
   const states = opts.states;
   const snippet = withoutOwnMarks(sourceHtml.slice(li.range[0], li.range[1]));
   const copyRoot = parse(snippet, { comment: true });
-  const top = elements(copyRoot)[0]!;
+  const top = elements(copyRoot)[0];
+  if (!top) return snippet;
   const newId = opts.newId ?? newListItemId;
   const edits: Edit[] = [];
 
   const reset = (item: HTMLElement) => {
     // A task that was Doing stays Doing in the copy; any other state resets to open.
-    const keepDoing = item.getAttribute('data-trilium-task-state') !== undefined && states.get(item.getAttribute('data-trilium-task-state')!) === '/';
+    const itemState = item.getAttribute('data-trilium-task-state');
+    const keepDoing = itemState !== undefined && states.get(itemState) === '/';
     edits.push(rewriteOpenTag(snippet, item, keepDoing ? { id: newId() } : { id: newId(), state: null }));
     const box = checkboxEdit(snippet, item, false);
     if (box) edits.push(box);
@@ -254,7 +256,7 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
   const source = findItem(parse(sourceHtml, { comment: true }), id);
   const sourceSpan = source && descriptionOf(source);
   if (!sourceSpan) return false;
-  const body = withoutMarks(sourceSpan.innerHTML);
+  const body = withoutScheduledMarks(sourceSpan.innerHTML);
   const origin = backLinkOf(sourceSpan)?.getAttribute('href');
   if (origin) {
     // The copy's back link is written again (`buildCopy`), so the rest of the text is compared,
@@ -289,7 +291,7 @@ function withoutOwnMarks(html: string): string {
 }
 
 /** A description's inner HTML without its "scheduled" marks, and the space before each. */
-function withoutMarks(inner: string): string {
+export function withoutScheduledMarks(inner: string): string {
   return withoutMarkRanges(inner, scheduledMarksOf(parse(inner)));
 }
 
@@ -328,7 +330,7 @@ export interface ScheduledMark {
   label: string;
 }
 
-const MARK_WORD = /^[\s\u00a0]*(?:re)?scheduled\b/;
+export const MARK_WORD = /^[\s\u00a0]*(?:re)?scheduled\b/;
 const MARK_WORD_ONLY = /^[\s\u00a0]*(?:re)?scheduled[\s\u00a0]*$/;
 const NOTE_HREF = /^#root\/([^/?#]+)$/;
 

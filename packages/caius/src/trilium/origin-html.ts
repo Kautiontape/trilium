@@ -4,7 +4,7 @@
 
 import { parse, HTMLElement } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
-import { backLinkOf, scheduledMarksOf, withoutBackLink } from './forward-html.js';
+import { backLinkOf, MARK_WORD, withoutBackLink, withoutScheduledMarks } from './forward-html.js';
 import { apply, descriptionOf, elements, findItem, isHeading, itemState, norm, tokenZoneStart, type Edit } from './html-util.js';
 
 /** What the source note's HTML says about a task. */
@@ -61,20 +61,19 @@ function itemText(li: HTMLElement): string {
   const inner = span
     ? span.innerHTML
     : li.childNodes.filter((n) => !(n instanceof HTMLElement && /^(UL|OL)$/.test(n.tagName))).map((n) => n.toString()).join('');
-  const text = withoutMarks(withoutBackLink(inner)).replace(/\s+/g, ' ').trim();
+  const text = wordsWithoutMarks(withoutBackLink(inner)).replace(/\s+/g, ' ').trim();
   return text.slice(0, tokenZoneStart(text)).trim();
 }
 
 /** `inner` as text, without its scheduled marks or any other italic that starts with the word. */
-function withoutMarks(inner: string): string {
-  const root = parse(inner);
-  const edits: Edit[] = scheduledMarksOf(root).map((mark) => ({ start: mark.start, end: mark.end, text: '' }));
+function wordsWithoutMarks(inner: string): string {
+  const stripped = withoutScheduledMarks(inner);
+  const root = parse(stripped);
+  const edits: Edit[] = [];
   for (const em of root.querySelectorAll('em')) {
-    const [start, end] = em.range;
-    const covered = edits.some((e) => e.start <= start && end <= e.end);
-    if (!covered && /^[\s\u00a0]*(?:re)?scheduled\b/.test(em.text)) edits.push({ start, end, text: '' });
+    if (MARK_WORD.test(em.text)) edits.push({ start: em.range[0], end: em.range[1], text: '' });
   }
-  return parse(apply(inner, edits)).text;
+  return parse(apply(stripped, edits)).text;
 }
 
 function matchItem(root: HTMLElement, text: string, states: StateSymbols): HTMLElement | undefined {
