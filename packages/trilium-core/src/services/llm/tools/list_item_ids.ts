@@ -153,19 +153,9 @@ function matchItems(oldItems: ListItem[], newItems: ListItem[]) {
         }
         const parent = item.parent ? counterpart.get(item.parent) : undefined;
 
-        let best: ListItem | undefined;
-        let bestRank = 4;
-        for (const old of byText.get(item.text) ?? []) {
-            if (taken.has(old)) {
-                continue;
-            }
-            const rank = (old.parent === parent ? 0 : 2) + (old.index > cursor ? 0 : 1);
-            if (rank < bestRank) {
-                best = old;
-                bestRank = rank;
-            }
-        }
-        accept(index, best);
+        const sameParent = (byText.get(item.text) ?? [])
+            .filter((old) => !taken.has(old) && old.parent === parent);
+        accept(index, pickAfter(sameParent, cursor));
     }
 
     // Pass 2: edited in place, or moved under a new parent.
@@ -207,7 +197,7 @@ function matchItems(oldItems: ListItem[], newItems: ListItem[]) {
 
         const candidates: ListItem[] = [];
         for (let o = lower + 1; o < upper && candidates.length < MAX_CANDIDATES; o++) {
-            if (!taken.has(oldItems[o])) {
+            if (!taken.has(oldItems[o]) && !oldItems[o].parent) {
                 candidates.push(oldItems[o]);
             }
         }

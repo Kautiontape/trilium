@@ -200,6 +200,31 @@ describe("carryListItemIds", () => {
             .toBe(`<ul><li data-list-item-id="a&amp;b&quot;c">X</li></ul>`);
     });
 
+    it("gives a fresh id to an item moved under a different existing parent", () => {
+        const previous = `<ul>${nest("a", "Ship the build", todo("f", "Follow up"))}`
+            + `${todo("b", "Book the venue")}</ul>`;
+        const html = `<ul>${todo("", "Ship the build")}`
+            + `${nest("", "Book the venue", todo("", "Follow up"))}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["a", "b", "fresh1"]);
+    });
+
+    it("gives a fresh id to an outdented item", () => {
+        const previous = `<ul>${nest("p", "Plan", todo("c", "Call Ana"))}</ul>`;
+        const html = `<ul>${todo("", "Plan")}${todo("", "Call Ana")}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["p", "fresh1"]);
+    });
+
+    it("does not match a top-level item to an old sub-item by similarity", () => {
+        const previous = `<ul>${nest("h", "Head", todo("s", "Pick a contract shape"))}`
+            + `${todo("t", "Tail")}</ul>`;
+        const html = `<ul>${todo("", "Head")}${todo("", "Pick the contract shape")}`
+            + `${todo("", "Tail")}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["h", "fresh1", "t"]);
+    });
+
     it("never reuses an id and gives fresh ids to items without a counterpart id", () => {
         const dup = withIds([["e1", "A"], ["e1", "B"]]);
         expect(idsOf(carryListItemIds(dup, list(["A", "B"]), counter()))).toEqual(["e1", "fresh1"]);
