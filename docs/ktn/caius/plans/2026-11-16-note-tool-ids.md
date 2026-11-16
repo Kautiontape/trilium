@@ -90,3 +90,17 @@ added one, and for upstream users the editor regenerates missing ids, so the cha
   the appended items fresh ids (red).
 
 **Done.** `note_tools.spec.ts` and `list_item_ids.spec.ts` green under both runners; `pnpm typecheck` clean.
+
+## Outcome
+
+The two tasks shipped as planned, but review rounds replaced the matching rules above. Two flaws drove the changes: a
+sub-item of a reworded parent could take a deleted line's id, and duplicate text under different headings could trade
+ids. The final rules are in the body of `fix(llm): match list items under their headings`:
+
+- Headings are id-less parent nodes, and identity is (parent, text).
+- Pass 1 defers a node whose parent has no counterpart yet.
+- Pass 2 matches only within a sibling window.
+- A node under a new parent takes an old id only when the text is unique on both sides.
+- Attributes are spliced by token.
+
+When a match is ambiguous, the item gets a fresh id.
