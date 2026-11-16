@@ -79,6 +79,12 @@ describe("a catch-up review's week refs", () => {
     });
 });
 
+/** The content of the day note of `date`, to compare a re-run against. */
+async function contentOf(date: string) {
+    const [ note ] = await cls.init(() => store.search(`#dateNote="${date}"`));
+    return note ? cls.init(() => store.content(note.noteId)) : null;
+}
+
 /** The values of the label `name` on the day note of `date`. */
 async function labelsOf(date: string, name: string) {
     const [ note ] = await cls.init(() => store.search(`#dateNote="${date}"`));
@@ -105,28 +111,35 @@ describe("a catch-up review writes only the reviewed day", () => {
             const added = [ li("cr-done", "Send the invoice ~15m"), li("cr-fwd", "Draft the agenda ~30m"), li("cr-drop", "Book the room"), li("cr-area", "Read the design doc ~30m") ];
             await store.putContent(reviewed.noteId, before.replace("</ul>", `${added.join("")}</ul>`));
             const target = await store.calendarDay(TODAY);
-            await store.putContent(target.noteId, `<h2>☑️ Tasks</h2>${ul(li("cr-list", "Review the roadmap ~30m"))}`);
+            await store.putContent(target.noteId, `<h2>☑️ Tasks</h2>${ul(li("cr-list", "Review the roadmap ~30m"))}<h2>On deck</h2>${ul(li("cr-deck", "Call the printer ~15m"))}`);
         });
         at(`${TODAY}T19:00`);
         const open = await call("caius_winddown", { date: REVIEWED, step: "open" });
         expect(open.data.items.map((item: any) => item.listItemId)).toEqual([ "cr-done", "cr-fwd", "cr-drop", "cr-area" ]);
         const next = await call("caius_winddown", { date: REVIEWED, step: "next", refresh: true });
         expect(next.data.candidates.map((c: any) => c.candidateId)).toEqual(expect.arrayContaining([ "ABC-21", "ABC-22", "ABC-23" ]));
+        expect(next.data.list.map((item: any) => item.listItemId)).toEqual([ "cr-list" ]);
+        expect(next.data.onDeck.map((item: any) => item.listItemId)).toEqual([ "cr-deck" ]);
         const context = await call("caius_winddown", { date: REVIEWED, step: "context" });
         const carry = context.data.noticed.find((line: any) => line.line === "Ben covers the on-call rotation");
         expect(carry).toMatchObject({ kind: "carry" });
 
-        const applied = await call("caius_winddown_apply", {
+        // Each item is named by the ref its step gave it, as the agent names it.
+        const [ done, forward, drop, area ] = open.data.items.map((item: any) => item.ref);
+        const [ list ] = next.data.list.map((item: any) => item.ref);
+        const [ deck ] = next.data.onDeck.map((item: any) => item.ref);
+        const answers = {
             date: REVIEWED,
-            done: [ "cr-done" ],
-            fates: [ { listItemId: "cr-fwd", to: TODAY }, { listItemId: "cr-drop", drop: "not needed" } ],
-            areas: [ { item: "cr-area", area: "growth" }, { item: "cr-list", area: "recharge" } ],
+            done: [ done ],
+            fates: [ { listItemId: forward, to: TODAY }, { listItemId: drop, drop: "not needed" } ],
+            areas: [ { item: area, area: "growth" }, { item: list, area: "recharge" }, { item: deck, area: "recharge" } ],
             accept: [ { candidateId: "ABC-21" } ],
             notToday: [ { candidateId: "ABC-23" } ],
             carry: [ { lineId: carry.lineId } ],
             context: [ "Ana is out Tuesday" ],
-            move: [ { listItemId: "cr-fwd", first: true }, { listItemId: "cr-list", after: "cr-area" } ]
-        });
+            move: [ { listItemId: forward, first: true }, { listItemId: list, after: area } ]
+        };
+        const applied = await call("caius_winddown_apply", answers);
         expect(applied.written).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: "done", id: "cr-done", status: "written" }),
             expect.objectContaining({ kind: "fate", id: "cr-fwd", detail: TODAY, status: "written" }),
@@ -137,28 +150,41 @@ describe("a catch-up review writes only the reviewed day", () => {
         const later = { reason: "review_only", detail: expect.stringContaining("Plan my day") };
         expect(applied.skipped).toEqual([
             { kind: "area", id: "cr-list", text: expect.stringContaining("Review the roadmap"), ...later },
+            { kind: "area", id: "cr-deck", text: expect.stringContaining("Call the printer"), ...later },
             { kind: "accept", id: "ABC-21", text: expect.stringContaining("ABC-21"), ...later },
             { kind: "not_today", id: "ABC-23", text: expect.stringContaining("ABC-23"), ...later },
             { kind: "move", id: "cr-list", text: expect.stringContaining("Review the roadmap"), ...later },
             { kind: "carry", id: carry.lineId, text: "Ben covers the on-call rotation", ...later },
             { kind: "context", text: "Ana is out Tuesday", ...later }
         ]);
-        expect(applied.say).toContain("Review the roadmap, ABC-21, ABC-23, Ben covers the on-call rotation and Ana is out Tuesday are left for Plan my day");
+        const left = "Review the roadmap, Call the printer, ABC-21, ABC-23, Ben covers the on-call rotation and Ana is out Tuesday are left for Plan my day";
+        expect(applied.say).toContain(left);
 
         // The target day keeps his list as it was, with the forward placed first, and nothing else of the review's.
         // The skipped move's anchor stays on the On deck its proposed fate gives it.
         const plan = await call("caius_plan", { period: "day", date: TODAY });
         const words = (tasks: any[]) => tasks.map((task: any) => task.text.split(" [")[0]);
         expect(words(plan.sections.flatMap((s: any) => s.tasks))).toEqual([ "Draft the agenda", "Review the roadmap" ]);
-        expect(words(plan.onDeck)).toEqual([ expect.stringContaining("Read the design doc") ]);
+        expect(words(plan.onDeck)).toEqual([ "Call the printer", expect.stringContaining("Read the design doc") ]);
         expect(plan.suggested).toEqual([]);
         expect(await labelsOf(TODAY, "caiusFocus")).toEqual([]);
         expect(await labelsOf(TODAY, "caiusNotToday")).toEqual([]);
+        expect(await labelsOf(TODAY, "caiusAsked")).not.toContain("area:cr-deck");
         expect(await labelsOf(REVIEWED, "caiusAsked")).not.toContain(carry.lineId);
         const monday = await call("caius_context", { date: TODAY });
         expect(monday.context.map((line: any) => line.text)).not.toContain("Ana is out Tuesday");
         const tuesday = await call("caius_context", { date: "2026-11-17" });
         expect(tuesday.context.map((line: any) => line.text)).toEqual([]);
+
+        // The same call again finds the forward's move in place and changes nothing on the target day.
+        const before = await contentOf(TODAY);
+        const again = await call("caius_winddown_apply", answers);
+        expect(again.skipped.filter((entry: any) => entry.kind === "move")).toEqual([ expect.objectContaining({ id: "cr-list", reason: "review_only" }) ]);
+        expect(again.written).toContainEqual(expect.objectContaining({ kind: "move", detail: "first", status: "unchanged" }));
+        expect(again.say).toContain(left);
+        expect(await contentOf(TODAY)).toBe(before);
+        expect(await labelsOf(TODAY, "caiusFocus")).toEqual([]);
+        expect(await labelsOf(TODAY, "caiusNotToday")).toEqual([]);
     });
 
     it("Mon 09:00, Review of Thu 12: a carry the review skips is still asked by the Plan my day it goes on to", async () => {

@@ -486,10 +486,14 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             record(written, skipped, { kind: "done", id: listItemId }, result);
         } });
         // The areas he gave are written before the fates move anything, so a forward carries the marker.
-        // In a catch-up review, an area for an item of the target day's list is left to Plan my day.
-        const targetList = new Set(listItems(facts.plan).map((item) => item.listItemId));
-        const laterArea = (ref: { item: string }) => reviewOnly && targetList.has(ref.item) && !input.follows.has(ref.item);
-        leftForPlanDay(skipped, input.areas.filter(laterArea).map((ref) => ({ kind: "area", id: ref.item })));
+        // A catch-up review gives areas only to its open items and their followed copies, and leaves
+        // the rest to Plan my day.
+        const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
+        const laterArea = (ref: { item: string }) => reviewOnly && !openIds.has(ref.item) && !input.follows.has(ref.item);
+        leftForPlanDay(skipped, input.areas.filter(laterArea).map((ref) => {
+            const text = journalItem(ref.item)?.text;
+            return { kind: "area", id: ref.item, ...(text ? { text } : {}) };
+        }));
         await guarded({ kind: "area" }, skipped, () => giveAreas(store, input.areas.filter((ref) => !laterArea(ref)), {
             day: targetDay, noteFor,
             textOf: (id) => [ ...open.items, ...listItems(facts.plan) ].find((item) => item.listItemId === id)?.text
@@ -501,7 +505,6 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...input.done.map((id) => [ id, "done" ] as const), ...input.fates.map((fate) => [ fate.listItemId, "fate" ] as const),
             ...input.move.map((ref) => [ ref.listItemId, "move" ] as const)
         ]);
-        const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
         // A hold's items can live on several days, so whether one is still open is read across the Journal.
         const liveIds = new Set(items.filter((item) => !item.settled).map((item) => item.id));
         const periodOf = (id: string) => journalItem(id)?.period;
@@ -607,7 +610,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             return fate ? fate.to === targetDay : "forward" in item.fate && item.fate.forward === targetDay;
         };
         const moved = new Map(open.items.filter(toTarget).map((item) => [ item.listItemId ?? "", { text: item.text, noteId: item.noteId } ] as const));
-        const onTarget = reviewOnly ? reviewAnswers(input, moved, skipped) : input;
+        const onTarget = reviewOnly ? reviewAnswers(input, targetDay, moved, skipped) : input;
         await acceptAll(store, targetDay, now, onTarget, { known, moved }, written, skipped);
         await guarded({ kind: "keep" }, skipped, async () => { for (const [ kind, refs ] of [ [ "keep", onTarget.keep ], [ "carry", onTarget.carry ] ] as const) {
             for (const { lineId } of refs) {
@@ -684,22 +687,23 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 }
 
 /**
- * The answers a catch-up review writes on the target day: the moves of the items it forwards there
- * (`moved`). Every other answer about the target day is skipped as `review_only`.
+ * The answers a catch-up review writes on `targetDay`: the moves of the items it forwards there
+ * (`moved`), or that an earlier run forwarded there (a followed copy on `targetDay`). Every other
+ * answer about the target day is skipped as `review_only`.
  */
-function reviewAnswers(input: ReturnType<typeof windDownAnswers>, moved: ReadonlyMap<string, unknown>, skipped: Skipped[]): ReturnType<typeof windDownAnswers> {
+function reviewAnswers(input: ReturnType<typeof windDownAnswers>, targetDay: string, moved: ReadonlyMap<string, unknown>, skipped: Skipped[]): ReturnType<typeof windDownAnswers> {
+    const forwarded = (ref: { listItemId: string }) => moved.has(ref.listItemId) || input.follows.get(ref.listItemId)?.period === targetDay;
     leftForPlanDay(skipped, [
         ...input.accept.map((ref) => ({ kind: "accept", id: ref.candidateId })),
         ...input.notToday.map((ref) => ({ kind: "not_today", id: ref.candidateId })),
         ...input.dismiss.map((ref) => ({ kind: "dismiss", id: ref.candidateId })),
-        ...input.move.filter((ref) => !moved.has(ref.listItemId)).map((ref) => ({ kind: "move", id: ref.listItemId })),
+        ...input.move.filter((ref) => !forwarded(ref)).map((ref) => ({ kind: "move", id: ref.listItemId })),
         ...input.keep.map((ref) => ({ kind: "keep", id: ref.lineId })),
         ...input.carry.map((ref) => ({ kind: "carry", id: ref.lineId })),
         ...input.context.map((text) => ({ kind: "context", text })),
         ...input.overlaps.map((ref) => ({ kind: "overlap", id: ref.overlapId, text: ref.take }))
     ]);
-    const move = input.move.filter((ref) => moved.has(ref.listItemId));
-    return { ...input, accept: [], move, keep: [], carry: [], notToday: [], dismiss: [], context: [], overlaps: [] };
+    return { ...input, accept: [], move: input.move.filter(forwarded), keep: [], carry: [], notToday: [], dismiss: [], context: [], overlaps: [] };
 }
 
 /** Skips each of `entries` as `review_only`, for Plan my day to take on the day it plans. */
