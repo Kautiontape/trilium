@@ -90,11 +90,14 @@ export function carryListItemIds(
         }
     }
 
-    let result = html;
-    for (const { start, end, tag } of splices.sort((a, b) => b.start - a.start)) {
-        result = result.slice(0, start) + tag + result.slice(end);
+    const parts: string[] = [];
+    let cursor = 0;
+    for (const { start, end, tag } of splices.sort((a, b) => a.start - b.start)) {
+        parts.push(html.slice(cursor, start), tag);
+        cursor = end;
     }
-    return result;
+    parts.push(html.slice(cursor));
+    return parts.join("");
 }
 
 /** Returns a new id in the format CKEditor's `uid()` writes: `e` and 32 lowercase hex digits. */
