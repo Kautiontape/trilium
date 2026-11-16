@@ -32,7 +32,12 @@ const caiusEnabled = vi.hoisted(() => ({ value: true }));
 const clock = vi.hoisted(() => ({ now: null as Date | null, next: null as Date | null }));
 const refreshCaiusClock = vi.hoisted(() => vi.fn());
 const trackStartedNotes = vi.hoisted(() => vi.fn());
-const refresh = vi.hoisted(() => ({ deferred: false, pending: [] as (() => void)[] }));
+const refresh = vi.hoisted(() => ({
+    deferred: false,
+    calls: 0,
+    pending: [] as (() => void)[],
+    promise: null as Promise<void> | null
+}));
 vi.mock("../../../services/caius", async (importOriginal) => {
     const original = await importOriginal<typeof import("../../../services/caius")>();
     return {
@@ -46,7 +51,10 @@ vi.mock("../../../services/caius", async (importOriginal) => {
         caiusApi: api,
         caiusWrite,
         startCaiusConversation,
-        isCaiusEnabled: async () => caiusEnabled.value,
+        isCaiusEnabled: async () => {
+            await refresh.promise;
+            return caiusEnabled.value;
+        },
         wasCaiusEnabled: () => false,
         findOpenEditors: () => [],
         openPeriodNoteIds: (key: string) => (key === "2026-10-28" ? [ "tomorrow" ] : [])
@@ -96,20 +104,31 @@ describe("PlanTab", () => {
         clock.now = null;
         clock.next = null;
         refresh.deferred = false;
+        refresh.calls = 0;
         refresh.pending = [];
+        refresh.promise = null;
         refreshCaiusClock.mockImplementation(() => {
             const answer = clock.next;
+            const call = ++refresh.calls;
+            // An older request answers with the latest one's status.
+            const apply = () => {
+                if (call === refresh.calls) {
+                    clock.now = answer;
+                }
+            };
             if (!refresh.deferred) {
-                clock.now = answer;
+                apply();
                 return Promise.resolve();
             }
 
-            return new Promise<void>((resolve) => {
+            const request = new Promise<void>((resolve) => {
                 refresh.pending.push(() => {
-                    clock.now = answer;
+                    apply();
                     resolve();
                 });
             });
+            refresh.promise = request;
+            return request;
         });
         options.load({ rightPaneCollapsedItems: "[]" } as Parameters<typeof options.load>[0]);
         caiusWrite.mockImplementation(
@@ -297,6 +316,20 @@ describe("PlanTab", () => {
         expect(container.querySelector(".plan-period-current")).not.toBeNull();
     });
 
+    it("keeps a period chosen before the status the tab read on opening has answered", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        refresh.deferred = true;
+        const { container } = mountInPane(true);
+        await flush();
+        await press(container.querySelector(".plan-period-step .bx-chevron-right"));
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+
+        refresh.pending[0]();
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
+    });
+
     it("shows a day started while the pane was closed when the tab opens", async () => {
         api.plan.mockResolvedValue(dayPlan());
         activeNote.current = buildNote({ id: "other", title: "Other" });
@@ -323,10 +356,8 @@ describe("PlanTab", () => {
         await caiusWrote([ startedRow(true) ]);
         expect(refresh.pending).toHaveLength(2);
 
-        refresh.pending[0]();
-        await flush();
-        expect(text(container, ".plan-period-key")).toBe("2026-10-28");
         refresh.pending[1]();
+        refresh.pending[0]();
         await flush();
         expect(text(container, ".plan-period-key")).toBe("2026-10-27");
 

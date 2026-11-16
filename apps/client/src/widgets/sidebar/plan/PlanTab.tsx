@@ -84,8 +84,7 @@ export default function PlanTab() {
     }, []);
 
     // Reads the clock when the tab opens, since a day started or taken back while the right pane
-    // was closed reached no listener. It runs before the effect below, which then shares its
-    // status request.
+    // was closed reached no listener, and applies the answer.
     useEffect(() => {
         mountedRef.current = true;
         void refreshCaiusClock().then(applyClock);
@@ -97,17 +96,6 @@ export default function PlanTab() {
     useEffect(() => {
         following.current = true;
         setPeriod(periodOfNote(note, caiusNow()));
-        // The server's dev clock is known once the status has answered.
-        let mounted = true;
-        void isCaiusEnabled().then(() => {
-            if (mounted) {
-                following.current = true;
-                setPeriod(periodOfNote(note, caiusNow()));
-            }
-        });
-        return () => {
-            mounted = false;
-        };
     }, [ note ]);
 
     // A day started early or taken back moves `caiusNow()`: a tab on the period its note gives

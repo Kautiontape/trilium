@@ -325,6 +325,7 @@ describe("sub-items", () => {
         const a = task({ listItemId: "A", text: "Alpha" });
         const b = task({ listItemId: "B", text: "Beta", parent: "Alpha", parentListItemId: "A" });
         const c = task({ listItemId: "C", text: "Gamma", parent: "Beta", parentListItemId: "B" });
+        expect(ids(a, b, c)).toEqual([ "A", "C" ]);
         expect(ids(a, { ...b, state: "done" }, c)).toEqual([ "A", "C" ]);
         expect(ids({ ...a, state: "done" }, { ...b, state: "done" }, c)).toEqual([ "B" ]);
     });
