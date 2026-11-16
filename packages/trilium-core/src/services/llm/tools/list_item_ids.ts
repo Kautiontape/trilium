@@ -10,6 +10,9 @@ const MIN_SIMILARITY = 0.5;
 /** The most unused old siblings that one edited line is compared with. */
 const MAX_CANDIDATES = 50;
 
+/** How much closer the best old line must be than any other compared line to be a match. */
+const AMBIGUITY_MARGIN = 0.05;
+
 /**
  * A list item or a heading. A node is identified by its parent node and its own text, and only
  * matches a node of the same kind. A top-level item's parent is the heading above it, a
@@ -225,7 +228,9 @@ function ownText(element: HTMLElement) {
  *   counterpart's unused children of its kind. A node that waited for pass 2 first takes an
  *   exact-text child. Otherwise the most similar child wins, if it scores at least
  *   `MIN_SIMILARITY`, among those strictly between the counterparts of the nearest matched
- *   siblings before it (from either pass) and after it (pass 1 only).
+ *   siblings before it (from either pass) and after it (pass 1 only). The match is dropped
+ *   when another candidate or either of those two counterparts scores within
+ *   `AMBIGUITY_MARGIN` of the best.
  * - A node under a new parent takes an old node of the same kind only when its text occurs once
  *   in both HTML documents and the old node was top-level, under a heading or under a matched
  *   parent. Anything else gets a fresh id.
@@ -294,7 +299,9 @@ function matchNodes(oldNodes: Node[], newNodes: Node[]) {
             }
         }
 
-        const [lower, upper] = windowOf(node, parentOld);
+        const [lowerAnchor, upperAnchor] = windowOf(node, parentOld);
+        const lower = lowerAnchor?.index ?? -1;
+        const upper = upperAnchor?.index ?? Infinity;
         const candidates: Node[] = [];
         for (let i = firstAfter(siblings, lower); i < siblings.length; i++) {
             const old = siblings[i];
@@ -305,24 +312,26 @@ function matchNodes(oldNodes: Node[], newNodes: Node[]) {
                 candidates.push(old);
             }
         }
-        accept(node, mostSimilar(node, candidates));
+        const anchors = [lowerAnchor, upperAnchor]
+            .filter((anchor): anchor is Node => anchor?.kind === node.kind);
+        accept(node, mostSimilar(node, candidates, anchors));
     }
 
     function windowOf(node: Node, parentOld: Node | undefined) {
         const siblings = newChildren.get(node.parent) ?? [];
-        let lower = -1;
+        let lower: Node | undefined;
         for (let i = node.position - 1; i >= 0; i--) {
             const match = siblings[i].match;
             if (match && match.parent === parentOld) {
-                lower = match.index;
+                lower = match;
                 break;
             }
         }
-        let upper = Infinity;
+        let upper: Node | undefined;
         for (let i = node.position + 1; i < siblings.length; i++) {
             const match = siblings[i].matchedInPass1 ? siblings[i].match : undefined;
             if (match && match.parent === parentOld) {
-                upper = match.index;
+                upper = match;
                 break;
             }
         }
@@ -359,18 +368,30 @@ function firstAfter(nodes: Node[], index: number) {
     return low;
 }
 
-/** Returns the earliest candidate with the highest similarity of at least `MIN_SIMILARITY`. */
-function mostSimilar(node: Node, candidates: Node[]) {
+/**
+ * Returns the candidate with the highest similarity of at least `MIN_SIMILARITY`, unless another
+ * compared line is nearly as close: the other candidates and the old counterparts of the nearest
+ * matched siblings (`anchors`) count, and a runner-up within `AMBIGUITY_MARGIN` of the best
+ * score, a tie included, leaves the line without a match.
+ */
+function mostSimilar(node: Node, candidates: Node[], anchors: Node[]) {
     let best: Node | undefined;
     let bestScore = 0;
-    for (const candidate of candidates) {
-        const score = similarity(candidate, node);
-        if (score >= MIN_SIMILARITY && score > bestScore) {
-            best = candidate;
+    let runnerUp = 0;
+    for (const old of [...candidates, ...anchors]) {
+        const score = similarity(old, node);
+        if (score > bestScore) {
+            runnerUp = bestScore;
             bestScore = score;
+            best = old;
+        } else if (score > runnerUp) {
+            runnerUp = score;
         }
     }
-    return best;
+    const isCandidate = best !== undefined && candidates.includes(best);
+    return isCandidate && bestScore >= MIN_SIMILARITY && runnerUp < bestScore - AMBIGUITY_MARGIN
+        ? best
+        : undefined;
 }
 
 /** Sørensen–Dice coefficient over character bigrams, counting repeated bigrams. */

@@ -136,13 +136,37 @@ describe("carryListItemIds", () => {
             .toEqual(["ea", "eb", "fresh1", "ec"]);
     });
 
-    it("gives equally similar candidates to the earliest one", () => {
+    it("gives a fresh id when two candidates are equally similar", () => {
         // "email cy" shares 5 of 7 bigrams with both "email ana" and "email ben" (8 each).
         const previous = withIds([["eh", "Head"], ["ex1", "Email Ana"], ["ex2", "Email Ben"],
             ["et", "Tail"]]);
         const html = list(["Head", "Email Cy", "Tail"]);
 
-        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["eh", "ex1", "et"]);
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["eh", "fresh1", "et"]);
+    });
+
+    it("keeps the id of a similar edit that has no equally close neighbour", () => {
+        const previous = withIds([["eh", "Head"], ["ex", "Email Ana about Q3"], ["et", "Tail"]]);
+        const html = list(["Head", "Email Ana about Q4", "Tail"]);
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["eh", "ex", "et"]);
+    });
+
+    it("gives a fresh id to a line as close to a surviving neighbour as to its candidate", () => {
+        const previous = withIds([["a", "Pay rent 1"], ["b", "Pay rent 2"]]);
+
+        expect(idsOf(carryListItemIds(previous, list(["Pay rent 3"]), counter())))
+            .toEqual(["fresh1"]);
+        expect(idsOf(carryListItemIds(previous, list(["Pay rent 3", "Pay rent 2"]), counter())))
+            .toEqual(["fresh1", "b"]);
+    });
+
+    it("gives a fresh id to a heading as close to another heading as to its candidate", () => {
+        const previous = section("Week 1", li("a", "Standup"))
+            + section("Week 2", li("b", "Standup"));
+        const html = section("Week 3", li("", "Standup")) + section("Week 2", li("", "Standup"));
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["fresh1", "b"]);
     });
 
     it("matches at a similarity of exactly 0.5 and not below", () => {
