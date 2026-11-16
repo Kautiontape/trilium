@@ -63,44 +63,67 @@ export interface PlanTaskRef {
  */
 export default function PlanTab() {
     const { note, noteContext } = useActiveNoteContext();
+    const noteRef = useRef(note);
+    noteRef.current = note;
     const [ period, setPeriod ] = useState<ViewedPeriod>(() => periodOfNote(note, caiusNow()));
+    // Whether the shown period is the one the active note gives, which a clock change moves.
+    const following = useRef(true);
+    const [ , setClockVersion ] = useState(0);
+    const mountedRef = useRef(true);
+
+    const applyClock = useCallback(() => {
+        if (!mountedRef.current) {
+            return;
+        }
+
+        if (following.current) {
+            setPeriod(periodOfNote(noteRef.current, caiusNow()));
+        } else {
+            setClockVersion((version) => version + 1);
+        }
+    }, []);
+
+    // Reads the clock when the tab opens, since a day started or taken back while the right pane
+    // was closed reached no listener. It runs before the effect below, which then shares its
+    // status request.
     useEffect(() => {
+        mountedRef.current = true;
+        void refreshCaiusClock().then(applyClock);
+        return () => {
+            mountedRef.current = false;
+        };
+    }, [ applyClock ]);
+
+    useEffect(() => {
+        following.current = true;
         setPeriod(periodOfNote(note, caiusNow()));
         // The server's dev clock is known once the status has answered.
         let mounted = true;
-        void isCaiusEnabled().then(() => mounted && setPeriod(periodOfNote(note, caiusNow())));
+        void isCaiusEnabled().then(() => {
+            if (mounted) {
+                following.current = true;
+                setPeriod(periodOfNote(note, caiusNow()));
+            }
+        });
         return () => {
             mounted = false;
         };
     }, [ note ]);
 
-    const mountedRef = useRef(true);
-    useEffect(() => {
-        mountedRef.current = true;
-        return () => {
-            mountedRef.current = false;
-        };
-    }, []);
-    // A day started early or taken back moves `caiusNow()`: a tab on the period it worked out
+    // A day started early or taken back moves `caiusNow()`: a tab on the period its note gives
     // follows it, and one the user stepped elsewhere keeps its period but draws it again.
     useTriliumEvent("entitiesReloaded", useCallback(({ loadResults }) => {
-        if (!movesCaiusClock(loadResults)) {
-            return;
+        if (movesCaiusClock(loadResults)) {
+            void trackStartedNotes(loadResults);
+            void refreshCaiusClock().then(applyClock);
         }
+    }, [ applyClock ]));
 
-        void trackStartedNotes(loadResults);
-        const before = periodOfNote(note, caiusNow());
-        void refreshCaiusClock().then(() => {
-            if (!mountedRef.current) {
-                return;
-            }
-
-            const after = periodOfNote(note, caiusNow());
-            setPeriod((shown) => shown.kind === before.kind && periodKey(shown) === periodKey(before)
-                ? after
-                : { ...shown });
-        });
-    }, [ note ]));
+    const changePeriod = useCallback((next: ViewedPeriod) => {
+        const given = periodOfNote(noteRef.current, caiusNow());
+        following.current = next.kind === given.kind && periodKey(next) === periodKey(given);
+        setPeriod(next);
+    }, []);
 
     const key = periodKey(period);
     const { data, error, reload, refresh } = usePlanData(period.kind, key);
@@ -112,7 +135,7 @@ export default function PlanTab() {
 
     return (
         <div className="plan-tab">
-            <PlanPeriodBar period={period} onChange={setPeriod} />
+            <PlanPeriodBar period={period} onChange={changePeriod} />
             {error ? (
                 <NoItems
                     icon="bx bx-error-circle"
