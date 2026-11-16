@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from 'node-html-parser';
-import { dayLabel, periodLabel, hasCopy, insertCopy, inspectItem, markRescheduled } from './forward-html.js';
+import { dayLabel, periodLabel, hasCopy, insertCopy, inspectItem, markRescheduled, scheduledMarksOf } from './forward-html.js';
 
 const STATES = new Map([
   ['doing', '/'],
@@ -293,5 +293,33 @@ describe('hasCopy of a task with a back link', () => {
     expect(hasCopy(fromMon, fromTue, 'tlau', 'src')).toBe(false);
     const same = ul(li('wlau', 'Laundry <a href="#root/tue">from Tue 3 Nov</a>'));
     expect(hasCopy(same, fromTue, 'tlau', 'src')).toBe(true);
+  });
+});
+
+describe('scheduledMarksOf', () => {
+  const marksIn = (inner: string) => scheduledMarksOf(parse(inner));
+
+  it.each([
+    ['as written', '<em>scheduled <a href="#root/tue">Tue 3 Nov</a></em>', true, 'Tue 3 Nov'],
+    ['as the editor saves a plain link', '<em>scheduled </em><a href="#root/tue"><em>Tue 3 Nov</em></a>', false, 'Tue 3 Nov'],
+    ['as the editor saves a reference link', '<em>scheduled&nbsp;</em><a class="reference-link" href="#root/tue">03 - Tuesday</a>', false, '03 - Tuesday'],
+    ['after a Markdown round trip, plain link', '<em>scheduled</em> <a href="#root/tue"><em>Tue 3 Nov</em></a>', false, 'Tue 3 Nov'],
+    ['after a Markdown round trip, reference link', '<em>scheduled</em>&nbsp;<a class="reference-link" href="#root/tue">03 - Tuesday</a>', false, '03 - Tuesday'],
+  ])('finds one mark %s', (_shape, mark, written, label) => {
+    const inner = `Call the vet ${mark} ~30m`;
+    const found = marksIn(inner);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ noteId: 'tue', label, written });
+    expect(inner.slice(found[0]?.start, found[0]?.end)).toBe(mark);
+  });
+
+  it('reads a rescheduled mark', () => {
+    expect(marksIn('Pay <em>rescheduled</em> <a href="#root/tue">Tue 3 Nov</a>')).toMatchObject([{ noteId: 'tue', written: false }]);
+  });
+
+  it('finds no mark in a bare em, an em then words then a link, or an em then a "from" link', () => {
+    expect(marksIn('Call <em>scheduled</em> soon')).toEqual([]);
+    expect(marksIn('Call <em>scheduled</em> for later <a href="#root/tue">Tue 3 Nov</a>')).toEqual([]);
+    expect(marksIn('Call <em>scheduled</em> <a href="#root/mon">from Mon 2 Nov</a>')).toEqual([]);
   });
 });

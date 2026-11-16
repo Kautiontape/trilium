@@ -5,7 +5,7 @@
 // source range; every change is then spliced into the original string, so all
 // markup we don't touch stays byte-for-byte as Trilium stored it.
 
-import { parse, HTMLElement } from 'node-html-parser';
+import { parse, HTMLElement, TextNode, type Node } from 'node-html-parser';
 import type { StateSymbols } from './markdown.js';
 import { escapeHtml, ON_DECK, placeForwarded } from './plan-html.js';
 import { isOnDeckName } from './sections.js';
@@ -285,6 +285,63 @@ function hasBackLink(span: HTMLElement): boolean {
 /** A task's "from …" link to the note it was forwarded from. */
 export function backLinkOf(span: HTMLElement): HTMLElement | undefined {
   return span.querySelectorAll('a').find((a) => /^#root\/[^/?#]+$/.test(a.getAttribute('href') ?? '') && /^from\s/.test(a.text.trim()));
+}
+
+/** A "scheduled" mark in a task's text: the italic word and the link to the note the task moved to. */
+export interface ScheduledMark {
+  /** The nodes that make up the mark, in order: one `em` as written, else the `em`, any space between and the `a`. */
+  nodes: Node[];
+  /** Offset of the first node's start in the HTML that was parsed. */
+  start: number;
+  /** Offset of the last node's end in the HTML that was parsed. */
+  end: number;
+  /** True when the mark is already in the shape `markRescheduled` writes: `<em>scheduled <a>…</a></em>`. */
+  written: boolean;
+  noteId: string;
+  /** The text inside the link. */
+  label: string;
+}
+
+const MARK_WORD = /^[\s\u00a0]*(?:re)?scheduled\b/;
+const MARK_WORD_ONLY = /^[\s\u00a0]*(?:re)?scheduled[\s\u00a0]*$/;
+const NOTE_HREF = /^#root\/([^/?#]+)$/;
+
+/**
+ * The "scheduled" marks in a task's text, as written (`<em>scheduled <a href="#root/…">…</a></em>`)
+ * and as the editor or a Markdown round trip saves them (`<em>scheduled</em>`, a space or `&nbsp;`,
+ * then the link). An italic word with no link after it, with other words before the link, or
+ * before the "from …" back link (`backLinkOf`) is not a mark.
+ */
+export function scheduledMarksOf(span: HTMLElement): ScheduledMark[] {
+  const marks: ScheduledMark[] = [];
+  for (const em of span.querySelectorAll('em')) {
+    const link = em.querySelector('a[href^="#root/"]');
+    const found = link ? { nodes: [em], link, written: true } : savedMark(em);
+    const noteId = found && NOTE_HREF.exec(found.link.getAttribute('href') ?? '')?.[1];
+    if (!found || !noteId || !MARK_WORD.test(em.text) || /^from\s/.test(found.link.text.trim())) continue;
+    const first = found.nodes[0];
+    const last = found.nodes[found.nodes.length - 1];
+    if (!first || !last) continue;
+    marks.push({ nodes: found.nodes, start: first.range[0], end: last.range[1], written: found.written, noteId, label: found.link.text.trim() });
+  }
+  return marks;
+}
+
+/** An `em` that holds only the word, with the link that follows it past any space. */
+function savedMark(em: HTMLElement): { nodes: Node[]; link: HTMLElement; written: false } | undefined {
+  if (!MARK_WORD_ONLY.test(em.text)) return undefined;
+  const siblings = em.parentNode?.childNodes ?? [];
+  const after = siblings.slice(siblings.indexOf(em) + 1);
+  const nodes: Node[] = [em];
+  let next = after[0];
+  if (next instanceof TextNode) {
+    if (next.rawText.replace(/&nbsp;/g, '').trim()) return undefined;
+    nodes.push(next);
+    next = after[1];
+  }
+  if (!(next instanceof HTMLElement) || next.tagName !== 'A') return undefined;
+  nodes.push(next);
+  return { nodes, link: next, written: false };
 }
 
 /** The note id a task's "from …" link points at, or null; `html` is the note, `id` the task's list item id. */
