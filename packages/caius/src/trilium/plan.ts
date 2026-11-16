@@ -77,7 +77,10 @@ export interface ItemRequest {
   reason?: string;
 }
 
-/** An On deck task put on his list: the end of his main list, or first, before or after an item of it, or the Important block. */
+/**
+ * An On deck task put on his list: the end of his main list, or `first` of it, or `before` or
+ * `after` a task of any time block, or the Important block.
+ */
 export interface CommitRequest {
   noteId: string;
   listItemId: string;
