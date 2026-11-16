@@ -277,10 +277,15 @@ export function hasCopy(targetHtml: string, sourceHtml: string, id: string, sour
     });
 }
 
-/** `html` without the "scheduled" marks of its first description, and the space before each. */
+/** `html` without the "scheduled" marks of any item's description, and the space before each. */
 function withoutOwnMarks(html: string): string {
-  const span = descriptionOf(elements(parse(html, { comment: true }))[0]!);
-  return span ? withoutMarkRanges(html, scheduledMarksOf(span)) : html;
+  const marks = parse(html, { comment: true })
+    .querySelectorAll('li')
+    .flatMap((item) => {
+      const span = descriptionOf(item);
+      return span ? scheduledMarksOf(span) : [];
+    });
+  return withoutMarkRanges(html, marks);
 }
 
 /** A description's inner HTML without its "scheduled" marks, and the space before each. */

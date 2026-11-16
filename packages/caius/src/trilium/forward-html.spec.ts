@@ -298,13 +298,32 @@ describe('a task reopened with a click, its mark kept', () => {
     expect(hasCopy('<h3>Work</h3>', reopened, 'eone', SRC_ID)).toBe(false);
   });
 
-  it('drops a written mark and the &nbsp; before a saved one, from the top item only', () => {
+  it('drops a written mark and the &nbsp; before a saved one, from the top item and its kept sub-items', () => {
     const sub = li('esub', 'Child <em>scheduled <a href="#root/x">X</a></em>');
     const src = ul(li('eone', 'Write it&nbsp;<em>scheduled&nbsp;</em><a class="reference-link" href="#root/tue">03 - Tuesday</a>', { sub: ul(sub) }));
     const r = insertCopy('', src, 'eone', fresh);
     if (!r.ok) throw new Error('expected ok');
     expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a>');
-    expect(r.html).toContain('Child <em>scheduled <a href="#root/x">X</a></em>');
+    expect(r.html).not.toContain('scheduled');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a>');
+    expect(r.html).toContain('>Child</span>');
+  });
+});
+
+describe('a task rescheduled, then reopened with a click', () => {
+  it('copies as the real output reads: the mark follows the estimate, and the copy has none', () => {
+    const src = ul(li('eone', 'Write it ~30m'));
+    const marked = markRescheduled(src, 'eone', mark);
+    if (!marked.ok) throw new Error('expected ok');
+    const reopened = marked.html
+      .replace(/ data-trilium-task-state="[^"]*"/g, '')
+      .replace(/ data-trilium-task-title="[^"]*"/g, '')
+      .replace(/ checked="checked"/g, '');
+    expect(reopened).toContain('Write it ~30m <em>scheduled');
+    const r = insertCopy('<h3>Work</h3>', reopened, 'eone', { ...copy, newId: () => 'enew' });
+    if (!r.ok) throw new Error('expected ok');
+    expect(text(r.html, 'enew')).toBe('Write it <a href="#root/srcnote">from Monday 26</a> ~30m');
+    expect(hasCopy(r.html, reopened, 'eone', SRC_ID)).toBe(true);
   });
 });
 
