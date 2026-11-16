@@ -64,6 +64,97 @@ describe("note_tools — write tools return post-write content", () => {
             });
         });
 
+        it("keeps the ids and task states of a text note's list items when the model writes back what it read", () => {
+            buildNote({
+                id: "_taskStates", title: "Task states",
+                children: [
+                    { id: "_taskStateNone", title: "To do" },
+                    { id: "_taskStateDone", title: "Done" },
+                    { id: "rescheduledState", title: "Rescheduled", "#stateId": "_rescheduled", "#markdownSymbol": ">", "#isCompleted": "true", "#iconClass": "bx bx-calendar" }
+                ]
+            });
+            const item = (id: string, state: string | null, words: string) => `<li data-list-item-id="${id}"${state ? ` data-trilium-task-state="${state}"` : ""}>`
+                + `<label class="todo-list__label"><input type="checkbox"${state ? " checked=\"checked\"" : ""} disabled="disabled">`
+                + `<span class="todo-list__label__description">${words}</span></label></li>`;
+            const html = `<h2>Follow-ups</h2><ul class="todo-list">${item("eone", "_rescheduled", "Count the seats <em>scheduled <a href=\"#root/tgt\">Fri 30 Oct</a></em>")}`
+                + `${item("etwo", null, "Pick a contract shape")}</ul>`;
+            const note = buildNote({ id: "meet1", type: "text", mime: "text/html", content: html });
+            withMutableContent(note, html);
+
+            const read = getTool("get_note_content").execute({ noteId: "meet1" }) as { content: string };
+            getTool("set_note_content").execute({ noteId: "meet1", content: read.content });
+
+            const written = note.getContent() as string;
+            expect.soft(written).toContain("data-list-item-id=\"eone\"");
+            expect.soft(written).toContain("data-list-item-id=\"etwo\"");
+            expect.soft(written).toContain("data-trilium-task-state=\"_rescheduled\"");
+            expect.soft(written).toContain("<em>scheduled <a href=\"#root/tgt\">Fri 30 Oct</a></em>");
+        });
+
+        it("keeps the ids of ticked, reworded and nested items and gives a new line a fresh id", () => {
+            buildNote({
+                id: "_taskStates", title: "Task states",
+                children: [
+                    { id: "_taskStateNone", title: "To do" },
+                    { id: "_taskStateDone", title: "Done" }
+                ]
+            });
+            const item = (id: string, done: boolean, words: string, nested = "") => `<li data-list-item-id="${id}"${done ? " data-trilium-task-state=\"_taskStateDone\"" : ""}>`
+                + `<label class="todo-list__label"><input type="checkbox"${done ? " checked=\"checked\"" : ""} disabled="disabled">`
+                + `<span class="todo-list__label__description">${words}</span></label>${nested}</li>`;
+            const nested = `<ul class="todo-list">${item("enest", false, "Draft the outline")}</ul>`;
+            const html = `<ul class="todo-list">${item("eaaa", false, "Book the room")}`
+                + `${item("ebbb", false, "Pick a contract shape", nested)}${item("eccc", false, "Email Ana about ABC-12")}</ul>`;
+            const note = buildNote({ id: "day1", type: "text", mime: "text/html", content: html });
+            withMutableContent(note, html);
+
+            const read = getTool("get_note_content").execute({ noteId: "day1" }) as { content: string };
+            const edited = read.content
+                .replace("[ ] Book the room", "[x] Book the room")
+                .replace("Pick a contract shape", "Pick the contract shape")
+                .replace(/\n*$/, "\n- [ ] Order lunch\n");
+            expect(edited).not.toBe(read.content);
+            const result = getTool("set_note_content").execute({ noteId: "day1", content: edited }) as { content: string };
+
+            const written = note.getContent() as string;
+            const ids = [...written.matchAll(/data-list-item-id="([^"]+)"/g)].map((m) => m[1]);
+            expect(ids).toHaveLength(5);
+            expect(new Set(ids).size).toBe(5);
+            for (const id of ["eaaa", "ebbb", "eccc", "enest"]) {
+                expect(ids).toContain(id);
+            }
+            const fresh = ids.filter((id) => !["eaaa", "ebbb", "eccc", "enest"].includes(id));
+            expect(fresh).toHaveLength(1);
+            expect(fresh[0]).toMatch(/^e[0-9a-f]{32}$/);
+            expect(written).toMatch(/data-list-item-id="eaaa"><label[^>]*><input type="checkbox" checked="checked"/);
+            expect(written).toMatch(/data-list-item-id="ebbb".*Pick the contract shape/);
+            expect(read.content).not.toContain("list-item-id");
+            expect(result.content).not.toContain("list-item-id");
+        });
+
+        it("stores content exactly as given when the note is not text after the write, and gives fresh ids when it becomes text", () => {
+            const code = buildNote({ id: "code2", type: "code", mime: "text/html", content: "" });
+            withMutableContent(code, "");
+            getTool("set_note_content").execute({ noteId: "code2", content: "<ul><li>a</li></ul>" });
+            expect(code.setContent).toHaveBeenCalledWith("<ul><li>a</li></ul>");
+
+            const text = buildNote({ id: "text2", type: "text", mime: "text/html", content: "" });
+            withMutableContent(text, "<ul><li data-list-item-id=\"eold\">a</li></ul>");
+            text.save = vi.fn() as typeof text.save;
+            getTool("set_note_content").execute({ noteId: "text2", content: "<ul><li>a</li></ul>", type: "code", mime: "text/html" });
+            expect(text.setContent).toHaveBeenCalledWith("<ul><li>a</li></ul>");
+
+            const toText = buildNote({ id: "code3", type: "code", mime: "text/html", content: "" });
+            withMutableContent(toText, "<ul><li data-list-item-id=\"eold\">a</li></ul>");
+            toText.save = vi.fn() as typeof toText.save;
+            getTool("set_note_content").execute({ noteId: "code3", content: "- a\n- b", type: "text" });
+            const ids = [...(toText.getContent() as string).matchAll(/data-list-item-id="([^"]+)"/g)].map((m) => m[1]);
+            expect(ids).toHaveLength(2);
+            for (const id of ids) {
+                expect(id).toMatch(/^e[0-9a-f]{32}$/);
+            }
+        });
+
         it("returns Markdown for text notes (HTML round-trip)", () => {
             const note = buildNote({ id: "text1", type: "text", mime: "text/html", content: "" });
             withMutableContent(note, "");
@@ -158,6 +249,23 @@ describe("note_tools — write tools return post-write content", () => {
     });
 
     describe("append_to_note", () => {
+        it("keeps the existing HTML byte for byte and gives appended list items fresh ids", () => {
+            const existing = "<ul><li data-list-item-id=\"eone\">a</li><li data-list-item-id=\"etwo\">b</li></ul>";
+            const note = buildNote({ id: "text3", type: "text", mime: "text/html", content: existing });
+            withMutableContent(note, existing);
+
+            getTool("append_to_note").execute({ noteId: "text3", content: "- a\n- b" });
+
+            const written = note.getContent() as string;
+            expect(written.startsWith(existing)).toBe(true);
+            const appended = [...written.slice(existing.length).matchAll(/data-list-item-id="([^"]+)"/g)].map((m) => m[1]);
+            expect(appended).toHaveLength(2);
+            for (const id of appended) {
+                expect(id).toMatch(/^e[0-9a-f]{32}$/);
+            }
+            expect(new Set([...appended, "eone", "etwo"]).size).toBe(4);
+        });
+
         it("returns the combined content for code notes", () => {
             const note = buildNote({ id: "code2", type: "code", mime: "text/plain", content: "first line" });
             withMutableContent(note, "first line");
