@@ -45,6 +45,15 @@ describe("displayText", () => {
         expect.soft(displayText("Pair on the seed data _scheduled_").forwardedTo).toBeNull();
     });
 
+    it("reads only Caius's marker, and the latest of several", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Read the scheduled [runbook](https://wiki.example/x)"))
+            .toEqual({ text: "Read the scheduled runbook", forwardedTo: null });
+        expect.soft(displayText("Tidy unscheduled [x](#root/a)").forwardedTo).toBeNull();
+        expect.soft(displayText("Pair on the seed data _scheduled [Tue](#root/a)_ _scheduled [Wed](#root/b)_"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "Wed" });
+    });
+
 describe("displayText's emphasis", () => {
     it("drops **bold**, *italic* and _italic_ markers and keeps their words, but not an underscore inside a word", async () => {
         const { displayText } = await import("./TaskRow.js");

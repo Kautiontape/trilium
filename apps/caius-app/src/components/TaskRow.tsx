@@ -131,22 +131,30 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
  * A task's words as the row shows them. A forwarded task (state `tombstone`) keeps Caius's marker
  * in its text, `_scheduled [Thu 5 Nov](#root/…)_` or, once the desktop editor has saved the note,
  * `_scheduled_ [_Thu 5 Nov_](#root/…)`; the row shows the day it went to instead, and links as
- * their labels. A bare `_scheduled_` with no link is not a marker. A copy's "from …" link to where
- * it came from is left out: on a narrow row it only cuts the task off, and the task tray's From
+ * their labels. A marker links to a `#root/` note and `scheduled` follows no letter, so a bare
+ * `_scheduled_`, `unscheduled [x](#root/a)` and `scheduled [docs](https://…)` are not markers. A
+ * task forwarded again carries several; every one is left out and the last names the day. A copy's
+ * "from …" link to where it came from is left out: on a narrow row it only cuts the task off, and the task tray's From
  * block carries it. A leading area marker and clock are left out too; the marker comes back as
  * `area` for the row to draw as a dot. Bold and italic marks are dropped, their words kept.
  */
 export function displayText(raw: string): { text: string; forwardedTo: string | null; area?: Area } {
     const area = markedArea(raw) ?? undefined;
     raw = bareText(raw);
-    const marker = /\s*_?(?:re)?scheduled_?\s+\[_?([^\]]+?)_?\]\([^)]*\)_?/i.exec(raw);
+    const markers = [ ...raw.matchAll(/\s*_?(?<!\p{L})(?:re)?scheduled_?\s+\[_?([^\]]+?)_?\]\(#root\/[^)]*\)_?/giu) ];
     const kept = raw.replace(/\s*\[from\s[^\]]*\]\(#root\/[^)]*\)/i, "");
-    const rest = marker ? kept.replace(marker[0], "").replace(/\s~\d+(?:h\d+m|h|m)\b/g, "") : kept;
+    let rest = kept;
+    if (markers.length) {
+        for (const marker of markers) {
+            rest = rest.replace(marker[0], "");
+        }
+        rest = rest.replace(/\s~\d+(?:h\d+m|h|m)\b/g, "");
+    }
     const plain = rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
         // A row is plain text: emphasis keeps its words and loses its marks; an underscore inside a word stays.
         .replace(/\*{1,3}(\S[^*]*?)\*{1,3}/g, "$1")
         .replace(/(?<![\p{L}\p{N}_])_(\S[^_]*?)_(?![\p{L}\p{N}_])/gu, "$1");
-    return { text: plain.trim(), forwardedTo: marker ? marker[1] : null, area };
+    return { text: plain.trim(), forwardedTo: markers.at(-1)?.[1] ?? null, area };
 }
 
 function isViewTask(task: PlanTask | ViewTask): task is ViewTask {
