@@ -49,3 +49,12 @@ export function workdayClock(day: Date, rollover: number): string {
   const minutes = workdayMinutes(day, rollover);
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
+
+/**
+ * The rollover in force at `now`: 0 while `started` (the `#caiusStarted` label, a local
+ * `YYYY-MM-DDTHH:mm:ss`) is dated today and `now` is still before `rollover`, otherwise `rollover`.
+ */
+export function effectiveRollover(rollover: number, started: string | null | undefined, now: Date): number {
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return started?.startsWith(today) && now.getHours() * 60 + now.getMinutes() < rollover ? 0 : rollover;
+}

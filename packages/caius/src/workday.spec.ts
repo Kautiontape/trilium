@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ROLLOVER, lastWorkday, nextWorkday, workdayClock, workdayKey, workdayMinutes, workdayNow } from './workday.js';
+import { DEFAULT_ROLLOVER, effectiveRollover, lastWorkday, nextWorkday, workdayClock, workdayKey, workdayMinutes, workdayNow } from './workday.js';
 
 const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -61,5 +61,24 @@ describe('the workday', () => {
     expect(clock('2026-11-03T04:00')).toBe('04:00');
     expect(clock('2026-11-03T17:45')).toBe('17:45');
     expect(workdayMinutes(workdayNow(at('2026-11-03T01:30'), 240), 240)).toBe(25 * 60 + 30);
+  });
+});
+
+describe('effectiveRollover', () => {
+  // 2026-11-16 is a Monday.
+  const at = (stamp: string) => new Date(`${stamp}:00`);
+  const today = '2026-11-16T03:00:00';
+  const yesterday = '2026-11-15T03:00:00';
+
+  it('is 0 only in the small hours of the day the label is dated', () => {
+    const rows: Array<[string, number, string | null | undefined, number]> = [];
+    for (const [time, started] of [['00:00', 0], ['03:59', 0], ['04:00', 240], ['05:00', 240]] as const) {
+      rows.push([time, 240, today, started]);
+      for (const label of [null, undefined, yesterday]) rows.push([time, 240, label, 240]);
+    }
+    rows.push(['02:59', 180, today, 0], ['03:00', 180, today, 180], ['00:00', 0, today, 0], ['05:00', 0, null, 0]);
+    for (const [time, rollover, label, expected] of rows) {
+      expect(effectiveRollover(rollover, label, at(`2026-11-16T${time}`)), `${time} ${rollover} ${label}`).toBe(expected);
+    }
   });
 });
