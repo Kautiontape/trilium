@@ -36,7 +36,9 @@ vi.mock("../../../services/caius", async (importOriginal) => {
     return {
         ...original,
         caiusNow: () => clock.now ?? original.caiusNow(),
-        caiusClockMinutes: (now: Date) => clock.now ? now.getHours() * 60 + now.getMinutes() : original.caiusClockMinutes(now),
+        caiusClockMinutes: (now: Date) => clock.now
+            ? now.getHours() * 60 + now.getMinutes()
+            : original.caiusClockMinutes(now),
         refreshCaiusClock,
         caiusApi: api,
         caiusWrite,
@@ -259,6 +261,24 @@ describe("PlanTab", () => {
         expect(text(container, ".plan-period-key")).toBe("2026-10-27");
         expect(container.querySelector(".plan-period-current")).toBeNull();
         expect(button(container, "Today")).toBeTruthy();
+    });
+
+    it("keeps the period a tab was stepped to when the clock moves, and redraws it", async () => {
+        api.plan.mockResolvedValue(dayPlan());
+        activeNote.current = buildNote({ id: "other", title: "Other" });
+        vi.setSystemTime(new Date(2026, 9, 28, 2, 0));
+        const { container, caiusWrote } = mountInPane(true);
+        await flush();
+        await press(container.querySelector(".plan-period-step .bx-chevron-left"));
+        expect(text(container, ".plan-period-key")).toBe("2026-10-26");
+        expect(container.querySelector(".plan-period-current")).toBeNull();
+
+        clock.next = new Date(2026, 9, 28, 2, 0);
+        await caiusWrote([ startedRow(false) ]);
+        await flush();
+        expect(text(container, ".plan-period-key")).toBe("2026-10-26");
+        expect(button(container, "Today")).toBeTruthy();
+        expect(api.plan).not.toHaveBeenCalledWith("day", "2026-10-28");
     });
 
     it("asks for the status only when a label that moves the clock changes", async () => {
