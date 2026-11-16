@@ -142,6 +142,37 @@ describe('setTaskState', () => {
   });
 });
 
+describe('setTaskState parentComplete', () => {
+  const o = { states: STATES };
+  const parentOf = (state: Record<string, unknown> = {}, kids = [li('ka', 'Kid one'), li('kb', 'Kid  two')]) =>
+    '<h3>Work</h3>' + ul(li('ep', 'Fix  <em>the</em> bug', { ...state, sub: ul(...kids) }));
+
+  it('reports the parent when the last live sub-item is ticked, and leaves the parent as it is', () => {
+    const h = parentOf({}, [li('ka', 'Kid one', { checked: true }), li('kb', 'Kid two')]);
+    const r = setTaskState(h, 'kb', 'done', o);
+    expect(r).toMatchObject({ ok: true, parentComplete: { listItemId: 'ep', text: 'Fix the bug' } });
+    expect(r.ok && r.html).toContain('<li data-list-item-id="ep"><label class="todo-list__label"><input type="checkbox" disabled');
+    expect(setTaskState(parentOf({ state: 'doing' }, [li('ka', 'Kid one')]), 'ka', 'done', o)).toMatchObject({ parentComplete: { listItemId: 'ep' } });
+  });
+  it('reports nothing while another sub-item is open or doing, or when the parent is closed', () => {
+    const open = setTaskState(parentOf(), 'ka', 'done', o);
+    expect(open.ok && open.parentComplete).toBeUndefined();
+    const doing = setTaskState(parentOf({}, [li('ka', 'Kid one'), li('kb', 'Kid two', { state: 'doing' })]), 'ka', 'done', o);
+    expect(doing.ok && doing.parentComplete).toBeUndefined();
+    const closed = setTaskState(parentOf({ checked: true }, [li('ka', 'Kid one')]), 'ka', 'done', o);
+    expect(closed.ok && closed.parentComplete).toBeUndefined();
+    const top = setTaskState('<h3>Work</h3>' + ul(li('eo', 'Open one')), 'eo', 'done', o);
+    expect(top.ok && top.parentComplete).toBeUndefined();
+  });
+  it('ticking a parent leaves its open sub-items open', () => {
+    const r = setTaskState(parentOf(), 'ep', 'done', o);
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.parentComplete).toBeUndefined();
+    expect(r.html).toContain('<li data-list-item-id="ka"><label class="todo-list__label"><input type="checkbox" disabled');
+    expect(r.html).toContain('<li data-list-item-id="kb"><label class="todo-list__label"><input type="checkbox" disabled');
+  });
+});
+
 describe('time blocks', () => {
   const sec = (name: string) => ({ kind: 'section' as const, name });
   const heads = (html: string) => parse(html).querySelectorAll('h1,h2,h3,h4').map((h) => h.text);

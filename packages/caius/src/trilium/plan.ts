@@ -128,6 +128,8 @@ export type PlanResult<R> = R &
         key?: string;
         /** done/start/drop: the state the task is now in. */
         state?: string;
+        /** done: the parent whose last live sub-item this tick closed; it is left as it is. */
+        parentComplete?: { noteId: string; listItemId: string; text: string };
         changes?: NoteChange[];
       }
     | { status: 'skipped'; reason: PlanSkip; detail?: string }
@@ -464,11 +466,12 @@ export async function setStates(
       reason: req.reason,
     });
     if (!r.ok) return skip(req, r.reason, r.from ? `the task is ${r.from}` : undefined);
+    const parentComplete = r.parentComplete && { parentComplete: { noteId: req.noteId, ...r.parentComplete } };
     if (opts.dryRun) {
-      return { ...req, status: 'updated', dryRun: true, state: RESULT_STATE[action], changes: [{ noteId: req.noteId, role: 'target', before: html, after: r.html }] };
+      return { ...req, status: 'updated', dryRun: true, state: RESULT_STATE[action], ...parentComplete, changes: [{ noteId: req.noteId, role: 'target', before: html, after: r.html }] };
     }
     if (!(await api.putContent(req.noteId, r.html, html))) return skip(req, 'edited', 'note changed meanwhile; nothing written');
-    return { ...req, status: 'updated', state: RESULT_STATE[action] };
+    return { ...req, status: 'updated', state: RESULT_STATE[action], ...parentComplete };
   });
 }
 

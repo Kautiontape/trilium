@@ -378,6 +378,16 @@ describe('done, start, drop', () => {
     expect((await setStates(f.api, 'done', [{ noteId: 'd', listItemId: 'e1' }], base))[0]).toMatchObject({ reason: 'already_done' });
     expect(puts(f.log)).toEqual(['put d']);
   });
+  it('passes on the parent a last sub-item completes, on a dry run too', async () => {
+    const nested = '<h3>Work</h3>' + ul(li('ep', 'Fix the bug', { sub: ul(li('ka', 'Kid one', { checked: true }), li('kb', 'Kid two')) }));
+    const expected = { parentComplete: { noteId: 'd', listItemId: 'ep', text: 'Fix the bug' } };
+    const f = fakeTrilium(seed(nested));
+    expect((await setStates(f.api, 'done', [{ noteId: 'd', listItemId: 'kb' }], base))[0]).toMatchObject({ status: 'updated', ...expected });
+    const g = fakeTrilium(seed(nested));
+    expect((await setStates(g.api, 'done', [{ noteId: 'd', listItemId: 'kb' }], { ...base, dryRun: true }))[0]).toMatchObject({ dryRun: true, ...expected });
+    const h = fakeTrilium(seed('<h3>Work</h3>' + ul(li('ep', 'Fix the bug', { sub: ul(li('ka', 'Kid one'), li('kb', 'Kid two')) }))));
+    expect((await setStates(h.api, 'done', [{ noteId: 'd', listItemId: 'ka' }], base))[0]).not.toHaveProperty('parentComplete');
+  });
   it('reads the real state ids from the symbols', async () => {
     const f = fakeTrilium(seed(html));
     await setStates(f.api, 'start', [{ noteId: 'd', listItemId: 'e1' }], { ...base, states: new Map([['my-doing', '/']]) });
