@@ -306,3 +306,62 @@ describe("caius_plan_apply: nest", () => {
         expect(await content(ids.next)).toMatch(/<li data-list-item-id="x1">(?:(?!<\/li>).)*<ul class="todo-list"><li [^>]*>(?:(?!<\/li>).)*Renew the passport/);
     });
 });
+
+describe("caius_plan_apply: nest of an On deck item", () => {
+    const DECK_DAY = "2035-08-07";
+    const PAIR_DECK_DAY = "2035-08-08";
+    const FORWARD_DAY = "2035-08-09";
+    const prose = { headline: "A day of errands", sections: [] };
+    const ids: Record<string, string> = {};
+
+    const deckList = (...items: string[]) => `<h3>Work</h3>${ul(li("d1", "Plan the trip"), li("d2", "Book the hotel"))}<h2>On deck</h2>${ul(...items)}`;
+
+    beforeAll(async () => {
+        await cls.init(async () => {
+            ids.deck = await dayNote(DECK_DAY, deckList(li("o1", "Pack the bags ~15m")));
+            ids.pair = await dayNote(PAIR_DECK_DAY, deckList(li("o2", "Buy stamps ~10m"), li("o3", "Post the parcel ~10m")));
+            ids.forward = await dayNote(FORWARD_DAY, deckList(li("o4", "Renew the licence ~20m")));
+        });
+    });
+
+    async function deckRef(date: string, listItemId: string): Promise<string> {
+        const answer = await planday(date);
+        const item = answer.data.onDeck.find((entry: any) => entry.listItemId === listItemId);
+        if (!item) throw new Error(`${listItemId} is not on ${date}'s On deck`);
+        return item.ref;
+    }
+
+    it("nests an On deck item under a list task in a call with only nest, and takes it off On deck", async () => {
+        const ref = await deckRef(DECK_DAY, "o1");
+        const result = await call("caius_plan_apply", { date: DECK_DAY, said: "pack the bags under the trip", nest: [ { items: [ ref ], under: refOf("l", "d1") } ] });
+        expect(result.skipped).toEqual([]);
+        expect(result.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "nest", id: "o1", status: "written", parentListItemId: "d1" }) ]));
+        const html = await content(ids.deck);
+        expect(html).toMatch(/<li data-list-item-id="d1">(?:(?!<\/li>).)*Plan the trip(?:(?!<\/li>).)*<ul class="todo-list"><li data-list-item-id="o1">(?:(?!<\/li>).)*Pack the bags/);
+        expect(html).not.toMatch(/<h2>On deck<\/h2>(?:(?!<h[23]>).)*Pack the bags/);
+    });
+
+    it("keeps two On deck items together under a new parent in a call with only nest", async () => {
+        const refs = [ await deckRef(PAIR_DECK_DAY, "o2"), await deckRef(PAIR_DECK_DAY, "o3") ];
+        const result = await call("caius_plan_apply", { date: PAIR_DECK_DAY, said: "stamps and the parcel are errands", nest: [ { items: refs, under: { text: "Errands" } } ] });
+        expect(result.skipped).toEqual([]);
+        const nested = result.written.filter((entry: any) => entry.kind === "nest");
+        expect(nested).toEqual([
+            expect.objectContaining({ id: "o2", status: "written", parentListItemId: expect.any(String) }),
+            expect.objectContaining({ id: "o3", status: "written", parentListItemId: nested[0]?.parentListItemId })
+        ]);
+        const html = await content(ids.pair);
+        expect(html.match(/Errands/g)).toHaveLength(1);
+        expect(html).toMatch(/<h2>On deck<\/h2>(?:(?!<h[23]>).)*Errands(?:(?!<\/li><li data-list-item-id="d).)*<li data-list-item-id="o2">(?:(?!<\/li>).)*Buy stamps(?:(?!<\/li>).)*<\/li><li data-list-item-id="o3">(?:(?!<\/li>).)*Post the parcel/);
+    });
+
+    it("skips an On deck item the same call forwards to another day, and writes no nest", async () => {
+        const ref = await deckRef(FORWARD_DAY, "o4");
+        const result = await call("caius_plan_apply", {
+            date: FORWARD_DAY, said: "the licence waits", onDeck: [ { listItemId: ref, to: "2035-08-14" } ],
+            nest: [ { items: [ ref ], under: refOf("l", "d1") } ], brief: prose
+        });
+        expect(result.skipped).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "nest", id: "o4", reason: "not_live" }) ]));
+        expect(result.written.filter((entry: any) => entry.kind === "nest")).toEqual([]);
+    });
+});
