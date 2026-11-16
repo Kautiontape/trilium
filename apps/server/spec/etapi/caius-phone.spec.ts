@@ -224,6 +224,10 @@ describe("Caius phone token routes", () => {
             const { body } = await supertest(app).post("/etapi/caius/apply").set("Authorization", token).send({ drops: [ drop ] }).expect(200);
             expect(body.results).toHaveLength(1);
             await supertest(app).post("/etapi/caius/apply").set("Authorization", token).send({ forwards: [], drops: [] }).expect(400);
+
+            const reword = { noteId: "nonexistent00", listItemId: "e1", text: "New words" };
+            const reworded = await supertest(app).post("/etapi/caius/apply").set("Authorization", token).send({ rewords: [ reword ] }).expect(200);
+            expect(reworded.body.results).toHaveLength(1);
         });
     });
 

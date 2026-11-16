@@ -501,17 +501,20 @@ export const routeInputs = {
     setEstimate: writes(estimateItem.safeExtend(version)),
     reword: writes(rewordItem.safeExtend(version)),
     forward: writes(forwardItem.safeExtend(version)),
-    /** The Plan tab's Close: forwards, then state changes, behind one version check. */
+    /** The Plan tab's Close and the phone's Edit: forwards, then state changes, then rewords, behind one version check. */
     apply: z.object({
         forwards: z.array(forwardItem).default([]),
         drops: z.array(stateItem).default([]),
+        rewords: z.array(rewordItem).default([]),
         expectedBlobId: version.expectedBlobId
-    }).refine((input) => input.forwards.length + input.drops.length > 0, "Give at least one forward or drop")
-        .refine(
-            ({ expectedBlobId, forwards, drops }) => expectedBlobId === undefined
-                || new Set([ ...forwards, ...drops ].map(({ noteId }) => noteId)).size === 1,
-            "An expectedBlobId versions one note, so every forward and drop must be in one note"
-        )
+    }).refine(
+        (input) => input.forwards.length + input.drops.length + input.rewords.length > 0,
+        "Give at least one forward, drop or reword"
+    ).refine(
+        ({ expectedBlobId, forwards, drops, rewords }) => expectedBlobId === undefined
+            || new Set([ ...forwards, ...drops, ...rewords ].map(({ noteId }) => noteId)).size === 1,
+        "An expectedBlobId versions one note, so every forward, drop and reword must be in one note"
+    )
 };
 
 export type InputsInput = z.infer<typeof inputs>;

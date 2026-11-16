@@ -529,19 +529,22 @@ export function createCaiusService(
             (await unlessStale(items, (fresh) => forwardTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
         )),
 
-        apply: ({ forwards, drops, expectedBlobId }: ApplyInput) => withCaiusLock("caius_apply", async () => {
+        /** Runs forwards, then state changes, then rewords behind one version check; the results follow that order. */
+        apply: ({ forwards, drops, rewords, expectedBlobId }: ApplyInput) => withCaiusLock("caius_apply", async () => {
             // One version check before the first write: every item is compared with the same token.
             const items = [
                 ...forwards.map((item) => ({ ...item, expectedBlobId })),
-                ...drops.map((item) => ({ ...item, expectedBlobId }))
+                ...drops.map((item) => ({ ...item, expectedBlobId })),
+                ...rewords.map((item) => ({ ...item, expectedBlobId }))
             ];
             return withBlobIds((await unlessStale(items, async (fresh) => {
                 const forwarding = fresh.filter((item): item is typeof forwards[number] => "to" in item);
                 const dropping = fresh.filter((item): item is typeof drops[number] => "state" in item);
-                return [
-                    ...(forwarding.length ? await forwardTasks(store, forwarding, {}) : []),
-                    ...(dropping.length ? await setStatesOf(store, dropping) : [])
-                ];
+                const rewording = fresh.filter((item): item is typeof rewords[number] => "text" in item);
+                const forwarded = forwarding.length ? await forwardTasks(store, forwarding, {}) : [];
+                const dropped = dropping.length ? await setStatesOf(store, dropping) : [];
+                const reworded = rewording.length ? await rewordTasks(store, rewording, {}) : [];
+                return [ ...forwarded, ...dropped, ...reworded ];
             })).map((r) => presentResult(r)));
         }),
 
