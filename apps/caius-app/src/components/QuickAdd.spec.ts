@@ -36,6 +36,15 @@ describe("displayText", () => {
         expect(displayText("Plan 10:30 slots").area).toBeUndefined();
     });
 
+    it("shows the day a forwarded task went to when the editor has saved its marker", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Pair on the seed data ~30m _scheduled_ [_Thu 5 Nov_](#root/xZTuVVFJcsxn)"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "Thu 5 Nov" });
+        expect.soft(displayText("Pair on the seed data ~30m _scheduled_\u00a0[05 - Thursday](#root/xZTuVVFJcsxn)"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "05 - Thursday" });
+        expect.soft(displayText("Pair on the seed data _scheduled_").forwardedTo).toBeNull();
+    });
+
 describe("displayText's emphasis", () => {
     it("drops **bold**, *italic* and _italic_ markers and keeps their words, but not an underscore inside a word", async () => {
         const { displayText } = await import("./TaskRow.js");
