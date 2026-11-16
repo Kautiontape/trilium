@@ -43,6 +43,7 @@ const MAX_ROLLOVER = 6 * 60;
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const TIME = /\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*([ap]\.?m\.?)?(?![\d])/i;
 const RANGE = String.raw`(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)\s*(?:work\s+)?(hours?|hrs?|h|minutes?|mins?|m)?(?![\p{L}\d])`;
+const JIRA_LINE = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*|__|\*|_)?Jira(?:\s+projects?)?(?:\*\*|__|\*|_)?\s*:(?:\*\*|__|\*|_)?(.*)$/i;
 const COORDINATES = /(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/;
 
 /**
@@ -61,15 +62,19 @@ export function sectionOf(markdown: string | null, name: string): string | null 
 }
 
 /**
- * The Jira project prefixes the Rhythm section names: the capitalised words after `Jira:` (or
- * `Jira projects:`) on one line, which can be a list item and bold. Deduplicated, in order; empty
- * when no line says so.
+ * The Jira project prefixes the Rhythm section names on a `Jira:` (or `Jira project:`) line, which
+ * can be a bulleted or numbered list item with emphasis on the label. Only the run of letters,
+ * digits, commas and spaces after the colon is read, so a note or parenthetical after the list
+ * adds nothing. Its tokens that are all capitals and digits, starting with a letter, are the
+ * prefixes, deduplicated, in order; empty when no line says so.
  */
 export function readJiraProjects(markdown: string | null): string[] {
   const projects: string[] = [];
   for (const line of (sectionOf(markdown, 'Rhythm') ?? '').split('\n')) {
-    const rest = /^\s*(?:[-*+]\s+)?(?:\*\*|__)?Jira(?:\s+projects)?(?:\*\*|__)?\s*:(?:\*\*|__)?(.*)$/i.exec(line)?.[1];
-    for (const word of rest?.match(/\b[A-Z][A-Z0-9]+\b/g) ?? []) if (!projects.includes(word)) projects.push(word);
+    const rest = JIRA_LINE.exec(line)?.[1] ?? '';
+    for (const token of (/^[A-Za-z0-9, ]*/.exec(rest)?.[0] ?? '').split(/[, ]+/)) {
+      if (/^[A-Z][A-Z0-9]+$/.test(token) && !projects.includes(token)) projects.push(token);
+    }
   }
   return projects;
 }

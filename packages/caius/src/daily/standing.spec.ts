@@ -136,6 +136,17 @@ describe('readJiraProjects', () => {
     expect(readJiraProjects('## Rhythm\n\n- **Jira**: ABC and abc, ABC DEF2\n')).toEqual(['ABC', 'DEF2']);
     expect(readJiraProjects('## Rhythm\n\n- Jira projects: QRS\n')).toEqual(['QRS']);
   });
+  it('reads only the list after the colon, in the line forms the markdown export writes', () => {
+    expect(readJiraProjects('## Rhythm\n\n- Jira: ABC, XYZ (TODO: PR reviews)\n')).toEqual(['ABC', 'XYZ']);
+    expect(readJiraProjects('## Rhythm\n\n- Jira: ABC and XYZ.\n')).toEqual(['ABC', 'XYZ']);
+    expect(readJiraProjects('## Rhythm\n\n- Jira: ABC, XYZ \u2014 not UTF-8\n')).toEqual(['ABC', 'XYZ']);
+    expect(readJiraProjects('## Rhythm\n\n1.  Jira: ABC\n')).toEqual(['ABC']);
+    expect(readJiraProjects('## Rhythm\n\n1) Jira: ABC\n')).toEqual(['ABC']);
+    expect(readJiraProjects('## Rhythm\n\n*   _Jira:_ ABC\n')).toEqual(['ABC']);
+    expect(readJiraProjects('## Rhythm\n\n- *Jira:* ABC\n')).toEqual(['ABC']);
+    expect(readJiraProjects('## Rhythm\n\n- _Jira_: ABC\n')).toEqual(['ABC']);
+    expect(readJiraProjects('## Rhythm\n\n- Jira project: ABC\n')).toEqual(['ABC']);
+  });
   it('reads nothing when the line is missing or outside the Rhythm section', () => {
     expect(readJiraProjects('## Brief rules\n\n*   Jira: name tickets by key\n\n## Rhythm\n\n- Standup at 9:30.\n')).toEqual([]);
     expect(readJiraProjects(FILLED)).toEqual([]);

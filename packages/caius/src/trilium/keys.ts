@@ -23,12 +23,6 @@ export function keyConfig(): KeyConfig {
   return config;
 }
 
-/** A bare-key pattern for `projects`; null for an empty list, which would match `-8` in `UTF-8`. */
-function bareKeyPattern(projects: string[]): RegExp | null {
-  const names = projects.filter((p) => /^[A-Z][A-Z0-9]+$/.test(p));
-  return names.length ? new RegExp(`\\b(?:${names.join('|')})-\\d+\\b`, 'g') : null;
-}
-
 const BROWSE = /\/browse\/([A-Z][A-Z0-9]+-\d+)(?![\w-])/;
 const LINK = /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
@@ -89,6 +83,12 @@ export function parseSource(
     }
   }
   return { keys: taskKeys('', [s], []), url: s, label, jira };
+}
+
+/** A bare-key pattern for `projects`; null for an empty list, which would match `-8` in `UTF-8`. */
+function bareKeyPattern(projects: string[]): RegExp | null {
+  const names = projects.filter((p) => /^[A-Z][A-Z0-9]+$/.test(p));
+  return names.length ? new RegExp(`\\b(?:${names.join('|')})-\\d+\\b`, 'g') : null;
 }
 
 /** A well-formed estimate: `30m`, `2h`, `1h30m`, with or without the leading `~`. */
