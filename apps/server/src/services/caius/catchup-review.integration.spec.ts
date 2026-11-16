@@ -141,7 +141,8 @@ describe("a catch-up review writes only the reviewed day", () => {
             expect.objectContaining({ kind: "fate", id: "cr-fwd", detail: TODAY, status: "written" }),
             expect.objectContaining({ kind: "fate", id: "cr-drop", detail: "dropped", status: "written" }),
             expect.objectContaining({ kind: "area", id: "cr-area", detail: "growth", status: "written" }),
-            expect.objectContaining({ kind: "move", id: "cr-fwd", detail: "first", status: "written" })
+            expect.objectContaining({ kind: "move", id: "cr-fwd", detail: "first", status: "written" }),
+            expect.objectContaining({ kind: "context", text: "Ana is out Tuesday", status: "written" })
         ]));
         const later = { reason: "review_only", detail: expect.stringContaining("Plan my day") };
         expect(applied.skipped).toEqual([
@@ -150,11 +151,11 @@ describe("a catch-up review writes only the reviewed day", () => {
             { kind: "accept", id: "ABC-21", text: expect.stringContaining("ABC-21"), ...later },
             { kind: "not_today", id: "ABC-23", text: expect.stringContaining("ABC-23"), ...later },
             { kind: "move", id: "cr-list", text: expect.stringContaining("Review the roadmap"), ...later },
-            { kind: "carry", id: carry.lineId, text: "Ben covers the on-call rotation", ...later },
-            { kind: "context", text: "Ana is out Tuesday", ...later }
+            { kind: "carry", id: carry.lineId, text: "Ben covers the on-call rotation", ...later }
         ]);
-        const left = "Review the roadmap, Call the printer, ABC-21, ABC-23, Ben covers the on-call rotation and Ana is out Tuesday are left for Plan my day";
+        const left = "Review the roadmap, Call the printer, ABC-21, ABC-23 and Ben covers the on-call rotation are left for Plan my day";
         expect(applied.say).toContain(left);
+        expect(applied.say).toContain("'Ana is out Tuesday' is noted");
 
         // The target day keeps his list as it was, with the forward placed first, and nothing else of the review's.
         // The skipped move's anchor stays on the On deck its proposed fate gives it.
@@ -168,7 +169,7 @@ describe("a catch-up review writes only the reviewed day", () => {
         expect(await labelsOf(TODAY, "caiusAsked")).not.toContain("area:cr-deck");
         expect(await labelsOf(REVIEWED, "caiusAsked")).not.toContain(carry.lineId);
         const monday = await call("caius_context", { date: TODAY });
-        expect(monday.context.map((line: any) => line.text)).not.toContain("Ana is out Tuesday");
+        expect(monday.context.map((line: any) => line.text)).toContain("Ana is out Tuesday");
         const tuesday = await call("caius_context", { date: "2026-11-17" });
         expect(tuesday.context.map((line: any) => line.text)).toEqual([]);
 
@@ -352,5 +353,17 @@ describe("a review asks nothing Plan my day asks", () => {
         expect(offered.written.filter((entry: any) => entry.kind === "keep" || entry.kind === "carry"))
             .toEqual([ expect.objectContaining({ kind: "keep", id: lineIdOf("ABC-31 is open"), status: "written" }) ]);
         expect(offered.skipped).toEqual([]);
+    });
+
+    it("Sat 10:00, Review of Fri 13: a Context line he gives is written and noted", async () => {
+        at("2026-11-14T10:00");
+        const open = await call("caius_winddown", { date: FRIDAY, step: "open" });
+        expect(open).toMatchObject({ targetDay: TODAY, next: null });
+        const applied = await call("caius_winddown_apply", { date: FRIDAY, context: [ "Ben is out Thursday" ] });
+        expect(applied.written).toContainEqual(expect.objectContaining({ kind: "context", text: "Ben is out Thursday", status: "written" }));
+        expect(applied.skipped).toEqual([]);
+        expect(applied.say).toContain("'Ben is out Thursday' is noted");
+        const monday = await call("caius_context", { date: TODAY });
+        expect(monday.context.map((line: any) => line.text)).toContain("Ben is out Thursday");
     });
 });

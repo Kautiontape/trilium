@@ -376,7 +376,8 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
  * (a forward, or a drop with his reason), the proposed fate for every open item he didn't name,
  * the candidates he took for the next workday in his order, the keep and carry lines, finished
  * tickets, candidates put off, evening tasks and Context lines on the next workday. A review
- * (`isReview`) writes only the answers about `date` and leaves the target day to Plan my day.
+ * (`isReview`) writes the answers about `date`, the keep lines it asks and the Context lines he
+ * gives, and leaves the target day's offers to Plan my day.
  */
 export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) {
     const { date } = asked;
@@ -690,9 +691,9 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 }
 
 /**
- * The answers a review writes on `targetDay`: the keep lines it asks, and the moves of the items
- * it forwards there (`moved`) or that an earlier run forwarded there (a followed copy on
- * `targetDay`). Every other answer about the target day is skipped as `review_only`.
+ * The answers a review writes on `targetDay`: the keep lines it asks, the Context lines he gives,
+ * and the moves of the items it forwards there (`moved`) or that an earlier run forwarded there (a
+ * followed copy on `targetDay`). Every other answer about the target day is skipped as `review_only`.
  */
 function reviewAnswers(input: ReturnType<typeof windDownAnswers>, targetDay: string, moved: ReadonlyMap<string, unknown>, skipped: Skipped[]): ReturnType<typeof windDownAnswers> {
     const forwarded = (ref: { listItemId: string }) => moved.has(ref.listItemId) || input.follows.get(ref.listItemId)?.period === targetDay;
@@ -702,10 +703,9 @@ function reviewAnswers(input: ReturnType<typeof windDownAnswers>, targetDay: str
         ...input.dismiss.map((ref) => ({ kind: "dismiss", id: ref.candidateId })),
         ...input.move.filter((ref) => !forwarded(ref)).map((ref) => ({ kind: "move", id: ref.listItemId })),
         ...input.carry.map((ref) => ({ kind: "carry", id: ref.lineId })),
-        ...input.context.map((text) => ({ kind: "context", text })),
         ...input.overlaps.map((ref) => ({ kind: "overlap", id: ref.overlapId, text: ref.take }))
     ]);
-    return { ...input, accept: [], move: input.move.filter(forwarded), carry: [], notToday: [], dismiss: [], context: [], overlaps: [] };
+    return { ...input, accept: [], move: input.move.filter(forwarded), carry: [], notToday: [], dismiss: [], overlaps: [] };
 }
 
 /** Skips each of `entries` as `review_only`, for Plan my day to take on the day it plans. */
