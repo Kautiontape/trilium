@@ -78,6 +78,10 @@ describe("caius tools", () => {
         }
     });
 
+    it("tells the agent a view's hidden rows are for counting, not listing", () => {
+        expect(toolNamed("caius_show").description).toContain("A row with hidden: true is a closed sub-item sent for counting; never list it.");
+    });
+
     it("caius_plan reads a day, and defaults to the current period", async () => {
         const view = await call("caius_plan", { period: "day", date: TODAY });
         expect(view.noteId).toBe(noteIds.today);
