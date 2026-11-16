@@ -11,7 +11,7 @@ import { isJournalNote } from "../../../menus/task_actions";
 import {
     caiusApi, caiusClockMinutes, type CaiusContextLine, caiusNow, type CaiusLane, type CaiusOpenTask, type CaiusPeriodKind, type CaiusPlan,
     isCaiusEnabled, movesCaiusClock, refreshCaiusClock, RELOAD_TIMEOUT_MS, startCaiusConversation,
-    wasCaiusEnabled
+    trackStartedNotes, wasCaiusEnabled
 } from "../../../services/caius";
 import froca from "../../../services/froca";
 import type LoadResults from "../../../services/load_results";
@@ -88,6 +88,7 @@ export default function PlanTab() {
             return;
         }
 
+        void trackStartedNotes(loadResults);
         const before = periodOfNote(note, caiusNow());
         void refreshCaiusClock().then(() => {
             if (!mountedRef.current) {

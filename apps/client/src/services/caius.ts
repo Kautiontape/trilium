@@ -278,9 +278,9 @@ export async function refreshCaiusClock() {
 }
 
 /**
- * Whether the changes can move `caiusNow()`: a `#caiusStarted` label set or deleted on any note
- * (the day note it lands on may be new to the client), or a change to the standing note, whose
- * Rhythm holds the rollover.
+ * Whether the changes can move `caiusNow()`: a `#caiusStarted` label set or deleted (a set row
+ * arrives for any note, a removal only for a note froca holds), or a change to the standing note,
+ * whose Rhythm holds the rollover.
  */
 export function movesCaiusClock(loadResults: LoadResults) {
     return loadResults.getAttributeRows().some(
@@ -288,6 +288,22 @@ export function movesCaiusClock(loadResults: LoadResults) {
     ) || loadResults.getNoteIds().some(
         (noteId) => froca.notes[noteId]?.hasOwnedLabel(STANDING_LABEL)
     );
+}
+
+/**
+ * Loads the notes a `#caiusStarted` label was set on that froca does not hold, so that taking the
+ * day back later reaches `entitiesReloaded`: froca reports a deleted attribute only when it holds
+ * it. A failed load is ignored.
+ */
+export async function trackStartedNotes(loadResults: LoadResults) {
+    const unknown = new Set<string>();
+    for (const row of loadResults.getAttributeRows()) {
+        if (row.name === "caiusStarted" && !row.isDeleted && !froca.notes[row.noteId]) {
+            unknown.add(row.noteId);
+        }
+    }
+
+    await Promise.allSettled(Array.from(unknown, (noteId) => froca.getNote(noteId, true)));
 }
 
 /** The label of the standing note, which the server finds it by. */
