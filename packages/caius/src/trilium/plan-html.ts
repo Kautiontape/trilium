@@ -627,9 +627,10 @@ export interface ParentComplete {
 }
 
 function completedParent(li: HTMLElement, states: StateSymbols): ParentComplete | undefined {
-  const parent = li.parentNode?.parentNode as HTMLElement | null | undefined;
-  const listItemId = parent?.tagName === 'LI' ? parent.getAttribute('data-list-item-id') : undefined;
-  if (!parent || !listItemId || !isLive(parent, states)) return undefined;
+  const parent = li.parentNode?.parentNode;
+  if (!(parent instanceof HTMLElement) || parent.tagName !== 'LI') return undefined;
+  const listItemId = parent.getAttribute('data-list-item-id');
+  if (!listItemId || !isLive(parent, states)) return undefined;
   if (liveDescendants(parent, states).some((d) => d !== li)) return undefined;
   const text = (descriptionOf(parent)?.text ?? '').replace(/\s+/g, ' ').trim();
   return { listItemId, text };

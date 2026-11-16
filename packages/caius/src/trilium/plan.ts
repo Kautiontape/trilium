@@ -5,7 +5,7 @@
 // write if the note changed, never call the calendar endpoints on a dry run, and
 // be safe to run twice.
 
-import { parse } from 'node-html-parser';
+import { HTMLElement, parse } from 'node-html-parser';
 import { now as clock } from '../clock.js';
 import { proseKind } from './sections.js';
 import { scanDocs } from '../index/index.js';
@@ -612,7 +612,11 @@ export async function setEstimates(api: NoteStore, reqs: EstimateRequest[], opts
 export interface PlaceRequest extends DayPlace {
   noteId: string;
   listItemId: string;
-  /** Nest the task, with its own sub-items, under a list item of its note (an id), or under a new parent made where the first item stood. */
+  /**
+   * Nest the task under a list item of its note (an id), or under a new parent made where the first
+   * item stood. The task must be a live top-level task with no sub-items; one with sub-items is
+   * refused `too_deep`.
+   */
   under?: string | NewParent;
   /** Lift a sub-item to its parent's level, right after the parent. */
   out?: true;
@@ -752,7 +756,7 @@ function sharedArea(html: string, ids: string[]): Area | null {
 /** The id of the task whose sub-list holds `id`, or undefined. */
 function parentIdOf(html: string, id: string): string | undefined {
   const holder = findItem(parse(html, { comment: true }), id)?.parentNode?.parentNode;
-  return holder && 'getAttribute' in holder ? (holder as { getAttribute(n: string): string | undefined }).getAttribute('data-list-item-id') : undefined;
+  return holder instanceof HTMLElement ? holder.getAttribute('data-list-item-id') : undefined;
 }
 
 export { JIRA_BASE };

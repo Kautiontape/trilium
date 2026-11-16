@@ -119,7 +119,9 @@ function useOpenParents() {
 function readOpenParents() {
     try {
         const stored: unknown = JSON.parse(window.localStorage.getItem(OPEN_PARENTS_KEY) ?? "[]");
-        return Array.isArray(stored) ? stored.filter((key) => typeof key === "string") : [];
+        return Array.isArray(stored)
+            ? stored.filter((key): key is string => typeof key === "string")
+            : [];
     } catch {
         return [];
     }
