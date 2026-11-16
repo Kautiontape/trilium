@@ -563,3 +563,89 @@ describe('placeTasks', () => {
     expect((await placeTasks(g.api, [{ noteId: 'd', listItemId: 'm1', onDeck: true }], base))[0]?.status).toBe('failed');
   });
 });
+
+describe('nesting writes', () => {
+  const day = '<h3>Work</h3>' + ul(li('p1', 'Standup'), li('p2', 'Write', { sub: ul(li('p2a', 'Part')) }), li('p3', 'Ship'));
+  const nextDay = '<h3>Work</h3>' + ul(li('q1', 'Elsewhere'));
+  const other = { n: [periodNote('n', 'dateNote', '2026-10-27'), nextDay] as [ReturnType<typeof periodNote>, string] };
+  const order = (doc: string | undefined) => [...(doc ?? '').matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1]);
+  const parentOf = (doc: string | undefined, id: string) => new RegExp(`data-list-item-id="(\\w+)"[^]*?<ul[^>]*>(?:(?!</ul>)[^])*data-list-item-id="${id}"`).exec(doc ?? '')?.[1];
+
+  it('adds a task as the last sub-item of an id, and a re-run is a duplicate', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const [r] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ZAP-9', source: 'ZAP-9' }], base);
+    expect(r).toMatchObject({ status: 'added', writtenNoteId: 'd' });
+    expect(r.status).toBe('added');
+    expect(order(f.html.d)).toEqual(['p1', 'p2', 'p2a', 'listItemId' in r ? r.listItemId : undefined, 'p3']);
+    expect(f.html.d).toMatch(/p2a[^]*Review[^]*<\/ul><\/li>/);
+    const [again] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ZAP-9', source: 'ZAP-9' }], base);
+    expect(again).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+  });
+  it('refuses an id of another note, an unknown id, a missing note and a bad shape', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const out = await addTasks(f.api, [
+      { date: DAY, under: 'q1', text: 'A' },
+      { date: DAY, under: 'zz', text: 'B' },
+      { date: '2026-10-28', under: 'q1', text: 'C' },
+      { date: '2026-10-28', under: 'zz', text: 'D' },
+      { date: DAY, under: 'p2', suggested: true, text: 'E' },
+      { date: DAY, under: 'p2a', text: 'F' },
+    ], base);
+    expect(out.map((r) => 'reason' in r && r.reason)).toEqual(['other_note', 'not_found', 'other_note', 'not_found', 'bad_request', 'too_deep']);
+    expect(out[0]).toMatchObject({ detail: expect.stringContaining('2026-10-27') });
+    expect(out[0]).toMatchObject({ detail: expect.stringContaining('forward') });
+    expect(puts(f.log)).toEqual([]);
+  });
+  it('places an item under an id, and a re-run is unchanged', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const [r] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p3', under: 'p1' }], base);
+    expect(r).toMatchObject({ status: 'moved', parentListItemId: 'p1' });
+    expect(order(f.html.d)).toEqual(['p1', 'p3', 'p2', 'p2a']);
+    const [again] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p3', under: 'p1' }], base);
+    expect(again).toMatchObject({ status: 'unchanged', parentListItemId: 'p1' });
+    expect(puts(f.log)).toEqual(['put d']);
+  });
+  it('places items under one new parent, in request order, with its estimate and area', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const under = { text: '09:30 Standup', est: '15m' };
+    const out = await placeTasks(f.api, [
+      { noteId: 'd', listItemId: 'p3', under },
+      { noteId: 'd', listItemId: 'p1', under: { ...under } },
+    ], base);
+    const pid = out[0]?.status === 'moved' ? out[0].parentListItemId : undefined;
+    expect(pid).toBeTruthy();
+    expect(out.map((r) => [r.status, 'parentListItemId' in r && r.parentListItemId])).toEqual([['moved', pid], ['moved', pid]]);
+    expect(f.html.d).toContain('09:30 Standup ~15m</span>');
+    expect(order(f.html.d)).toEqual(['p2', 'p2a', pid, 'p3', 'p1']);
+    expect(puts(f.log)).toEqual(['put d']);
+    const [again] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p3', under }, { noteId: 'd', listItemId: 'p1', under }], base);
+    expect(again).toMatchObject({ status: 'unchanged', parentListItemId: pid });
+
+    const g = fakeTrilium(seed(day, other));
+    await placeTasks(g.api, [{ noteId: 'd', listItemId: 'p3', under: { text: 'Growing', area: 'growth' } }], base);
+    expect(g.html.d).toContain('🌱 Growing</span>');
+  });
+  it('lifts a sub-item out, right after its parent', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const [r] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p2a', out: true }], base);
+    expect(r).toMatchObject({ status: 'moved' });
+    expect('parentListItemId' in r).toBe(false);
+    expect(order(f.html.d)).toEqual(['p1', 'p2', 'p2a', 'p3']);
+    expect(parentOf(f.html.d, 'p2a')).toBeUndefined();
+  });
+  it('passes the nest refusals through, and refuses other notes and bad shapes', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const out = await placeTasks(f.api, [
+      { noteId: 'd', listItemId: 'p1', under: 'p2a' },
+      { noteId: 'd', listItemId: 'p1', under: 'zz' },
+      { noteId: 'd', listItemId: 'p1', under: 'q1' },
+      { noteId: 'd', listItemId: 'p1', under: 'p3', block: 'morning' },
+      { noteId: 'd', listItemId: 'p1', under: 'p1' },
+      { noteId: 'd', listItemId: 'p1', under: 'p3', out: true },
+      { noteId: 'd', listItemId: 'p1', under: { text: 'X', est: 'soon' } },
+      { noteId: 'd', listItemId: 'p3', under: 'p2a' },
+    ], base);
+    expect(out.map((r) => 'reason' in r && r.reason)).toEqual(['too_deep', 'not_found', 'other_note', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'too_deep']);
+    expect(puts(f.log)).toEqual([]);
+  });
+});

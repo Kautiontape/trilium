@@ -5,10 +5,12 @@
 // write if the note changed, never call the calendar endpoints on a dry run, and
 // be safe to run twice.
 
+import { parse } from 'node-html-parser';
 import { now as clock } from '../clock.js';
 import { proseKind } from './sections.js';
 import { scanDocs } from '../index/index.js';
-import { newListItemId, tokenZoneStart } from './html-util.js';
+import { findItem, newListItemId, tokenZoneStart } from './html-util.js';
+import { addUnder, liftOut, nestNew, nestUnder, type NestResult } from './nest-html.js';
 import { scanTokens } from '../core/index.js';
 import { loadJournal, loadStateSymbols } from './journal.js';
 import { TRILIUM_CONFIG } from './config.js';
@@ -40,7 +42,7 @@ import {
 } from './plan-html.js';
 import { DISMISSED_LABEL, PERIODS, dismissedKeys, findPeriodNote, isPeriodKey, type PeriodKind } from './plan-read.js';
 import type { StateSymbols } from './markdown.js';
-import { AREAS, type Area } from './areas.js';
+import { AREAS, withArea, type Area } from './areas.js';
 
 export interface AddRequest {
   /** Exactly one of date (YYYY-MM-DD), week (YYYY-Www) or month (YYYY-MM). */
@@ -58,6 +60,8 @@ export interface AddRequest {
   source?: string;
   /** `30m`, `2h`, `1h30m`. */
   est?: string;
+  /** A list item id in the target note: the task becomes its last sub-item. Needs no section, critical or onDeck. */
+  under?: string;
 }
 
 export interface AcceptRequest {
@@ -110,6 +114,10 @@ export type PlanSkip =
   | 'dismissed'
   | 'edited'
   | 'bad_request'
+  /** The item or its parent is in another note: forward it first. */
+  | 'other_note'
+  /** Nesting under a sub-item. */
+  | 'too_deep'
   | 'unreadable'
   /** Reported by a host that checks the note's version before it calls the library. */
   | 'stale';
@@ -123,6 +131,8 @@ export type PlanResult<R> = R &
         /** The note written (add: the day, week or month note). */
         writtenNoteId?: string;
         listItemId?: string;
+        /** place under: the task the item now sits under (the given id, or the new parent's). */
+        parentListItemId?: string;
         /** The source key (add, dismiss). */
         key?: string;
         /** done/start/drop: the state the task is now in. */
@@ -181,7 +191,12 @@ function periodOf(req: AddRequest): { period: PeriodKind; key: string } | string
   return isPeriodKey(period, key) ? { period, key } : `${PERIOD_FIELDS[period]} must be a ${PERIODS[period].shape} that exists`;
 }
 
-function targetOf(req: AddRequest): Target | string {
+function targetOf(req: AddRequest): Target | string | null {
+  if (req.under !== undefined) {
+    const others = [req.section !== undefined, !!req.critical, !!req.suggested, !!req.onDeck].some(Boolean);
+    if (typeof req.under !== 'string' || !req.under) return 'under is a list item id';
+    return others ? 'under takes no section, critical, suggested or onDeck' : null;
+  }
   const given = [req.section !== undefined, !!req.critical, !!req.suggested, !!req.onDeck].filter(Boolean).length;
   if (given !== 1) return 'give exactly one of section, critical, suggested, onDeck';
   if (req.critical) return { kind: 'critical' };
@@ -231,7 +246,7 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
     if (typeof when === 'string') return skip(req, 'bad_request', when);
     const target = targetOf(req);
     if (typeof target === 'string') return skip(req, 'bad_request', target);
-    if (isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
+    if (target && isProseTarget(target)) return skip(req, 'prose_section', PROSE_DETAIL);
     const est = req.est === undefined ? null : parseEstimate(req.est);
     if (req.est !== undefined && !est) return skip(req, 'bad_request', 'est must look like 30m, 2h or 1h30m');
     const source = req.source === undefined ? null : parseSource(req.source);
@@ -242,6 +257,7 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
       const problem = usable(note);
       if (problem) return skip(req, 'unreadable', problem);
     }
+    if (req.under !== undefined && !note) return skip(req, ...(await missingParent(api, req.under, null)));
 
     // Keys: the source's, if given; otherwise from the text.
     const keys = source ? source.keys : taskKeys(req.text.trim(), []);
@@ -275,8 +291,14 @@ export async function addTasks(api: NoteStore, reqs: AddRequest[], opts: PlanOpt
       }
     }
 
-    const after = placeTask(html, markup, target);
-    if (inProseById(after, id)) return skip(req, 'prose_section', PROSE_DETAIL);
+    let after: string;
+    if (target) after = placeTask(html, markup, target);
+    else {
+      const nested = addUnder(html, markup, req.under ?? '', opts.states ?? (await loadStateSymbols(api)));
+      if (!nested.ok) return skip(req, ...(await nestRefusal(api, nested, req.under ?? '', html, note?.noteId ?? null)));
+      after = nested.html;
+    }
+    if (target && inProseById(after, id)) return skip(req, 'prose_section', PROSE_DETAIL);
     const noteId = target_?.noteId ?? 'NEW-NOTE';
     const track = () => {
       const where = `${when.key}: ${req.text.trim()}`;
@@ -590,6 +612,10 @@ export async function setEstimates(api: NoteStore, reqs: EstimateRequest[], opts
 export interface PlaceRequest extends DayPlace {
   noteId: string;
   listItemId: string;
+  /** Nest the task, with its own sub-items, under a list item of its note (an id), or under a new parent made where the first item stood. */
+  under?: string | NewParent;
+  /** Lift a sub-item to its parent's level, right after the parent. */
+  out?: true;
 }
 
 /**
@@ -598,11 +624,13 @@ export interface PlaceRequest extends DayPlace {
  * changed meanwhile, none of them is written and each reports `edited`.
  */
 export async function placeTasks(api: NoteStore, reqs: PlaceRequest[], opts: PlanOptions = {}): Promise<Done<PlaceRequest>[]> {
+  const newId = opts.newId ?? newListItemId;
   const states = opts.states ?? (await loadStateSymbols(api));
   const out = new Map<PlaceRequest, Done<PlaceRequest>>();
   const byNote = new Map<string, PlaceRequest[]>();
   for (const req of reqs) {
-    const problem = validItem(req) ? placeProblem(req.listItemId, req) : 'need noteId and listItemId';
+    const nesting = req.under !== undefined || req.out !== undefined;
+    const problem = !validItem(req) ? 'need noteId and listItemId' : nestProblem(req.listItemId, req) ?? (nesting ? null : placeProblem(req.listItemId, req));
     if (problem) out.set(req, skip(req, 'bad_request', problem));
     else byNote.set(req.noteId, [...(byNote.get(req.noteId) ?? []), req]);
   }
@@ -616,28 +644,104 @@ export async function placeTasks(api: NoteStore, reqs: PlaceRequest[], opts: Pla
       const before = await api.content(noteId);
       let after = before;
       const changed: PlaceRequest[] = [];
+      const parents = new Map<PlaceRequest, string>();
+      const parentOf = (req: PlaceRequest) => (parents.has(req) ? { parentListItemId: parents.get(req) } : {});
       for (const req of group) {
-        const r = placeInDay(after, req.listItemId, req, states);
-        if (!r.ok) out.set(req, skip(req, r.reason, r.detail));
-        else if (r.unchanged) out.set(req, { ...req, status: 'unchanged' });
-        else {
+        if (out.has(req) || changed.includes(req)) continue;
+        let r: NestResult | { ok: true; html: string; unchanged: boolean } | { ok: false; reason: PlanSkip; detail?: string };
+        let members = [req];
+        if (typeof req.under === 'object') {
+          const key = parentKey(req.under);
+          members = group.filter((q) => typeof q.under === 'object' && parentKey(q.under) === key);
+          const pid = newId();
+          r = nestNew(after, members.map((q) => q.listItemId), parentMarkup(pid, req.under), states);
+          if (r.ok) for (const q of members) parents.set(q, pid);
+        } else if (typeof req.under === 'string') {
+          r = nestUnder(after, req.listItemId, req.under, states);
+          if (r.ok) parents.set(req, req.under);
+        } else if (req.out) r = liftOut(after, req.listItemId);
+        else r = placeInDay(after, req.listItemId, req, states);
+        if (!r.ok) {
+          const [reason, detail] = typeof req.under === 'string' ? await nestRefusal(api, r as Extract<NestResult, { ok: false }>, req.under, after, noteId) : [r.reason, r.detail];
+          for (const q of members) out.set(q, skip(q, reason, detail));
+        } else if (r.unchanged) {
+          for (const q of members) {
+            const parent = parents.get(q) && typeof q.under === 'object' ? parentIdOf(after, q.listItemId) : parents.get(q);
+            out.set(q, { ...q, status: 'unchanged', ...(parent && { parentListItemId: parent }) });
+          }
+        } else {
           after = r.html;
-          changed.push(req);
+          changed.push(...members);
         }
       }
       if (!changed.length) continue;
       if (opts.dryRun) {
         for (const [i, req] of changed.entries()) {
-          out.set(req, { ...req, status: 'moved', dryRun: true, changes: i ? undefined : [{ noteId, role: 'target', before, after }] });
+          out.set(req, { ...req, status: 'moved', dryRun: true, ...parentOf(req), changes: i ? undefined : [{ noteId, role: 'target', before, after }] });
         }
       } else if (!(await api.putContent(noteId, after, before))) {
         for (const req of changed) out.set(req, skip(req, 'edited', 'note changed meanwhile; nothing written'));
-      } else for (const req of changed) out.set(req, { ...req, status: 'moved' });
+      } else for (const req of changed) out.set(req, { ...req, status: 'moved', ...parentOf(req) });
     } catch (e) {
       for (const req of group) if (!out.has(req)) out.set(req, failed(req, e));
     }
   }
   return reqs.map((req) => out.get(req) ?? failed(req, 'no result'));
+}
+
+// ---- nesting helpers ---------------------------------------------------
+
+/** Why `id` is not in the note `noteId`: `other_note` naming the Journal note that has it, else `not_found`. */
+async function missingParent(api: NoteStore, id: string, noteId: string | null): Promise<['other_note' | 'not_found', string]> {
+  const load = await loadJournal(api);
+  const doc = load.docs.find((d) => d.noteId !== noteId && [...d.itemIds.values()].includes(id));
+  if (!doc) return ['not_found', `no task ${id}`];
+  const where = doc.path.replace(/^Journal\/\w+\//, '').replace(/\.md$/, '') || doc.noteId;
+  return ['other_note', `${id} is in ${where} (note ${doc.noteId}); forward it into this note first`];
+}
+
+/** The skip for a refused nest: `nest-html`'s reason, or `other_note` when the parent `under` is in another note. */
+async function nestRefusal(
+  api: NoteStore,
+  r: Extract<NestResult, { ok: false }>,
+  under: string | null,
+  html: string,
+  noteId: string | null,
+): Promise<[PlanSkip, string | undefined]> {
+  if (r.reason === 'not_found' && under !== null && !findItem(parse(html, { comment: true }), under)) return missingParent(api, under, noteId);
+  return [r.reason, r.detail];
+}
+
+type NewParent = { text: string; est?: string; area?: Area };
+
+/** What is wrong with the nesting fields of a place request, or null; `placeProblem` checks the rest. */
+function nestProblem(id: string, req: PlaceRequest): string | null {
+  const { under, out } = req;
+  if (under === undefined && out === undefined) return null;
+  const given = [req.block !== undefined, req.onDeck !== undefined, req.before !== undefined || req.after !== undefined, under !== undefined, out !== undefined];
+  if (given.filter(Boolean).length !== 1) return 'give exactly one of block, onDeck, before or after, under or out';
+  if (out !== undefined && out !== true) return 'out is true';
+  if (typeof under === 'string') return !under ? 'under is a list item id' : under === id ? 'an item cannot go under itself' : null;
+  if (under) {
+    if (typeof under.text !== 'string' || !under.text.trim()) return 'under.text is required';
+    if (under.est !== undefined && !parseEstimate(under.est)) return 'est must look like 30m, 2h or 1h30m';
+    if (under.area !== undefined && !AREAS.includes(under.area)) return 'area must be foundation, growth or recharge';
+  }
+  return null;
+}
+
+const parentKey = (u: NewParent) => JSON.stringify([u.text, u.est ?? null, u.area ?? null]);
+
+function parentMarkup(id: string, u: NewParent): string {
+  const est = u.est === undefined ? '' : ` ~${parseEstimate(u.est)}`;
+  const text = escapeHtml(u.text.trim());
+  return itemMarkup(id, (u.area === undefined ? text : withArea(text, u.area)) + est);
+}
+
+/** The id of the task whose sub-list holds `id`, or undefined. */
+function parentIdOf(html: string, id: string): string | undefined {
+  const holder = findItem(parse(html, { comment: true }), id)?.parentNode?.parentNode;
+  return holder && 'getAttribute' in holder ? (holder as { getAttribute(n: string): string | undefined }).getAttribute('data-list-item-id') : undefined;
 }
 
 export { JIRA_BASE };
