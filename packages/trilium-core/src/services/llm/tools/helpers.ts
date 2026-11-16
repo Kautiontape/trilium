@@ -10,6 +10,7 @@ import blobService from "../../../services/blob.js";
 import markdownExport from "../../../services/export/markdown.js";
 import markdownImport from "../../../services/import/markdown.js";
 import { unwrapStringOrBuffer } from "../../../services/utils/binary.js";
+import { carryListItemIds } from "./list_item_ids.js";
 
 const CONTENT_PREVIEW_MAX_LENGTH = 500;
 const ATTACHMENT_PREVIEW_MAX_LENGTH = 200;
@@ -115,11 +116,12 @@ export function getNoteContentForLlm(note: BNote) {
 
 /**
  * Convert LLM-provided content to a format suitable for storage.
- * For text notes, converts Markdown to HTML.
+ * For text notes, converts Markdown to HTML and carries the `data-list-item-id`s of
+ * `previousHtml` onto the list items.
  */
-export function setNoteContentFromLlm(note: BNote, content: string) {
+export function setNoteContentFromLlm(note: BNote, content: string, previousHtml = "") {
     if (note.type === "text") {
-        note.setContent(markdownImport.renderToHtml(content, note.title));
+        note.setContent(carryListItemIds(previousHtml, markdownImport.renderToHtml(content, note.title)));
     } else {
         note.setContent(content);
     }
