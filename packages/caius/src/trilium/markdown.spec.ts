@@ -105,7 +105,7 @@ describe('htmlToMarkdown on a moved task\'s "scheduled" mark', () => {
     expect(out.itemIds.get(0)).toBe('t1');
   });
 
-  it('leaves a bare "scheduled", his own word and other #root/ links as they are', () => {
+  it('leaves a bare "scheduled", the word in a task\'s own text and other #root/ links as they are', () => {
     expect(moved('Ring the plumber <em>scheduled</em>').markdown).toBe('- [>] Ring the plumber _scheduled_');
     expect(moved('Ring the plumber scheduled <a href="#root/tue">Tue 3 Nov</a>').markdown).toBe('- [>] Ring the plumber scheduled [Tue 3 Nov](#root/tue)');
     expect(moved('Ring the plumber <em>scheduled <a href="#root/tue">Tue 3 Nov</a></em> and <a href="#root/x">a b</a>').markdown)
