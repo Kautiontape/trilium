@@ -268,6 +268,32 @@ describe("carryListItemIds", () => {
             .toEqual(["a", "b", "c"]);
     });
 
+    it("carries duplicate items through a title heading via their headings", () => {
+        const plain = (a: string, c: string) => `<h2>Tasks</h2><ul>${li(a, "Standup")}</ul>`
+            + `<h2>Notes</h2><ul>${li(c, "Standup")}</ul>`;
+        const titled = (a: string, c: string) => `<h2>Monday</h2><h3>Tasks</h3>`
+            + `<ul>${li(a, "Standup")}</ul><h3>Notes</h3><ul>${li(c, "Standup")}</ul>`;
+
+        expect(idsOf(carryListItemIds(plain("a", "c"), titled("", ""), counter())))
+            .toEqual(["a", "c"]);
+    });
+
+    it("matches an item only with an item and a heading only with a heading", () => {
+        const previous = `<ul>${li("a", "Plan")}${li("z", "Zed")}</ul><h2>Plan</h2>`;
+        const html = `<ul>${li("", "Zed")}${li("", "Plan")}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter()))).toEqual(["z", "a"]);
+    });
+
+    it("gives fresh ids to a text that is not unique among the new lines", () => {
+        const previous = `<h2>Plan</h2><ul>${li("d", "Draft")}</ul>`;
+        const html = `<h2>Plan</h2><ul>${li("", "Write blog", li("", "Draft"))}`
+            + `${li("", "Write memo", li("", "Draft"))}</ul>`;
+
+        expect(idsOf(carryListItemIds(previous, html, counter())))
+            .toEqual(["fresh1", "fresh2", "fresh3", "fresh4"]);
+    });
+
     it("gives a fresh id to a new line at the end of the children, not a deleted one", () => {
         const previous = `<ul>${li("p", "P", li("a", "Call Ana") + li("b", "Book flights")
             + li("c", "Pack"))}</ul>`;
