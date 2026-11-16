@@ -3,14 +3,13 @@
  * read under the lock, so a bare key counts only for a configured project.
  */
 
-import { dayCapacity, setKeyConfig } from "@triliumnext/caius";
+import { dayCapacity, type NoteStore, setKeyConfig } from "@triliumnext/caius";
 import { cls, sql_init } from "@triliumnext/core";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CaiusInputs, JiraInputs } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
 import { createBeccaStore, createChildNote } from "./store.js";
-import type { NoteStore } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
