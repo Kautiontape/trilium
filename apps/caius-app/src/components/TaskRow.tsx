@@ -127,10 +127,6 @@ export function TaskRow({ task, variant = "list", detail, top, onOpen, right, le
     );
 }
 
-/** Caius's forward marker: lower case, opened by an underscore after no letter, digit or `_`. */
-const FORWARD_MARKER =
-    /\s*(?<![\p{L}\p{N}_])_(?:re)?scheduled_?\s+\[_?(?!from\s)([^\]]+?)_?\]\(#root\/[^)]*\)_?/gu;
-
 /**
  * A task's words as the row shows them. A forwarded task (state `tombstone`) keeps Caius's marker
  * in its text, `_scheduled [Thu 5 Nov](#root/…)_` or, once the desktop editor has saved the note,
@@ -141,8 +137,10 @@ const FORWARD_MARKER =
  * `scheduled [docs](https://…)` are not markers. A task forwarded again carries several; every
  * one is left out and the last names the day. A copy's "from …" link to where it came from is
  * left out: on a narrow row it only cuts the task off, and the task tray's From block carries
- * it. A leading area marker and clock are left out too; the marker comes back as `area` for the
- * row to draw as a dot. Bold and italic marks are dropped, their words kept.
+ * it. An estimate left at the end of the words once the markers are out, the shape older
+ * snapshots hold (`… ~30m _scheduled […]_`), is left out; one in the middle is the user's own
+ * and stays. A leading area marker and clock are left out too; the marker comes back as `area`
+ * for the row to draw as a dot. Bold and italic marks are dropped, their words kept.
  */
 export function displayText(raw: string): { text: string; forwardedTo: string | null; area?: Area } {
     const area = markedArea(raw) ?? undefined;
@@ -154,7 +152,7 @@ export function displayText(raw: string): { text: string; forwardedTo: string | 
         for (const marker of markers) {
             rest = rest.replace(marker[0], "");
         }
-        rest = rest.replace(/\s~\d+(?:h\d+m|h|m)\b/g, "");
+        rest = rest.replace(/\s~\d+(?:h\d+m|h|m)\s*$/, "");
     }
     const plain = rest.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
         // A row is plain text: emphasis keeps its words and loses its marks; an underscore inside a word stays.
@@ -162,6 +160,10 @@ export function displayText(raw: string): { text: string; forwardedTo: string | 
         .replace(/(?<![\p{L}\p{N}_])_(\S[^_]*?)_(?![\p{L}\p{N}_])/gu, "$1");
     return { text: plain.trim(), forwardedTo: markers.at(-1)?.[1] ?? null, area };
 }
+
+/** Caius's forward marker: lower case, opened by an underscore after no letter, digit or `_`. */
+const FORWARD_MARKER =
+    /\s*(?<![\p{L}\p{N}_])_(?:re)?scheduled_?\s+\[(?!_?from\s)_?([^\]]+?)_?\]\(#root\/[^)]*\)_?/gu;
 
 function isViewTask(task: PlanTask | ViewTask): task is ViewTask {
     return "slips" in task;

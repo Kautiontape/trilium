@@ -64,6 +64,16 @@ describe("displayText", () => {
         expect.soft(displayText("_scheduled_ [from Mon](#root/m)").forwardedTo).toBeNull();
     });
 
+    it("keeps the user's own estimate and refuses a \"from\" link whether or not it is italic", async () => {
+        const { displayText } = await import("./TaskRow.js");
+        expect.soft(displayText("Block ~2h for the review _scheduled [Tue](#root/x)_"))
+            .toEqual({ text: "Block ~2h for the review", forwardedTo: "Tue" });
+        expect.soft(displayText("Pair on the seed data _scheduled [Thu 5 Nov](#root/x)_"))
+            .toEqual({ text: "Pair on the seed data", forwardedTo: "Thu 5 Nov" });
+        expect.soft(displayText("_scheduled_ [_from Mon_](#root/m)").forwardedTo).toBeNull();
+        expect.soft(displayText("_scheduled_ [from Mon](#root/m)").forwardedTo).toBeNull();
+    });
+
 describe("displayText's emphasis", () => {
     it("drops **bold**, *italic* and _italic_ markers and keeps their words, but not an underscore inside a word", async () => {
         const { displayText } = await import("./TaskRow.js");
