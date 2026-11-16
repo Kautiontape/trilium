@@ -50,7 +50,7 @@ import { ANSWERED_LABEL, ASK_SEEN_LABEL, ASKED_LABEL, type BriefPick, DECLINED_L
 import {
     allHeld as heldItems,
     catchupOf,
-    catchUpReview,
+    isReview,
     closingLines,
     copyKey,
     closingPeriods,
@@ -375,13 +375,13 @@ export async function planApply(deps: ApplyDeps, asked: PlanApplyInput) {
  * Wind down's writes for `date`, against the next workday: what he called done, the fates he named
  * (a forward, or a drop with his reason), the proposed fate for every open item he didn't name,
  * the candidates he took for the next workday in his order, the keep and carry lines, finished
- * tickets, candidates put off, evening tasks and Context lines on the next workday. A catch-up
- * review writes only the answers about `date` and leaves the target day to Plan my day.
+ * tickets, candidates put off, evening tasks and Context lines on the next workday. A review
+ * (`isReview`) writes only the answers about `date` and leaves the target day to Plan my day.
  */
 export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) {
     const { date } = asked;
     const targetDay = windDownTarget(date, deps.now);
-    const reviewOnly = catchUpReview(date, targetDay);
+    const reviewOnly = isReview(date, targetDay, dayKey(deps.now));
     const read = await deps.dayRead(targetDay);
     // The next workday, when it has a brief, has its header drawn again after the writes, from its
     // calendar, with the day's forecast fetched for a brief that kept no weather.
@@ -410,7 +410,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const states = await loadStateSymbols(store);
         // An answer may name only an item the open step showed, and only a day, week or month it listed.
         const shownItems = new Set(open.items.map((item) => item.listItemId).filter((id): id is string => !!id));
-        const listed = namedDays(date, targetDay);
+        const listed = namedDays(date, targetDay, reviewOnly);
         const listedTo = listedOf(listed);
         // Every ref and name is read against the step data as it stands before the first write.
         const pools: Pools = {
@@ -457,7 +457,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
         const check = asked.checked ? [] : [ ...yesChecks(asked.said, hasAnswer, offered), ...finishedChecks(input.unmatched), ...fateChecks(asked.said, input, pools, endOf), ...parkChecks(asked.said, stale, open.items, input),
             ...dismissChecks(asked.said, input.dismiss, known, [ ...candidates, ...followUpsOf(jira) ], facts.plan.suggested), ...overlapChecks(asked.said, asks.overlaps, input.overlaps) ];
         if (check.length) return checkAnswer({ date, targetDay }, check);
-        // A catch-up review answers none of these questions, so Plan my day still asks them.
+        // A review answers none of these questions, so Plan my day still asks them.
         if (!reviewOnly) {
             await labelDay(store, date, ASKED_LABEL, [ ...lines.keep, ...lines.carry ].map((line) => line.lineId));
             // The next step's questions are about the next workday, so they are answered on its note.
@@ -486,8 +486,8 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             record(written, skipped, { kind: "done", id: listItemId }, result);
         } });
         // The areas he gave are written before the fates move anything, so a forward carries the marker.
-        // A catch-up review gives areas only to its open items and their followed copies, and leaves
-        // the rest to Plan my day.
+        // A review gives areas only to its open items and their followed copies, and leaves the rest
+        // to Plan my day.
         const openIds = new Set(open.items.flatMap((item) => item.listItemId ? [ item.listItemId ] : []));
         const laterArea = (ref: { item: string }) => reviewOnly && !openIds.has(ref.item) && !input.follows.has(ref.item);
         leftForPlanDay(skipped, input.areas.filter(laterArea).map((ref) => {
@@ -537,7 +537,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
             ...freed
         ];
         // An item he gives a place on the next workday's list ("the bike first") goes on that list, not on deck.
-        // A catch-up review reads the places only from the moves of its own open items.
+        // A review reads the places only from the moves of its own open items.
         const places = reviewOnly ? input.move.filter((ref) => openIds.has(ref.listItemId)) : input.move;
         const placed = new Set([ ...places.flatMap((ref) => [ ref.listItemId, ref.before, ref.after ]), ...(reviewOnly ? [] : input.accept).flatMap((ref) => [ ref.before, ref.after ]) ]
             .filter((id): id is string => !!id));
@@ -673,7 +673,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
     // A morning Review goes straight on to today's plan: its steps run here, with what he already
     // answered (the lines written, a vague yes's included), so the reply asks the plan's questions and
     // never whether to plan. When they fail, the writes stand and the nextCall is left to make.
-    // A catch-up review passes only the lines it wrote, so Plan my day asks about the lines it skipped.
+    // A review passes only the lines it wrote, so Plan my day asks about the lines it skipped.
     const kept = result.written.filter((entry) => (entry.kind === "keep" || entry.kind === "carry") && entry.id).map((entry) => entry.id ?? "");
     const answered = { keep: [ ...new Set((reviewOnly ? [] : [ ...asked.keep, ...asked.carry ]).map((line) => line.lineId).concat(kept)) ] };
     try {
@@ -687,7 +687,7 @@ export async function windDownApply(deps: ApplyDeps, asked: WindDownApplyInput) 
 }
 
 /**
- * The answers a catch-up review writes on `targetDay`: the moves of the items it forwards there
+ * The answers a review writes on `targetDay`: the moves of the items it forwards there
  * (`moved`), or that an earlier run forwarded there (a followed copy on `targetDay`). Every other
  * answer about the target day is skipped as `review_only`.
  */

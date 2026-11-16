@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-import { carryQuestion, fitted, MAX_REPLY_CHARS, namedDays, withoutMoveLinks } from "./daily.js";
+import { carryQuestion, fitted, isReview, MAX_REPLY_CHARS, namedDays, withoutMoveLinks } from "./daily.js";
 
 describe("carryQuestion", () => {
     it("names up to four lines in one question, into next week or within the week", () => {
@@ -56,5 +56,17 @@ describe("namedDays", () => {
 
         const old = namedDays("2026-10-27", "2026-11-16");
         expect(old.days.flatMap((day) => "date" in day ? [ day.date ] : [])[0]).toBe("2026-11-16");
+
+        const monday = namedDays("2026-11-13", "2026-11-16", true);
+        expect(monday.weeks).toEqual([ { week: "2026-W47" }, { week: "2026-W48" } ]);
+        expect(monday.days.flatMap((day) => "week" in day ? [ [ day.ref, day.week ] ] : [])).toEqual([ [ "w1", "2026-W47" ], [ "w2", "2026-W48" ] ]);
+    });
+});
+
+describe("isReview", () => {
+    it("is true for a catch-up review and for any wind-down of a day before today, false for one of today", () => {
+        expect(isReview("2026-11-13", "2026-11-16", "2026-11-16")).toBe(true);
+        expect(isReview("2026-11-13", "2026-11-16", "2026-11-13")).toBe(false);
+        expect(isReview("2026-11-10", "2026-11-16", "2026-11-10")).toBe(true);
     });
 });

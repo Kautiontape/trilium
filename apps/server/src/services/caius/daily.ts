@@ -109,6 +109,7 @@ const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
 export async function windDown(deps: StepDeps, { date, step, refresh, older }: { date: string; step: WindDownStep; refresh?: boolean; older?: boolean }) {
     const targetDay = windDownTarget(date, deps.now);
+    const review = isReview(date, targetDay, dayKey(deps.now));
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: WindDownStep | null) => fitted({
         ...withDateLabels({ step, title: t(`caius.daily.title_winddown_${step}`, { day: weekdayName(targetDay) }), date, targetDay, targetDayName: weekdayName(targetDay), data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
@@ -140,7 +141,7 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
-        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay, review), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
     }
 
     const read = await deps.dayRead(targetDay, refresh);
@@ -308,16 +309,21 @@ export function catchUpReview(date: string, targetDay: string): boolean {
     return dayKey(nextWorkday(localDay(date))) < targetDay;
 }
 
+/** Whether a wind-down of `date` is a review: a catch-up review, or one of a day before `today`, the workday clock's day. */
+export function isReview(date: string, targetDay: string, today: string): boolean {
+    return catchUpReview(date, targetDay) || date < today;
+}
+
 /**
  * The days, weeks and months he can name in an answer, so a day he says maps to a date without the
  * agent working one out: the workdays from `first` to the end of the week after the anchor's, those
- * two ISO weeks, and the anchor's month and the next two. The anchor is `date`, or `first` when
- * `catchUpReview(date, first)`. Each day has a ref (`d1`), and `days` ends with the two weeks as he
- * names them, `w1` "later this week" and `w2` "next week". Each gets its display string from
- * `withDateLabels`.
+ * two ISO weeks, and the anchor's month and the next two. The anchor is `first` when `review` (by
+ * default `catchUpReview(date, first)`), else `date`. Each day has a ref (`d1`), and `days` ends
+ * with the two weeks as he names them, `w1` "later this week" and `w2` "next week". Each gets its
+ * display string from `withDateLabels`.
  */
-export function namedDays(date: string, first: string): { days: NamedDay[]; weeks: { week: string }[]; months: { month: string }[] } {
-    const anchor = catchUpReview(date, first) ? first : date;
+export function namedDays(date: string, first: string, review = catchUpReview(date, first)): { days: NamedDay[]; weeks: { week: string }[]; months: { month: string }[] } {
+    const anchor = review ? first : date;
     const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(anchor))).start);
     const end = dayKey(new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 11));
     const days: { date: string }[] = [];

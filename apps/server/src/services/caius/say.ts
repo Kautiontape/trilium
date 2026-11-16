@@ -57,7 +57,7 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
     ];
     const unnamed = skipped.filter((entry) => !entry.text && UNKNOWN.has(entry.reason)).length;
     const holding = skipped.filter((entry) => entry.reason === "ambiguous" && HOLDING.has(entry.kind));
-    // What a catch-up review leaves for Plan my day is said once, for all its items.
+    // What a review leaves for Plan my day is said once, for all its items.
     const later = skipped.filter((entry) => entry.reason === "review_only");
     const missed = unique([
         ...skipped.filter((entry) => !holding.includes(entry) && !later.includes(entry)).flatMap((entry) => skipClause(entry)),

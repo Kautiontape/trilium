@@ -1,6 +1,7 @@
 /**
- * A catch-up review: the wind-down of an older day run from a later one. "Later this week" and
- * "next week" count from the day the review works against, not from the week the reviewed day is in.
+ * A review: the wind-down of an older day run from a later one, as the catch-up's Review or a
+ * Monday-morning Wind down of Friday. "Later this week" and "next week" count from the day the
+ * review works against, not from the week the reviewed day is in.
  * It writes only the reviewed day: what it would offer or write for the target day is left to Plan my day.
  */
 
@@ -201,5 +202,54 @@ describe("a catch-up review writes only the reviewed day", () => {
         expect(review.skipped).toEqual([ expect.objectContaining({ kind: "carry", id: carry.lineId, reason: "review_only" }) ]);
         expect(review.planday).toBeDefined();
         expect(review.planday.inputs.data.carry.map((line: any) => line.lineId)).toContain(carry.lineId);
+    });
+});
+
+/** The week a step's `data.days` names by `ref` (`w1` "later this week", `w2` "next week"). */
+const weekOf = (step: any, ref: string) => step.data.days.find((day: any) => day.ref === ref)?.week;
+
+describe("a wind-down of a day before today is a review", () => {
+    const FRIDAY = "2026-11-13";
+
+    beforeAll(async () => {
+        await cls.init(async () => {
+            const friday = await store.calendarDay(FRIDAY);
+            await store.putContent(friday.noteId, `<h2>☑️ Tasks</h2>${ul(li("fr-week", "Plan the offsite ~30m"), li("fr-done", "File the expenses ~15m"))}`);
+        });
+    });
+
+    it("Fri 23:00 and Sat 02:00, before the rollover: the wind-down of Friday is no review, and 'later this week' is Friday's week", async () => {
+        for (const stamp of [ `${FRIDAY}T23:00`, "2026-11-14T02:00" ]) {
+            at(stamp);
+            const open = await call("caius_winddown", { date: FRIDAY, step: "open" });
+            expect(open.targetDay, stamp).toBe(TODAY);
+            expect(weekOf(open, "w1"), stamp).toBe("2026-W46");
+        }
+    });
+
+    it("Mon 08:00, Review of Fri 13: 'later this week' is the target day's week, and the answers about Monday are left for Plan my day", async () => {
+        at(`${TODAY}T08:00`);
+        const open = await call("caius_winddown", { date: FRIDAY, step: "open" });
+        expect(open.targetDay).toBe(TODAY);
+        expect(weekOf(open, "w1")).toBe("2026-W47");
+        const ref = (id: string) => open.data.items.find((item: any) => item.listItemId === id)?.ref;
+
+        const applied = await call("caius_winddown_apply", {
+            date: FRIDAY, done: [ ref("fr-done") ], fates: [ { listItemId: ref("fr-week"), to: "w1" } ],
+            accept: [ { candidateId: "ABC-21" } ], notToday: [ { candidateId: "ABC-23" } ]
+        });
+        expect(applied.written).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "done", id: "fr-done", status: "written" }),
+            expect.objectContaining({ kind: "fate", id: "fr-week", detail: "2026-W47", status: "written" })
+        ]));
+        const later = { reason: "review_only", detail: expect.stringContaining("Plan my day") };
+        expect(applied.skipped).toEqual([
+            { kind: "accept", id: "ABC-21", text: expect.stringContaining("ABC-21"), ...later },
+            { kind: "not_today", id: "ABC-23", text: expect.stringContaining("ABC-23"), ...later }
+        ]);
+        expect(applied.say).toContain("ABC-21 and ABC-23 are left for Plan my day");
+        expect(await labelsOf(TODAY, "caiusNotToday")).toEqual([]);
+        const plan = await call("caius_plan", { period: "day", date: TODAY });
+        expect(plan.sections.flatMap((s: any) => s.tasks).map((task: any) => task.text).join("\n")).not.toContain("ABC-21");
     });
 });
