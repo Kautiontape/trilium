@@ -687,7 +687,7 @@ export function setTaskEstimate(
   const start = html.indexOf('>', span.range[0] + 5 + span.rawAttrs.length) + 1;
   // The zone is read on the text without its "scheduled" marks, as the scan reads it; masked to the
   // same length, so a `&nbsp;` before a token reads as the space it is.
-  const { bare, original } = withoutMarks(html, span, start);
+  const { bare, original } = descriptionWithoutMarks(html, span, start);
   const masked = bare.replace(/&nbsp;/g, '      ');
   const zone = tokenZoneStartInHtml(masked);
   const found = /~(?:(\d+)h(\d+)m|(\d+)h|(\d+)m)(?=\s|$)/.exec(masked.slice(zone));
@@ -706,7 +706,7 @@ export function setTaskEstimate(
  * A description's inner HTML (which starts at `start` in `html`) without its "scheduled" marks and
  * the spaces before each, and `original`, which maps an offset in that text back into the inner HTML.
  */
-function withoutMarks(html: string, span: HTMLElement, start: number): { bare: string; original: (at: number) => number } {
+function descriptionWithoutMarks(html: string, span: HTMLElement, start: number): { bare: string; original: (at: number) => number } {
   const cuts: { at: number; length: number }[] = [];
   const edits: Edit[] = [];
   let removed = 0;
