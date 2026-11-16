@@ -110,3 +110,30 @@ describe("stepPicks", () => {
         expect(stepPicks(context, { context: { 1: "end" } })).toMatchObject({ picks: [ { what: "Release on Thursday", choice: "Let it end" } ], total: 2 });
     });
 });
+
+describe("nests", () => {
+    const inputs = {
+        ritual: "plan" as const, step: "inputs", data: {
+            onDeck: [ { text: "Sketch the copy", fate: { list: true } } ],
+            nests: [
+                { ref: "n1", under: { listItemId: "m1", ref: "t3", text: "Standup" }, items: [ { id: "a", text: "Ana's ask" }, { id: "b", text: "Ben's ask" }, { id: "c", text: "Cy's ask" }, { id: "d", text: "Ana again" } ], because: "Put 4 answers under Standup? Ana, Ben and Cy are in it." },
+                { ref: "n2", under: { text: "ABC-12 rollout" }, items: [ { id: "e", text: "Draft the plan" }, { id: "f", text: "Ping Ben" } ], because: "Group these under a new ABC-12 rollout?" }
+            ]
+        }
+    };
+
+    it("adds one sentence for the answered nests only", () => {
+        expect(stepReply(inputs, { nests: { 0: "yes", 1: "skip" } })).toContain("Nests: n1 yes (4 under Standup); n2 skip.");
+        expect(stepReply(inputs, { nests: { 1: "yes" } })).toContain("Nests: n2 yes (2 under ABC-12 rollout).");
+        expect(stepReply(inputs, { nests: { 0: null } }).some((line) => line.startsWith("Nests"))).toBe(false);
+        expect(stepReply(inputs, {}).some((line) => line.startsWith("Nests"))).toBe(false);
+    });
+
+    it("lists the answered nests as picks, counts them in the total and undoes one", () => {
+        expect(stepPicks(inputs, {})).toEqual({ picks: [], total: 3 });
+        const { picks, total } = stepPicks(inputs, { nests: { 0: "yes", 1: "skip" } });
+        expect(total).toBe(3);
+        expect(picks.map(({ what, choice }) => [ what, choice ])).toEqual([ [ "4 under Standup", "Yes" ], [ "2 under ABC-12 rollout", "Skip" ] ]);
+        expect(picks[0].undo).toEqual({ nests: { 0: null, 1: "skip" } });
+    });
+});
