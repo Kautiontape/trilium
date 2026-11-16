@@ -90,7 +90,7 @@ These settled the questions this note first left open.
 
 ### Calls the design left to the build
 
-- A task with live sub-items counts toward capacity through its sub-items, not twice. Unestimated live tasks count 30 minutes each.
+- A parent's own estimate covers its sub-items; without one, its live sub-items add up, so nothing counts twice. Unestimated live tasks count 30 minutes each, and a parent pinned to a meeting's start counts nothing, since the calendar books it.
 - The `[…]` placeholder is replaced by the first real task added to a day, whichever section it lands in. Filling only Suggested leaves the placeholder alone, since the day is still untouched for planning.
 - New headers are created above On deck, else above Suggested, one level under the template's lone `Tasks` title, else at the level already in use. Suggested is created last if missing; Caius never reorders a Suggested section that someone has put elsewhere.
 - Duplicate checks compare against live tasks across the Journal, plus open Suggested items on the same note. Suggested items on other notes don't count, so a stale suggestion cannot block a source forever.

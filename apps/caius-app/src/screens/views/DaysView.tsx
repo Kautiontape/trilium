@@ -62,7 +62,7 @@ export function DaysView({ data, answers, onAnswer }: {
             <section class="day-group days-week">
                 <h4 class="label-caps">{data.week.label}</h4>
                 <AreaMeter name="Foundation" minutes={data.week.foundation.minutes} target={data.week.foundation.target} tone />
-                {after.week.length > 0
+                {after.week.some((t) => !t.hidden)
                     ? <ViewRows tasks={after.week} answers={answers} open={open} />
                     : <p class="step-note ink-2">Nothing on the week that isn't on a day.</p>}
                 <NotShown count={data.omitted?.week} />
@@ -124,7 +124,7 @@ function CellRows({ day, area, answers, open }: {
     answers: ViewAnswers;
     open: ReturnType<typeof rowOpener>;
 }) {
-    const tasks = day.tasks.filter((t) => t.area === area);
+    const tasks = day.tasks.filter((t) => t.area === area && !t.hidden);
     if (!tasks.length) {
         return <p class="step-note ink-2">Nothing in {AREA_NAMES[area]}.</p>;
     }

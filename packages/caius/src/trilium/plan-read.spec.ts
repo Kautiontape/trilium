@@ -117,15 +117,46 @@ describe('readPlan (day)', () => {
 
   it('counts capacity from live tasks only, unestimated at 30m, leaving Suggested out', async () => {
     const { capacity } = await readPlan(fakeTrilium(seed).api, 'day', '2026-10-26', now);
-    // Work: critical 60 + First 30 + Underway 15 = 105; 1 unestimated. Step one 10 is under Growth (Learn it has a live sub-item), so not work.
-    expect(capacity).toMatchObject({ plannedMinutes: 105, estimatedCount: 3, unestimatedCount: 1, unestimatedMinutes: 30, totalMinutes: 135, eveningMinutes: 10 });
+    // Work: critical 60 + First 30 + Underway 15 = 105; 1 unestimated. Learn it ~45m is Growth and counts by its own estimate, Step one under it adds nothing.
+    expect(capacity).toMatchObject({ plannedMinutes: 105, estimatedCount: 3, unestimatedCount: 1, unestimatedMinutes: 30, totalMinutes: 135, eveningMinutes: 45 });
     expect(capacity.areas).toEqual({
       foundation: { minutes: 135, target: { min: 180, max: 240 } },
-      growth: { minutes: 10, target: { min: 60, max: 120 } },
+      growth: { minutes: 45, target: { min: 60, max: 120 } },
       recharge: { minutes: 0, target: null },
     });
     expect(capacity.horizons).toEqual({ today: 6 });
     expect(capacity.target).toEqual({ min: 180, max: 240 });
+  });
+
+  it('counts a meeting parent as 0, a sub-item of a Growth parent as Growth, and a done parent\'s open sub-item alone', async () => {
+    const html = '<h3>Meetings</h3>' + ul(li('mt', '09:30 Standup (Ana)')) + '<h3>Morning</h3>' + ul(
+      li('m1', '09:30 Standup', { sub: ul(li('m1a', 'Ask Ana ~10m')) }),
+      li('g1', '🌱 Study', { sub: ul(li('g1a', 'Chapter one ~20m'), li('g1b', 'Chapter two')) }),
+      li('d1', 'Old parent', { checked: true, sub: ul(li('d1a', 'Leftover ~15m')) }),
+    );
+    const f = fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] });
+    const v = await readPlan(f.api, 'day', '2026-10-26', now);
+    const tasks = v.sections.flatMap((s) => s.tasks);
+    expect(tasks.find((t) => t.text === 'Chapter two')?.area).toBe('growth');
+    expect(v.meetings).toEqual(['09:30 Standup (Ana)']);
+    expect(v.capacity).toMatchObject({ totalMinutes: 15, plannedMinutes: 15, estimatedCount: 1, unestimatedCount: 0, eveningMinutes: 50 });
+    expect(v.capacity.areas.foundation.minutes).toBe(15);
+    expect(v.capacity.areas.growth.minutes).toBe(50);
+  });
+
+  it('keeps a parent a parent once its sub-items are done, on the list and On deck', async () => {
+    const family = (id: string, ticked: boolean) =>
+      ul(li(id, 'Review', { sub: ul(li(`${id}a`, 'Read ~10m', { checked: true }), li(`${id}b`, 'Comment ~20m', { checked: ticked })) }));
+    const read = async (ticked: boolean) => {
+      const html = '<h3>Work</h3>' + family('p1', ticked) + '<h3>On deck</h3>' + family('p2', ticked);
+      return (await readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] }).api, 'day', '2026-10-26', now)).capacity;
+    };
+    const open = await read(false);
+    expect(open).toMatchObject({ totalMinutes: 20, plannedMinutes: 20, estimatedCount: 1, unestimatedCount: 0, onDeckMinutes: 20 });
+    expect(open.areas.foundation.minutes).toBe(20);
+    const done = await read(true);
+    expect(done).toMatchObject({ totalMinutes: 0, plannedMinutes: 0, estimatedCount: 0, unestimatedCount: 0, onDeckMinutes: 0 });
+    expect(done.areas.foundation.minutes).toBe(0);
   });
 
   it('leaves empty to-do items out of capacity', async () => {
@@ -152,6 +183,12 @@ describe('readPlan (day)', () => {
     const html = '<h3>Work</h3>' + ul(li('p1', 'Write report ~2h', { sub: ul(li('p1a', '')) }));
     const { capacity } = await readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] }).api, 'day', '2026-10-26', now);
     expect(capacity).toMatchObject({ plannedMinutes: 120, estimatedCount: 1, unestimatedCount: 0, totalMinutes: 120 });
+  });
+
+  it('keeps a task whose words a parent shares counted on its own', async () => {
+    const html = '<h3>Work</h3>' + ul(li('s1', 'Standup ~15m'), li('s2', 'Standup', { sub: ul(li('s2a', 'Notes ~10m')) }));
+    const { capacity } = await readPlan(fakeTrilium({ d: [periodNote('d', 'dateNote', '2026-10-26'), html] }).api, 'day', '2026-10-26', now);
+    expect(capacity).toMatchObject({ plannedMinutes: 25, estimatedCount: 2, unestimatedCount: 0, totalMinutes: 25 });
   });
 
   it('gives noteId null for a missing note and never creates one', async () => {

@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { CHAT_TITLES, chatOnScreen, closeRitual, minimizeRitual, pendingReply, publishActivity, resumed } from "../app-state.js";
 import { FateMenu } from "../components/FateMenu.js";
 import { useSwipeDown } from "../components/MiniChat.js";
+import { NestCards } from "../components/NestCards.js";
 import { addReminder } from "../components/sheets.js";
 import { displayText } from "../components/TaskRow.js";
 import { Button, Chip, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
@@ -871,9 +872,10 @@ function Spans({ spans }: { spans: Span[] }) {
 
 /**
  * The box his next message is written in. Taps on step cards gather in the answers pill above it,
- * so the box holds only his own words; Send sends both, the answers written out first.
+ * so the box holds only his own words; Send sends both, the answers written out first. Enter adds a
+ * line, and only the Send button sends.
  */
-function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: string; onSend?: (text: string) => void }) {
+export function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: string; onSend?: (text: string) => void }) {
     const text = chat.draft;
     const setText = chat.setDraft;
     const pending = chat.pending;
@@ -893,15 +895,9 @@ function Composer({ chat, placeholder, onSend }: { chat: Chat; placeholder: stri
         setOpen(false);
     };
     const box = (cls: string) => (
-        <textarea class={cls} rows={text.length > 60 ? 3 : 1} placeholder={pending ? "Add a comment (optional)" : placeholder} value={text}
+        <textarea class={cls} rows={text.length > 60 || text.includes("\n") ? 3 : 1} placeholder={pending ? "Add a comment (optional)" : placeholder} value={text}
             aria-label={pending ? "Comment" : undefined} disabled={chat.state === "needs-update"}
-            onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
-            onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                }
-            }} />
+            onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} />
     );
     return (
         <footer class="composer">
@@ -1058,6 +1054,7 @@ function StepBody({ step, answers, update, disabled, chat }: { step: RitualStep;
                 {onDeck.length > 0 && <FateList items={onDeck} options={options} answers={answers} update={update} disabled={disabled} />}
                 <Candidates items={Array.isArray(d.candidates) ? d.candidates : []} answers={answers} update={update} disabled={disabled} />
                 <Unmarked items={Array.isArray(d.unmarked) ? d.unmarked : []} answers={answers} update={update} disabled={disabled} />
+                <NestCards items={Array.isArray(d.nests) ? d.nests : []} answers={answers} update={update} disabled={disabled} />
             </>
         );
     }

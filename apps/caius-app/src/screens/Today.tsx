@@ -2,12 +2,14 @@ import "./today.css";
 
 import { layoutGroups } from "@triliumnext/caius/src/daily/blocks.js";
 import { groupTasks, meetingName } from "@triliumnext/caius/src/daily/groups.js";
+import { topLevelOf, unitMinutes } from "@triliumnext/caius/src/daily/load.js";
 import { renderDayTerrain } from "@triliumnext/caius/src/draw/terrain.js";
 import { bareText } from "@triliumnext/caius/src/trilium/areas.js";
 import { useLayoutEffect, useMemo, useRef } from "preact/hooks";
 
 import { openRitual, openSettings } from "../app-state.js";
 import { AreaMeter } from "../components/AreaMeter.js";
+import { groupedRows } from "../components/ParentRow.js";
 import { acceptFromSwipe, dismissSuggestion, ForwardSheet, markDone, startDoing, TaskSheet } from "../components/sheets.js";
 import { TaskRow } from "../components/TaskRow.js";
 import { Button, Card, Est, Icon, openSheet } from "../components/ui.js";
@@ -83,14 +85,12 @@ function TerrainView({ data, now }: { data: TodayData; now: Date }) {
     const svg = useMemo(() => {
         const meetings = data.plan.meetings.map(parseMeeting).filter((m): m is NonNullable<typeof m> => !!m);
         const live = (t: PlanTask) => (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)];
-        const tasks = [
-            ...data.plan.critical.map((t) => ({ ...t, critical: true })),
-            ...data.plan.sections.flatMap((s) => s.tasks.filter((t) => !t.parent))
-        ]
+        const listed = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ];
+        const tasks = topLevelOf(listed)
             .filter(live)
             .map((t) => ({
-                id: t.listItemId ?? null, section: t.section ?? null, critical: t.critical,
-                label: bareText(t.text), minutes: t.estMinutes ?? 30, block: t.block, area: t.area, at: t.at
+                id: t.listItemId ?? null, section: t.section ?? null, critical: t.critical || data.plan.critical.includes(t),
+                label: bareText(t.text), minutes: unitMinutes(t, listed, { meetings: data.plan.meetings }), block: t.block, area: t.area, at: t.at
             }));
         const groups = groupTasks(tasks, data.plan.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
         const nowMinutes = dayMinutes(now, data.rhythm, data.started);
@@ -217,8 +217,9 @@ export function DayFlip({ data, now }: { data: TodayData; now: Date }) {
 function NowCard({ data, now }: { data: TodayData; now: Date }) {
     const minutes = dayMinutes(now, data.rhythm, data.started);
     const workEnd = clockMinutes(data.rhythm.workEnd) ?? 18 * 60;
-    const order = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ]
-        .filter((t) => !t.parent && (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)])
+    const listed = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ];
+    const order = topLevelOf(listed)
+        .filter((t) => (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)])
         .filter((t) => minutes >= workEnd || (t.area !== "recharge" && t.block !== "evening"));
     if (!order.length) {
         return null;
@@ -229,7 +230,7 @@ function NowCard({ data, now }: { data: TodayData; now: Date }) {
         .find((m) => m.at > minutes);
     const gap = meeting ? meeting.at - minutes : null;
     const doing = order.find((t) => t.state === "in_progress");
-    const task = doing ?? (gap === null ? order[0] : order.find((t) => (t.estMinutes ?? 30) <= gap) ?? order[0]);
+    const task = doing ?? (gap === null ? order[0] : order.find((t) => unitMinutes(t, listed, { meetings: data.plan.meetings }) <= gap) ?? order[0]);
     const head = meeting && gap !== null ? `Now · ${duration(gap)} until ${meeting.title}` : "Now";
     return (
         <Card class="now">
@@ -258,7 +259,7 @@ function CapacityCard({ data }: { data: TodayData }) {
     const growth = cap.areas?.growth;
     const recharge = cap.areas?.recharge;
     const live = (t: PlanTask) => (t.state === "open" || t.state === "in_progress") && !held.value[taskKey(t)];
-    const recharging = [ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ].filter((t) => !t.parent && t.area === "recharge" && live(t)).length;
+    const recharging = topLevelOf([ ...data.plan.critical, ...data.plan.sections.flatMap((s) => s.tasks) ]).filter((t) => t.area === "recharge" && live(t)).length;
     if (!foundation.target) {
         return null;
     }
@@ -286,29 +287,29 @@ function TaskLists({ data }: { data: TodayData }) {
         right: { label: "✓ Done", tone: "moss" as const, run: () => markDone(task) },
         left: { label: "Forward ▸", tone: "dusk" as const, run: () => openSheet(<ForwardSheet task={task} />) }
     };
-    const row = (task: PlanTask, variant: "list" | "critical" | "onDeck") => (
-        <TaskRow key={taskKey(task)} task={task} variant={variant} top={top.get(taskKey(task))}
+    const rows = (tasks: PlanTask[], variant: "list" | "critical" | "onDeck") => groupedRows(tasks, (task, trailing) => (
+        <TaskRow key={taskKey(task)} task={task} variant={variant} top={top.get(taskKey(task))} trailing={trailing}
             detail={detailOf(task)} onOpen={() => openSheet(<TaskSheet task={task} />)} {...swipes(task)} />
-    );
+    ));
 
     return (
         <>
             {data.plan.critical.length > 0 && (
                 <section class="list-group">
                     <h2 class="label-caps">Important</h2>
-                    <div class="rows">{data.plan.critical.map((t) => row(t, "critical"))}</div>
+                    <div class="rows">{rows(data.plan.critical, "critical")}</div>
                 </section>
             )}
             {data.plan.sections.filter((s) => s.tasks.length).map((s) => (
                 <section class="list-group" key={s.name ?? "tasks"}>
                     <h2 class="label-caps">{s.name ?? "Tasks"}</h2>
-                    <div class="rows">{s.tasks.map((t) => row(t, "list"))}</div>
+                    <div class="rows">{rows(s.tasks, "list")}</div>
                 </section>
             ))}
             {data.plan.onDeck.length > 0 && (
                 <section class="list-group">
                     <h2 class="label-caps">On deck</h2>
-                    <div class="rows">{data.plan.onDeck.map((t) => row(t, "onDeck"))}</div>
+                    <div class="rows">{rows(data.plan.onDeck, "onDeck")}</div>
                     <p class="list-foot ink-2">Not on the list yet: Plan my day places these.</p>
                 </section>
             )}

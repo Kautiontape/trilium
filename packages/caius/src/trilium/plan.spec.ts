@@ -378,6 +378,16 @@ describe('done, start, drop', () => {
     expect((await setStates(f.api, 'done', [{ noteId: 'd', listItemId: 'e1' }], base))[0]).toMatchObject({ reason: 'already_done' });
     expect(puts(f.log)).toEqual(['put d']);
   });
+  it('passes on the parent a last sub-item completes, on a dry run too', async () => {
+    const nested = '<h3>Work</h3>' + ul(li('ep', 'Fix the bug', { sub: ul(li('ka', 'Kid one', { checked: true }), li('kb', 'Kid two')) }));
+    const expected = { parentComplete: { noteId: 'd', listItemId: 'ep', text: 'Fix the bug' } };
+    const f = fakeTrilium(seed(nested));
+    expect((await setStates(f.api, 'done', [{ noteId: 'd', listItemId: 'kb' }], base))[0]).toMatchObject({ status: 'updated', ...expected });
+    const g = fakeTrilium(seed(nested));
+    expect((await setStates(g.api, 'done', [{ noteId: 'd', listItemId: 'kb' }], { ...base, dryRun: true }))[0]).toMatchObject({ dryRun: true, ...expected });
+    const h = fakeTrilium(seed('<h3>Work</h3>' + ul(li('ep', 'Fix the bug', { sub: ul(li('ka', 'Kid one'), li('kb', 'Kid two')) }))));
+    expect((await setStates(h.api, 'done', [{ noteId: 'd', listItemId: 'ka' }], base))[0]).not.toHaveProperty('parentComplete');
+  });
   it('reads the real state ids from the symbols', async () => {
     const f = fakeTrilium(seed(html));
     await setStates(f.api, 'start', [{ noteId: 'd', listItemId: 'e1' }], { ...base, states: new Map([['my-doing', '/']]) });
@@ -470,7 +480,7 @@ describe('setEstimates', () => {
     expect(plan.sections.flatMap((s) => s.tasks).find((t) => t.text.startsWith('Two'))?.text).toBe('Two _from [Mon 26 Oct](#root/srcnote)_');
     expect(plan.capacity.areas.foundation.minutes).toBe(before + 60 + 15);
   });
-  it('skips a parent with live sub-items, an unknown item and a bad request, keeping the order', async () => {
+  it('writes a parent\'s estimate, skips an unknown item and a bad request, keeping the order', async () => {
     const f = fakeTrilium(seed(html));
     const out = await setEstimates(f.api, [
       { noteId: 'd', listItemId: 'e3', minutes: 30 },
@@ -481,9 +491,9 @@ describe('setEstimates', () => {
       { noteId: 'd', listItemId: 'e1', minutes: 15 },
     ], base);
     expect(out.map((r) => [r.status, 'reason' in r ? r.reason : undefined])).toEqual([
-      ['skipped', 'has_subitems'], ['skipped', 'not_found'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['updated', undefined],
+      ['updated', undefined], ['skipped', 'not_found'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['skipped', 'bad_request'], ['updated', undefined],
     ]);
-    expect(out[0]).toMatchObject({ detail: 'set the estimates of its sub-items' });
+    expect(f.html.d).toContain('Three ~30m');
   });
   it('dry run writes nothing; the guard drops a changed note; a failed put is reported', async () => {
     const f = fakeTrilium(seed(html));
@@ -551,5 +561,122 @@ describe('placeTasks', () => {
 
     const g = fakeTrilium(seed(html), { failPut: 'd' });
     expect((await placeTasks(g.api, [{ noteId: 'd', listItemId: 'm1', onDeck: true }], base))[0]?.status).toBe('failed');
+  });
+});
+
+describe('nesting writes', () => {
+  const day = '<h3>Work</h3>' + ul(li('p1', 'Standup'), li('p2', 'Write', { sub: ul(li('p2a', 'Part')) }), li('p3', 'Ship'));
+  const nextDay = '<h3>Work</h3>' + ul(li('q1', 'Elsewhere'));
+  const other = { n: [periodNote('n', 'dateNote', '2026-10-27'), nextDay] as [ReturnType<typeof periodNote>, string] };
+  const order = (doc: string | undefined) => [...(doc ?? '').matchAll(/data-list-item-id="(\w+)"/g)].map((m) => m[1]);
+  const parentOf = (doc: string | undefined, id: string) => new RegExp(`data-list-item-id="(\\w+)"[^]*?<ul[^>]*>(?:(?!</ul>)[^])*data-list-item-id="${id}"`).exec(doc ?? '')?.[1];
+
+  it('adds a task as the last sub-item of an id, and a re-run is a duplicate', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const [r] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ABC-9', source: 'ABC-9' }], base);
+    expect(r).toMatchObject({ status: 'added', writtenNoteId: 'd' });
+    expect(r.status).toBe('added');
+    expect(order(f.html.d)).toEqual(['p1', 'p2', 'p2a', 'listItemId' in r ? r.listItemId : undefined, 'p3']);
+    expect(f.html.d).toMatch(/p2a[^]*Review[^]*<\/ul><\/li>/);
+    const [again] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ABC-9', source: 'ABC-9' }], base);
+    expect(again).toMatchObject({ status: 'skipped', reason: 'duplicate' });
+  });
+  it('refuses an id of another note, an unknown id, a missing note and a bad shape', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const out = await addTasks(f.api, [
+      { date: DAY, under: 'q1', text: 'A' },
+      { date: DAY, under: 'zz', text: 'B' },
+      { date: '2026-10-28', under: 'q1', text: 'C' },
+      { date: '2026-10-28', under: 'zz', text: 'D' },
+      { date: DAY, under: 'p2', suggested: true, text: 'E' },
+      { date: DAY, under: 'p2a', text: 'F' },
+    ], base);
+    expect(out.map((r) => 'reason' in r && r.reason)).toEqual(['other_note', 'not_found', 'other_note', 'not_found', 'bad_request', 'too_deep']);
+    expect(out[0]).toMatchObject({ detail: expect.stringContaining('2026-10-27') });
+    expect(out[0]).toMatchObject({ detail: expect.stringContaining('forward') });
+    expect(puts(f.log)).toEqual([]);
+  });
+  it('places an item under an id, and a re-run is unchanged', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const [r] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p3', under: 'p1' }], base);
+    expect(r).toMatchObject({ status: 'moved', parentListItemId: 'p1' });
+    expect(order(f.html.d)).toEqual(['p1', 'p3', 'p2', 'p2a']);
+    const [again] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p3', under: 'p1' }], base);
+    expect(again).toMatchObject({ status: 'unchanged', parentListItemId: 'p1' });
+    expect(puts(f.log)).toEqual(['put d']);
+  });
+  it('places items under one new parent, in request order, with its estimate and area', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const under = { text: '09:30 Standup', est: '15m' };
+    const out = await placeTasks(f.api, [
+      { noteId: 'd', listItemId: 'p3', under },
+      { noteId: 'd', listItemId: 'p1', under: { ...under } },
+    ], base);
+    const pid = out[0]?.status === 'moved' ? out[0].parentListItemId : undefined;
+    expect(pid).toBeTruthy();
+    expect(out.map((r) => [r.status, 'parentListItemId' in r && r.parentListItemId])).toEqual([['moved', pid], ['moved', pid]]);
+    expect(f.html.d).toContain('09:30 Standup ~15m</span>');
+    expect(order(f.html.d)).toEqual(['p2', 'p2a', pid, 'p3', 'p1']);
+    expect(puts(f.log)).toEqual(['put d']);
+    const [again] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p3', under }, { noteId: 'd', listItemId: 'p1', under }], base);
+    expect(again).toMatchObject({ status: 'unchanged', parentListItemId: pid });
+
+    const g = fakeTrilium(seed(day, other));
+    await placeTasks(g.api, [{ noteId: 'd', listItemId: 'p3', under: { text: 'Growing', area: 'growth' } }], base);
+    expect(g.html.d).toContain('🌱 Growing</span>');
+  });
+  it('lifts a sub-item out, right after its parent', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const [r] = await placeTasks(f.api, [{ noteId: 'd', listItemId: 'p2a', out: true }], base);
+    expect(r).toMatchObject({ status: 'moved' });
+    expect('parentListItemId' in r).toBe(false);
+    expect(order(f.html.d)).toEqual(['p1', 'p2', 'p2a', 'p3']);
+    expect(parentOf(f.html.d, 'p2a')).toBeUndefined();
+  });
+  it('keeps the order of sub-items lifted out in one call, and each parent\'s own', async () => {
+    const tree = '<h3>Work</h3>' + ul(
+      li('P', 'Parent', { sub: ul(li('a', 'A'), li('b', 'B'), li('c', 'C')) }),
+      li('Q', 'Other', { sub: ul(li('x', 'X'), li('y', 'Y')) }),
+      li('R', 'Last'),
+    );
+    const lift = async (ids: string[]) => {
+      const f = fakeTrilium(seed(tree));
+      await placeTasks(f.api, ids.map((listItemId) => ({ noteId: 'd', listItemId, out: true as const })), base);
+      return order(f.html.d);
+    };
+    expect(await lift(['a', 'b', 'c'])).toEqual(['P', 'a', 'b', 'c', 'Q', 'x', 'y', 'R']);
+    expect(await lift(['b', 'a'])).toEqual(['P', 'c', 'b', 'a', 'Q', 'x', 'y', 'R']);
+    expect(await lift(['a', 'x', 'b', 'y'])).toEqual(['P', 'c', 'a', 'b', 'Q', 'x', 'y', 'R']);
+  });
+  it('passes the nest refusals through, and refuses other notes and bad shapes', async () => {
+    const f = fakeTrilium(seed(day, other));
+    const out = await placeTasks(f.api, [
+      { noteId: 'd', listItemId: 'p1', under: 'p2a' },
+      { noteId: 'd', listItemId: 'p1', under: 'zz' },
+      { noteId: 'd', listItemId: 'p1', under: 'q1' },
+      { noteId: 'd', listItemId: 'p1', under: 'p3', block: 'morning' },
+      { noteId: 'd', listItemId: 'p1', under: 'p1' },
+      { noteId: 'd', listItemId: 'p1', under: 'p3', out: true },
+      { noteId: 'd', listItemId: 'p1', under: { text: 'X', est: 'soon' } },
+      { noteId: 'd', listItemId: 'p3', under: 'p2a' },
+    ], base);
+    expect(out.map((r) => 'reason' in r && r.reason)).toEqual(['too_deep', 'not_found', 'other_note', 'bad_request', 'bad_request', 'bad_request', 'bad_request', 'too_deep']);
+    expect(puts(f.log)).toEqual([]);
+  });
+  it('gives a new parent the area its items share unless an area is given', async () => {
+    const marked = '<h3>Work</h3>' + ul(li('g1', '🌱 Dig'), li('g2', '🌱 Plant'), li('r1', '🔋 Nap'), li('x1', 'Plain'));
+    const parentOfFirst = async (ids: string[], under: { text: string; area?: 'foundation' }) => {
+      const f = fakeTrilium(seed(marked));
+      const out = await placeTasks(f.api, ids.map((listItemId) => ({ noteId: 'd', listItemId, under })), base);
+      const pid = out[0]?.status === 'moved' ? out[0].parentListItemId : undefined;
+      const text = new RegExp(`data-list-item-id="${pid}"[^]*?description">([^<]*)`).exec(f.html.d ?? '')?.[1];
+      return { text, view: await readPlan(f.api, 'day', DAY, now) };
+    };
+    const shared = await parentOfFirst(['g1', 'g2'], { text: 'Garden' });
+    expect(shared.text).toBe('🌱 Garden');
+    expect(shared.view.sections.flatMap((s) => s.tasks).find((t) => t.text.includes('Garden'))).toMatchObject({ area: 'growth' });
+    expect((await parentOfFirst(['g1', 'r1'], { text: 'Garden' })).text).toBe('Garden');
+    expect((await parentOfFirst(['g1', 'x1'], { text: 'Garden' })).text).toBe('Garden');
+    expect((await parentOfFirst(['g1', 'g2'], { text: 'Garden', area: 'foundation' })).text).toBe('Garden');
   });
 });

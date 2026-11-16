@@ -1,7 +1,7 @@
 import { formatEstimate } from "@triliumnext/caius/src/daily/format.js";
 import { layoutGroups } from "@triliumnext/caius/src/daily/blocks.js";
 import { groupTasks, meetingName } from "@triliumnext/caius/src/daily/groups.js";
-import { type DayLoad, dayLoad, DEFAULT_ESTIMATE, liveMinutes } from "@triliumnext/caius/src/daily/load.js";
+import { type DayLoad, dayLoad, liveMinutes, topLevelOf, unitMinutes } from "@triliumnext/caius/src/daily/load.js";
 import type { DaysViewData, DaysViewDay, DayViewData, ItemViewData, ShownView, SlippingViewData, ViewName, ViewTask, ViewTrailStep } from "@triliumnext/caius/src/daily/views.js";
 import type { TerrainInput } from "@triliumnext/caius/src/draw/terrain.js";
 import { type Area, bareText, type Block } from "@triliumnext/caius/src/trilium/areas.js";
@@ -179,7 +179,7 @@ export function redraw(view: ShownView, answers: ViewAnswers): RedrawnDay[] {
 }
 
 /** One day's rows and load after the taps. A leaving row stays in `tasks`, so the view can strike it through. */
-export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad }, answers: ViewAnswers): RedrawnDay {
+export function redrawDay(day: { tasks: ViewTask[]; load: DayLoad; meetingLines: string[] }, answers: ViewAnswers): RedrawnDay {
     return withLoad(day, redrawRows(day.tasks, answers));
 }
 
@@ -271,8 +271,8 @@ export function takeTicket(data: ItemViewData, to: string, onDeck: boolean): Tic
  * The day's server `load` moved by the change in each figure between its own rows and `tasks`,
  * with `over`, `overMinutes` and `overWith` worked again; the server's own `load` when nothing changed.
  */
-function withLoad(day: { tasks: ViewTask[]; load: DayLoad }, tasks: RedrawnTask[]): RedrawnDay {
-    const [ was, now ] = [ countOf(day.tasks), countOf(tasks.filter((t) => !t.leaving)) ];
+function withLoad(day: { tasks: ViewTask[]; load: DayLoad; meetingLines: string[] }, tasks: RedrawnTask[]): RedrawnDay {
+    const [ was, now ] = [ countOf(day.tasks, day.meetingLines), countOf(afterTaps(tasks), day.meetingLines) ];
     if (FIGURES.every((figure) => was[figure] === now[figure])) {
         return { tasks, load: day.load };
     }
@@ -286,15 +286,24 @@ function withLoad(day: { tasks: ViewTask[]; load: DayLoad }, tasks: RedrawnTask[
     return { tasks, load };
 }
 
+/**
+ * `tasks` with each row's state as its fate leaves it, for `countUnits`: a row ticked done stays
+ * done, so it keeps its parent a parent; a row a tap moves off the day or drops counts as cancelled.
+ */
+function afterTaps(tasks: RedrawnTask[]): RedrawnTask[] {
+    return tasks.map((t) => t.leaving ? { ...t, state: t.fate?.kind === "done" ? "done" : "cancelled" } : t);
+}
+
 /** The four figures `dayLoad` takes, counted from rows: Foundation, On deck and Growth minutes, and the Recharge things on the list. */
-function countOf(tasks: ViewTask[]): Record<(typeof FIGURES)[number], number> {
+function countOf(tasks: ViewTask[], meetingLines: string[]): Record<(typeof FIGURES)[number], number> {
     const list = tasks.filter((t) => t.place === "list");
     const onDeck = tasks.filter((t) => t.place === "onDeck");
+    const opts = { meetings: meetingLines };
     return {
-        foundation: liveMinutes(list, "foundation"),
-        onDeck: liveMinutes(onDeck, "foundation"),
-        growth: liveMinutes(list, "growth"),
-        recharge: list.filter((t) => !t.parent && t.area === "recharge" && isLive(t)).length
+        foundation: liveMinutes(list, "foundation", opts),
+        onDeck: liveMinutes(onDeck, "foundation", opts),
+        growth: liveMinutes(list, "growth", opts),
+        recharge: topLevelOf(list).filter((t) => t.area === "recharge" && isLive(t)).length
     };
 }
 
@@ -353,7 +362,8 @@ export interface DayGroup {
  * The Day view's rows under their headings: Important, Morning, Afternoon, Evening, The list (no
  * block) and On deck, empty ones left out. A sub-item follows its parent, whatever its own block.
  */
-export function dayGroups(tasks: RedrawnTask[]): DayGroup[] {
+export function dayGroups(rows: RedrawnTask[]): DayGroup[] {
+    const tasks = rows.filter((t) => !t.hidden);
     const keys = new Set(tasks.map(rowKey));
     const parentOf = (task: RedrawnTask) => task.parentListItemId ? rowKey({ noteId: task.noteId, listItemId: task.parentListItemId }) : null;
     const isSub = (task: RedrawnTask) => {
@@ -382,11 +392,6 @@ export function dayGroups(tasks: RedrawnTask[]): DayGroup[] {
     return groups.filter((group) => group.tasks.length);
 }
 
-/** Whether a live sub-item on the task's note names it as its parent; the server sets no estimate on such a task. */
-export function hasLiveSubItems(task: ViewTask, tasks: ViewTask[]): boolean {
-    return tasks.some((t) => t.noteId === task.noteId && t.parentListItemId === task.listItemId && isLive(t));
-}
-
 /**
  * The `renderDayTerrain` input for a Day view's redrawn rows, as the server's `workBlocks` lays the
  * day out: the live top-level rows on the list that stay, in the brief's groups, around the timed
@@ -394,11 +399,12 @@ export function hasLiveSubItems(task: ViewTask, tasks: ViewTask[]): boolean {
  */
 export function dayTerrain(data: DayViewData, tasks: RedrawnTask[]): { input: TerrainInput; unplacedMinutes: number } {
     const meetings = data.meetings.filter((m) => !m.allDay);
-    const work = tasks
-        .filter((t) => !t.leaving && t.place === "list" && !t.parent && isLive(t))
+    const listed = afterTaps(tasks).filter((t) => t.place === "list");
+    const work = topLevelOf(listed)
+        .filter(isLive)
         .map((t) => ({
             id: t.listItemId, section: t.section ?? null, critical: t.critical,
-            label: bareText(t.text), minutes: t.estMinutes ?? DEFAULT_ESTIMATE, block: t.block, area: t.area, at: t.at
+            label: bareText(t.text), minutes: unitMinutes(t, listed, { meetings: data.meetingLines }), block: t.block, area: t.area, at: t.at
         }));
     const groups = groupTasks(work, data.drawn?.groups).map((group) => ({ name: group.name, important: group.important, tasks: group.tasks }));
     const { span } = data;
@@ -502,6 +508,10 @@ const BLOCK_NAMES: Record<Block, string> = { morning: "Morning", afternoon: "Aft
 export const AREA_NAMES: Record<Area, string> = { foundation: "Foundation", growth: "Growth", recharge: "Recharge" };
 
 function rowsOf(view: ShownView): ViewTask[] {
+    return allRowsOf(view).filter((t) => !t.hidden);
+}
+
+function allRowsOf(view: ShownView): ViewTask[] {
     switch (view.view) {
         case "day": return view.data.tasks ?? [];
         case "days": return [ ...(view.data.days ?? []).flatMap((d) => d.tasks ?? []), ...(view.data.week?.tasks ?? []) ];

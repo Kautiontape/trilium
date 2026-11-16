@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { meetingLines, overlapPairs, type MeetingEvent } from './meetings.js';
+import { attendeeFirstName, meetingLines, overlapPairs, type MeetingEvent } from './meetings.js';
 
 const event = (start: string, end: string, title: string, o: Partial<MeetingEvent> = {}): MeetingEvent => ({
   start, end, title, attendees: [], allDay: false, declined: false, ...o,
@@ -37,5 +37,17 @@ describe('overlapPairs', () => {
       event('12:15', '12:45', 'Declined', { declined: true }),
     ]);
     expect(pairs).toEqual([{ first: 'Release call', second: 'Review', at: '12:30' }]);
+  });
+});
+
+describe('attendeeFirstName', () => {
+  it('reads the first name from an email, a dotted handle or a display name', () => {
+    expect(attendeeFirstName('ana.lopez@example.com')).toBe('ana');
+    expect(attendeeFirstName('ana.lopez')).toBe('ana');
+    expect(attendeeFirstName('Ana Lopez')).toBe('ana');
+    expect(attendeeFirstName('Cy')).toBe('cy');
+    expect(attendeeFirstName('Ana Lopez <ana.lopez@example.com>')).toBe('ana');
+    expect(attendeeFirstName('  ')).toBe('');
+    expect(attendeeFirstName('')).toBe('');
   });
 });

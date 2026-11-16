@@ -112,6 +112,7 @@ import { createFeedCache, readCalendar } from "./inputs/calendar.js";
 import { type CaiusInputs, isInputWarning, readInputs } from "./inputs/index.js";
 import { readTicket, type TicketCard, type TicketError } from "./inputs/jira.js";
 import type { CalendarEvent, InputError } from "./inputs/types.js";
+import { refOf } from "./refs.js";
 import { createBeccaStore, withCaiusLock } from "./store.js";
 import { showView } from "./views.js";
 import { type DayWeather, fetchDayWeather } from "./weather.js";
@@ -516,7 +517,9 @@ export function createCaiusService(
         )),
 
         place: ({ items, dryRun, html }: PlaceInput) => withCaiusLock("caius_place", async () => withBlobIds(
-            (await unlessStale(items, (fresh) => placeTasks(store, fresh, { dryRun }))).map((r) => presentResult(r, html))
+            (await unlessStale(items, async (fresh) => placeTasks(store, await Promise.all(fresh.map(async (item) => typeof item.under === "string"
+                ? { ...item, under: await underIdOf(store, item.noteId, item.under) }
+                : item)), { dryRun }))).map((r) => presentResult(r, html))
         )),
 
         reword: ({ items, dryRun, html }: RewordInput) => withCaiusLock("caius_reword", async () => withBlobIds(
@@ -873,12 +876,33 @@ const MONTHS = [
  * its area files it under) as its section. A Foundation task filed by area alone goes under Morning
  * when the day note has that heading, else under Tasks, the main list.
  */
-async function filedItem(store: NoteStore, { block, area, ...item }: AddInput["items"][number]) {
-    const text = area === undefined ? item.text : withArea(item.text, area);
-    const byArea = block === undefined && item.section === undefined && !item.critical && !item.suggested && !item.onDeck;
+async function filedItem(store: NoteStore, { block, area, ...given }: AddInput["items"][number]) {
+    const text = area === undefined ? given.text : withArea(given.text, area);
+    const periodNote = given.under === undefined ? null
+        : given.date !== undefined ? await findPeriodNote(store, "day", given.date)
+            : given.week !== undefined ? await findPeriodNote(store, "week", given.week)
+                : given.month === undefined ? null : await findPeriodNote(store, "month", given.month);
+    const item = given.under !== undefined && periodNote ? { ...given, under: await underIdOf(store, periodNote.noteId, given.under) } : given;
+    const byArea = block === undefined && item.section === undefined && !item.critical && !item.suggested && !item.onDeck && item.under === undefined;
     if (item.date === undefined || (block === undefined && !byArea)) return { ...item, text };
     const filed = await blockFor(store, item.date, area ?? "foundation", block);
     return { ...item, text, section: filed ? BLOCK_NAMES[filed] : MAIN_LIST };
+}
+
+/**
+ * The list item id that `under` names in note `noteId`: `under` itself when it is an id there, else the id whose
+ * `l…` ref it is, else the id of that ref in another Journal note, which the library then names as `other_note`.
+ * An unmatched value goes to the library as given, which answers `not_found`.
+ */
+async function underIdOf(store: NoteStore, noteId: string, under: string): Promise<string> {
+    const ids = [ ...(await store.content(noteId)).matchAll(/data-list-item-id="([^"]+)"/g) ].map((m) => m[1]);
+    if (ids.includes(under)) return under;
+    const ref = under.trim().toLowerCase();
+    const here = ids.find((id) => refOf("l", id) === ref);
+    if (here !== undefined) return here;
+    const docs = (await loadJournal(store)).docs;
+    const elsewhere = docs.flatMap((doc) => [ ...doc.itemIds.values() ]).find((id) => refOf("l", id) === ref);
+    return elsewhere ?? under;
 }
 
 /** The heading of a day note's main task list, which a task filed by area alone falls under when the note has no Morning. */

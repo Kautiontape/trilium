@@ -14,6 +14,16 @@ export interface MeetingEvent {
 const MAX_NAMES = 4;
 
 /**
+ * The lowercased first name of an attendee: the part of an email or dotted handle before its first
+ * `.` (`ana.lopez@example.com`, `ana.lopez` give `ana`), else the first word of the name.
+ */
+export function attendeeFirstName(attendee: string): string {
+  const text = attendee.trim().replace(/\s*<[^>]*>\s*$/, '');
+  if (/\s/.test(text) && !text.includes('@')) return (text.split(/\s+/)[0] ?? '').toLowerCase();
+  return (text.split('@')[0]?.split('.')[0] ?? '').toLowerCase();
+}
+
+/**
  * One `HH:MM Title (Sam, Riley)` line per timed meeting, in start order: the first names of up to
  * four attendees, and ` (overlaps)` on a meeting that overlaps another. Declined and all-day events
  * are left out, and so is a line identical to an earlier one.

@@ -103,7 +103,8 @@ beforeAll(async () => {
     });
 
     const mon = await dayWith(MON, `<h3>Work</h3>${ul(li("m-plumber", "Ring the plumber ~30m"))}`);
-    await dayWith(TUE, critical(li("d-rent", "Pay the rent ~10m"))
+    await dayWith(TUE, `<h3>Meetings</h3>${ul(li("d-meet", "10:00 Standup (Ana)"), li("d-meet2", "14:00 Vendor sync"))}`
+        + critical(li("d-rent", "Pay the rent ~10m"))
         + `<h3>Work</h3>${ul(
             li("d-spec", "Write the export spec ZAP-4101 ~2h"),
             li("d-parent", "Plan the demo", ul(li("d-sub1", "Draft the slides ~45m"), li("d-sub2", "Book the room ~15m"))),
@@ -140,9 +141,9 @@ describe("the day view", () => {
         const list = data.tasks.filter((t) => t.place === "list");
         const onDeck = data.tasks.filter((t) => t.place === "onDeck");
         expect(dayLoad({
-            foundation: liveMinutes(list, "foundation"),
-            onDeck: liveMinutes(onDeck, "foundation"),
-            growth: liveMinutes(list, "growth"),
+            foundation: liveMinutes(list, "foundation", { meetings: data.meetingLines }),
+            onDeck: liveMinutes(onDeck, "foundation", { meetings: data.meetingLines }),
+            growth: liveMinutes(list, "growth", { meetings: data.meetingLines }),
             recharge: list.filter((t) => !t.parent && t.area === "recharge" && isLive(t)).length
         }, { focus: data.load.foundation.focus, growthTarget: data.load.growth.target })).toEqual(data.load);
 
@@ -152,6 +153,8 @@ describe("the day view", () => {
         expect(data.capacity).toEqual({ windowMinutes: day.capacity.windowMinutes, bookedMinutes: 75, openMinutes: day.capacity.openMinutes });
         expect(data.span).toEqual({ start: frame.rhythm.start, noon: frame.rhythm.noon, workEnd: frame.rhythm.workEnd, end: "23:00" });
         expect(data.meetings.map((m) => m.title)).toEqual([ "Daily Standup", "Vendor sync" ]);
+        expect(data.meetingLines).toEqual(day.plan.meetings);
+        expect(data.meetingLines).toHaveLength(2);
         expect(data.unplacedMinutes).toBe(day.layout.unplaced.reduce((n, u) => n + u.minutes, 0));
         expect(data.context).toContainEqual({ text: expect.stringContaining("ZAP-4101 is blocked"), until: FRI, untilLabel: "Fri 10 Mar" });
 
@@ -184,6 +187,25 @@ describe("the day view", () => {
     });
 });
 
+describe("a parent's closed sub-items", () => {
+    it("come back hidden, so a recount counts the parent as the server does, and a done top-level task doesn't come back", async () => {
+        const DATE = "2034-04-05";
+        await dayWith(DATE, `<h3>Work</h3>${ul(
+            li("h-review", "Review the draft", ul(doneLi("h-done", "Read the intro ~10m"), li("h-open", "Check the figures ~20m"))),
+            doneLi("h-gone", "Send the invoice ~15m")
+        )}`);
+        const { data } = await shown("day", { date: DATE });
+        const byId = (id: string) => data.tasks.find((t) => t.listItemId === id);
+        expect(byId("h-done")).toMatchObject({ state: "done", hidden: true, parentListItemId: "h-review" });
+        expect(byId("h-review")?.hidden).toBeUndefined();
+        expect(byId("h-open")?.hidden).toBeUndefined();
+        expect(byId("h-gone")).toBeUndefined();
+        expect(data.tasks.map((t) => t.listItemId)).toEqual([ "h-review", "h-done", "h-open" ]);
+        expect(data.load.foundation.minutes).toBe(20);
+        expect(liveMinutes(data.tasks, "foundation", { meetings: data.meetingLines })).toBe(20);
+    });
+});
+
 describe("the days view", () => {
     it("reads two days and seven, each weighed as the day view weighs it, with the Week row", async () => {
         const week = await run(async () => (await store.calendarWeek(WEEK)).noteId);
@@ -194,6 +216,7 @@ describe("the days view", () => {
         const tuesday = two.data.days[1];
         expect(tuesday?.load).toEqual((await shown("day", { date: TUE })).data.load);
         expect(tuesday?.meetingMinutes).toBe(75);
+        expect(tuesday?.meetingLines).toHaveLength(2);
         expect(tuesday?.calendarFailed).toBe(false);
         expect(tuesday?.tasks).toHaveLength(11);
         expect(two.title).toBe("Mon 6 Mar to Tue 7 Mar");

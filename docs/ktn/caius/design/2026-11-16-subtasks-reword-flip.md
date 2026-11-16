@@ -83,9 +83,9 @@ my day doesn't ask about each one.
 ### Writes
 
 - `caius_add` takes `under` (a list item id or ref): the new task becomes the last sub-item of that task, in its note.
-- `caius_place` takes `under`. With an id, the task and its own sub-items become the last sub-item of that task. With
-  `{ text, est?, area? }`, a new parent is made where the first item stood and the items go under it, in order. `out:
-  true` lifts a sub-item to its parent's level, right after the parent.
+- `caius_place` takes `under`. With an id, the task becomes the last sub-item of that task; a task that has sub-items of
+  its own can't go under another (`too_deep`). With `{ text, est?, area? }`, a new parent is made where the first item
+  stood and the items go under it, in order. `out: true` lifts a sub-item to its parent's level, right after the parent.
 - One level only: nesting under a sub-item is refused (`too_deep`). Both tasks must be in the same note, else
   `other_note`; Plan my day forwards an item into the day before nesting it.
 - `caius_set_estimate` accepts a parent (`has_subitems` goes away). The parent's estimate then covers its sub-items.

@@ -123,6 +123,31 @@ export function unmarkedReply(tasks: UnmarkedData[], answers: Record<number, Are
     });
 }
 
+/** A grouping Plan my day offers: items to nest under a task, or under a new parent named by `under.text`. */
+export interface NestData {
+    ref?: string;
+    under: { listItemId?: string; ref?: string; text: string };
+    items: { id: string; ref?: string; text: string }[];
+    because: string;
+}
+
+export type NestAnswer = "yes" | "skip" | null;
+
+/** Each nest he answered, one sentence for all: `Nests: n1 yes (4 under Standup); n2 skip.` Those he hasn't answered are left unsaid. */
+export function nestsReply(nests: NestData[], answers: Record<number, NestAnswer> | undefined): string {
+    const parts = nests.flatMap((nest, i) => {
+        const answer = answers?.[i];
+        const ref = nest.ref ?? `n${i + 1}`;
+        return answer === "yes" ? [ `${ref} yes (${nestWords(nest)})` ] : answer === "skip" ? [ `${ref} skip` ] : [];
+    });
+    return parts.length ? `Nests: ${parts.join("; ")}.` : "";
+}
+
+/** `4 under Standup`. */
+function nestWords(nest: NestData) {
+    return `${nest.items.length} under ${nest.under.text}`;
+}
+
 export type ContextAnswer = "keep" | "end" | null;
 
 /** Every Context line with his answer, or left as it is, and what he adds (nothing unless he typed it). */
@@ -141,6 +166,7 @@ export interface StepAnswers {
     candidates?: Record<number, CandidateAnswer>;
     areas?: Record<number, Area | null>;
     context?: Record<number, ContextAnswer>;
+    nests?: Record<number, NestAnswer>;
     catchup?: string | null;
 }
 
@@ -155,6 +181,7 @@ export function stepReply(step: { ritual: "plan" | "winddown"; step: string; dat
         onDeck?: { text: string; fate?: StepFate }[];
         candidates?: CandidateData[];
         unmarked?: UnmarkedData[];
+        nests?: NestData[];
         context?: { text: string; untilLabel?: string }[];
         keepDateLabel?: string;
     };
@@ -168,7 +195,7 @@ export function stepReply(step: { ritual: "plan" | "winddown"; step: string; dat
         case "winddown:open":
             return [ itemsReply("Leftovers", fate(d.items ?? [])) ].filter(Boolean);
         case "plan:inputs":
-            return [ itemsReply("On deck", fate(d.onDeck ?? [])), candidates(d.candidates ?? []), ...unmarked() ].filter(Boolean);
+            return [ itemsReply("On deck", fate(d.onDeck ?? [])), candidates(d.candidates ?? []), ...unmarked(), nestsReply(d.nests ?? [], answers.nests) ].filter(Boolean);
         case "winddown:next":
             return [ candidates(d.candidates ?? []) ].filter(Boolean);
         case "winddown:context":
@@ -219,6 +246,7 @@ export function stepPicks(step: { ritual: "plan" | "winddown"; step: string; dat
         onDeck?: { text: string; fate?: StepFate }[];
         candidates?: CandidateData[];
         unmarked?: UnmarkedData[];
+        nests?: NestData[];
         context?: { text: string }[];
     };
     const fates = (items: { text: string; fate?: StepFate }[]): StepPick[] => items.flatMap((item, i) => {
@@ -237,6 +265,10 @@ export function stepPicks(step: { ritual: "plan" | "winddown"; step: string; dat
         const area = answers.areas?.[i];
         return area ? [ { what: task.text, choice: AREA_LABELS[area], undo: { areas: { ...answers.areas, [i]: null } } } ] : [];
     });
+    const nests = (list: NestData[]): StepPick[] => list.flatMap((nest, i) => {
+        const answer = answers.nests?.[i];
+        return answer ? [ { what: nestWords(nest), choice: answer === "yes" ? "Yes" : "Skip", undo: { nests: { ...answers.nests, [i]: null } } } ] : [];
+    });
 
     switch (`${step.ritual}:${step.step}`) {
         // The catch-up has no default: until he picks, it isn't answered at all, so it counts only once picked.
@@ -245,7 +277,7 @@ export function stepPicks(step: { ritual: "plan" | "winddown"; step: string; dat
         case "winddown:open":
             return { picks: fates(d.items ?? []), total: (d.items ?? []).length };
         case "plan:inputs":
-            return { picks: [ ...fates(d.onDeck ?? []), ...candidates(d.candidates ?? []), ...unmarked(d.unmarked ?? []) ], total: (d.onDeck ?? []).length + (d.candidates ?? []).length + (d.unmarked ?? []).length };
+            return { picks: [ ...fates(d.onDeck ?? []), ...candidates(d.candidates ?? []), ...unmarked(d.unmarked ?? []), ...nests(d.nests ?? []) ], total: (d.onDeck ?? []).length + (d.candidates ?? []).length + (d.unmarked ?? []).length + (d.nests ?? []).length };
         case "winddown:next":
             return { picks: candidates(d.candidates ?? []), total: (d.candidates ?? []).length };
         case "winddown:context": {

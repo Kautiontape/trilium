@@ -11,7 +11,7 @@ import { displayText, TaskRow } from "../../components/TaskRow.js";
 import { openSheet } from "../../components/ui.js";
 import { duration, periodLabel } from "../../lib/day.js";
 import {
-    type DayGroup, fateChoices, fateLabel, hasLiveSubItems, type RedrawnTask, type RowAnswer, rowKey, type ViewAnswers, type ViewTask
+    type DayGroup, fateChoices, fateLabel, type RedrawnTask, type RowAnswer, rowKey, type ViewAnswers, type ViewTask
 } from "../../lib/views.js";
 
 /**
@@ -52,7 +52,7 @@ export function ViewRows({ tasks, variant, answers, open, detail }: {
 }) {
     return (
         <div class="day-rows">
-            {tasks.map((task) => {
+            {tasks.filter((task) => !task.hidden).map((task) => {
                 const fate = answers.rows?.[rowKey(task)]?.fate;
                 const words = task.landed ? `from ${periodLabel(task.landed.key)}` : fate ? fateLabel(fate) : detail?.(task);
                 return (
@@ -102,7 +102,7 @@ export function rowOpener(tasks: ViewTask[], answers: ViewAnswers, where: (task:
         const shown = tasks.find((t) => rowKey(t) === key) ?? task;
         return () => openSheet(
             <RowFateMenu task={shown} choices={fateChoices(shown, where(shown))} answer={answers.rows?.[key]}
-                estimate={!hasLiveSubItems(shown, tasks)} onAnswer={(answer) => onAnswer(key, answer)} />
+                onAnswer={(answer) => onAnswer(key, answer)} />
         );
     };
 }

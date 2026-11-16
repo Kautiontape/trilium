@@ -31,6 +31,8 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         const to = entry.onDeck ? t("caius.say.on_deck_of", { day }) : day;
         moves.set(to, [ ...(moves.get(to) ?? []), entry ]);
     }
+    const nests = new Map<string, Written[]>();
+    for (const entry of of("nest")) nests.set(entry.anchor ?? "", [ ...(nests.get(entry.anchor ?? "") ?? []), entry ]);
     const caught = of("catchup").filter((entry) => entry.detail !== "skip");
     // An answer found already settled is said, never folded silently into "already in place".
     const settled = [ "done", "dropped", "moved", "taken" ].flatMap((how) => clause(`already_${how}`, already.filter((entry) => entry.how === how)));
@@ -45,6 +47,7 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
         ...of("place", "move").filter((entry) => entry.detail).map((entry) => t(`caius.say.${entry.detail}`, {
             item: labelOf(entry.text ?? entry.id ?? ""), anchor: labelOf(entry.anchor ?? "")
         })),
+        ...[ ...nests ].map(([ parent, entries ]) => t("caius.say.nested", { items: andList(labels(entries)), parent: labelOf(parent) || t("caius.say.a_task") })),
         ...clause("suggested", of("suggested")),
         ...clause("not_today", of("not_today")),
         ...clause("dismissed", of("dismiss")),
@@ -57,8 +60,11 @@ export function sayOf({ written, skipped }: { written: Written[]; skipped: Skipp
     ];
     const unnamed = skipped.filter((entry) => !entry.text && UNKNOWN.has(entry.reason)).length;
     const holding = skipped.filter((entry) => entry.reason === "ambiguous" && HOLDING.has(entry.kind));
+    // What a review leaves for Plan my day is said once, for all its items.
+    const later = skipped.filter((entry) => entry.reason === "review_only");
     const missed = unique([
-        ...skipped.filter((entry) => !holding.includes(entry)).flatMap((entry) => skipClause(entry)),
+        ...skipped.filter((entry) => !holding.includes(entry) && !later.includes(entry)).flatMap((entry) => skipClause(entry)),
+        ...clause("review_only", later),
         ...(unnamed ? [ t("caius.say.unnamed", { count: unnamed }) ] : [])
     ]);
     const questions = holding.length

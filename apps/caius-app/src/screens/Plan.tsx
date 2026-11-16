@@ -1,8 +1,10 @@
 import "./plan.css";
 
+import { topLevelOf } from "@triliumnext/caius/src/daily/load.js";
 import { useEffect, useState } from "preact/hooks";
 
 import { openRitual, openSettings } from "../app-state.js";
+import { groupedRows } from "../components/ParentRow.js";
 import { acceptFromSwipe, dismissSuggestion, DropSheet, ExplainSheet, ForwardSheet, markDone, OriginBlock, TaskSheet } from "../components/sheets.js";
 import { displayText, TaskRow } from "../components/TaskRow.js";
 import { Button, Card, closeSheet, haptic, Icon, openSheet, SheetAction, SheetTitle } from "../components/ui.js";
@@ -122,8 +124,8 @@ function PeriodView({ view }: { view: PlanView }) {
                 <section class="list-group">
                     <h2 class="label-caps">On the list</h2>
                     <div class="rows">
-                        {tasks.map((t) => (
-                            <TaskRow key={taskKey(t)} task={t} variant={t.critical ? "critical" : "list"} detail={t.section}
+                        {groupedRows(tasks, (t, trailing) => (
+                            <TaskRow key={taskKey(t)} task={t} variant={t.critical ? "critical" : "list"} detail={t.section} trailing={trailing}
                                 onOpen={() => open(t)} right={{ label: "✓ Done", tone: "moss", run: () => markDone(t) }} />
                         ))}
                     </div>
@@ -132,7 +134,7 @@ function PeriodView({ view }: { view: PlanView }) {
             {view.onDeck.length > 0 && (
                 <section class="list-group">
                     <h2 class="label-caps">On deck</h2>
-                    <div class="rows">{view.onDeck.map((t) => <TaskRow key={taskKey(t)} task={t} variant="onDeck" onOpen={() => open(t)} />)}</div>
+                    <div class="rows">{groupedRows(view.onDeck, (t, trailing) => <TaskRow key={taskKey(t)} task={t} variant="onDeck" trailing={trailing} onOpen={() => open(t)} />)}</div>
                 </section>
             )}
             {view.suggested.length > 0 && (
@@ -164,7 +166,7 @@ function LaneView({ lane, title, into }: { lane: Lane; title: string; into: stri
     }, [ lane, limit, revision.value ]);
 
     const base = today.value?.key;
-    const tasks = (result?.tasks ?? []).filter((t) => !t.parent && t.period !== into);
+    const tasks = topLevelOf(result?.tasks ?? []).filter((t) => t.period !== into);
     if (!result || !tasks.length) {
         return null;
     }

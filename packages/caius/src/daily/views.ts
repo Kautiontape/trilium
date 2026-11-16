@@ -29,6 +29,8 @@ export interface ViewTask extends Pick<PlanTask, 'noteId' | 'state' | 'text' | '
   place: 'list' | 'onDeck';
   /** Moves off day notes (`slipsOf`). */
   slips: number;
+  /** A closed sub-item of a live parent, sent so a recount sees the parent as the server does; never listed. */
+  hidden?: true;
   /** The first ticket key the task names, with its Jira status when it was read. */
   ticket?: { key: string; status?: string };
 }
@@ -67,6 +69,8 @@ export interface DayViewData {
   capacity: { windowMinutes: number; bookedMinutes: number; openMinutes: number };
   span: ViewSpan;
   meetings: ViewMeeting[];
+  /** The day note's Meetings lines, which the count reads to give a parent pinned to a meeting 0 minutes. */
+  meetingLines: string[];
   /** The brief's groups and meeting names, as `caius_plan`'s `drawn` gives them; null without a brief. */
   drawn: { groups: SavedGroup[]; meetings: { title: string; name: string }[] } | null;
   /** The minutes of work that don't fit before bedtime, as the server laid the day out. */
@@ -87,6 +91,8 @@ export interface DaysViewDay {
   meetingMinutes: number;
   load: DayLoad;
   calendarFailed: boolean;
+  /** The day note's Meetings lines, as in `DayViewData`. */
+  meetingLines: string[];
   tasks: ViewTask[];
 }
 
