@@ -573,12 +573,12 @@ describe('nesting writes', () => {
 
   it('adds a task as the last sub-item of an id, and a re-run is a duplicate', async () => {
     const f = fakeTrilium(seed(day, other));
-    const [r] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ZAP-9', source: 'ZAP-9' }], base);
+    const [r] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ABC-9', source: 'ABC-9' }], base);
     expect(r).toMatchObject({ status: 'added', writtenNoteId: 'd' });
     expect(r.status).toBe('added');
     expect(order(f.html.d)).toEqual(['p1', 'p2', 'p2a', 'listItemId' in r ? r.listItemId : undefined, 'p3']);
     expect(f.html.d).toMatch(/p2a[^]*Review[^]*<\/ul><\/li>/);
-    const [again] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ZAP-9', source: 'ZAP-9' }], base);
+    const [again] = await addTasks(f.api, [{ date: DAY, under: 'p2', text: 'Review ABC-9', source: 'ABC-9' }], base);
     expect(again).toMatchObject({ status: 'skipped', reason: 'duplicate' });
   });
   it('refuses an id of another note, an unknown id, a missing note and a bad shape', async () => {
