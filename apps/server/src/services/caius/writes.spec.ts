@@ -23,7 +23,9 @@ describe("weekPlace, a line naming one weekday", () => {
             [ "Riley is out next Wednesday", day(W49, "2026-12-02") ],
             [ "ABC-12 ships Tuesday", day(W49, "2026-12-01") ],
             [ "Fix the sun panel Tuesday", day(W49, "2026-12-01") ],
-            [ "I sat in on Tuesday standup", day(W49, "2026-12-01") ]
+            [ "Charge the sat phone Tuesday", day(W49, "2026-12-01") ],
+            [ "Ana is out Weds", day(W48, "2026-11-25") ],
+            [ "ABC-12 isn't open, fix lands Thursday", day(W48, "2026-11-26") ]
         ];
         for (const [ text, placed ] of cases) expect(weekPlace(text, DATE), text).toEqual(placed);
     });
@@ -37,6 +39,19 @@ describe("weekPlace, a line naming one weekday", () => {
             [ "Ana is out Tue 24 Nov", state ],
             [ "Ana is out Tue, 24 Nov", state ],
             [ "Ana is out Tuesday, 24 Nov", state ],
+            [ "Ana is out Tue Nov 24", state ],
+            [ "Ana is out Tuesday, Dec 8", state ],
+            [ "Ana is out until next Tuesday", state ],
+            [ "Vendor freeze until this Friday", state ],
+            [ "Code freeze from next Monday", state ],
+            [ "ABC-12 must ship by next Friday", { week: W48 } ],
+            [ "Ana is out, back Monday", state ],
+            [ "Ana is out, back on Monday", state ],
+            [ "Ana returns Monday", null ],
+            [ "Ana is returning Monday", null ],
+            [ "ABC-12 is open, fix lands Thursday", { week: W48 } ],
+            [ "Sat with Ana on the roadmap", null ],
+            [ "Sun shade for the patio", null ],
             [ "Ana is out Tuesday and Thursday", state ],
             [ "Ana is out until Friday", { week: W48 } ],
             [ "Sam is out Thu–Fri", { week: W48, from: "2026-11-26", until: "2026-11-27" } ],

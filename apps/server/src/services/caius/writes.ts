@@ -23,6 +23,7 @@ import {
 
 import { SKIP_CATCHUP_LABEL, STARTED_LABEL } from "./brief.js";
 import { dateLabel, dayKey, localDay } from "./daily.js";
+import { overriddenKeys } from "./inputs/jira.js";
 import type { ContextAddInput, HeaderDay } from "./schemas.js";
 import { putAttachment, removeLabel, setLabel } from "./store.js";
 import type { DayWeather } from "./weather.js";
@@ -138,14 +139,17 @@ export function drawHeader(noteId: string, day: HeaderDay, weather: DayWeather |
 }
 
 const WEEKDAY = "(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*";
-// A full name in any case, or an abbreviation with a capital first letter, so "sat" and "mon" in
-// ordinary words aren't days. A trailing "s" makes it a plural.
+// A full name in any case, or an abbreviation with a capital first letter, so "mon" in an ordinary
+// word isn't a day. Saturday and Sunday have no abbreviation: "Sat" and "Sun" are common words. A
+// trailing "s" makes a plural, except in "Weds", which is Wednesday.
 const DAY_NAME = new RegExp(
     "\\b(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
-    + "(?:Mon|Tues|Tue|Wed|Thurs|Thur|Thu|Fri|Sat|Sun))(s?)\\b", "gi"
+    + "(?:Mon|Tues|Tue|Weds|Wed|Thurs|Thur|Thu|Fri))(s?)\\b", "gi"
 );
 const FULL_DAY_NAME = /^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i;
-const DAY_ABBREVIATION = /^(?:Mon|Tues?|Wed|Thu(?:rs?)?|Fri|Sat|Sun)$/;
+const DAY_ABBREVIATION = /^(?:Mon|Tues?|Weds?|Thu(?:rs?)?|Fri)$/;
+const AFTER_NAME_DATE = /^,?\s+(?:\d|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d)/i;
+const BEFORE_NAME_WORD = /\b(?:until|till|through|thru|since|from|by|before|after|last|every|back|returns?|returning)\s+(?:(?:next|this|on)\s+)?$/i;
 const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ];
 
 /**
@@ -156,8 +160,10 @@ const WEEKDAYS_FROM_MONDAY = [ "mon", "tue", "wed", "thu", "fri", "sat", "sun" ]
  *   this week, or next week when its last day is already past.
  * - This week, all week, or until a weekday or a date: this week's, with no end of its own.
  * - One weekday name ("Tuesday", "Tue", "next Tuesday"): that day alone, in this week, or next week
- *   when the day is before `date` or the line says next. A plural, a weekday with a day number, one
- *   after until, since, from or the like, and two or more weekdays that aren't a range don't count.
+ *   when the day is before `date` or the line says next. A plural, a weekday with a date after it
+ *   ("Tue 24 Nov", "Tue Nov 24"), one after until, since, from, back, returns or the like (with next,
+ *   this or on between), two or more weekdays that aren't a range, and a line that keeps a ticket
+ *   open (so Jira's Done stays overridden) don't count.
  * - A ticket key: this week's, with no end, so "ABC-12 is open" doesn't lapse.
  * - A person's or a one-day state (is open, out, off or down; away, on leave, covering, freeze,
  *   on PTO, vacation or holiday): this week's, ending on `date`.
@@ -166,28 +172,32 @@ export function weekPlace(text: string, date: string): { week: string; from?: st
     if (/\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?[ap]m\b|\b(?:today|tonight|this (?:morning|afternoon|evening))\b/i.test(text)) return null;
     const at = new Date(`${date}T00:00:00Z`);
     const week = isoWeekKey(at);
-    if (/\bnext week\b/i.test(text)) return { week: isoWeekKey(new Date(at.getTime() + 7 * 86_400_000)) };
+    if (/\bnext week\b/i.test(text)) return { week: isoWeekKey(new Date(`${weekLater(date)}T00:00:00Z`)) };
     const range = new RegExp(`\\b(${WEEKDAY})\\s*(?:-|–|to)\\s*(${WEEKDAY})\\b`, "i").exec(text);
     if (range?.[1] && range[2]) {
         // Looking forward: a range whose last day is already past in this week is next week's.
-        const later = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
         const until = weekdayOf(date, range[2]);
         const from = weekdayOf(date, range[1]);
         return until < date
-            ? { week: isoWeekKey(new Date(`${later(from)}T00:00:00Z`)), from: later(from), until: later(until) }
+            ? { week: isoWeekKey(new Date(`${weekLater(from)}T00:00:00Z`)), from: weekLater(from), until: weekLater(until) }
             : { week, from, until };
     }
     const untilWhen = new RegExp(`\\buntil\\s+(?:${WEEKDAY}\\b|\\d|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\s+\\d)`, "i");
     if (/\b(?:this week|all week)\b/i.test(text) || untilWhen.test(text)) return { week };
     const single = singleWeekday(text);
-    if (single) {
+    if (single && overriddenKeys([ text ]).size === 0) {
         const day = weekdayOf(date, single.name);
-        const on = single.next || day < date ? new Date(Date.parse(`${day}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10) : day;
+        const on = single.next || day < date ? weekLater(day) : day;
         return { week: isoWeekKey(new Date(`${on}T00:00:00Z`)), from: on, until: on };
     }
     if (/\b[A-Z][A-Z0-9]+-\d+\b/.test(text)) return { week };
     const state = /\b(?:is|are)\s+(?:open|out|off|down|away)\b|['’]s\s+(?:out|off|down|away)\b|\b(?:away|on leave|covering|freeze|on PTO|on vacation|on holiday)\b/i;
     return state.test(text) ? { week, until: date } : null;
+}
+
+/** The date a week after `day`. */
+function weekLater(day: string): string {
+    return new Date(Date.parse(`${day}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** The one weekday `text` names as a day to place a line on, and whether it follows "next"; else null. */
@@ -198,9 +208,9 @@ function singleWeekday(text: string): { name: string; next: boolean } | null {
     if (found.length !== 1 || !only || only[1] !== "") return null;
     const name = nameOf(only);
     const index = only.index ?? 0;
-    if (/^,?\s+\d/.test(text.slice(index + name.length))) return null;
+    if (AFTER_NAME_DATE.test(text.slice(index + name.length))) return null;
     const before = text.slice(0, index);
-    if (/\b(?:until|till|through|thru|since|from|by|before|after|last|every)\s+$/i.test(before)) return null;
+    if (BEFORE_NAME_WORD.test(before)) return null;
     return { name, next: /\bnext\s+$/i.test(before) };
 }
 
