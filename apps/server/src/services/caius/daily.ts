@@ -18,7 +18,6 @@ import {
     contextNotes,
     dayCandidates,
     dayCapacity,
-    DEFAULT_ESTIMATE,
     DEFAULT_ROLLOVER,
     findPeriodNote,
     formatHours,
@@ -1272,7 +1271,7 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
         .map((task) => ({ task, area: areaOf(task) }))
         .map(({ task, area }) => ({
             group: group(task), noteId: task.noteId, listItemId: task.listItemId, text: task.text, period: task.period,
-            section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: task.estMinutes ?? DEFAULT_ESTIMATE, area,
+            section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: unitMinutes(task, grouped), area,
             fate: group(task) !== "week" ? dayFate(task, area, targetDay) : week === targetWeek ? { stay: week } : { forward: targetWeek }
         }));
     const oldestDate = older.map((task) => periodStart(task.period)).sort()[0] ?? null;
@@ -1393,10 +1392,10 @@ export function leftovers(plan: PlanView): PlanTask[] {
     return [ ...mainTasks(plan), ...deckTasks(plan) ];
 }
 
-/** A day's On deck as the steps show it: each live item's id, plain text and minutes (30 without an estimate), with its ref. */
+/** A day's On deck as the steps show it: each live item's id, plain text and minutes (`unitMinutes`), with its ref. */
 export function deckItems(plan: PlanView) {
     return withRefs(deckTasks(plan).flatMap((task) => task.listItemId
-        ? [ { listItemId: task.listItemId, noteId: task.noteId, text: plainText(withoutMoveLinks(task.text)), minutes: task.estMinutes ?? DEFAULT_ESTIMATE, area: task.area } ]
+        ? [ { listItemId: task.listItemId, noteId: task.noteId, text: plainText(withoutMoveLinks(task.text)), minutes: unitMinutes(task, plan.onDeck, { meetings: plan.meetings }), area: task.area } ]
         : []), "o", (item) => item.listItemId);
 }
 
@@ -1459,10 +1458,11 @@ function projectsOffered(facts: { projects: Presented[]; live: Map<string, unkno
  * without a clock is not counted: only the pinned spans are booked.
  */
 export function withBooked<R extends DayFrame>(read: R, plan: PlanView): R {
+    const listed = [ ...plan.critical, ...plan.sections.flatMap((section) => section.tasks) ];
     const spans = mainTasks(plan).flatMap((task) => {
         const from = task.area !== "foundation" && task.at ? parseClock(task.at) : undefined;
         if (from === undefined) return [];
-        const to = from + (task.estMinutes ?? DEFAULT_ESTIMATE);
+        const to = from + unitMinutes(task, listed, { meetings: plan.meetings });
         const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
         return [ { start: clock(from), end: clock(Math.min(to, 29 * 60 + 59)) } ];
     });
