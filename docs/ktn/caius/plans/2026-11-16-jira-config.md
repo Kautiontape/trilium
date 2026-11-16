@@ -31,8 +31,8 @@ This is a module-level setting rather than a parameter threaded through every ca
 The server sets the config at one place every call passes: the lock. Inside `createCaiusService`, a local
 `withCaiusLock` wraps `store.ts`'s and, once it holds the lock, reads the standing note's Jira line and
 `JIRA_BASE_URL` into `setKeyConfig()`. Every service entry point, including `caius_show` and `caius_inputs` (through
-`locked`), takes the lock through it. The standing note's markdown is reused while its `utcDateModified` is
-unchanged.
+`locked`), takes the lock through it. The key sync reuses the projects it read while the standing note's HTML
+is unchanged.
 
 **A bare-key `source` with no `JIRA_BASE_URL`** keeps its key and label and gets no link (`url: null`). The task
 reads "Review ABC-12" with the key as plain text, and `keys` is `["ABC-12"]`. This is the gentler of the two choices:
@@ -81,9 +81,9 @@ base; the projects their keys use).
 `env`, beside `TRILIUM_PUBLIC_SERVER`); a new spec beside the other integration specs; the standing-note fixtures of
 the server specs that relied on bare keys.
 
-**Change.** As in the design. `syncKeys()` reads the standing note (reusing its markdown while `utcDateModified` is
-unchanged), `readJiraProjects` of it, and `process.env.JIRA_BASE_URL`, and calls `setKeyConfig`. No call site in
-`apply.ts`, `daily.ts`, `views.ts` or `writes.ts` changes.
+**Change.** As in the design. `syncKeys()` reads the standing note, takes `readJiraProjects` of it (reusing the projects while the note's HTML is
+unchanged) and `process.env.JIRA_BASE_URL`, and calls `setKeyConfig`. The sync is best-effort: a failed read keeps the
+last projects, and the site always comes from `JIRA_BASE_URL`. No call site in `apply.ts`, `daily.ts`, `views.ts` or `writes.ts` changes.
 
 **Tests first** (a new `jira-config.integration.spec.ts`, invented keys only).
 - With `- Jira: ABC` in the standing note's Rhythm, a `caius_add` of "Review ABC-12" when "Check ABC-12" is open in
