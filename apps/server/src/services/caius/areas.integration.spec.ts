@@ -299,3 +299,22 @@ describe("caius_set_area", () => {
         expect(content).not.toContain("🔋");
     });
 });
+
+describe("caius_plan_apply move by an item of another block", () => {
+    it("puts a Morning item right after an Evening item, in Evening, as caius_place does", async () => {
+        const DAY = "2026-11-19";
+        await dayWith(DAY, {
+            Morning: [ li("p1", "ABC-7001 first ~30m"), li("p2", "ABC-7002 second ~30m") ],
+            Afternoon: [ li("p3", "ABC-7003 third ~30m") ],
+            Evening: [ li("p4", "🌱 Read the novel ~30m"), li("p5", "🌱 Water the plants ~30m") ]
+        });
+        at(`${DAY}T09:30`);
+        const applied = await call("caius_plan_apply", { date: DAY, brief: prose, move: [ { listItemId: "p1", after: "p4" } ] });
+        expect(applied.skipped).toEqual([]);
+        expect(applied.written).toEqual(expect.arrayContaining([ expect.objectContaining({ kind: "move", id: "p1", status: "written", detail: "after" }) ]));
+        const plan = await call("caius_plan", { period: "day", date: DAY });
+        const names = Object.fromEntries(plan.sections.map((section: any) => [ section.name, section.tasks.map((task: any) => task.text) ]));
+        expect(names.Evening).toEqual([ "🌱 Read the novel", "ABC-7001 first", "🌱 Water the plants" ]);
+        expect(names.Morning).toEqual([ "ABC-7002 second" ]);
+    });
+});

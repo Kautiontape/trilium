@@ -461,7 +461,7 @@ const refresh = z.boolean().optional().describe("Fetch Jira and the calendar aga
 
 const winddown = z.object({
     date: periodKey("day").describe("The day being closed, YYYY-MM-DD. The steps work against the next workday after it."),
-    step: z.enum([ "open", "next", "context" ]).describe("open, then next, then context"),
+    step: z.enum([ "open", "next", "context" ]).describe("open, then each step its answer's `next` names: next, then context; a review's open skips next"),
     refresh,
     older: z.boolean().optional().describe("open: count the older overdue tasks on a day other than Friday, only when the user asks about them")
 });

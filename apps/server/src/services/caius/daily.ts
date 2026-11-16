@@ -115,15 +115,16 @@ const JIRA_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
 
 export async function windDown(deps: StepDeps, { date, step, refresh, older }: { date: string; step: WindDownStep; refresh?: boolean; older?: boolean }) {
     const targetDay = windDownTarget(date, deps.now);
+    const review = isReview(date, targetDay, dayKey(deps.now));
     const reply = (standing: Standing, data: Record<string, unknown>, question: string | null, next: WindDownStep | null) => fitted({
         ...withDateLabels({ step, title: t(`caius.daily.title_winddown_${step}`, { day: weekdayName(targetDay) }), date, targetDay, targetDayName: weekdayName(targetDay), data, question, next }),
         standing: standing.markdown, ...(standing.missing ? { standingMissing: standing.missing } : {})
     });
 
     if (step === "open") {
-        const { standing, open, held } = await deps.locked("caius_winddown", async () => {
+        const { standing, open, held, keep } = await deps.locked("caius_winddown", async () => {
             const items = await stillOpen(deps.store, date, targetDay);
-            return { standing: await deps.standing(), open: items, held: await allHeld(deps.store) };
+            return { standing: await deps.standing(), open: items, held: await allHeld(deps.store), keep: review ? await keepLines(deps.store, date, targetDay) : [] };
         });
         // Jira is asked about the items' own tickets, so an item it calls done can be named as such.
         const keys = open.items.map((item) => keysOf(item.text)[0]).filter((key): key is string => !!key && JIRA_KEY.test(key));
@@ -146,7 +147,17 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
-        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, "next");
+        return reply(standing, { ...rest, ...backlog, ...namedDays(date, targetDay, review), items: withRefs(parked, "o", (item) => item.listItemId), ...(items.length ? {} : { summary: t("caius.daily.nothing_open") }) }, question, !review ? "next" : keep.length ? "context" : null);
+    }
+
+    // A review leaves the target day to Plan my day: it asks only the keep lines of the reviewed day's Context.
+    if (review) {
+        const { standing, keep } = await deps.locked("caius_winddown", async () => ({ standing: await deps.standing(), keep: await keepLines(deps.store, date, targetDay) }));
+        if (step === "context" && keep.length) {
+            const noticed = withRefs(keep, "x", (line) => line.lineId);
+            return reply(standing, { targetWeek: isoWeekKey(utcDay(targetDay)), keepDate: targetDay, noticed }, keep.map((line) => line.question).join(" "), null);
+        }
+        return reply(standing, { summary: t("caius.daily.review_sets_up", { day: weekdayName(targetDay) }) }, null, step === "next" && keep.length ? "context" : null);
     }
 
     const read = await deps.dayRead(targetDay, refresh);
@@ -262,19 +273,29 @@ export function nextAsked(asks: ReturnType<typeof nextAsks>): string[] {
 
 /**
  * The lines the wind-down of `date` asks about, neither asked that day nor on the last workday:
- * `keep`, a line in force today that lapses before `targetDay` and keeps a ticket open (Jira's own
- * answer is not consulted, since `done` leaves out every key a Context line calls open), and `carry`,
- * a line `targetDay` won't read. The caller holds the lock.
+ * `keep` (`keepLines`) and `carry`, a line in force today that `targetDay` won't read. The caller
+ * holds the lock.
  */
 export async function closingLines(store: NoteStore, date: string, targetDay: string, read: DayRead) {
     const today = await gatherContext(store, date);
     const asked = await askedAbout(store, date);
-    const keep = today.context
+    return { keep: await keepLines(store, date, targetDay), carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
+}
+
+/**
+ * The keep lines of `date`, neither asked that day nor on the last workday: each a line in force
+ * that day that lapses before `targetDay` and keeps a ticket open (Jira's own answer is not
+ * consulted, since `done` leaves out every key a Context line calls open). They need no read of
+ * `targetDay`. The caller holds the lock.
+ */
+async function keepLines(store: NoteStore, date: string, targetDay: string) {
+    const today = await gatherContext(store, date);
+    const asked = await askedAbout(store, date);
+    return today.context
         .filter((line) => line.until !== undefined && line.until < targetDay)
         .map((line) => ({ kind: "keep" as const, line: line.text, lineId: lineIdOf(line.text), until: line.until, keys: [ ...overriddenKeys([ line.text ]) ] }))
         .filter((line) => line.keys.length && !asked.has(line.lineId))
         .map((line) => ({ ...line, question: t("caius.daily.keep", { line: line.line }) }));
-    return { keep, carry: carryLines(today.context, targetDay, read.context).filter((line) => !asked.has(line.lineId)) };
 }
 
 /**
@@ -307,20 +328,35 @@ export function windDownTarget(date: string, now: Date): string {
 }
 
 /**
- * The days, weeks and months he can name in an answer, so a day he says maps to a date without the
- * agent working one out: the workdays from `first` to the end of the week after `date`'s, those two
- * ISO weeks, and `date`'s month and the next two. Each day has a ref (`d1`), and `days` ends with the
- * two weeks as he names them, `w1` "later this week" and `w2` "next week". Each gets its display
- * string from `withDateLabels`.
+ * Whether a wind-down of `date` is a catch-up review: its next workday is before `targetDay`, as when
+ * the catch-up's Review winds down an older day.
  */
-export function namedDays(date: string, first: string): { days: NamedDay[]; weeks: { week: string }[]; months: { month: string }[] } {
-    const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(date))).start);
+export function catchUpReview(date: string, targetDay: string): boolean {
+    return dayKey(nextWorkday(localDay(date))) < targetDay;
+}
+
+/** Whether a wind-down of `date` is a review: a catch-up review, or one of a day before `today`, the workday clock's day. */
+export function isReview(date: string, targetDay: string, today: string): boolean {
+    return catchUpReview(date, targetDay) || date < today;
+}
+
+/**
+ * The days, weeks and months he can name in an answer, so a day he says maps to a date without the
+ * agent working one out: the workdays from `first` to the end of the week after the anchor's, those
+ * two ISO weeks, and the anchor's month and the next two. The anchor is `first` when `review` (by
+ * default `catchUpReview(date, first)`), else `date`. Each day has a ref (`d1`), and `days` ends
+ * with the two weeks as he names them, `w1` "later this week" and `w2` "next week". Each gets its
+ * display string from `withDateLabels`.
+ */
+export function namedDays(date: string, first: string, review = catchUpReview(date, first)): { days: NamedDay[]; weeks: { week: string }[]; months: { month: string }[] } {
+    const anchor = review ? first : date;
+    const monday = utcDay(periodSpan("week", isoWeekKey(utcDay(anchor))).start);
     const end = dayKey(new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 11));
     const days: { date: string }[] = [];
     for (let at = localDay(first); dayKey(at) <= end; at = nextWorkday(at)) days.push({ date: dayKey(at) });
     const weeks = [ 0, 7 ].map((offset) => ({ week: isoWeekKey(new Date(monday.getTime() + offset * 86_400_000)) }));
     const months = [ 0, 1, 2 ].map((offset) => {
-        const at = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + offset, 1));
+        const at = new Date(Date.UTC(Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7)) - 1 + offset, 1));
         return { month: at.toISOString().slice(0, 7) };
     });
     const [ thisWeek, nextWeek ] = weeks;

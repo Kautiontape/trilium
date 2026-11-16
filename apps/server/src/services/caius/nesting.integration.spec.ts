@@ -74,7 +74,7 @@ describe("a sub-item whose parent is not live", () => {
     it("cannot anchor a move of the main list", async () => {
         at(`${MON}T10:00`);
         const result = await call("caius_plan_apply", { date: MON, move: [ { listItemId: "t1", after: "s1" } ] });
-        expect(result.skipped).toEqual([ expect.objectContaining({ kind: "move", reason: "not_in_main_list" }) ]);
+        expect(result.skipped).toEqual([ expect.objectContaining({ kind: "move", reason: "bad_request", detail: expect.stringContaining("s1 is not a top-level task") }) ]);
     });
 
     it("counts a parent by its own estimate, else by its sub-items", async () => {
