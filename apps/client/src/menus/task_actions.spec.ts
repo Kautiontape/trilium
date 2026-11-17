@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
     wasCaiusEnabled: vi.fn(() => true),
     startCaiusConversation: vi.fn(async () => {}),
     prompt: vi.fn(),
+    triggerCommand: vi.fn(),
     showMessage: vi.fn(),
     showError: vi.fn(),
     tabManager: {
@@ -25,7 +26,7 @@ const h = vi.hoisted(() => ({
     }
 }));
 
-vi.mock("../components/app_context.js", () => ({ default: { tabManager: h.tabManager } }));
+vi.mock("../components/app_context.js", () => ({ default: { tabManager: h.tabManager, triggerCommand: h.triggerCommand } }));
 vi.mock("../services/froca.js", () => ({ default: { notes: h.notes } }));
 vi.mock("../services/caius.js", () => ({
     caiusNow: () => new Date(),
@@ -52,7 +53,8 @@ import { setEditorNoteId } from "../widgets/react/NoteStore.js";
 import type { MenuCommandItem, MenuItem } from "./context_menu.js";
 import {
     buildTaskActionItems, buildTaskActionsMenuItem, findTaskAtElement, findTaskAtSelection,
-    isForwardKey, isJournalNote, isOverJournalTask, nextMonthKey, nextWeekKey, originSentence, runDayCommand, runTaskCommand,
+    isJournalNote, isOverJournalTask, journalSource, nextMonthKey, nextWeekKey, originSentence, runDayCommand,
+    runTaskCommand,
     type TaskTarget, tomorrowKey
 } from "./task_actions.js";
 
@@ -82,11 +84,14 @@ function findItem(items: MenuItem<CommandNames>[], ...path: string[]): MenuComma
 const click = (item: MenuCommandItem<CommandNames>) => item.handler?.(item, {} as never);
 
 function target(overrides: Partial<TaskTarget> = {}): TaskTarget {
-    return { noteId: "day", listItemId: "eaaa", state: "open", area: "foundation", inSuggested: false, headers: [ "Morning", "Work" ], ...overrides };
+    return {
+        noteId: "day", listItemId: "eaaa", state: "open", area: "foundation", inSuggested: false, headers: [ "Morning", "Work" ],
+        source: "day", ...overrides
+    };
 }
 
 const STATE_ACTIONS = [ "caius.doing", "caius.done", [ "caius.forward", [
-    "caius.forward_tomorrow", "caius.forward_next_week", "caius.forward_next_month", "--", "caius.forward_pick"
+    "caius.forward_tomorrow", "caius.forward_this_week", "caius.forward_this_month", "--", "caius.forward_pick"
 ] ], [ "caius.area", [ "caius.area_foundation", "caius.area_growth", "caius.area_recharge" ] ], "caius.drop" ];
 
 describe("buildTaskActionItems", () => {
@@ -95,6 +100,13 @@ describe("buildTaskActionItems", () => {
         expect(outline(buildTaskActionItems(target({ state: "doing" })))).toEqual([
             ...STATE_ACTIONS.slice(1), "--", "caius.explain"
         ]);
+    });
+
+    it("offers the quick forwards of the note the task is in", () => {
+        const forwards = (source: TaskTarget["source"]) => outline(findItem(buildTaskActionItems(target({ source })), "caius.forward").items ?? []);
+        expect(forwards("dayChild")).toEqual([ "caius.forward_this_week", "caius.forward_this_month", "--", "caius.forward_pick" ]);
+        expect(forwards("week")).toEqual([ "caius.forward_next_week", "caius.forward_this_month", "--", "caius.forward_pick" ]);
+        expect(forwards("month")).toEqual([ "caius.forward_next_month", "--", "caius.forward_pick" ]);
     });
 
     it("marks the task's current area in the Area submenu", () => {
@@ -155,7 +167,7 @@ describe("buildTaskActionItems", () => {
             ]);
         });
 
-        it("forwards to tomorrow, or to a picked day, week or month", async () => {
+        it("forwards to tomorrow, this week or this month, counted from now", async () => {
             vi.useFakeTimers({ toFake: [ "Date" ] });
             vi.setSystemTime(new Date(2026, 9, 27, 23, 30));
             try {
@@ -167,20 +179,42 @@ describe("buildTaskActionItems", () => {
                 expect(h.caiusWrite).toHaveBeenLastCalledWith(
                     "day", expect.any(Function), "caius.forwarded", { alsoLock: [ "tomorrow" ] });
 
-                h.prompt.mockResolvedValueOnce(" 2026-W45 ");
-                await click(findItem(buildTaskActionItems(target()), "caius.forward", "caius.forward_pick"));
-                expect(h.prompt).toHaveBeenCalledWith(expect.objectContaining({ defaultValue: "2026-10-28" }));
+                await click(findItem(buildTaskActionItems(target({ source: "dayChild" })), "caius.forward", "caius.forward_this_week"));
+                expect(h.api.forward).toHaveBeenLastCalledWith([ expect.objectContaining({ to: "2026-W44" }) ]);
+                await click(findItem(buildTaskActionItems(target({ source: "dayChild" })), "caius.forward", "caius.forward_this_month"));
+                expect(h.api.forward).toHaveBeenLastCalledWith([ expect.objectContaining({ to: "2026-10" }) ]);
+                await click(findItem(buildTaskActionItems(target({ source: "week" })), "caius.forward", "caius.forward_next_week"));
                 expect(h.api.forward).toHaveBeenLastCalledWith([ expect.objectContaining({ to: "2026-W45" }) ]);
-                expect(h.caiusWrite).toHaveBeenLastCalledWith(
-                    "day", expect.any(Function), "caius.forwarded", { alsoLock: [] });
-
-                h.prompt.mockResolvedValueOnce("next tuesday");
-                await click(findItem(buildTaskActionItems(target()), "caius.forward", "caius.forward_pick"));
-                expect(h.showError).toHaveBeenCalledWith("caius.forward_pick_invalid");
-                expect(h.api.forward).toHaveBeenCalledTimes(2);
+                await click(findItem(buildTaskActionItems(target({ source: "month" })), "caius.forward", "caius.forward_next_month"));
+                expect(h.api.forward).toHaveBeenLastCalledWith([ expect.objectContaining({ to: "2026-11" }) ]);
             } finally {
                 vi.useRealTimers();
             }
+        });
+
+        it("forwards to what the picker answers, with its place on a day", async () => {
+            const pick = findItem(buildTaskActionItems(target()), "caius.forward", "caius.forward_pick");
+            const answer = (value: unknown) => h.triggerCommand.mockImplementationOnce(
+                (_name: string, { callback }: { callback: (pick: unknown) => void }) => callback(value));
+
+            answer({ to: "2026-11-02", critical: true });
+            await click(pick);
+            expect(h.triggerCommand).toHaveBeenLastCalledWith("showCaiusForwardDialog", { callback: expect.any(Function) });
+            expect(h.api.forward).toHaveBeenLastCalledWith([
+                { noteId: "day", listItemId: "eaaa", to: "2026-11-02", critical: true, expectedBlobId: "blob1" }
+            ]);
+            expect(h.caiusWrite).toHaveBeenLastCalledWith(
+                "day", expect.any(Function), "caius.forwarded", { alsoLock: [] });
+
+            answer({ to: "2026-W45" });
+            await click(pick);
+            expect(h.api.forward).toHaveBeenLastCalledWith([
+                { noteId: "day", listItemId: "eaaa", to: "2026-W45", expectedBlobId: "blob1" }
+            ]);
+
+            answer(null);
+            await click(pick);
+            expect(h.api.forward).toHaveBeenCalledTimes(2);
         });
 
         it("drops only with a reason", async () => {
@@ -294,7 +328,8 @@ describe("reading the task from the editor", () => {
         if (!description || !checkbox || !nestedText) throw new Error("Missing DOM");
 
         expect(findTaskAtElement(description)).toEqual({
-            noteId: "day", listItemId: "eopen", state: "open", area: "foundation", inSuggested: false, headers: [ "Morning" ]
+            noteId: "day", listItemId: "eopen", state: "open", area: "foundation", inSuggested: false, headers: [ "Morning" ],
+            source: "day"
         });
         expect(findTaskAtElement(checkbox)).toMatchObject({ listItemId: "edone", state: "done" });
         expect(findTaskAtElement(item("esugg"))).toMatchObject({ listItemId: "esugg", inSuggested: true });
@@ -421,6 +456,15 @@ describe("isJournalNote", () => {
         expect(isJournalNote(fakeNote([], [ fakeNote([ "monthNote" ]) ]))).toBe(true);
         expect(isJournalNote(fakeNote([ "yearNote" ], [ fakeNote([]) ]))).toBe(false);
     });
+
+    it("tells a note under a day note from the day, week and month notes", () => {
+        expect(journalSource(fakeNote([ "dateNote" ]))).toBe("day");
+        expect(journalSource(fakeNote([], [ fakeNote([]), fakeNote([ "dateNote" ]) ]))).toBe("dayChild");
+        expect(journalSource(fakeNote([ "weekNote" ]))).toBe("week");
+        expect(journalSource(fakeNote([], [ fakeNote([ "weekNote" ]) ]))).toBe("week");
+        expect(journalSource(fakeNote([ "monthNote" ], [ fakeNote([ "dateNote" ]) ]))).toBe("month");
+        expect(journalSource(fakeNote([], [ fakeNote([ "yearNote" ]) ]))).toBeNull();
+    });
 });
 
 describe("forward keys", () => {
@@ -436,15 +480,6 @@ describe("forward keys", () => {
 
         expect(nextMonthKey(new Date(2026, 11, 15))).toBe("2027-01");
         expect(nextMonthKey(new Date(2026, 0, 31))).toBe("2026-02");
-    });
-
-    it("recognizes a day, an ISO week or a month", () => {
-        for (const key of [ "2026-10-28", "2026-W01", "2026-W53", "2026-11" ]) {
-            expect(isForwardKey(key)).toBe(true);
-        }
-        for (const key of [ "2026-13", "2026-W54", "2026-W00", "2026-10-32", "26-10-28", "tomorrow" ]) {
-            expect(isForwardKey(key)).toBe(false);
-        }
     });
 });
 

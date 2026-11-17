@@ -46,6 +46,10 @@ export interface CaiusSetAreaItem extends CaiusItemRef {
 export interface CaiusForwardItem extends CaiusItemRef {
     /** `YYYY-MM-DD`, `YYYY-Www` (ISO week) or `YYYY-MM`. */
     to: string;
+    /** To a day: `true` puts the copy on its On deck, `false` on its list. */
+    onDeck?: boolean;
+    /** Puts the copy in the target's Important block. */
+    critical?: boolean;
 }
 
 export type CaiusAcceptItem = CaiusItemRef & ({ section: string } | { critical: true });

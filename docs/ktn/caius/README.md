@@ -40,7 +40,7 @@ Right-click a to-do item in a Journal note (browser or Electron). The menu gains
 |---|---|
 | Doing | Sets the Doing state. Hidden if the task is already Doing. |
 | Done | Checks the task off. |
-| Forward ▸ Tomorrow / Next week / Next month / Pick a date… | Marks the task Rescheduled with a link to the target, and puts an open copy under the same heading in the target note. A Doing task stays Doing in the copy. Open sub-items come along. "Pick a date…" takes a day (`2026-10-29`), an ISO week (`2026-W45`) or a month (`2026-11`). |
+| Forward ▸ | Marks the task Rescheduled with a link to the target, and puts an open copy under the same heading in the target note. A Doing task stays Doing in the copy. Open sub-items come along. The quick items depend on the note the task is in: a day note offers Tomorrow, This week and This month; a note under a day note, such as a meeting's, This week and This month; a week note (or a note under one) Next week and This month; a month note Next month. Each counts from now. **Pick a date…** opens a calendar: a day, a week number or the month's name fills the box with `2026-10-29`, `2026-W45` or `2026-11`, which can also be typed. For a day it asks where on that day the task goes, On deck, On the list (the default) or Important, and **Forward** sends it. |
 | Drop… | Asks for a reason, then sets the task to Cancelled with the reason after it. |
 | Accept ▸ (a heading, or Critical) and Dismiss | Only on items under Suggested. Accept moves the item up. Dismiss removes it and stops it being suggested again on that note. |
 | Why is this here? | A toast with the task's lane and the rule behind it. |
@@ -53,7 +53,7 @@ Done, cancelled and rescheduled tasks only get "Why is this here?".
 
 ## The mobile Task button
 
-On a phone, in the server's mobile layout, a **Task** button is pinned to the front of the editor toolbar while the caret is in a to-do item of a Journal note. It is not there for bulleted items or for other notes. Tap it and the same actions open as a bottom sheet, with Forward and Accept as drill-in lists. Drop… and Pick a date… open a prompt at the bottom of the screen.
+On a phone, in the server's mobile layout, a **Task** button is pinned to the front of the editor toolbar while the caret is in a to-do item of a Journal note. It is not there for bulleted items or for other notes. Tap it and the same actions open as a bottom sheet, with Forward and Accept as drill-in lists. Drop… opens a prompt at the bottom of the screen, and Pick a date… the calendar dialog.
 
 The button disappears for a moment during a write (the editor is read-only) and comes back. It is not available in the Capacitor app or the standalone build, which have no Caius routes.
 
