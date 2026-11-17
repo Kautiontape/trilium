@@ -86,6 +86,7 @@ describe('loadJournal', () => {
       'Journal/Weekly/2026-W44.md',
     ]);
     expect(load.docs.find((d) => d.path.endsWith('Prep - notes.md'))?.noteId).toBe('child');
+    expect(load.docs.filter((d) => d.child).map((d) => d.noteId)).toEqual(['child']);
   });
 
   it('skips the brief and protected notes', () => {
@@ -166,6 +167,8 @@ describe('a period with two notes', () => {
       ['Journal/Daily/2026-10-28.md', 'older'],
       ['Journal/Daily/2026-10-28/2026-10-28 (newer).md', 'newer'],
     ]);
+    // The newer note sits at a child's path but is a day note, not a note under one.
+    expect(loaded.docs.some((d) => d.child)).toBe(false);
     const open = openTasks(loaded.docs, scanDocs(loaded.docs, TRILIUM_CONFIG, new Date(2026, 9, 28, 12)));
     expect(open.map((t) => [t.text, t.noteId, t.period, t.horizon])).toEqual([
       ['Real task', 'older', '2026-10-28', 'today'],

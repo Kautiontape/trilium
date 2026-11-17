@@ -14,6 +14,7 @@ import dialog from "../services/dialog.js";
 import froca from "../services/froca.js";
 import { t } from "../services/i18n.js";
 import toast from "../services/toast.js";
+import type { CaiusForwardPick, ForwardPlacing } from "../widgets/dialogs/caius_forward.js";
 import { getEditorNoteId } from "../widgets/react/NoteStore.js";
 import type { MenuItem } from "./context_menu.js";
 
@@ -31,7 +32,12 @@ export interface TaskTarget {
     inSuggested: boolean;
     /** The note's headings, in order, without "Suggested": where Accept can put the item. */
     headers: string[];
+    /** The Journal note the task is in: it picks the quick items of Forward ▸. */
+    source: TaskSource;
 }
+
+/** A day, week or month note, or `dayChild` for a note under a day note, such as a meeting's. */
+export type TaskSource = "day" | "dayChild" | "week" | "month";
 
 /** The task actions bound to commands, which act on the todo item at the caret. */
 export type TaskCommand = "done" | "doing" | "forwardTomorrow" | "drop";
@@ -61,26 +67,17 @@ export function buildTaskActionItems(target: TaskTarget): MenuItem<CommandNames>
             title: t("caius.forward"),
             uiIcon: "bx bx-right-arrow-alt",
             items: [
-                {
-                    title: t("caius.forward_tomorrow"),
-                    uiIcon: "bx bx-sun",
-                    handler: () => void forwardTask(target, tomorrowKey(caiusNow()))
-                },
-                {
-                    title: t("caius.forward_next_week"),
-                    uiIcon: "bx bx-calendar-week",
-                    handler: () => void forwardTask(target, nextWeekKey(caiusNow()))
-                },
-                {
-                    title: t("caius.forward_next_month"),
-                    uiIcon: "bx bx-calendar",
-                    handler: () => void forwardTask(target, nextMonthKey(caiusNow()))
-                },
+                ...QUICK_FORWARDS[target.source].map((quick): MenuItem<CommandNames> => ({
+                    title: t(`caius.forward_${quick}`),
+                    uiIcon: QUICK_FORWARD_TARGETS[quick].icon,
+                    handler: () => void forwardTask(
+                        target, QUICK_FORWARD_TARGETS[quick].key(caiusNow()))
+                })),
                 { kind: "separator" },
                 {
                     title: t("caius.forward_pick"),
                     uiIcon: "bx bx-calendar-edit",
-                    handler: () => void pickDateAndForward(target)
+                    handler: () => void pickAndForward(target)
                 }
             ]
         });
@@ -258,11 +255,50 @@ export function findTaskAtSelection(editor: CKTextEditor): TaskTarget | null {
 
 /** Whether `note` is a day, week or month note, or a child of one. */
 export function isJournalNote(note: FNote) {
-    return [ note, ...note.getParentNotes() ].some((candidate) =>
-        JOURNAL_LABELS.some((label) => candidate.hasOwnedLabel(label)));
+    return journalSource(note) !== null;
 }
 
-const JOURNAL_LABELS = [ "dateNote", "weekNote", "monthNote" ];
+/**
+ * Which Journal note `note` is: a day, week or month note, a note under a day note (`dayChild`),
+ * or under a week or month note, which counts as that week or month; `null` for any other note.
+ */
+export function journalSource(note: FNote): TaskSource | null {
+    const own = periodOf(note);
+    if (own) {
+        return own;
+    }
+
+    const parents = note.getParentNotes().map(periodOf);
+    return parents.includes("day") ? "dayChild" : parents.find((period) => period !== null) ?? null;
+}
+
+function periodOf(note: FNote) {
+    return JOURNAL_LABELS.find(({ label }) => note.hasOwnedLabel(label))?.period ?? null;
+}
+
+const JOURNAL_LABELS = [
+    { label: "dateNote", period: "day" },
+    { label: "weekNote", period: "week" },
+    { label: "monthNote", period: "month" }
+] as const;
+
+type QuickForward = "tomorrow" | "this_week" | "next_week" | "this_month" | "next_month";
+
+/** The quick items of Forward ▸ for a task in each kind of Journal note; other days are picked. */
+const QUICK_FORWARDS: Record<TaskSource, QuickForward[]> = {
+    day: [ "tomorrow", "this_week", "this_month" ],
+    dayChild: [ "this_week", "this_month" ],
+    week: [ "next_week", "this_month" ],
+    month: [ "next_month" ]
+};
+
+const QUICK_FORWARD_TARGETS: Record<QuickForward, { icon: string; key: (now: Date) => string }> = {
+    tomorrow: { icon: "bx bx-sun", key: tomorrowKey },
+    this_week: { icon: "bx bx-calendar-week", key: weekKey },
+    next_week: { icon: "bx bx-calendar-week", key: nextWeekKey },
+    this_month: { icon: "bx bx-calendar", key: monthKey },
+    next_month: { icon: "bx bx-calendar", key: nextMonthKey }
+};
 
 /** Mirrors `TASK_STATE_ATTRIBUTE` in the editor's `todo_list_multistate` plugin. */
 const TASK_STATE_ATTRIBUTE = "taskState";
@@ -286,17 +322,19 @@ const STATE_BY_SYMBOL: Record<string, TaskState> = {
 function readJournalTask(editor: CKTextEditor, block: ModelElement): TaskTarget | null {
     const noteId = getEditorNoteId(editor);
     const note = noteId ? froca.notes[noteId] : undefined;
-    if (!noteId || !note || !isJournalNote(note)) {
+    const source = note ? journalSource(note) : null;
+    if (!noteId || !source) {
         return null;
     }
 
-    return readTaskTarget(editor, noteId, block);
+    return readTaskTarget(editor, noteId, source, block);
 }
 
 /** Reads the task `block` belongs to, or `null` when `block` is not in a todo item. */
 export function readTaskTarget(
     editor: CKTextEditor,
     noteId: string,
+    source: TaskSource,
     block: ModelElement
 ): TaskTarget | null {
     const first = firstBlockOfItem(block);
@@ -312,7 +350,8 @@ export function readTaskTarget(
         state: readTaskState(editor, first),
         area: markedArea(textOf(first)),
         inSuggested: nearest !== null && isSuggested(nearest),
-        headers: allHeadings(editor).filter((heading) => !isSuggested(heading))
+        headers: allHeadings(editor).filter((heading) => !isSuggested(heading)),
+        source
     };
 }
 
@@ -421,17 +460,6 @@ export function monthKey(date: Date) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
 }
 
-/** Whether `value` is a day (`YYYY-MM-DD`), an ISO week (`YYYY-Www`) or a month (`YYYY-MM`). */
-export function isForwardKey(value: string) {
-    return FORWARD_KEYS.some((pattern) => pattern.test(value));
-}
-
-const FORWARD_KEYS = [
-    /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/,
-    /^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/,
-    /^\d{4}-(0[1-9]|1[0-2])$/
-];
-
 function pad(value: number) {
     return String(value).padStart(2, "0");
 }
@@ -458,10 +486,12 @@ async function setCaiusArea(target: TaskTarget, area: CaiusArea) {
     );
 }
 
-async function forwardTask(target: TaskTarget, to: string) {
+async function forwardTask(target: TaskTarget, to: string, placing: ForwardPlacing = {}) {
     await caiusWrite(
         target.noteId,
-        (expectedBlobId) => caiusApi.forward([ { ...itemOf(target), to, expectedBlobId } ]),
+        (expectedBlobId) => caiusApi.forward([
+            { ...itemOf(target), to, ...placing, expectedBlobId }
+        ]),
         t("caius.forwarded", { to }),
         // The client cannot know the target's note id before the call, so it locks any open note
         // that carries the target's period label.
@@ -469,22 +499,13 @@ async function forwardTask(target: TaskTarget, to: string) {
     );
 }
 
-async function pickDateAndForward(target: TaskTarget) {
-    const value = (await dialog.prompt({
-        title: t("caius.forward_pick_title"),
-        message: t("caius.forward_pick_message"),
-        defaultValue: tomorrowKey(caiusNow())
-    }))?.trim();
-    if (!value) {
-        return;
+async function pickAndForward(target: TaskTarget) {
+    const pick = await new Promise<CaiusForwardPick | null>((callback) =>
+        appContext.triggerCommand("showCaiusForwardDialog", { callback }));
+    if (pick) {
+        const { to, ...placing } = pick;
+        await forwardTask(target, to, placing);
     }
-
-    if (!isForwardKey(value)) {
-        toast.showError(t("caius.forward_pick_invalid", { value }));
-        return;
-    }
-
-    await forwardTask(target, value);
 }
 
 async function dropTask(target: TaskTarget) {

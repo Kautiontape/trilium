@@ -32,6 +32,7 @@ import type { PrintPreviewData } from "../widgets/dialogs/print_preview.jsx";
 import type { NotePickerDialogOptions } from "../widgets/dialogs/note_picker.js";
 import type { ItemPickerDialogOptions } from "../widgets/dialogs/item_picker.js";
 import type { PromptDialogOptions } from "../widgets/dialogs/prompt.js";
+import type { CaiusForwardDialogOptions } from "../widgets/dialogs/caius_forward.js";
 import type { InsertMediaOpts } from "../widgets/dialogs/insert_media.js";
 import type NoteTreeWidget from "../widgets/note_tree.js";
 import type { PaneId, PaneMode } from "../widgets/react/peek_pane.js";
@@ -162,6 +163,7 @@ export type CommandMappings = {
     };
     showPromptDialog: PromptDialogOptions;
     showItemPickerDialog: ItemPickerDialogOptions;
+    showCaiusForwardDialog: CaiusForwardDialogOptions;
     showNotePickerDialog: NotePickerDialogOptions;
     showInfoDialog: InfoProps;
     showLightbox: LightboxOptions;

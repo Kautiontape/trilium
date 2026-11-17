@@ -667,6 +667,7 @@
       "because_week": "on the week's list",
       "because_project": "it's one of your active projects",
       "open": "Here's what's left from today and what slipped. Which are done? The rest goes on {{- day}}'s On deck unless you say otherwise.",
+      "open_month": "Tasks in meeting notes go up to {{- month}} instead.",
       "load_line": "{{- day}}: {{- meetings}} of meetings and {{- list}} on the list, against {{- focus}} of focus time.",
       "load_line_incoming": "{{- day}}: {{- meetings}} of meetings, {{- list}} on the list and {{- incoming}} more if today's leftovers go there, against {{- focus}} of focus time.",
       "load_over": "{{- day}}: {{- meetings}} of meetings and {{- list}} on the list, against {{- focus}} of focus time. That's {{- over}} more than fits.",

@@ -11,7 +11,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { areaAskIds } from "./daily.js";
 import type { CaiusInputs } from "./inputs/types.js";
 import type { InputsInput } from "./schemas.js";
-import { createBeccaStore } from "./store.js";
+import { createBeccaStore, createChildNote } from "./store.js";
 import { createCaiusTools } from "./tools.js";
 
 const store = createBeccaStore();
@@ -135,5 +135,39 @@ describe("an On deck item forwarded by one wind-down call and given an area by t
         expect(asked).toContain(id);
         expect(asked).toContain(words);
         expect(asked).not.toContain("area:~da39a3ee5e");
+    });
+});
+
+describe("a leftover in a meeting note under the day", () => {
+    const CLOSING = "2027-06-08";
+    const TARGET = "2027-06-09";
+
+    it("goes up to the month unless it is Important, while the day's own leftover goes on deck", async () => {
+        let meeting = "";
+        await cls.init(async () => {
+            const closing = await store.calendarDay(CLOSING);
+            await store.putContent(closing.noteId, `<h2>☑️ Tasks</h2>${ul(li("d1", "Water the ferns ~15m"))}`);
+            meeting = createChildNote(closing.noteId, "Blind spot sync",
+                `<aside class="admonition important">${ul(li("m2", "Send the deck before noon"))}</aside>${ul(li("m1", "Document the new features in Slack"))}`);
+            await store.calendarDay(TARGET);
+        });
+        at(`${CLOSING}T18:00`);
+
+        const open = await call("caius_winddown", { date: CLOSING, step: "open" });
+        const fateOf = (id: string) => open.data.items.find((item: any) => item.listItemId === id)?.fate;
+        expect(fateOf("d1")).toMatchObject({ forward: TARGET, onDeck: true });
+        expect(fateOf("m1")).toMatchObject({ forward: "2027-06", forwardLabel: "June 2027" });
+        expect(fateOf("m1")).not.toHaveProperty("onDeck");
+        expect(fateOf("m2")).toMatchObject({ forward: TARGET });
+        expect(open.question).toContain("Tasks in meeting notes go up to June instead.");
+
+        const applied = await call("caius_winddown_apply", { date: CLOSING });
+        expect(applied.written).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: "fate", id: "m1", detail: "2027-06", status: "written" }),
+            expect.objectContaining({ kind: "fate", id: "d1", detail: TARGET, onDeck: true, status: "written" })
+        ]));
+        const month = await call("caius_plan", { period: "month", date: "2027-06" });
+        expect(JSON.stringify(month)).toContain("Document the new features in Slack");
+        expect(await content(meeting)).toContain("_rescheduled");
     });
 });

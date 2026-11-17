@@ -1,0 +1,20 @@
+.modal.caius-forward-dialog {
+    .caius-forward-calendar {
+        width: 100%;
+        max-width: 400px;
+        margin-bottom: 1rem;
+
+        .calendar-header {
+            justify-content: space-between;
+            padding: 0 0 0.5rem;
+        }
+
+        .caius-forward-month {
+            font-weight: 500;
+        }
+
+        .calendar-body {
+            min-height: 0;
+        }
+    }
+}
