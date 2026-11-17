@@ -32,6 +32,8 @@ export interface TriliumDoc extends VaultDoc {
   meetings: string[];
   /** The bullets under `### Context`, as written (a trailing `(until …)` still on). */
   contextLines: string[];
+  /** Set on a non-periodic child of a period's note, such as a meeting note under a day. */
+  child?: true;
 }
 
 export interface JournalLoad {
@@ -77,7 +79,7 @@ export async function loadJournal(api: NoteReader): Promise<JournalLoad> {
   const skipped = { protected: 0, brief: 0, nonText: 0 };
 
   // One entry per note to read: the note, and the path it becomes.
-  const wanted: { note: StoreNote; path: string }[] = [];
+  const wanted: { note: StoreNote; path: string; child?: true }[] = [];
   const taken = new Set<string>();
   const claim = (base: string, noteId: string): string => {
     const path = taken.has(`${base}.md`) ? `${base} (${noteId}).md` : `${base}.md`;
@@ -124,11 +126,12 @@ export async function loadJournal(api: NoteReader): Promise<JournalLoad> {
   const children = await mapLimit(childIds, CONCURRENCY, async (c) => ({ ...c, note: await api.note(c.id) }));
   for (const c of children) {
     if (!keep(c.note)) continue;
-    wanted.push({ note: c.note, path: claim(`${c.dir}/${c.key} ${safeName(c.note.title)}`, c.note.noteId) });
+    wanted.push({ note: c.note, path: claim(`${c.dir}/${c.key} ${safeName(c.note.title)}`, c.note.noteId), child: true });
   }
 
-  const docs = await mapLimit(wanted, CONCURRENCY, async ({ note, path }): Promise<TriliumDoc> => {
-    return buildDoc(note, path, await api.content(note.noteId), states);
+  const docs = await mapLimit(wanted, CONCURRENCY, async ({ note, path, child }): Promise<TriliumDoc> => {
+    const doc = buildDoc(note, path, await api.content(note.noteId), states);
+    return child ? { ...doc, child } : doc;
   });
   docs.sort((a, b) => a.path.localeCompare(b.path));
   return { docs, calendarRootId: root.noteId, skipped };

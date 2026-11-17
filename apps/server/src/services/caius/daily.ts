@@ -135,7 +135,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         }));
         const which = heldQuestion(items.filter((item) => item.listItemId && held.has(item.listItemId)).map(({ text, period }) => ({ text, period })));
         // An item carried on three workdays or more is offered a month instead; its fate stays the next workday.
-        const stale = await deps.locked("caius_winddown", () => staleItems(deps.store, deps.now, items.filter((item) => !("held" in item.fate)), targetDay));
+        // One already bound for a month is not offered it again.
+        const stale = await deps.locked("caius_winddown", () => staleItems(deps.store, deps.now, items.filter((item) => !("held" in item.fate) && !toMonth(item.fate)), targetDay));
         const parked = items.map((item) => {
             const park = item.listItemId ? stale.get(item.listItemId) : undefined;
             return park ? { ...item, forwarded: park.forwarded, park: { month: park.month } } : item;
@@ -143,7 +144,8 @@ export async function windDown(deps: StepDeps, { date, step, refresh, older }: {
         const parks = parked.flatMap((item) => "park" in item ? [ t("caius.daily.park", {
             task: plainText(withoutMoveLinks(item.text)), count: item.forwarded, month: t(`months.${MONTHS[Number(item.park.month.slice(5, 7)) - 1]}`)
         }) ] : []);
-        const question = items.length ? [ t("caius.daily.open", { day: weekdayName(targetDay) }), ...(which ? [ which ] : []), ...parks ].join(" ") : null;
+        const upToMonth = items.some((item) => toMonth(item.fate)) ? [ t("caius.daily.open_month", { month: t(`months.${MONTHS[Number(targetDay.slice(5, 7)) - 1]}`) }) ] : [];
+        const question = items.length ? [ t("caius.daily.open", { day: weekdayName(targetDay) }), ...upToMonth, ...(which ? [ which ] : []), ...parks ].join(" ") : null;
         // The older backlog is a Friday matter, or one he asks about; on other nights it isn't mentioned.
         const { olderCount, oldestDate, ...rest } = open;
         const backlog = older || utcDay(date).getUTCDay() === FRIDAY ? { olderCount, oldestDate } : {};
@@ -1284,15 +1286,21 @@ function localMoment(stamp: string): Date | undefined {
     return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] ?? 0)) : undefined;
 }
 
+/** Whether a proposed fate sends the item up to a month. */
+function toMonth(fate: object) {
+    return "forward" in fate && typeof fate.forward === "string" && PERIODS.month.pattern.test(fate.forward);
+}
+
 /** Workdays before the closed day whose leftovers the wind-down lists one by one. */
 const RECENT_WORKDAYS = 3;
 
 /**
  * The live tasks the wind-down of `date` closes, each with its proposed fate: those in its day note
  * (`today`), in the notes of the last `RECENT_WORKDAYS` workdays (`recent`) and in its ISO week
- * note (`week`), in that order. The target day is the fate of the first two; a week task's is its
- * week, or the target day's week when the week ends first. A sub-item goes with its listed parent.
- * Older overdue tasks are only counted, with the start of the oldest one's period.
+ * note (`week`), in that order. The target day is the fate of the first two, except for a task in a
+ * note under a day note, such as a meeting's, which goes up to the target day's month; a week task's
+ * is its week, or the target day's week when the week ends first. A sub-item goes with its listed
+ * parent. Older overdue tasks are only counted, with the start of the oldest one's period.
  */
 export async function stillOpen(store: NoteStore, date: string, targetDay: string) {
     const docs = (await loadJournal(store)).docs;
@@ -1301,6 +1309,7 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
     const targetWeek = isoWeekKey(utcDay(targetDay));
     const recent = new Set(closingPeriods(date).recent);
     const tasks = openTasks(docs, scanDocs(docs, TRILIUM_CONFIG, noon(date)));
+    const childPaths = new Set(docs.filter((doc) => doc.child).map((doc) => doc.path));
     const group = (task: (typeof tasks)[number]) => task.period === date ? "today"
         : recent.has(task.period) ? "recent"
             : task.period === week ? "week"
@@ -1316,7 +1325,9 @@ export async function stillOpen(store: NoteStore, date: string, targetDay: strin
         .map(({ task, area }) => ({
             group: group(task), noteId: task.noteId, listItemId: task.listItemId, text: task.text, period: task.period,
             section: task.section, critical: task.critical, onDeck: task.onDeck, minutes: unitMinutes(task, grouped), area,
-            fate: group(task) !== "week" ? dayFate(task, area, targetDay) : week === targetWeek ? { stay: week } : { forward: targetWeek }
+            fate: group(task) === "week" ? (week === targetWeek ? { stay: week } : { forward: targetWeek })
+                : childPaths.has(task.path) ? childFate(task, area, targetDay)
+                    : dayFate(task, area, targetDay)
         }));
     const oldestDate = older.map((task) => periodStart(task.period)).sort()[0] ?? null;
     return { items, olderCount: older.length, oldestDate };
@@ -1350,6 +1361,14 @@ function areaReader(docs: TriliumDoc[]) {
  */
 function dayFate(task: { critical: boolean }, area: Area, targetDay: string): { forward: string; onDeck?: true } {
     return task.critical || area !== "foundation" ? { forward: targetDay } : { forward: targetDay, onDeck: true };
+}
+
+/**
+ * The fate a wind-down proposes for a leftover in a note under a day note, such as a meeting's: the
+ * target day's month, where he pulls it down when he plans. An Important task takes the day's fate.
+ */
+function childFate(task: { critical: boolean }, area: Area, targetDay: string): { forward: string; onDeck?: true } {
+    return task.critical ? dayFate(task, area, targetDay) : { forward: targetDay.slice(0, 7) };
 }
 
 /**
